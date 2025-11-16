@@ -5,6 +5,15 @@ add_executable(test_sanity test_sanity.cpp)
 target_link_libraries(test_sanity GTest::gtest)
 add_test(NAME SanityTest COMMAND test_sanity)
 
+# Lexer tests
+add_executable(test_lexer
+    test_lexer.cpp
+    ${CMAKE_SOURCE_DIR}/src/token.cpp
+    ${CMAKE_SOURCE_DIR}/src/lexer.cpp
+)
+target_link_libraries(test_lexer GTest::gtest)
+add_test(NAME LexerTest COMMAND test_lexer)
+
 # Additional test sources (will be added as we implement)
 # set(TEST_SOURCES
 #     test_lexer.cpp

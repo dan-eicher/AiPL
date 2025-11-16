@@ -24,19 +24,19 @@ endif()
 include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-# Source files
-set(APL_SOURCES
-    # Will be added as we implement
+# Generate lexer from re2c specification
+add_custom_command(
+    OUTPUT ${CMAKE_SOURCE_DIR}/src/lexer.cpp
+    COMMAND ${RE2C_EXECUTABLE} --utf8 --input-encoding utf8 -o ${CMAKE_SOURCE_DIR}/src/lexer.cpp ${CMAKE_SOURCE_DIR}/src/lexer.re
+    DEPENDS ${CMAKE_SOURCE_DIR}/src/lexer.re
+    COMMENT "Generating lexer with re2c (UTF-8)"
 )
 
-# Generate lexer from re2c specification
-# TODO: Add custom command once lexer.re is created
-# add_custom_command(
-#     OUTPUT ${CMAKE_SOURCE_DIR}/src/lexer.cpp
-#     COMMAND ${RE2C_EXECUTABLE} -o ${CMAKE_SOURCE_DIR}/src/lexer.cpp ${CMAKE_SOURCE_DIR}/src/lexer.re
-#     DEPENDS ${CMAKE_SOURCE_DIR}/src/lexer.re
-#     COMMENT "Generating lexer with re2c"
-# )
+# Source files
+set(APL_SOURCES
+    src/token.cpp
+    src/lexer.cpp
+)
 
 # Main executable (for REPL)
 # add_executable(apl-repl ${APL_SOURCES})
