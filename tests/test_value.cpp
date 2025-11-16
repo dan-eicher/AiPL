@@ -258,6 +258,177 @@ TEST_F(ValueTest, ConstAsMatrix) {
     delete v;
 }
 
+// Test GC metadata initialization
+TEST_F(ValueTest, GCMetadataInit) {
+    Value* v = Value::from_scalar(1.0);
+
+    EXPECT_FALSE(v->marked);
+    EXPECT_FALSE(v->in_old_generation);
+
+    delete v;
+}
+
+// Test GC metadata on different types
+TEST_F(ValueTest, GCMetadataAllTypes) {
+    Value* s = Value::from_scalar(1.0);
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* v = Value::from_vector(vec);
+    Eigen::MatrixXd mat(2, 2);
+    mat << 1, 2, 3, 4;
+    Value* m = Value::from_matrix(mat);
+
+    EXPECT_FALSE(s->marked);
+    EXPECT_FALSE(v->marked);
+    EXPECT_FALSE(m->marked);
+
+    EXPECT_FALSE(s->in_old_generation);
+    EXPECT_FALSE(v->in_old_generation);
+    EXPECT_FALSE(m->in_old_generation);
+
+    delete s;
+    delete v;
+    delete m;
+}
+
+// Test mark bit setting
+TEST_F(ValueTest, MarkBit) {
+    Value* v = Value::from_scalar(5.0);
+
+    EXPECT_FALSE(v->marked);
+
+    v->marked = true;
+    EXPECT_TRUE(v->marked);
+
+    v->marked = false;
+    EXPECT_FALSE(v->marked);
+
+    delete v;
+}
+
+// Test old generation flag
+TEST_F(ValueTest, OldGenerationFlag) {
+    Value* v = Value::from_scalar(10.0);
+
+    EXPECT_FALSE(v->in_old_generation);
+
+    v->in_old_generation = true;
+    EXPECT_TRUE(v->in_old_generation);
+
+    delete v;
+}
+
+// Test rank for all types
+TEST_F(ValueTest, RankAllTypes) {
+    Value* s = Value::from_scalar(1.0);
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* v = Value::from_vector(vec);
+    Eigen::MatrixXd mat(2, 3);
+    mat.setConstant(1.0);
+    Value* m = Value::from_matrix(mat);
+
+    EXPECT_EQ(s->rank(), 0);
+    EXPECT_EQ(v->rank(), 1);
+    EXPECT_EQ(m->rank(), 2);
+
+    delete s;
+    delete v;
+    delete m;
+}
+
+// Test size for all types
+TEST_F(ValueTest, SizeAllTypes) {
+    Value* s = Value::from_scalar(1.0);
+    Eigen::VectorXd vec(5);
+    vec.setConstant(1.0);
+    Value* v = Value::from_vector(vec);
+    Eigen::MatrixXd mat(3, 4);
+    mat.setConstant(1.0);
+    Value* m = Value::from_matrix(mat);
+
+    EXPECT_EQ(s->size(), 1);
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_EQ(m->size(), 12);
+
+    delete s;
+    delete v;
+    delete m;
+}
+
+// Test rows and cols
+TEST_F(ValueTest, RowsAndCols) {
+    Value* s = Value::from_scalar(1.0);
+    Eigen::VectorXd vec(7);
+    vec.setConstant(1.0);
+    Value* v = Value::from_vector(vec);
+    Eigen::MatrixXd mat(4, 5);
+    mat.setConstant(1.0);
+    Value* m = Value::from_matrix(mat);
+
+    EXPECT_EQ(s->rows(), 1);
+    EXPECT_EQ(s->cols(), 1);
+
+    EXPECT_EQ(v->rows(), 7);
+    EXPECT_EQ(v->cols(), 1);
+
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_EQ(m->cols(), 5);
+
+    delete s;
+    delete v;
+    delete m;
+}
+
+// Test vector with fractional values
+TEST_F(ValueTest, VectorFractional) {
+    Eigen::VectorXd vec(3);
+    vec << 1.5, 2.7, 3.14;
+
+    Value* v = Value::from_vector(vec);
+
+    Eigen::MatrixXd* m = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.5);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.7);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.14);
+
+    delete v;
+}
+
+// Test matrix with negative values
+TEST_F(ValueTest, MatrixNegative) {
+    Eigen::MatrixXd mat(2, 2);
+    mat << -1.0, -2.0, -3.0, -4.0;
+
+    Value* v = Value::from_matrix(mat);
+
+    Eigen::MatrixXd* m = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), -4.0);
+
+    delete v;
+}
+
+// Test very large scalar
+TEST_F(ValueTest, VeryLargeScalar) {
+    Value* v = Value::from_scalar(1.7976931348623157e+308);  // Near max double
+
+    EXPECT_DOUBLE_EQ(v->as_scalar(), 1.7976931348623157e+308);
+
+    delete v;
+}
+
+// Test very small scalar
+TEST_F(ValueTest, VerySmallScalar) {
+    Value* v = Value::from_scalar(2.2250738585072014e-308);  // Near min positive double
+
+    EXPECT_DOUBLE_EQ(v->as_scalar(), 2.2250738585072014e-308);
+
+    delete v;
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
