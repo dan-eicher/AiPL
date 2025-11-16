@@ -38,6 +38,7 @@ set(APL_SOURCES
     src/lexer.cpp
     src/value.cpp
     src/control.cpp
+    src/continuation.cpp
 )
 
 # Main executable (for REPL)

@@ -33,6 +33,18 @@ add_executable(test_completion
 target_link_libraries(test_completion GTest::gtest Eigen3::Eigen)
 add_test(NAME CompletionTest COMMAND test_completion)
 
+# Continuation tests
+add_executable(test_continuation
+    test_continuation.cpp
+    ${CMAKE_SOURCE_DIR}/src/value.cpp
+    ${CMAKE_SOURCE_DIR}/src/control.cpp
+    ${CMAKE_SOURCE_DIR}/src/continuation.cpp
+    ${CMAKE_SOURCE_DIR}/src/token.cpp
+    ${CMAKE_SOURCE_DIR}/src/lexer.cpp
+)
+target_link_libraries(test_continuation GTest::gtest Eigen3::Eigen)
+add_test(NAME ContinuationTest COMMAND test_continuation)
+
 # Additional test sources (will be added as we implement)
 # set(TEST_SOURCES
 #     test_lexer.cpp
