@@ -36,6 +36,7 @@ add_custom_command(
 set(APL_SOURCES
     src/token.cpp
     src/lexer.cpp
+    src/value.cpp
 )
 
 # Main executable (for REPL)

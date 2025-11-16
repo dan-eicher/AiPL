@@ -14,6 +14,14 @@ add_executable(test_lexer
 target_link_libraries(test_lexer GTest::gtest)
 add_test(NAME LexerTest COMMAND test_lexer)
 
+# Value system tests
+add_executable(test_value
+    test_value.cpp
+    ${CMAKE_SOURCE_DIR}/src/value.cpp
+)
+target_link_libraries(test_value GTest::gtest Eigen3::Eigen)
+add_test(NAME ValueTest COMMAND test_value)
+
 # Additional test sources (will be added as we implement)
 # set(TEST_SOURCES
 #     test_lexer.cpp
