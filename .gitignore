@@ -1,0 +1,29 @@
+# Build directories
+build/
+cmake-build-*/
+
+# Generated files
+src/lexer.cpp
+
+# Compiled objects
+*.o
+*.so
+*.a
+
+# Executables
+apl-repl
+run_tests
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test outputs
+Testing/
