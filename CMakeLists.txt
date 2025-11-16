@@ -37,6 +37,7 @@ set(APL_SOURCES
     src/token.cpp
     src/lexer.cpp
     src/value.cpp
+    src/control.cpp
 )
 
 # Main executable (for REPL)
