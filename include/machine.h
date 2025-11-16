@@ -4,12 +4,10 @@
 
 #include "control.h"
 #include "continuation.h"
+#include "heap.h"
 #include <vector>
 
 namespace apl {
-
-// Forward declaration
-class APLHeap;
 
 // Machine - The CEK machine execution engine
 // This is a minimal implementation for Phase 1.5
@@ -18,9 +16,11 @@ class Machine {
 public:
     Control ctrl;                           // Control register
     std::vector<Continuation*> kont_stack;  // Continuation stack
-    APLHeap* heap;                          // Memory heap (nullptr for now)
+    APLHeap* heap;                          // Memory heap
 
-    Machine() : heap(nullptr) {}
+    Machine() {
+        heap = new APLHeap();
+    }
 
     ~Machine() {
         // Clean up continuation stack
@@ -28,6 +28,9 @@ public:
             delete k;
         }
         kont_stack.clear();
+
+        // Clean up heap
+        delete heap;
     }
 
     // Push continuation onto stack

@@ -104,6 +104,8 @@ Value* Value::from_scalar(double d) {
     val->tag = ValueType::SCALAR;
     val->data.scalar = d;
     val->promoted_matrix_ = nullptr;
+    val->marked = false;
+    val->in_old_generation = false;
     return val;
 }
 

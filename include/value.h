@@ -36,8 +36,15 @@ public:
         ~Data() {}  // Manual cleanup required
     } data;
 
+    // GC metadata
+    bool marked;                // Mark bit for GC
+    bool in_old_generation;     // True if in old generation
+
     // Constructors
-    Value() : tag(ValueType::SCALAR) { data.scalar = 0.0; }
+    Value() : tag(ValueType::SCALAR), marked(false), in_old_generation(false) {
+        data.scalar = 0.0;
+        promoted_matrix_ = nullptr;
+    }
     ~Value();
 
     // Type checking methods

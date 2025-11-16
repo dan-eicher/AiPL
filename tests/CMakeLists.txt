@@ -39,11 +39,25 @@ add_executable(test_continuation
     ${CMAKE_SOURCE_DIR}/src/value.cpp
     ${CMAKE_SOURCE_DIR}/src/control.cpp
     ${CMAKE_SOURCE_DIR}/src/continuation.cpp
+    ${CMAKE_SOURCE_DIR}/src/heap.cpp
     ${CMAKE_SOURCE_DIR}/src/token.cpp
     ${CMAKE_SOURCE_DIR}/src/lexer.cpp
 )
 target_link_libraries(test_continuation GTest::gtest Eigen3::Eigen)
 add_test(NAME ContinuationTest COMMAND test_continuation)
+
+# Heap/GC tests
+add_executable(test_heap
+    test_heap.cpp
+    ${CMAKE_SOURCE_DIR}/src/value.cpp
+    ${CMAKE_SOURCE_DIR}/src/control.cpp
+    ${CMAKE_SOURCE_DIR}/src/continuation.cpp
+    ${CMAKE_SOURCE_DIR}/src/heap.cpp
+    ${CMAKE_SOURCE_DIR}/src/token.cpp
+    ${CMAKE_SOURCE_DIR}/src/lexer.cpp
+)
+target_link_libraries(test_heap GTest::gtest Eigen3::Eigen)
+add_test(NAME HeapTest COMMAND test_heap)
 
 # Additional test sources (will be added as we implement)
 # set(TEST_SOURCES

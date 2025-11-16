@@ -39,6 +39,7 @@ set(APL_SOURCES
     src/value.cpp
     src/control.cpp
     src/continuation.cpp
+    src/heap.cpp
 )
 
 # Main executable (for REPL)
