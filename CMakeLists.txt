@@ -40,6 +40,8 @@ set(APL_SOURCES
     src/control.cpp
     src/continuation.cpp
     src/heap.cpp
+    src/environment.cpp
+    src/machine.cpp
 )
 
 # Main executable (for REPL)

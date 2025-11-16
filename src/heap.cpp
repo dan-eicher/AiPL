@@ -167,6 +167,11 @@ void APLHeap::mark_from_roots(Machine* machine) {
             k->mark(this);
         }
     }
+
+    // Mark values in environment
+    if (machine->env) {
+        machine->env->mark(this);
+    }
 }
 
 // Mark a value and its transitive references
