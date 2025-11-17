@@ -330,3 +330,171 @@ TEST(PrimitivesTest, MismatchedShapeError) {
     delete vec1;
     delete vec2;
 }
+
+// ============================================================================
+// Array Operation Tests
+// ============================================================================
+
+TEST(PrimitivesTest, ShapeScalar) {
+    Value* scalar = Value::from_scalar(5.0);
+    Value* result = fn_shape(scalar);
+
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);  // Empty shape for scalar
+
+    delete scalar;
+    delete result;
+}
+
+TEST(PrimitivesTest, ShapeVector) {
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = Value::from_vector(v);
+    Value* result = fn_shape(vec);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* shape = result->as_matrix();
+    EXPECT_EQ(shape->rows(), 1);
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 5.0);
+
+    delete vec;
+    delete result;
+}
+
+TEST(PrimitivesTest, ReshapeVector) {
+    Eigen::VectorXd v(6);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0;
+    Value* vec = Value::from_vector(v);
+
+    Eigen::VectorXd new_shape(2);
+    new_shape << 2.0, 3.0;
+    Value* shape = Value::from_vector(new_shape);
+
+    Value* result = fn_reshape(shape, vec);
+
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 3.0);
+
+    delete vec;
+    delete shape;
+    delete result;
+}
+
+TEST(PrimitivesTest, Ravel) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = Value::from_matrix(m);
+
+    Value* result = fn_ravel(mat);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 6);
+    // Column-major order
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+
+    delete mat;
+    delete result;
+}
+
+TEST(PrimitivesTest, Catenate) {
+    Eigen::VectorXd v1(3);
+    v1 << 1.0, 2.0, 3.0;
+    Eigen::VectorXd v2(2);
+    v2 << 4.0, 5.0;
+
+    Value* vec1 = Value::from_vector(v1);
+    Value* vec2 = Value::from_vector(v2);
+
+    Value* result = fn_catenate(vec1, vec2);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+
+    delete vec1;
+    delete vec2;
+    delete result;
+}
+
+TEST(PrimitivesTest, Transpose) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = Value::from_matrix(m);
+
+    Value* result = fn_transpose(mat);
+
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_EQ(res->cols(), 2);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 4.0);
+
+    delete mat;
+    delete result;
+}
+
+TEST(PrimitivesTest, Iota) {
+    Value* n = Value::from_scalar(5.0);
+    Value* result = fn_iota(n);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);
+
+    delete n;
+    delete result;
+}
+
+TEST(PrimitivesTest, Take) {
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = Value::from_vector(v);
+
+    Value* count = Value::from_scalar(3.0);
+    Value* result = fn_take(count, vec);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+
+    delete vec;
+    delete count;
+    delete result;
+}
+
+TEST(PrimitivesTest, Drop) {
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = Value::from_vector(v);
+
+    Value* count = Value::from_scalar(2.0);
+    Value* result = fn_drop(count, vec);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+
+    delete vec;
+    delete count;
+    delete result;
+}

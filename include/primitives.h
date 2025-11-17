@@ -32,4 +32,22 @@ extern PrimitiveFn prim_times;     // × symbol
 extern PrimitiveFn prim_divide;    // ÷ symbol
 extern PrimitiveFn prim_star;      // * symbol
 
+// Array operation functions
+Value* fn_shape(Value* omega);                    // ⍴ monadic (get shape)
+Value* fn_reshape(Value* lhs, Value* rhs);        // ⍴ dyadic (reshape)
+Value* fn_ravel(Value* omega);                    // , monadic (flatten to vector)
+Value* fn_catenate(Value* lhs, Value* rhs);       // , dyadic (concatenate)
+Value* fn_transpose(Value* omega);                // ⍉ monadic (transpose)
+Value* fn_iota(Value* omega);                     // ⍳ monadic (index generator)
+Value* fn_take(Value* lhs, Value* rhs);           // ↑ dyadic (take)
+Value* fn_drop(Value* lhs, Value* rhs);           // ↓ dyadic (drop)
+
+// Array operation PrimitiveFn structs
+extern PrimitiveFn prim_rho;       // ⍴ symbol (shape/reshape)
+extern PrimitiveFn prim_comma;     // , symbol (ravel/catenate)
+extern PrimitiveFn prim_transpose; // ⍉ symbol (transpose)
+extern PrimitiveFn prim_iota;      // ⍳ symbol (index generator)
+extern PrimitiveFn prim_uptack;    // ↑ symbol (take)
+extern PrimitiveFn prim_downtack;  // ↓ symbol (drop)
+
 } // namespace apl
