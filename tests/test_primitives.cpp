@@ -498,3 +498,133 @@ TEST(PrimitivesTest, Drop) {
     delete count;
     delete result;
 }
+
+// ============================================================================
+// Reduction and Scan Tests
+// ============================================================================
+
+TEST(PrimitivesTest, ReduceVector) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = Value::from_vector(v);
+    Value* plus_fn = Value::from_function(&prim_plus);
+
+    Value* result = fn_reduce(plus_fn, vec);
+
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);  // 1+2+3+4
+
+    delete vec;
+    delete plus_fn;
+    delete result;
+}
+
+TEST(PrimitivesTest, ReduceWithMultiply) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = Value::from_vector(v);
+    Value* times_fn = Value::from_function(&prim_times);
+
+    Value* result = fn_reduce(times_fn, vec);
+
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 24.0);  // 1*2*3*4
+
+    delete vec;
+    delete times_fn;
+    delete result;
+}
+
+TEST(PrimitivesTest, ReduceMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = Value::from_matrix(m);
+    Value* plus_fn = Value::from_function(&prim_plus);
+
+    Value* result = fn_reduce(plus_fn, mat);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 2);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 15.0);  // 4+5+6
+
+    delete mat;
+    delete plus_fn;
+    delete result;
+}
+
+TEST(PrimitivesTest, ReduceFirstMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = Value::from_matrix(m);
+    Value* plus_fn = Value::from_function(&prim_plus);
+
+    Value* result = fn_reduce_first(plus_fn, mat);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);  // 1+4
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 7.0);  // 2+5
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 9.0);  // 3+6
+
+    delete mat;
+    delete plus_fn;
+    delete result;
+}
+
+TEST(PrimitivesTest, ScanVector) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = Value::from_vector(v);
+    Value* plus_fn = Value::from_function(&prim_plus);
+
+    Value* result = fn_scan(plus_fn, vec);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+    // Right-to-left cumulative: [10, 9, 7, 4]
+    // 1+(2+(3+4)) = 1+9 = 10
+    // 2+(3+4) = 9
+    // 3+4 = 7
+    // 4 = 4
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 4.0);
+
+    delete vec;
+    delete plus_fn;
+    delete result;
+}
+
+TEST(PrimitivesTest, ScanMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = Value::from_matrix(m);
+    Value* plus_fn = Value::from_function(&prim_plus);
+
+    Value* result = fn_scan(plus_fn, mat);
+
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 2);
+    EXPECT_EQ(res->cols(), 3);
+    // Row 0: [6, 5, 3] = [1+2+3, 2+3, 3]
+    // Row 1: [15, 11, 6] = [4+5+6, 5+6, 6]
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 15.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 11.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 2), 6.0);
+
+    delete mat;
+    delete plus_fn;
+    delete result;
+}

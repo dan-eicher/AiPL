@@ -548,4 +548,238 @@ Value* fn_drop(Value* lhs, Value* rhs) {
     return Value::from_matrix(result);
 }
 
+// ============================================================================
+// Reduction and Scan Operations
+// ============================================================================
+
+// Reduce (/) - apply dyadic function between elements, right to left
+Value* fn_reduce(Value* func, Value* omega) {
+    if (!func->is_function()) {
+        throw std::runtime_error("DOMAIN ERROR: reduce requires a function");
+    }
+
+    PrimitiveFn* fn = func->data.function;
+    if (!fn->dyadic) {
+        throw std::runtime_error("DOMAIN ERROR: reduce requires a dyadic function");
+    }
+
+    if (omega->is_scalar()) {
+        // Reducing a scalar is identity
+        return Value::from_scalar(omega->as_scalar());
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    if (omega->is_vector()) {
+        // Reduce vector to scalar
+        int len = mat->rows();
+        if (len == 0) {
+            throw std::runtime_error("LENGTH ERROR: cannot reduce empty vector");
+        }
+        if (len == 1) {
+            return Value::from_scalar((*mat)(0, 0));
+        }
+
+        // Right-to-left reduction
+        Value* acc = Value::from_scalar((*mat)(len - 1, 0));
+        for (int i = len - 2; i >= 0; --i) {
+            Value* elem = Value::from_scalar((*mat)(i, 0));
+            Value* result = fn->dyadic(elem, acc);
+            delete elem;
+            delete acc;
+            acc = result;
+        }
+        return acc;
+    }
+
+    // For matrix, reduce along last axis (columns)
+    // Result is a vector with one element per row
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (cols == 0) {
+        throw std::runtime_error("LENGTH ERROR: cannot reduce empty dimension");
+    }
+
+    Eigen::VectorXd result(rows);
+
+    for (int r = 0; r < rows; ++r) {
+        // Reduce this row
+        Value* acc = Value::from_scalar((*mat)(r, cols - 1));
+        for (int c = cols - 2; c >= 0; --c) {
+            Value* elem = Value::from_scalar((*mat)(r, c));
+            Value* new_acc = fn->dyadic(elem, acc);
+            delete elem;
+            delete acc;
+            acc = new_acc;
+        }
+        result(r) = acc->as_scalar();
+        delete acc;
+    }
+
+    return Value::from_vector(result);
+}
+
+// Reduce-first (⌿) - reduce along first axis (rows)
+Value* fn_reduce_first(Value* func, Value* omega) {
+    if (!func->is_function()) {
+        throw std::runtime_error("DOMAIN ERROR: reduce-first requires a function");
+    }
+
+    PrimitiveFn* fn = func->data.function;
+    if (!fn->dyadic) {
+        throw std::runtime_error("DOMAIN ERROR: reduce-first requires a dyadic function");
+    }
+
+    if (omega->is_scalar()) {
+        return Value::from_scalar(omega->as_scalar());
+    }
+
+    if (omega->is_vector()) {
+        // For vector, same as regular reduce
+        return fn_reduce(func, omega);
+    }
+
+    // For matrix, reduce along first axis (rows)
+    // Result is a row vector
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (rows == 0) {
+        throw std::runtime_error("LENGTH ERROR: cannot reduce empty dimension");
+    }
+
+    Eigen::VectorXd result(cols);
+
+    for (int c = 0; c < cols; ++c) {
+        // Reduce this column
+        Value* acc = Value::from_scalar((*mat)(rows - 1, c));
+        for (int r = rows - 2; r >= 0; --r) {
+            Value* elem = Value::from_scalar((*mat)(r, c));
+            Value* new_acc = fn->dyadic(elem, acc);
+            delete elem;
+            delete acc;
+            acc = new_acc;
+        }
+        result(c) = acc->as_scalar();
+        delete acc;
+    }
+
+    return Value::from_vector(result);
+}
+
+// Scan (\) - apply dyadic function cumulatively, right to left
+Value* fn_scan(Value* func, Value* omega) {
+    if (!func->is_function()) {
+        throw std::runtime_error("DOMAIN ERROR: scan requires a function");
+    }
+
+    PrimitiveFn* fn = func->data.function;
+    if (!fn->dyadic) {
+        throw std::runtime_error("DOMAIN ERROR: scan requires a dyadic function");
+    }
+
+    if (omega->is_scalar()) {
+        return Value::from_scalar(omega->as_scalar());
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    if (omega->is_vector()) {
+        int len = mat->rows();
+        if (len == 0) {
+            return Value::from_vector(Eigen::VectorXd(0));
+        }
+
+        Eigen::VectorXd result(len);
+
+        // Right-to-left scan
+        result(len - 1) = (*mat)(len - 1, 0);
+        Value* acc = Value::from_scalar((*mat)(len - 1, 0));
+
+        for (int i = len - 2; i >= 0; --i) {
+            Value* elem = Value::from_scalar((*mat)(i, 0));
+            Value* new_acc = fn->dyadic(elem, acc);
+            result(i) = new_acc->as_scalar();
+            delete elem;
+            delete acc;
+            acc = new_acc;
+        }
+        delete acc;
+
+        return Value::from_vector(result);
+    }
+
+    // For matrix, scan along last axis (columns)
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    Eigen::MatrixXd result(rows, cols);
+
+    for (int r = 0; r < rows; ++r) {
+        // Scan this row
+        result(r, cols - 1) = (*mat)(r, cols - 1);
+        Value* acc = Value::from_scalar((*mat)(r, cols - 1));
+
+        for (int c = cols - 2; c >= 0; --c) {
+            Value* elem = Value::from_scalar((*mat)(r, c));
+            Value* new_acc = fn->dyadic(elem, acc);
+            result(r, c) = new_acc->as_scalar();
+            delete elem;
+            delete acc;
+            acc = new_acc;
+        }
+        delete acc;
+    }
+
+    return Value::from_matrix(result);
+}
+
+// Scan-first (⍀) - scan along first axis (rows)
+Value* fn_scan_first(Value* func, Value* omega) {
+    if (!func->is_function()) {
+        throw std::runtime_error("DOMAIN ERROR: scan-first requires a function");
+    }
+
+    PrimitiveFn* fn = func->data.function;
+    if (!fn->dyadic) {
+        throw std::runtime_error("DOMAIN ERROR: scan-first requires a dyadic function");
+    }
+
+    if (omega->is_scalar()) {
+        return Value::from_scalar(omega->as_scalar());
+    }
+
+    if (omega->is_vector()) {
+        // For vector, same as regular scan
+        return fn_scan(func, omega);
+    }
+
+    // For matrix, scan along first axis (rows)
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    Eigen::MatrixXd result(rows, cols);
+
+    for (int c = 0; c < cols; ++c) {
+        // Scan this column
+        result(rows - 1, c) = (*mat)(rows - 1, c);
+        Value* acc = Value::from_scalar((*mat)(rows - 1, c));
+
+        for (int r = rows - 2; r >= 0; --r) {
+            Value* elem = Value::from_scalar((*mat)(r, c));
+            Value* new_acc = fn->dyadic(elem, acc);
+            result(r, c) = new_acc->as_scalar();
+            delete elem;
+            delete acc;
+            acc = new_acc;
+        }
+        delete acc;
+    }
+
+    return Value::from_matrix(result);
+}
+
 } // namespace apl

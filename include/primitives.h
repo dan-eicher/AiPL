@@ -50,4 +50,15 @@ extern PrimitiveFn prim_iota;      // ⍳ symbol (index generator)
 extern PrimitiveFn prim_uptack;    // ↑ symbol (take)
 extern PrimitiveFn prim_downtack;  // ↓ symbol (drop)
 
+// Reduction/scan operation functions
+// These take a dyadic function and apply it across an array
+Value* fn_reduce(Value* func, Value* omega);         // / reduce along last axis
+Value* fn_reduce_first(Value* func, Value* omega);   // ⌿ reduce along first axis
+Value* fn_scan(Value* func, Value* omega);           // \ scan along last axis
+Value* fn_scan_first(Value* func, Value* omega);     // ⍀ scan along first axis
+
+// Note: Reduction operators are higher-order - they take functions as arguments
+// For now, we'll implement them as regular functions that take a PrimitiveFn*
+// extracted from a Value. Full operator support comes in Phase 5.
+
 } // namespace apl
