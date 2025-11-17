@@ -135,8 +135,13 @@ Value* fn_divide(Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        // Check for zeros in divisor
+        if ((rmat->array() == 0.0).any()) {
+            throw std::runtime_error("DOMAIN ERROR: division by zero");
+        }
         Eigen::MatrixXd result =
-            lhs->data.scalar / rhs->as_matrix()->array();
+            lhs->data.scalar / rmat->array();
         return Value::from_matrix(result);
     }
 
@@ -157,6 +162,11 @@ Value* fn_divide(Value* lhs, Value* rhs) {
         throw std::runtime_error("LENGTH ERROR: mismatched shapes in division");
     }
 
+    // Check for zeros in divisor
+    if ((rmat->array() == 0.0).any()) {
+        throw std::runtime_error("DOMAIN ERROR: division by zero");
+    }
+
     Eigen::MatrixXd result = lmat->array() / rmat->array();
     return Value::from_matrix(result);
 }
@@ -170,12 +180,17 @@ Value* fn_power(Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
-        Eigen::MatrixXd result =
-            rhs->as_matrix()->array().pow(lhs->data.scalar);
+        // lhs is scalar base, rhs is array of exponents: lhs^rhs[i]
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = std::pow(lhs->data.scalar, rmat->data()[i]);
+        }
         return Value::from_matrix(result);
     }
 
     if (rhs->is_scalar()) {
+        // lhs is array of bases, rhs is scalar exponent
         Eigen::MatrixXd result =
             lhs->as_matrix()->array().pow(rhs->data.scalar);
         return Value::from_matrix(result);
@@ -249,7 +264,13 @@ Value* fn_reciprocal(Value* omega) {
         return Value::from_scalar(1.0 / omega->data.scalar);
     }
 
-    Eigen::MatrixXd result = 1.0 / omega->as_matrix()->array();
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    // Check for zeros
+    if ((mat->array() == 0.0).any()) {
+        throw std::runtime_error("DOMAIN ERROR: reciprocal of zero");
+    }
+
+    Eigen::MatrixXd result = 1.0 / mat->array();
     return Value::from_matrix(result);
 }
 
@@ -303,18 +324,43 @@ Value* fn_reshape(Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         // Scalar shape means 1D vector of that length
-        target_rows = static_cast<int>(lhs->as_scalar());
+        double dim = lhs->as_scalar();
+        // Validate: must be non-negative integer
+        if (dim < 0.0) {
+            throw std::runtime_error("DOMAIN ERROR: reshape dimension must be non-negative");
+        }
+        if (dim != std::floor(dim)) {
+            throw std::runtime_error("DOMAIN ERROR: reshape dimension must be an integer");
+        }
+        target_rows = static_cast<int>(dim);
         target_cols = 1;
     } else {
         const Eigen::MatrixXd* shape_mat = lhs->as_matrix();
         if (shape_mat->rows() == 1) {
             // Single element: vector of that length
-            target_rows = static_cast<int>((*shape_mat)(0, 0));
+            double dim = (*shape_mat)(0, 0);
+            // Validate: must be non-negative integer
+            if (dim < 0.0) {
+                throw std::runtime_error("DOMAIN ERROR: reshape dimension must be non-negative");
+            }
+            if (dim != std::floor(dim)) {
+                throw std::runtime_error("DOMAIN ERROR: reshape dimension must be an integer");
+            }
+            target_rows = static_cast<int>(dim);
             target_cols = 1;
         } else if (shape_mat->rows() == 2) {
             // Two elements: matrix of that shape
-            target_rows = static_cast<int>((*shape_mat)(0, 0));
-            target_cols = static_cast<int>((*shape_mat)(1, 0));
+            double dim1 = (*shape_mat)(0, 0);
+            double dim2 = (*shape_mat)(1, 0);
+            // Validate: must be non-negative integers
+            if (dim1 < 0.0 || dim2 < 0.0) {
+                throw std::runtime_error("DOMAIN ERROR: reshape dimensions must be non-negative");
+            }
+            if (dim1 != std::floor(dim1) || dim2 != std::floor(dim2)) {
+                throw std::runtime_error("DOMAIN ERROR: reshape dimensions must be integers");
+            }
+            target_rows = static_cast<int>(dim1);
+            target_cols = static_cast<int>(dim2);
         } else {
             throw std::runtime_error("RANK ERROR: reshape shape must have 1 or 2 elements");
         }
@@ -331,6 +377,11 @@ Value* fn_reshape(Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
         // Flatten to vector (column-major order)
         source = Eigen::Map<const Eigen::VectorXd>(rhs_mat->data(), rhs_mat->size());
+    }
+
+    // Validate: target size must match source size (no cycling/truncating for now)
+    if (target_size != static_cast<int>(source.size())) {
+        throw std::runtime_error("LENGTH ERROR: reshape size must match array size");
     }
 
     // Build result by cycling through source data
@@ -405,10 +456,17 @@ Value* fn_iota(Value* omega) {
         throw std::runtime_error("RANK ERROR: iota argument must be scalar");
     }
 
-    int n = static_cast<int>(omega->as_scalar());
-    if (n < 0) {
+    double val = omega->as_scalar();
+
+    // Validate: must be non-negative integer
+    if (val < 0.0) {
         throw std::runtime_error("DOMAIN ERROR: iota argument must be non-negative");
     }
+    if (val != std::floor(val)) {
+        throw std::runtime_error("DOMAIN ERROR: iota argument must be an integer");
+    }
+
+    int n = static_cast<int>(val);
 
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
@@ -580,7 +638,7 @@ Value* fn_reduce(Value* func, Value* omega) {
             return Value::from_scalar((*mat)(0, 0));
         }
 
-        // Right-to-left reduction
+        // Right-to-left reduction (APL standard: first f (f/rest))
         Value* acc = Value::from_scalar((*mat)(len - 1, 0));
         for (int i = len - 2; i >= 0; --i) {
             Value* elem = Value::from_scalar((*mat)(i, 0));
@@ -604,7 +662,7 @@ Value* fn_reduce(Value* func, Value* omega) {
     Eigen::VectorXd result(rows);
 
     for (int r = 0; r < rows; ++r) {
-        // Reduce this row
+        // Reduce this row right-to-left
         Value* acc = Value::from_scalar((*mat)(r, cols - 1));
         for (int c = cols - 2; c >= 0; --c) {
             Value* elem = Value::from_scalar((*mat)(r, c));
@@ -653,7 +711,7 @@ Value* fn_reduce_first(Value* func, Value* omega) {
     Eigen::VectorXd result(cols);
 
     for (int c = 0; c < cols; ++c) {
-        // Reduce this column
+        // Reduce this column bottom-to-top (right-to-left in first axis)
         Value* acc = Value::from_scalar((*mat)(rows - 1, c));
         for (int r = rows - 2; r >= 0; --r) {
             Value* elem = Value::from_scalar((*mat)(r, c));
@@ -694,7 +752,7 @@ Value* fn_scan(Value* func, Value* omega) {
 
         Eigen::VectorXd result(len);
 
-        // Right-to-left scan
+        // Right-to-left scan (APL standard)
         result(len - 1) = (*mat)(len - 1, 0);
         Value* acc = Value::from_scalar((*mat)(len - 1, 0));
 
@@ -718,7 +776,7 @@ Value* fn_scan(Value* func, Value* omega) {
     Eigen::MatrixXd result(rows, cols);
 
     for (int r = 0; r < rows; ++r) {
-        // Scan this row
+        // Scan this row right-to-left
         result(r, cols - 1) = (*mat)(r, cols - 1);
         Value* acc = Value::from_scalar((*mat)(r, cols - 1));
 
@@ -764,7 +822,7 @@ Value* fn_scan_first(Value* func, Value* omega) {
     Eigen::MatrixXd result(rows, cols);
 
     for (int c = 0; c < cols; ++c) {
-        // Scan this column
+        // Scan this column bottom-to-top (right-to-left in first axis)
         result(rows - 1, c) = (*mat)(rows - 1, c);
         Value* acc = Value::from_scalar((*mat)(rows - 1, c));
 
