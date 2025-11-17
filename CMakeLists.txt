@@ -42,6 +42,7 @@ set(APL_SOURCES
     src/heap.cpp
     src/environment.cpp
     src/machine.cpp
+    src/primitives.cpp
 )
 
 # Main executable (for REPL)

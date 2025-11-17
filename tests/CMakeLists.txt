@@ -76,6 +76,15 @@ add_executable(test_machine
 target_link_libraries(test_machine GTest::gtest Eigen3::Eigen)
 add_test(NAME MachineTest COMMAND test_machine)
 
+# Primitives tests
+add_executable(test_primitives
+    test_primitives.cpp
+    ${CMAKE_SOURCE_DIR}/src/value.cpp
+    ${CMAKE_SOURCE_DIR}/src/primitives.cpp
+)
+target_link_libraries(test_primitives GTest::gtest Eigen3::Eigen)
+add_test(NAME PrimitivesTest COMMAND test_primitives)
+
 # Additional test sources (will be added as we implement)
 # set(TEST_SOURCES
 #     test_lexer.cpp

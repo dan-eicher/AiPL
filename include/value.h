@@ -6,8 +6,17 @@
 
 namespace apl {
 
-// Forward declarations for function and operator types
-struct PrimitiveFn;
+// Forward declaration
+class Value;
+
+// Primitive function - can have both monadic and dyadic forms
+struct PrimitiveFn {
+    const char* name;  // For debugging
+    Value* (*monadic)(Value* omega);           // Monadic form (can be nullptr)
+    Value* (*dyadic)(Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
+};
+
+// Forward declaration for operators
 struct PrimitiveOp;
 
 // Value type enumeration
