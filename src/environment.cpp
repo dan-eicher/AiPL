@@ -2,6 +2,7 @@
 
 #include "environment.h"
 #include "heap.h"
+#include "primitives.h"
 
 namespace apl {
 
@@ -19,6 +20,28 @@ void Environment::mark(APLHeap* heap) {
     if (parent) {
         parent->mark(heap);
     }
+}
+
+// Initialize global environment with all built-in primitives
+void init_global_environment(Environment* env) {
+    // Arithmetic primitives
+    env->define("+", Value::from_function(&prim_plus));
+    env->define("-", Value::from_function(&prim_minus));
+    env->define("×", Value::from_function(&prim_times));
+    env->define("÷", Value::from_function(&prim_divide));
+    env->define("*", Value::from_function(&prim_star));
+
+    // Array operations
+    env->define("⍴", Value::from_function(&prim_rho));
+    env->define(",", Value::from_function(&prim_comma));
+    env->define("⍉", Value::from_function(&prim_transpose));
+    env->define("⍳", Value::from_function(&prim_iota));
+    env->define("↑", Value::from_function(&prim_uptack));
+    env->define("↓", Value::from_function(&prim_downtack));
+
+    // Note: Reduction/scan operators will be added in Phase 5 when we
+    // implement proper operator support. For now they're just functions
+    // that take a function argument.
 }
 
 } // namespace apl

@@ -81,6 +81,12 @@ add_executable(test_primitives
     test_primitives.cpp
     ${CMAKE_SOURCE_DIR}/src/value.cpp
     ${CMAKE_SOURCE_DIR}/src/primitives.cpp
+    ${CMAKE_SOURCE_DIR}/src/environment.cpp
+    ${CMAKE_SOURCE_DIR}/src/heap.cpp
+    ${CMAKE_SOURCE_DIR}/src/control.cpp
+    ${CMAKE_SOURCE_DIR}/src/continuation.cpp
+    ${CMAKE_SOURCE_DIR}/src/token.cpp
+    ${CMAKE_SOURCE_DIR}/src/lexer.cpp
 )
 target_link_libraries(test_primitives GTest::gtest Eigen3::Eigen)
 add_test(NAME PrimitivesTest COMMAND test_primitives)

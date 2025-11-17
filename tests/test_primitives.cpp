@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 #include "primitives.h"
 #include "value.h"
+#include "environment.h"
 #include <cmath>
 
 using namespace apl;
@@ -627,4 +628,104 @@ TEST(PrimitivesTest, ScanMatrix) {
     delete mat;
     delete plus_fn;
     delete result;
+}
+
+// ============================================================================
+// Environment and Binding Tests
+// ============================================================================
+
+TEST(PrimitivesTest, EnvironmentInit) {
+    Environment env;
+    init_global_environment(&env);
+
+    // Verify arithmetic primitives are bound
+    Value* plus = env.lookup("+");
+    ASSERT_NE(plus, nullptr);
+    ASSERT_TRUE(plus->is_function());
+    EXPECT_EQ(plus->data.function, &prim_plus);
+
+    Value* minus = env.lookup("-");
+    ASSERT_NE(minus, nullptr);
+    ASSERT_TRUE(minus->is_function());
+
+    // Verify array operations are bound
+    Value* rho = env.lookup("⍴");
+    ASSERT_NE(rho, nullptr);
+    ASSERT_TRUE(rho->is_function());
+
+    Value* iota = env.lookup("⍳");
+    ASSERT_NE(iota, nullptr);
+    ASSERT_TRUE(iota->is_function());
+}
+
+TEST(PrimitivesTest, EnvironmentLookup) {
+    Environment env;
+    init_global_environment(&env);
+
+    // Lookup and use a primitive from environment
+    Value* plus = env.lookup("+");
+    ASSERT_NE(plus, nullptr);
+
+    // Use it to add two numbers
+    Value* a = Value::from_scalar(3.0);
+    Value* b = Value::from_scalar(4.0);
+    PrimitiveFn* fn = plus->data.function;
+    Value* result = fn->dyadic(a, b);
+
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+
+    delete a;
+    delete b;
+    delete result;
+}
+
+TEST(PrimitivesTest, EnvironmentDefineAndUpdate) {
+    Environment env;
+
+    // Define a variable
+    Value* x = Value::from_scalar(42.0);
+    env.define("x", x);
+
+    // Lookup the variable
+    Value* lookup = env.lookup("x");
+    ASSERT_NE(lookup, nullptr);
+    EXPECT_DOUBLE_EQ(lookup->as_scalar(), 42.0);
+
+    // Update the variable
+    Value* y = Value::from_scalar(100.0);
+    bool updated = env.update("x", y);
+    ASSERT_TRUE(updated);
+
+    Value* lookup2 = env.lookup("x");
+    EXPECT_DOUBLE_EQ(lookup2->as_scalar(), 100.0);
+
+    delete x;
+    delete y;
+}
+
+TEST(PrimitivesTest, EnvironmentScoping) {
+    Environment parent;
+    Environment child(&parent);
+
+    // Define in parent
+    Value* x = Value::from_scalar(10.0);
+    parent.define("x", x);
+
+    // Define in child
+    Value* y = Value::from_scalar(20.0);
+    child.define("y", y);
+
+    // Child can see both
+    EXPECT_NE(child.lookup("x"), nullptr);
+    EXPECT_NE(child.lookup("y"), nullptr);
+    EXPECT_DOUBLE_EQ(child.lookup("x")->as_scalar(), 10.0);
+    EXPECT_DOUBLE_EQ(child.lookup("y")->as_scalar(), 20.0);
+
+    // Parent can only see its own
+    EXPECT_NE(parent.lookup("x"), nullptr);
+    EXPECT_EQ(parent.lookup("y"), nullptr);
+
+    delete x;
+    delete y;
 }
