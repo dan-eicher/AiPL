@@ -25,19 +25,19 @@ void Environment::mark(APLHeap* heap) {
 // Initialize global environment with all built-in primitives
 void init_global_environment(Environment* env) {
     // Arithmetic primitives
-    env->define("+", Value::from_function(&prim_plus));
-    env->define("-", Value::from_function(&prim_minus));
-    env->define("×", Value::from_function(&prim_times));
-    env->define("÷", Value::from_function(&prim_divide));
-    env->define("*", Value::from_function(&prim_star));
+    env->define("+", Value::from_primitive(&prim_plus));
+    env->define("-", Value::from_primitive(&prim_minus));
+    env->define("×", Value::from_primitive(&prim_times));
+    env->define("÷", Value::from_primitive(&prim_divide));
+    env->define("*", Value::from_primitive(&prim_star));
 
     // Array operations
-    env->define("⍴", Value::from_function(&prim_rho));
-    env->define(",", Value::from_function(&prim_comma));
-    env->define("⍉", Value::from_function(&prim_transpose));
-    env->define("⍳", Value::from_function(&prim_iota));
-    env->define("↑", Value::from_function(&prim_uptack));
-    env->define("↓", Value::from_function(&prim_downtack));
+    env->define("⍴", Value::from_primitive(&prim_rho));
+    env->define(",", Value::from_primitive(&prim_comma));
+    env->define("⍉", Value::from_primitive(&prim_transpose));
+    env->define("⍳", Value::from_primitive(&prim_iota));
+    env->define("↑", Value::from_primitive(&prim_uptack));
+    env->define("↓", Value::from_primitive(&prim_downtack));
 
     // Note: Reduction/scan operators will be added in Phase 5 when we
     // implement proper operator support. For now they're just functions

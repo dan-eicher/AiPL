@@ -6,8 +6,10 @@
 
 namespace apl {
 
-// Forward declaration
+// Forward declarations
 class Value;
+class Continuation;
+class APLHeap;
 
 // Primitive function - can have both monadic and dyadic forms
 struct PrimitiveFn {
@@ -24,7 +26,8 @@ enum class ValueType {
     SCALAR,     // Single numeric value (double)
     VECTOR,     // 1D array stored as n×1 matrix
     MATRIX,     // 2D array
-    FUNCTION,   // Primitive or user-defined function
+    PRIMITIVE,  // Primitive function (C function pointer)
+    CLOSURE,    // User-defined function (continuation graph)
     OPERATOR    // Higher-order operator
 };
 
@@ -37,7 +40,8 @@ public:
     union Data {
         double scalar;              // For SCALAR
         Eigen::MatrixXd* matrix;    // For VECTOR and MATRIX (vectors stored as n×1)
-        PrimitiveFn* function;      // For FUNCTION
+        PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
+        Continuation* closure;      // For CLOSURE (user-defined function body)
         PrimitiveOp* op;            // For OPERATOR
 
         // Union constructors
@@ -61,7 +65,9 @@ public:
     bool is_vector() const { return tag == ValueType::VECTOR; }
     bool is_matrix() const { return tag == ValueType::MATRIX; }
     bool is_array() const { return tag == ValueType::VECTOR || tag == ValueType::MATRIX; }
-    bool is_function() const { return tag == ValueType::FUNCTION; }
+    bool is_primitive() const { return tag == ValueType::PRIMITIVE; }
+    bool is_closure() const { return tag == ValueType::CLOSURE; }
+    bool is_function() const { return tag == ValueType::PRIMITIVE || tag == ValueType::CLOSURE; }
     bool is_operator() const { return tag == ValueType::OPERATOR; }
 
     // Shape queries (for arrays)
@@ -79,8 +85,12 @@ public:
     static Value* from_scalar(double d);
     static Value* from_vector(const Eigen::VectorXd& v);     // Zero-copy wrapping
     static Value* from_matrix(const Eigen::MatrixXd& m);
-    static Value* from_function(PrimitiveFn* fn);
+    static Value* from_primitive(PrimitiveFn* fn);
+    static Value* from_closure(Continuation* body);
     static Value* from_operator(PrimitiveOp* op);
+
+    // GC support - mark all objects this Value references
+    void mark_references(APLHeap* heap);
 
 private:
     // Helper for lazy scalar promotion

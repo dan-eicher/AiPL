@@ -508,7 +508,7 @@ TEST(PrimitivesTest, ReduceVector) {
     Eigen::VectorXd v(4);
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = Value::from_vector(v);
-    Value* plus_fn = Value::from_function(&prim_plus);
+    Value* plus_fn = Value::from_primitive(&prim_plus);
 
     Value* result = fn_reduce(plus_fn, vec);
 
@@ -524,7 +524,7 @@ TEST(PrimitivesTest, ReduceWithMultiply) {
     Eigen::VectorXd v(4);
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = Value::from_vector(v);
-    Value* times_fn = Value::from_function(&prim_times);
+    Value* times_fn = Value::from_primitive(&prim_times);
 
     Value* result = fn_reduce(times_fn, vec);
 
@@ -541,7 +541,7 @@ TEST(PrimitivesTest, ReduceMatrix) {
     m << 1.0, 2.0, 3.0,
          4.0, 5.0, 6.0;
     Value* mat = Value::from_matrix(m);
-    Value* plus_fn = Value::from_function(&prim_plus);
+    Value* plus_fn = Value::from_primitive(&prim_plus);
 
     Value* result = fn_reduce(plus_fn, mat);
 
@@ -561,7 +561,7 @@ TEST(PrimitivesTest, ReduceFirstMatrix) {
     m << 1.0, 2.0, 3.0,
          4.0, 5.0, 6.0;
     Value* mat = Value::from_matrix(m);
-    Value* plus_fn = Value::from_function(&prim_plus);
+    Value* plus_fn = Value::from_primitive(&prim_plus);
 
     Value* result = fn_reduce_first(plus_fn, mat);
 
@@ -581,7 +581,7 @@ TEST(PrimitivesTest, ScanVector) {
     Eigen::VectorXd v(4);
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = Value::from_vector(v);
-    Value* plus_fn = Value::from_function(&prim_plus);
+    Value* plus_fn = Value::from_primitive(&prim_plus);
 
     Value* result = fn_scan(plus_fn, vec);
 
@@ -608,7 +608,7 @@ TEST(PrimitivesTest, ScanMatrix) {
     m << 1.0, 2.0, 3.0,
          4.0, 5.0, 6.0;
     Value* mat = Value::from_matrix(m);
-    Value* plus_fn = Value::from_function(&prim_plus);
+    Value* plus_fn = Value::from_primitive(&prim_plus);
 
     Value* result = fn_scan(plus_fn, mat);
 
@@ -642,7 +642,7 @@ TEST(PrimitivesTest, EnvironmentInit) {
     Value* plus = env.lookup("+");
     ASSERT_NE(plus, nullptr);
     ASSERT_TRUE(plus->is_function());
-    EXPECT_EQ(plus->data.function, &prim_plus);
+    EXPECT_EQ(plus->data.primitive_fn, &prim_plus);
 
     Value* minus = env.lookup("-");
     ASSERT_NE(minus, nullptr);
@@ -669,7 +669,7 @@ TEST(PrimitivesTest, EnvironmentLookup) {
     // Use it to add two numbers
     Value* a = Value::from_scalar(3.0);
     Value* b = Value::from_scalar(4.0);
-    PrimitiveFn* fn = plus->data.function;
+    PrimitiveFn* fn = plus->data.primitive_fn;
     Value* result = fn->dyadic(a, b);
 
     ASSERT_TRUE(result->is_scalar());
@@ -1141,7 +1141,7 @@ TEST(PrimitivesTest, BroadcastEmptyVector) {
 // ============================================================================
 
 TEST(PrimitivesTest, ReduceMultiply) {
-    Value* func = Value::from_function(&prim_times);
+    Value* func = Value::from_primitive(&prim_times);
     Eigen::VectorXd v(4);
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = Value::from_vector(v);
@@ -1157,7 +1157,7 @@ TEST(PrimitivesTest, ReduceMultiply) {
 }
 
 TEST(PrimitivesTest, ReduceSubtract) {
-    Value* func = Value::from_function(&prim_minus);
+    Value* func = Value::from_primitive(&prim_minus);
     Eigen::VectorXd v(4);
     v << 10.0, 3.0, 2.0, 1.0;
     Value* vec = Value::from_vector(v);
@@ -1173,7 +1173,7 @@ TEST(PrimitivesTest, ReduceSubtract) {
 }
 
 TEST(PrimitivesTest, ReduceDivide) {
-    Value* func = Value::from_function(&prim_divide);
+    Value* func = Value::from_primitive(&prim_divide);
     Eigen::VectorXd v(3);
     v << 100.0, 5.0, 2.0;
     Value* vec = Value::from_vector(v);
@@ -1189,7 +1189,7 @@ TEST(PrimitivesTest, ReduceDivide) {
 }
 
 TEST(PrimitivesTest, ReducePower) {
-    Value* func = Value::from_function(&prim_star);
+    Value* func = Value::from_primitive(&prim_star);
     Eigen::VectorXd v(3);
     v << 2.0, 3.0, 2.0;
     Value* vec = Value::from_vector(v);
@@ -1205,7 +1205,7 @@ TEST(PrimitivesTest, ReducePower) {
 }
 
 TEST(PrimitivesTest, ReduceSingleElement) {
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Eigen::VectorXd v(1);
     v << 42.0;
     Value* vec = Value::from_vector(v);
@@ -1221,7 +1221,7 @@ TEST(PrimitivesTest, ReduceSingleElement) {
 }
 
 TEST(PrimitivesTest, ReduceEmptyVector) {
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Eigen::VectorXd v(0);
     Value* vec = Value::from_vector(v);
 
@@ -1233,7 +1233,7 @@ TEST(PrimitivesTest, ReduceEmptyVector) {
 }
 
 TEST(PrimitivesTest, ScanMultiply) {
-    Value* func = Value::from_function(&prim_times);
+    Value* func = Value::from_primitive(&prim_times);
     Eigen::VectorXd v(4);
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = Value::from_vector(v);
@@ -1255,7 +1255,7 @@ TEST(PrimitivesTest, ScanMultiply) {
 }
 
 TEST(PrimitivesTest, ScanSubtract) {
-    Value* func = Value::from_function(&prim_minus);
+    Value* func = Value::from_primitive(&prim_minus);
     Eigen::VectorXd v(5);
     v << 10.0, 1.0, 1.0, 1.0, 1.0;
     Value* vec = Value::from_vector(v);
@@ -1278,7 +1278,7 @@ TEST(PrimitivesTest, ScanSubtract) {
 }
 
 TEST(PrimitivesTest, ScanDivide) {
-    Value* func = Value::from_function(&prim_divide);
+    Value* func = Value::from_primitive(&prim_divide);
     Eigen::VectorXd v(4);
     v << 100.0, 2.0, 5.0, 2.0;
     Value* vec = Value::from_vector(v);
@@ -1299,7 +1299,7 @@ TEST(PrimitivesTest, ScanDivide) {
 }
 
 TEST(PrimitivesTest, ScanSingleElement) {
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Eigen::VectorXd v(1);
     v << 99.0;
     Value* vec = Value::from_vector(v);
@@ -1317,7 +1317,7 @@ TEST(PrimitivesTest, ScanSingleElement) {
 }
 
 TEST(PrimitivesTest, ReduceFirstAxis) {
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Eigen::MatrixXd m(3, 4);
     m << 1.0, 2.0, 3.0, 4.0,
          5.0, 6.0, 7.0, 8.0,
@@ -1341,7 +1341,7 @@ TEST(PrimitivesTest, ReduceFirstAxis) {
 }
 
 TEST(PrimitivesTest, ScanFirstAxis) {
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Eigen::MatrixXd m(3, 2);
     m << 1.0, 2.0,
          3.0, 4.0,
@@ -1434,7 +1434,7 @@ TEST(PrimitivesTest, CompositionIotaTakeReduce) {
     Value* taken = fn_take(five, iota_result);
 
     // Sum with reduction
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Value* sum = fn_reduce(func, taken);
 
     ASSERT_TRUE(sum->is_scalar());
@@ -1488,7 +1488,7 @@ TEST(PrimitivesTest, CompositionMultiplyReduce) {
     Value* mat = Value::from_matrix(m);
 
     // Reduce along last axis with multiplication
-    Value* func = Value::from_function(&prim_times);
+    Value* func = Value::from_primitive(&prim_times);
     Value* result = fn_reduce(func, mat);
 
     ASSERT_TRUE(result->is_vector());
@@ -1513,7 +1513,7 @@ TEST(PrimitivesTest, CompositionDropScan) {
     Value* dropped = fn_drop(three, iota_result);
 
     // Scan with addition
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Value* scanned = fn_scan(func, dropped);
 
     ASSERT_TRUE(scanned->is_vector());
@@ -1587,7 +1587,7 @@ TEST(PrimitivesTest, CompositionNestedReduce) {
     Value* mat = Value::from_matrix(m);
 
     // Reduce along last axis (sum rows)
-    Value* func = Value::from_function(&prim_plus);
+    Value* func = Value::from_primitive(&prim_plus);
     Value* row_sums = fn_reduce(func, mat);
 
     // Now reduce that result (sum of row sums)

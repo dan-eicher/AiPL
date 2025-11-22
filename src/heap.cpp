@@ -227,8 +227,8 @@ void APLHeap::mark_value(Value* val) {
 
     val->marked = true;
 
-    // For future: mark any values referenced by this value
-    // (e.g., if we add Value types that contain other Values)
+    // Mark objects this value references (e.g., CLOSURE continuation graphs)
+    val->mark_references(this);
 }
 
 // Mark a continuation and its transitive references

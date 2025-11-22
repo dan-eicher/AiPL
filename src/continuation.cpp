@@ -36,15 +36,14 @@ Value* ArgK::invoke(Machine* machine) {
 }
 
 void ArgK::mark(APLHeap* heap) {
-    // Mark the argument value if heap exists
-    if (heap && arg_value) {
-        // Heap marking will be implemented in Phase 1.6
-        // For now, this is a placeholder
+    // Mark the argument Value
+    if (arg_value) {
+        heap->mark_value(arg_value);
     }
 
-    // Mark values in next continuation
+    // Mark next continuation
     if (next) {
-        next->mark(heap);
+        heap->mark_continuation(next);
     }
 }
 
@@ -63,9 +62,9 @@ Value* FrameK::invoke(Machine* machine) {
 }
 
 void FrameK::mark(APLHeap* heap) {
-    // Mark values in return continuation
+    // Mark return continuation
     if (return_k) {
-        return_k->mark(heap);
+        heap->mark_continuation(return_k);
     }
 }
 

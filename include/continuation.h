@@ -64,7 +64,7 @@ public:
         : arg_value(arg), next(k) {}
 
     ~ArgK() override {
-        delete next;
+        // Don't delete next - it's GC-managed
     }
 
     Value* invoke(Machine* machine) override;
@@ -82,7 +82,7 @@ public:
         : function_name(name), return_k(ret) {}
 
     ~FrameK() override {
-        delete return_k;
+        // Don't delete return_k - it's GC-managed
     }
 
     Value* invoke(Machine* machine) override;

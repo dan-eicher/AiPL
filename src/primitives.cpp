@@ -616,7 +616,7 @@ Value* fn_reduce(Value* func, Value* omega) {
         throw std::runtime_error("DOMAIN ERROR: reduce requires a function");
     }
 
-    PrimitiveFn* fn = func->data.function;
+    PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
         throw std::runtime_error("DOMAIN ERROR: reduce requires a dyadic function");
     }
@@ -684,7 +684,7 @@ Value* fn_reduce_first(Value* func, Value* omega) {
         throw std::runtime_error("DOMAIN ERROR: reduce-first requires a function");
     }
 
-    PrimitiveFn* fn = func->data.function;
+    PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
         throw std::runtime_error("DOMAIN ERROR: reduce-first requires a dyadic function");
     }
@@ -733,7 +733,7 @@ Value* fn_scan(Value* func, Value* omega) {
         throw std::runtime_error("DOMAIN ERROR: scan requires a function");
     }
 
-    PrimitiveFn* fn = func->data.function;
+    PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
         throw std::runtime_error("DOMAIN ERROR: scan requires a dyadic function");
     }
@@ -800,7 +800,7 @@ Value* fn_scan_first(Value* func, Value* omega) {
         throw std::runtime_error("DOMAIN ERROR: scan-first requires a function");
     }
 
-    PrimitiveFn* fn = func->data.function;
+    PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
         throw std::runtime_error("DOMAIN ERROR: scan-first requires a dyadic function");
     }
