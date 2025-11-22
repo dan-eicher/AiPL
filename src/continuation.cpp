@@ -21,6 +21,30 @@ void HaltK::mark(APLHeap* heap) {
     (void)heap;  // Unused
 }
 
+// LiteralK implementation
+Value* LiteralK::invoke(Machine* machine) {
+    // Convert the literal double to a Value* at runtime
+    // This is safe because we're no longer in parse-time
+    Value* val = machine->heap->allocate_scalar(literal_value);
+    machine->ctrl.set_value(val);
+
+    if (next) {
+        return next->invoke(machine);
+    }
+
+    // No next continuation - halt
+    machine->halt();
+    return val;
+}
+
+void LiteralK::mark(APLHeap* heap) {
+    // LiteralK only has a double (not a Value*), so nothing to mark there
+    // Just mark the next continuation
+    if (next) {
+        heap->mark_continuation(next);
+    }
+}
+
 // ArgK implementation
 Value* ArgK::invoke(Machine* machine) {
     // Set the argument value and continue with next continuation

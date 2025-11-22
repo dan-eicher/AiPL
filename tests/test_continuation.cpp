@@ -274,6 +274,85 @@ TEST_F(ContinuationTest, FrameKChaining) {
     delete v;
 }
 
+// ============================================================================
+// LiteralK Tests - Parse-time safe continuation
+// ============================================================================
+
+// Test LiteralK basic invoke
+TEST_F(ContinuationTest, LiteralKBasic) {
+    auto halt = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
+    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0, halt)));
+
+    Value* result = lit->invoke(machine);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+    EXPECT_EQ(machine->ctrl.value, result);
+    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+}
+
+// Test LiteralK without next
+TEST_F(ContinuationTest, LiteralKWithoutNext) {
+    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(3.14, nullptr)));
+
+    Value* result = lit->invoke(machine);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.14);
+    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+}
+
+// Test LiteralK chaining
+TEST_F(ContinuationTest, LiteralKChaining) {
+    auto halt = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
+    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(20.0, halt)));
+    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(10.0, lit2)));
+
+    Value* result = lit1->invoke(machine);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
+    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+}
+
+// Test LiteralK uses scalar cache
+TEST_F(ContinuationTest, LiteralKUsesScalarCache) {
+    auto halt1 = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
+    auto halt2 = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
+
+    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0, halt1)));
+    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0, halt2)));
+
+    machine->ctrl.init_evaluating();
+    Value* result1 = lit1->invoke(machine);
+
+    machine->ctrl.init_evaluating();
+    Value* result2 = lit2->invoke(machine);
+
+    EXPECT_EQ(result1, result2);
+    EXPECT_DOUBLE_EQ(result1->as_scalar(), 42.0);
+}
+
+// Test LiteralK parse-time safety
+TEST_F(ContinuationTest, LiteralKParseTimeSafety) {
+    HaltK* halt = new HaltK();
+    LiteralK* lit = new LiteralK(123.0, halt);
+
+    EXPECT_DOUBLE_EQ(lit->literal_value, 123.0);
+    EXPECT_EQ(lit->next, halt);
+
+    machine->heap->allocate_continuation(halt);
+    machine->heap->allocate_continuation(lit);
+
+    size_t values_before = machine->heap->total_size();
+    Value* result = lit->invoke(machine);
+    size_t values_after = machine->heap->total_size();
+
+    EXPECT_GT(values_after, values_before);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 123.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -53,6 +53,25 @@ public:
     void mark(APLHeap* heap) override;
 };
 
+// LiteralK - Parse-time continuation for literal values
+// Stores a double directly (not a Value*) for GC safety during parsing
+// At runtime, this gets converted to a Value* by the Machine
+class LiteralK : public Continuation {
+public:
+    double literal_value;       // The literal number
+    Continuation* next;         // Next continuation
+
+    LiteralK(double val, Continuation* k)
+        : literal_value(val), next(k) {}
+
+    ~LiteralK() override {
+        // Don't delete next - it's GC-managed
+    }
+
+    Value* invoke(Machine* machine) override;
+    void mark(APLHeap* heap) override;
+};
+
 // ArgK - Continuation for function arguments
 // Saves an argument value and continues with next continuation
 class ArgK : public Continuation {
