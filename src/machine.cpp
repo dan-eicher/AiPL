@@ -35,7 +35,7 @@ Value* Machine::execute() {
 
             // Invoke continuation (may modify ctrl.value or ctrl.completion)
             k->invoke(this);
-            delete k;
+            // Don't delete k - it's GC-managed now
 
             // Check for GC periodically
             maybe_gc();

@@ -37,22 +37,14 @@ public:
 
     // Destructor
     ~Machine() {
-        // Clean up continuation stack
-        for (auto k : kont_stack) {
-            delete k;
-        }
+        // Clear continuation references (heap will delete them)
         kont_stack.clear();
-
-        // Clean up cached continuations
-        for (auto& pair : function_cache) {
-            delete pair.second;
-        }
         function_cache.clear();
 
-        // Clean up environment chain
+        // Clean up environment chain (not GC-managed)
         delete env;
 
-        // Clean up heap (which cleans up all values)
+        // Clean up heap (deletes all GC objects: Values AND Continuations)
         delete heap;
     }
 
