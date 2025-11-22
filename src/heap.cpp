@@ -318,6 +318,7 @@ void APLHeap::sweep() {
 
 // Promote survivors from young to old generation
 void APLHeap::promote_survivors() {
+    // Promote Values
     auto it = young_objects.begin();
     while (it != young_objects.end()) {
         Value* val = *it;
@@ -328,6 +329,20 @@ void APLHeap::promote_survivors() {
             it = young_objects.erase(it);
         } else {
             ++it;
+        }
+    }
+
+    // Promote Continuations
+    auto it_cont = young_continuations.begin();
+    while (it_cont != young_continuations.end()) {
+        Continuation* k = *it_cont;
+        if (k->marked && !k->in_old_generation) {
+            // Promote to old generation
+            k->in_old_generation = true;
+            old_continuations.push_back(k);
+            it_cont = young_continuations.erase(it_cont);
+        } else {
+            ++it_cont;
         }
     }
 }
