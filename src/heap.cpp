@@ -2,9 +2,30 @@
 
 #include "heap.h"
 #include "machine.h"
+#include "continuation.h"
 #include <algorithm>
 
 namespace apl {
+
+// Destructor
+APLHeap::~APLHeap() {
+    // Clean up all Values
+    for (Value* v : young_objects) {
+        delete v;
+    }
+    for (Value* v : old_objects) {
+        delete v;
+    }
+    // Scalar cache shares pointers with young/old, so don't double-delete
+
+    // Clean up all Continuations
+    for (Continuation* k : young_continuations) {
+        delete k;
+    }
+    for (Continuation* k : old_continuations) {
+        delete k;
+    }
+}
 
 // Allocate a new Value in the heap
 Value* APLHeap::allocate(Value* val) {
@@ -50,6 +71,24 @@ Value* APLHeap::allocate_scalar(double d) {
     // Non-cacheable scalar - regular allocation
     Value* val = Value::from_scalar(d);
     return allocate(val);
+}
+
+// Allocate a continuation in the heap
+Continuation* APLHeap::allocate_continuation(Continuation* k) {
+    if (!k) return nullptr;
+
+    // Check if GC is needed
+    if (should_gc() && !gc_in_progress) {
+        collect(nullptr);
+    }
+
+    // Add to young generation
+    k->marked = false;
+    k->in_old_generation = false;
+    young_continuations.push_back(k);
+    bytes_allocated += sizeof(Continuation);
+
+    return k;
 }
 
 // Trigger appropriate garbage collection
@@ -161,10 +200,17 @@ void APLHeap::mark_from_roots(Machine* machine) {
         mark_value(machine->ctrl.completion->value);
     }
 
-    // Mark values referenced by continuations
+    // Mark continuations on kont_stack (they're GC objects now!)
     for (Continuation* k : machine->kont_stack) {
         if (k) {
-            k->mark(this);
+            mark_continuation(k);
+        }
+    }
+
+    // Mark continuations in function_cache
+    for (auto& pair : machine->function_cache) {
+        if (pair.second) {
+            mark_continuation(pair.second);
         }
     }
 
@@ -183,6 +229,17 @@ void APLHeap::mark_value(Value* val) {
 
     // For future: mark any values referenced by this value
     // (e.g., if we add Value types that contain other Values)
+}
+
+// Mark a continuation and its transitive references
+void APLHeap::mark_continuation(Continuation* k) {
+    if (!k) return;
+    if (k->marked) return;  // Already marked
+
+    k->marked = true;
+
+    // Mark Values and Continuations this continuation references
+    k->mark(this);
 }
 
 // Sweep unmarked objects from both generations
@@ -231,6 +288,32 @@ void APLHeap::sweep() {
             ++it_old;
         }
     }
+
+    // Sweep young continuations
+    auto it_young_cont = young_continuations.begin();
+    while (it_young_cont != young_continuations.end()) {
+        Continuation* k = *it_young_cont;
+        if (!k->marked) {
+            bytes_allocated -= sizeof(Continuation);
+            delete k;
+            it_young_cont = young_continuations.erase(it_young_cont);
+        } else {
+            ++it_young_cont;
+        }
+    }
+
+    // Sweep old continuations
+    auto it_old_cont = old_continuations.begin();
+    while (it_old_cont != old_continuations.end()) {
+        Continuation* k = *it_old_cont;
+        if (!k->marked) {
+            bytes_allocated -= sizeof(Continuation);
+            delete k;
+            it_old_cont = old_continuations.erase(it_old_cont);
+        } else {
+            ++it_old_cont;
+        }
+    }
 }
 
 // Promote survivors from young to old generation
@@ -256,6 +339,12 @@ void APLHeap::clear_marks() {
     }
     for (Value* val : old_objects) {
         val->marked = false;
+    }
+    for (Continuation* k : young_continuations) {
+        k->marked = false;
+    }
+    for (Continuation* k : old_continuations) {
+        k->marked = false;
     }
 }
 

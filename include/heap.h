@@ -8,15 +8,20 @@
 
 namespace apl {
 
-// Forward declaration
+// Forward declarations
 class Machine;
+class Continuation;
 
 // APLHeap - Generational heap with specialized zones
 class APLHeap {
 public:
-    // Generational zones
+    // Generational zones for Values
     std::vector<Value*> young_objects;      // Short-lived allocations
     std::vector<Value*> old_objects;        // Long-lived objects
+
+    // Generational zones for Continuations
+    std::vector<Continuation*> young_continuations;  // Short-lived continuations
+    std::vector<Continuation*> old_continuations;    // Long-lived continuations
 
     // Scalar cache for common values (-128 to 127)
     Value* scalar_cache[256];
@@ -51,17 +56,8 @@ public:
         }
     }
 
-    // Destructor
-    ~APLHeap() {
-        // Clean up all objects
-        for (Value* v : young_objects) {
-            delete v;
-        }
-        for (Value* v : old_objects) {
-            delete v;
-        }
-        // Scalar cache shares pointers with young/old, so don't double-delete
-    }
+    // Destructor (implemented in .cpp to avoid incomplete type issues)
+    ~APLHeap();
 
     // Allocate a new Value in the heap
     Value* allocate(Value* val);
@@ -69,14 +65,18 @@ public:
     // Allocate a scalar (with cache checking)
     Value* allocate_scalar(double d);
 
+    // Allocate a continuation in the heap
+    Continuation* allocate_continuation(Continuation* k);
+
     // Garbage collection
     void minor_gc(Machine* machine);    // Collect young generation
     void major_gc(Machine* machine);    // Collect all generations
     void collect(Machine* machine);     // Trigger appropriate GC
 
-    // Mark phase - mark all reachable values
+    // Mark phase - mark all reachable objects
     void mark_from_roots(Machine* machine);
     void mark_value(Value* val);
+    void mark_continuation(Continuation* k);
 
     // Sweep phase - reclaim unmarked values
     void sweep();

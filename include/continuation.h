@@ -14,13 +14,18 @@ class APLHeap;
 // Represents "what to do next" in the CEK machine
 class Continuation {
 public:
+    // GC metadata (same pattern as Value)
+    bool marked;
+    bool in_old_generation;
+
+    Continuation() : marked(false), in_old_generation(false) {}
     virtual ~Continuation() {}
 
     // Execute this continuation
     // Returns the result value (or nullptr if execution should continue)
     virtual Value* invoke(Machine* machine) = 0;
 
-    // Mark all Values referenced by this continuation for GC
+    // Mark all Values and Continuations referenced by this continuation for GC
     virtual void mark(APLHeap* heap) = 0;
 
     // Query methods for control flow handling

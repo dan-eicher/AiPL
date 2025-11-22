@@ -41,6 +41,7 @@ add_executable(test_continuation
     ${CMAKE_SOURCE_DIR}/src/continuation.cpp
     ${CMAKE_SOURCE_DIR}/src/heap.cpp
     ${CMAKE_SOURCE_DIR}/src/environment.cpp
+    ${CMAKE_SOURCE_DIR}/src/primitives.cpp
     ${CMAKE_SOURCE_DIR}/src/token.cpp
     ${CMAKE_SOURCE_DIR}/src/lexer.cpp
 )
@@ -55,6 +56,7 @@ add_executable(test_heap
     ${CMAKE_SOURCE_DIR}/src/continuation.cpp
     ${CMAKE_SOURCE_DIR}/src/heap.cpp
     ${CMAKE_SOURCE_DIR}/src/environment.cpp
+    ${CMAKE_SOURCE_DIR}/src/primitives.cpp
     ${CMAKE_SOURCE_DIR}/src/token.cpp
     ${CMAKE_SOURCE_DIR}/src/lexer.cpp
 )
@@ -69,6 +71,7 @@ add_executable(test_machine
     ${CMAKE_SOURCE_DIR}/src/continuation.cpp
     ${CMAKE_SOURCE_DIR}/src/heap.cpp
     ${CMAKE_SOURCE_DIR}/src/environment.cpp
+    ${CMAKE_SOURCE_DIR}/src/primitives.cpp
     ${CMAKE_SOURCE_DIR}/src/machine.cpp
     ${CMAKE_SOURCE_DIR}/src/token.cpp
     ${CMAKE_SOURCE_DIR}/src/lexer.cpp
