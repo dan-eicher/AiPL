@@ -45,9 +45,14 @@ set(APL_SOURCES
     src/primitives.cpp
 )
 
+# Build APL VM as a library (build once, link everywhere)
+add_library(apl_vm STATIC ${APL_SOURCES})
+target_link_libraries(apl_vm PUBLIC Eigen3::Eigen)
+target_include_directories(apl_vm PUBLIC ${CMAKE_SOURCE_DIR}/include)
+
 # Main executable (for REPL)
-# add_executable(apl-repl ${APL_SOURCES})
-# target_link_libraries(apl-repl Eigen3::Eigen)
+# add_executable(apl-repl src/main.cpp)
+# target_link_libraries(apl-repl apl_vm)
 
 # Enable testing
 enable_testing()
