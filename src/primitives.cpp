@@ -37,12 +37,20 @@ Value* fn_add(Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         Eigen::MatrixXd result =
             lhs->data.scalar + rhs->as_matrix()->array();
+        // Preserve vector/matrix distinction
+        if (rhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
     if (rhs->is_scalar()) {
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() + rhs->data.scalar;
+        // Preserve vector/matrix distinction
+        if (lhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
@@ -56,6 +64,10 @@ Value* fn_add(Value* lhs, Value* rhs) {
     }
 
     Eigen::MatrixXd result = lmat->array() + rmat->array();
+    // Preserve vector/matrix distinction
+    if (lhs->is_vector() && rhs->is_vector()) {
+        return Value::from_vector(result.col(0));
+    }
     return Value::from_matrix(result);
 }
 
@@ -70,12 +82,20 @@ Value* fn_subtract(Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         Eigen::MatrixXd result =
             lhs->data.scalar - rhs->as_matrix()->array();
+        // Preserve vector/matrix distinction
+        if (rhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
     if (rhs->is_scalar()) {
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() - rhs->data.scalar;
+        // Preserve vector/matrix distinction
+        if (lhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
@@ -88,6 +108,10 @@ Value* fn_subtract(Value* lhs, Value* rhs) {
     }
 
     Eigen::MatrixXd result = lmat->array() - rmat->array();
+    // Preserve vector/matrix distinction
+    if (lhs->is_vector() && rhs->is_vector()) {
+        return Value::from_vector(result.col(0));
+    }
     return Value::from_matrix(result);
 }
 
@@ -102,12 +126,20 @@ Value* fn_multiply(Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         Eigen::MatrixXd result =
             lhs->data.scalar * rhs->as_matrix()->array();
+        // Preserve vector/matrix distinction
+        if (rhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
     if (rhs->is_scalar()) {
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() * rhs->data.scalar;
+        // Preserve vector/matrix distinction
+        if (lhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
@@ -120,6 +152,10 @@ Value* fn_multiply(Value* lhs, Value* rhs) {
     }
 
     Eigen::MatrixXd result = lmat->array() * rmat->array();
+    // Preserve vector/matrix distinction
+    if (lhs->is_vector() && rhs->is_vector()) {
+        return Value::from_vector(result.col(0));
+    }
     return Value::from_matrix(result);
 }
 
@@ -142,6 +178,10 @@ Value* fn_divide(Value* lhs, Value* rhs) {
         }
         Eigen::MatrixXd result =
             lhs->data.scalar / rmat->array();
+        // Preserve vector/matrix distinction
+        if (rhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
@@ -151,6 +191,10 @@ Value* fn_divide(Value* lhs, Value* rhs) {
         }
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() / rhs->data.scalar;
+        // Preserve vector/matrix distinction
+        if (lhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
@@ -168,6 +212,10 @@ Value* fn_divide(Value* lhs, Value* rhs) {
     }
 
     Eigen::MatrixXd result = lmat->array() / rmat->array();
+    // Preserve vector/matrix distinction
+    if (lhs->is_vector() && rhs->is_vector()) {
+        return Value::from_vector(result.col(0));
+    }
     return Value::from_matrix(result);
 }
 
@@ -186,6 +234,10 @@ Value* fn_power(Value* lhs, Value* rhs) {
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = std::pow(lhs->data.scalar, rmat->data()[i]);
         }
+        // Preserve vector/matrix distinction
+        if (rhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
@@ -193,6 +245,10 @@ Value* fn_power(Value* lhs, Value* rhs) {
         // lhs is array of bases, rhs is scalar exponent
         Eigen::MatrixXd result =
             lhs->as_matrix()->array().pow(rhs->data.scalar);
+        // Preserve vector/matrix distinction
+        if (lhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
         return Value::from_matrix(result);
     }
 
@@ -205,6 +261,10 @@ Value* fn_power(Value* lhs, Value* rhs) {
     }
 
     Eigen::MatrixXd result = lmat->array().pow(rmat->array());
+    // Preserve vector/matrix distinction
+    if (lhs->is_vector() && rhs->is_vector()) {
+        return Value::from_vector(result.col(0));
+    }
     return Value::from_matrix(result);
 }
 

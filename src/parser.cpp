@@ -12,7 +12,8 @@ namespace apl {
 // APL has uniform precedence, so all operators have the same binding power
 // This gives us right-to-left evaluation
 const int BP_NONE = 0;
-const int BP_OPERATOR = 10;  // All dyadic operators have same precedence
+const int BP_OPERATOR = 10;      // All dyadic operators have same precedence
+const int BP_JUXTAPOSE = 100;    // Juxtaposition (strands) binds tightest
 
 // Parse entry point
 Continuation* Parser::parse(const std::string& input) {
@@ -75,11 +76,34 @@ Continuation* Parser::parse_expression(int min_bp) {
         return nullptr;
     }
 
-    // Now handle infix operators (led)
+    // Now handle infix operators (led) and juxtaposition (strands)
     // Continue while the next operator has higher binding power
     while (!at_end()) {
         Token next = current();
         int bp = get_binding_power(next);
+
+        // Check for juxtaposition (implicit strand formation)
+        // Juxtaposition occurs when we see a token that can start a value (fb-term)
+        // This corresponds to the grammar rule: fbn-term ::= fb-term fbn-term
+        bool is_juxtaposition = false;
+        if (bp == BP_NONE) {
+            // Not an operator - check if it can start a value (nud-able token)
+            switch (next.type) {
+                case TOK_NUMBER:
+                case TOK_LPAREN:
+                // TODO (Phase 3.4.1): TOK_MINUS is NOT included here because it's ambiguous
+                // (could be monadic negate or dyadic subtraction). This is a phase ordering
+                // issue - we need to implement monadic operators first. For now, negative
+                // literals in strands must use parentheses: (-1) 2 (-3)
+                // Alternatively, we could add APL's ¯ (high minus) for negative literals.
+                case TOK_NAME:   // For variables (Phase 3.2.3)
+                    is_juxtaposition = true;
+                    bp = BP_JUXTAPOSE;
+                    break;
+                default:
+                    break;
+            }
+        }
 
         // APL is right-associative, so we use >= instead of >
         // This means: continue parsing if next_bp >= min_bp
@@ -88,10 +112,41 @@ Continuation* Parser::parse_expression(int min_bp) {
             break;
         }
 
-        advance();
-        left = led(left, next);
-        if (!left) {
-            return nullptr;
+        if (is_juxtaposition) {
+            // Juxtaposition: recursively parse the right operand and form a strand
+            // For right-associativity, pass the same bp
+            Continuation* right = parse_expression(bp);
+            if (!right) {
+                return nullptr;
+            }
+
+            // Combine left and right into a strand
+            std::vector<Continuation*> elements;
+
+            // If left is already a strand, extend it
+            if (auto* strand = dynamic_cast<StrandK*>(left)) {
+                elements = strand->elements;
+            } else {
+                elements.push_back(left);
+            }
+
+            // If right is a strand, append all its elements
+            if (auto* strand = dynamic_cast<StrandK*>(right)) {
+                elements.insert(elements.end(), strand->elements.begin(), strand->elements.end());
+            } else {
+                elements.push_back(right);
+            }
+
+            StrandK* new_strand = new StrandK(elements, nullptr);
+            heap_->allocate_continuation(new_strand);
+            left = new_strand;
+        } else {
+            // Regular infix operator
+            advance();
+            left = led(left, next);
+            if (!left) {
+                return nullptr;
+            }
         }
     }
 
@@ -102,7 +157,7 @@ Continuation* Parser::parse_expression(int min_bp) {
 Continuation* Parser::nud(const Token& token) {
     switch (token.type) {
         case TOK_NUMBER: {
-            // Token already contains the number value
+            // Single number - create LiteralK
             double value = token.number;
             LiteralK* lit = new LiteralK(value, nullptr);
             heap_->allocate_continuation(lit);

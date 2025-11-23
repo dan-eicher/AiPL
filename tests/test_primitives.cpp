@@ -39,7 +39,7 @@ TEST(PrimitivesTest, AddScalarVector) {
 
     Value* result = fn_add(scalar, vec);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_EQ(mat->rows(), 3);
     EXPECT_EQ(mat->cols(), 1);
@@ -60,7 +60,7 @@ TEST(PrimitivesTest, AddVectorScalar) {
 
     Value* result = fn_add(vec, scalar);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 11.0);
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 12.0);
@@ -82,7 +82,7 @@ TEST(PrimitivesTest, AddVectorVector) {
 
     Value* result = fn_add(vec1, vec2);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 7.0);
@@ -1027,7 +1027,7 @@ TEST(PrimitivesTest, BroadcastWithNegativeScalar) {
 
     Value* result = fn_add(scalar, vec);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*res_mat)(0, 0), -4.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), -3.0);
@@ -1047,7 +1047,7 @@ TEST(PrimitivesTest, BroadcastZeroScalar) {
 
     Value* result = fn_multiply(zero, vec);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 0.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);
@@ -1066,7 +1066,7 @@ TEST(PrimitivesTest, BroadcastScalarDivideVector) {
 
     Value* result = fn_divide(scalar, vec);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 50.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 25.0);
@@ -1086,7 +1086,7 @@ TEST(PrimitivesTest, BroadcastVectorDivideScalar) {
 
     Value* result = fn_divide(vec, scalar);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 5.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 10.0);
@@ -1106,7 +1106,7 @@ TEST(PrimitivesTest, BroadcastScalarPower) {
 
     Value* result = fn_power(base, exp_vec);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 1.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 2.0);
@@ -1126,7 +1126,7 @@ TEST(PrimitivesTest, BroadcastEmptyVector) {
 
     Value* result = fn_add(scalar, empty_vec);
 
-    ASSERT_TRUE(result->is_matrix());
+    ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
     EXPECT_EQ(res_mat->rows(), 0);
     EXPECT_EQ(res_mat->cols(), 1);

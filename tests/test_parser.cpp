@@ -312,6 +312,167 @@ TEST_F(ParserTest, ParseEmptyParentheses) {
     EXPECT_NE(parser->get_error(), "");
 }
 
+// ============================================================================
+// Array Strand Tests (Phase 3.2.2)
+// ============================================================================
+
+// Test simple 2-element strand
+TEST_F(ParserTest, ParseSimpleStrand) {
+    Continuation* k = parser->parse("1 2");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 2);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+}
+
+// Test 3-element strand
+TEST_F(ParserTest, ParseThreeElementStrand) {
+    Continuation* k = parser->parse("1 2 3");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+// Test longer strand
+TEST_F(ParserTest, ParseLongerStrand) {
+    Continuation* k = parser->parse("10 20 30 40 50");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 5);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 50.0);
+}
+
+// Test strand with negative numbers (using parentheses for negatives)
+TEST_F(ParserTest, ParseStrandWithNegatives) {
+    Continuation* k = parser->parse("(-1) 2 (-3)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
+}
+
+// Test strand with parenthesized expressions
+TEST_F(ParserTest, ParseStrandWithParens) {
+    Continuation* k = parser->parse("(1+1) 3 (2*2)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);   // 1+1
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 4.0);   // 2*2
+}
+
+// Test strand with decimals
+TEST_F(ParserTest, ParseStrandWithDecimals) {
+    Continuation* k = parser->parse("1.5 2.25 3.75");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.5);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.25);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.75);
+}
+
+// Test strand as operand to binary operation: (1 2 3) + 10 = 11 12 13
+TEST_F(ParserTest, ParseStrandAsLeftOperand) {
+    Continuation* k = parser->parse("1 2 3 + 10");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 13.0);
+}
+
+// Test strand as right operand: 10 + (1 2 3) = 11 12 13
+TEST_F(ParserTest, ParseStrandAsRightOperand) {
+    Continuation* k = parser->parse("10 + 1 2 3");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 13.0);
+}
+
+// Test two strands: (1 2) + (3 4) = 4 6
+TEST_F(ParserTest, ParseTwoStrands) {
+    Continuation* k = parser->parse("1 2 + 3 4");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 2);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);
+}
+
+// Test parenthesized strand: (1 2 3) should still be a strand
+TEST_F(ParserTest, ParseParenthesizedStrand) {
+    Continuation* k = parser->parse("(1 2 3)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

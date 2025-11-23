@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <vector>
 #include "value.h"
 
 namespace apl {
@@ -66,6 +67,26 @@ public:
 
     ~LiteralK() override {
         // Don't delete next - it's GC-managed
+    }
+
+    Value* invoke(Machine* machine) override;
+    void mark(APLHeap* heap) override;
+};
+
+// StrandK - Parse-time continuation for array strands
+// Stores a vector of continuations representing the strand elements
+// At runtime, evaluates each element and combines them into a vector Value*
+// Examples: "1 2 3" or "var1 var2 3" or "(1+2) 5 x"
+class StrandK : public Continuation {
+public:
+    std::vector<Continuation*> elements;  // Continuation for each element
+    Continuation* next;                   // Next continuation
+
+    StrandK(const std::vector<Continuation*>& elems, Continuation* k)
+        : elements(elems), next(k) {}
+
+    ~StrandK() override {
+        // Don't delete elements or next - they're GC-managed
     }
 
     Value* invoke(Machine* machine) override;

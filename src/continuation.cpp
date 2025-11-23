@@ -45,6 +45,58 @@ void LiteralK::mark(APLHeap* heap) {
     }
 }
 
+// StrandK implementation
+Value* StrandK::invoke(Machine* machine) {
+    // Evaluate each element continuation and collect the results
+    std::vector<double> data;
+
+    for (Continuation* elem : elements) {
+        Value* elem_val = elem->invoke(machine);
+
+        // Each element should evaluate to a scalar (for now)
+        // TODO: In full APL, strands can nest and need flattening
+        if (elem_val->tag == ValueType::SCALAR) {
+            data.push_back(elem_val->as_scalar());
+        } else {
+            // For now, error on non-scalar strand elements
+            // Full APL would flatten nested arrays
+            machine->halt();
+            return nullptr;
+        }
+    }
+
+    // Create Eigen vector from collected data
+    Eigen::VectorXd vec(data.size());
+    for (size_t i = 0; i < data.size(); ++i) {
+        vec(i) = data[i];
+    }
+
+    Value* val = Value::from_vector(vec);
+    machine->ctrl.set_value(val);
+
+    if (next) {
+        return next->invoke(machine);
+    }
+
+    // No next continuation - halt
+    machine->halt();
+    return val;
+}
+
+void StrandK::mark(APLHeap* heap) {
+    // Mark all element continuations
+    for (Continuation* elem : elements) {
+        if (elem) {
+            heap->mark_continuation(elem);
+        }
+    }
+
+    // Mark next continuation
+    if (next) {
+        heap->mark_continuation(next);
+    }
+}
+
 // BinOpK implementation
 Value* BinOpK::invoke(Machine* machine) {
     // APL evaluates right-to-left, so:
