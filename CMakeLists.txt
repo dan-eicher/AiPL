@@ -37,7 +37,6 @@ set(APL_SOURCES
     src/token.cpp
     src/lexer.cpp
     src/value.cpp
-    src/control.cpp
     src/continuation.cpp
     src/heap.cpp
     src/environment.cpp

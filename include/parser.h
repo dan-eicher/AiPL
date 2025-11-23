@@ -1,12 +1,12 @@
 // APL Pratt Parser
-// Manual Pratt parser with binding powers for right-to-left evaluation
+// Manual Pratt parser with integrated on-demand lexing
 
 #pragma once
 
 #include "continuation.h"
 #include "token.h"
+#include "lexer.h"
 #include <string>
-#include <vector>
 
 namespace apl {
 
@@ -14,9 +14,10 @@ namespace apl {
 class APLHeap;
 
 // Pratt parser that builds continuation graphs
+// Integrates with Lexer for on-demand tokenization
 class Parser {
 public:
-    Parser(APLHeap* heap) : heap_(heap), pos_(0) {}
+    Parser(APLHeap* heap) : heap_(heap), lexer_(nullptr), current_token_() {}
 
     // Parse an APL expression and return the continuation graph
     // Returns nullptr on parse failure
@@ -28,10 +29,11 @@ public:
 private:
     APLHeap* heap_;
     std::string error_message_;
+    std::string input_;  // Keep input alive for lexer
 
-    // Token stream and current position
-    std::vector<Token> tokens_;
-    size_t pos_;
+    // Integrated lexer (on-demand tokenization)
+    Lexer* lexer_;
+    Token current_token_;
 
     // Pratt parsing functions
     Continuation* parse_expression(int min_bp);
@@ -41,11 +43,10 @@ private:
     // Binding power lookup
     int get_binding_power(const Token& token);
 
-    // Token stream helpers
-    const Token& current() const;
-    const Token& peek(int offset = 1) const;
-    void advance();
-    bool at_end() const;
+    // Token stream helpers (unified with lexer)
+    const Token& current() const { return current_token_; }
+    void advance();  // Calls lexer->next_token()
+    bool at_end() const { return current_token_.type == TOK_EOF; }
 };
 
 } // namespace apl

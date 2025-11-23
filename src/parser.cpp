@@ -3,8 +3,6 @@
 #include "parser.h"
 #include "heap.h"
 #include "continuation.h"
-#include "lexer.h"
-#include "lexer_arena.h"
 #include <stdexcept>
 #include <cstdlib>
 
@@ -19,23 +17,22 @@ const int BP_OPERATOR = 10;  // All dyadic operators have same precedence
 // Parse entry point
 Continuation* Parser::parse(const std::string& input) {
     error_message_.clear();
-    tokens_.clear();
-    pos_ = 0;
 
-    // Tokenize the input
-    LexerArena arena;
-    LexerState* lexer = lexer_init(input.c_str(), &arena);
-    Token tok = lex_next_token(lexer);
-    while (tok.type != TOK_EOF) {
-        if (tok.type == TOK_ERROR) {
-            error_message_ = "Lexer error";
-            lexer_free(lexer);
-            return nullptr;
-        }
-        tokens_.push_back(tok);
-        tok = lex_next_token(lexer);
+    // Keep input alive for lexer lifetime
+    input_ = input;
+
+    // Create lexer for on-demand tokenization
+    lexer_ = new Lexer(input_.c_str());
+
+    // Get first token
+    current_token_ = lexer_->next_token();
+
+    if (current_token_.type == TOK_ERROR) {
+        error_message_ = "Lexer error";
+        delete lexer_;
+        lexer_ = nullptr;
+        return nullptr;
     }
-    lexer_free(lexer);
 
     // Parse expression starting with minimum binding power
     Continuation* result = parse_expression(BP_NONE);
@@ -44,15 +41,21 @@ Continuation* Parser::parse(const std::string& input) {
         if (error_message_.empty()) {
             error_message_ = "Parse failed";
         }
+        delete lexer_;
+        lexer_ = nullptr;
         return nullptr;
     }
 
-    // Check that we consumed all tokens
+    // Check that we consumed all input
     if (!at_end()) {
         error_message_ = "Unexpected input after expression";
+        delete lexer_;
+        lexer_ = nullptr;
         return nullptr;
     }
 
+    delete lexer_;
+    lexer_ = nullptr;
     return result;
 }
 
@@ -183,32 +186,11 @@ int Parser::get_binding_power(const Token& token) {
     }
 }
 
-// Token stream helpers
-const Token& Parser::current() const {
-    static Token eof_token;  // Default constructor makes TOK_EOF
-    if (pos_ >= tokens_.size()) {
-        return eof_token;
-    }
-    return tokens_[pos_];
-}
-
-const Token& Parser::peek(int offset) const {
-    static Token eof_token;  // Default constructor makes TOK_EOF
-    size_t peek_pos = pos_ + offset;
-    if (peek_pos >= tokens_.size()) {
-        return eof_token;
-    }
-    return tokens_[peek_pos];
-}
-
+// Advance to next token (on-demand from lexer)
 void Parser::advance() {
-    if (pos_ < tokens_.size()) {
-        pos_++;
+    if (lexer_ && !at_end()) {
+        current_token_ = lexer_->next_token();
     }
-}
-
-bool Parser::at_end() const {
-    return pos_ >= tokens_.size();
 }
 
 } // namespace apl

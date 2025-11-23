@@ -203,7 +203,6 @@ TEST_F(ControlTest, DefaultConstruction) {
     Control ctrl;
 
     EXPECT_EQ(ctrl.mode, ExecMode::HALTED);
-    EXPECT_EQ(ctrl.lexer_state, nullptr);
     EXPECT_EQ(ctrl.value, nullptr);
     EXPECT_EQ(ctrl.completion, nullptr);
 }

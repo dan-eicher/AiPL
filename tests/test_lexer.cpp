@@ -2,32 +2,35 @@
 
 #include <gtest/gtest.h>
 #include "lexer.h"
-#include "lexer_arena.h"
 #include "token.h"
 
 using namespace apl;
 
 class LexerTest : public ::testing::Test {
 protected:
-    LexerArena arena;
+    Lexer* lexer_ = nullptr;
+
+    void TearDown() override {
+        if (lexer_) {
+            delete lexer_;
+            lexer_ = nullptr;
+        }
+    }
 
     // Helper to tokenize entire string
+    // Keeps lexer alive so name pointers remain valid
     std::vector<Token> tokenize(const char* input) {
-        LexerState* state = lexer_init(input, &arena);
+        if (lexer_) delete lexer_;
+        lexer_ = new Lexer(input);
         std::vector<Token> tokens;
 
         Token tok;
         do {
-            tok = lex_next_token(state);
+            tok = lexer_->next_token();
             tokens.push_back(tok);
         } while (tok.type != TOK_EOF && tok.type != TOK_ERROR);
 
-        lexer_free(state);
         return tokens;
-    }
-
-    void TearDown() override {
-        arena.reset();
     }
 };
 

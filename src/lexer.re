@@ -1,49 +1,29 @@
 // APL Lexer - re2c specification
-// Generates lexer.cpp with lex_next_token() function
+// Generates lexer.cpp with C++ Lexer class
 
-#include "token.h"
-#include "lexer_arena.h"
+#include "lexer.h"
 #include <cstdlib>
 #include <cstring>
 
 namespace apl {
 
-// Lexer state
-struct LexerState {
-    const char* cursor;     // Current position
-    const char* marker;     // Backtrack marker
-    const char* limit;      // End of input
-    LexerArena* arena;      // Arena for string allocation
-    int line;               // Current line number
-    int column;             // Current column number
-};
-
-// Initialize lexer
-LexerState* lexer_init(const char* input, LexerArena* arena) {
-    LexerState* state = new LexerState();
-    state->cursor = input;
-    state->marker = input;
-    state->limit = input + std::strlen(input);
-    state->arena = arena;
-    state->line = 1;
-    state->column = 0;
-    return state;
+// Lexer constructor
+Lexer::Lexer(const char* input)
+    : cursor_(input)
+    , marker_(input)
+    , limit_(input + std::strlen(input))
+    , line_(1)
+    , column_(0)
+{
+    // arena_ is initialized by its default constructor
 }
-
-// Free lexer
-void lexer_free(LexerState* state) {
-    delete state;
-}
-
-// Forward declaration
-Token lex_next_token(LexerState* state);
 
 /*!re2c
     re2c:define:YYCTYPE = "unsigned char";
     re2c:encoding:utf8 = 1;
-    re2c:define:YYCURSOR = state->cursor;
-    re2c:define:YYMARKER = state->marker;
-    re2c:define:YYLIMIT = state->limit;
+    re2c:define:YYCURSOR = cursor_;
+    re2c:define:YYMARKER = marker_;
+    re2c:define:YYLIMIT = limit_;
     re2c:yyfill:enable = 0;
 
     // Whitespace (skip)
@@ -91,23 +71,23 @@ Token lex_next_token(LexerState* state);
     comment = "⍝" [^\n]*;  // U+235D
 */
 
-Token lex_next_token(LexerState* state) {
+Token Lexer::next_token() {
     while (true) {
-        const char* token_start = state->cursor;
-        int token_line = state->line;
-        int token_column = state->column;
+        const char* token_start = cursor_;
+        int token_line = line_;
+        int token_column = column_;
 
         /*!re2c
             // End of input
             "\x00" { return Token(TOK_EOF, token_line, token_column); }
 
             // Whitespace - skip and continue
-            ws { state->column += (state->cursor - token_start); continue; }
+            ws { column_ += (cursor_ - token_start); continue; }
 
             // Newline
             nl {
-                state->line++;
-                state->column = 0;
+                line_++;
+                column_ = 0;
                 return Token(TOK_NEWLINE, token_line, token_column);
             }
 
@@ -117,77 +97,77 @@ Token lex_next_token(LexerState* state) {
         // Numbers
         number {
             double num = std::atof(token_start);
-            state->column += (state->cursor - token_start);
+            column_ += (cursor_ - token_start);
             return Token(num, token_line, token_column);
         }
 
         // Control flow keywords
-        ":If" { state->column += 3; return Token(TOK_IF, token_line, token_column); }
-        ":Else" { state->column += 5; return Token(TOK_ELSE, token_line, token_column); }
-        ":ElseIf" { state->column += 7; return Token(TOK_ELSEIF, token_line, token_column); }
-        ":EndIf" { state->column += 6; return Token(TOK_ENDIF, token_line, token_column); }
-        ":While" { state->column += 6; return Token(TOK_WHILE, token_line, token_column); }
-        ":EndWhile" { state->column += 9; return Token(TOK_ENDWHILE, token_line, token_column); }
-        ":For" { state->column += 4; return Token(TOK_FOR, token_line, token_column); }
-        ":EndFor" { state->column += 7; return Token(TOK_ENDFOR, token_line, token_column); }
-        ":Leave" { state->column += 6; return Token(TOK_LEAVE, token_line, token_column); }
-        ":Return" { state->column += 7; return Token(TOK_RETURN, token_line, token_column); }
+        ":If" { column_ += 3; return Token(TOK_IF, token_line, token_column); }
+        ":Else" { column_ += 5; return Token(TOK_ELSE, token_line, token_column); }
+        ":ElseIf" { column_ += 7; return Token(TOK_ELSEIF, token_line, token_column); }
+        ":EndIf" { column_ += 6; return Token(TOK_ENDIF, token_line, token_column); }
+        ":While" { column_ += 6; return Token(TOK_WHILE, token_line, token_column); }
+        ":EndWhile" { column_ += 9; return Token(TOK_ENDWHILE, token_line, token_column); }
+        ":For" { column_ += 4; return Token(TOK_FOR, token_line, token_column); }
+        ":EndFor" { column_ += 7; return Token(TOK_ENDFOR, token_line, token_column); }
+        ":Leave" { column_ += 6; return Token(TOK_LEAVE, token_line, token_column); }
+        ":Return" { column_ += 7; return Token(TOK_RETURN, token_line, token_column); }
 
         // Names (must come after keywords)
         name {
-            size_t len = state->cursor - token_start;
-            char* str = state->arena->allocate_string(token_start, len);
-            state->column += len;
+            size_t len = cursor_ - token_start;
+            char* str = arena_.allocate_string(token_start, len);
+            column_ += len;
             return Token(TOK_NAME, str, token_line, token_column);
         }
 
         // Single-character operators
-        "+" { state->column++; return Token(TOK_PLUS, token_line, token_column); }
-        "-" { state->column++; return Token(TOK_MINUS, token_line, token_column); }
-        "*" { state->column++; return Token(TOK_POWER, token_line, token_column); }
-        "," { state->column++; return Token(TOK_RAVEL, token_line, token_column); }
-        "/" { state->column++; return Token(TOK_REDUCE, token_line, token_column); }
-        "\\" { state->column++; return Token(TOK_SCAN, token_line, token_column); }
-        "=" { state->column++; return Token(TOK_EQUAL, token_line, token_column); }
-        "<" { state->column++; return Token(TOK_LESS, token_line, token_column); }
-        ">" { state->column++; return Token(TOK_GREATER, token_line, token_column); }
-        "~" { state->column++; return Token(TOK_NOT, token_line, token_column); }
-        "(" { state->column++; return Token(TOK_LPAREN, token_line, token_column); }
-        ")" { state->column++; return Token(TOK_RPAREN, token_line, token_column); }
-        "[" { state->column++; return Token(TOK_LBRACKET, token_line, token_column); }
-        "]" { state->column++; return Token(TOK_RBRACKET, token_line, token_column); }
-        "{" { state->column++; return Token(TOK_LBRACE, token_line, token_column); }
-        "}" { state->column++; return Token(TOK_RBRACE, token_line, token_column); }
-        ";" { state->column++; return Token(TOK_SEMICOLON, token_line, token_column); }
+        "+" { column_++; return Token(TOK_PLUS, token_line, token_column); }
+        "-" { column_++; return Token(TOK_MINUS, token_line, token_column); }
+        "*" { column_++; return Token(TOK_POWER, token_line, token_column); }
+        "," { column_++; return Token(TOK_RAVEL, token_line, token_column); }
+        "/" { column_++; return Token(TOK_REDUCE, token_line, token_column); }
+        "\\" { column_++; return Token(TOK_SCAN, token_line, token_column); }
+        "=" { column_++; return Token(TOK_EQUAL, token_line, token_column); }
+        "<" { column_++; return Token(TOK_LESS, token_line, token_column); }
+        ">" { column_++; return Token(TOK_GREATER, token_line, token_column); }
+        "~" { column_++; return Token(TOK_NOT, token_line, token_column); }
+        "(" { column_++; return Token(TOK_LPAREN, token_line, token_column); }
+        ")" { column_++; return Token(TOK_RPAREN, token_line, token_column); }
+        "[" { column_++; return Token(TOK_LBRACKET, token_line, token_column); }
+        "]" { column_++; return Token(TOK_RBRACKET, token_line, token_column); }
+        "{" { column_++; return Token(TOK_LBRACE, token_line, token_column); }
+        "}" { column_++; return Token(TOK_RBRACE, token_line, token_column); }
+        ";" { column_++; return Token(TOK_SEMICOLON, token_line, token_column); }
 
         // APL Unicode symbols
-        times { state->column++; return Token(TOK_TIMES, token_line, token_column); }
-        divide { state->column++; return Token(TOK_DIVIDE, token_line, token_column); }
-        reshape { state->column++; return Token(TOK_RESHAPE, token_line, token_column); }
-        transpose { state->column++; return Token(TOK_TRANSPOSE, token_line, token_column); }
-        iota { state->column++; return Token(TOK_IOTA, token_line, token_column); }
-        take { state->column++; return Token(TOK_TAKE, token_line, token_column); }
-        drop { state->column++; return Token(TOK_DROP, token_line, token_column); }
-        reduce_first { state->column++; return Token(TOK_REDUCE_FIRST, token_line, token_column); }
-        scan_first { state->column++; return Token(TOK_SCAN_FIRST, token_line, token_column); }
-        each { state->column++; return Token(TOK_EACH, token_line, token_column); }
-        compose { state->column++; return Token(TOK_COMPOSE, token_line, token_column); }
-        commute { state->column++; return Token(TOK_COMMUTE, token_line, token_column); }
-        assign { state->column++; return Token(TOK_ASSIGN, token_line, token_column); }
-        goto_sym { state->column++; return Token(TOK_GOTO, token_line, token_column); }
-        not_equal { state->column++; return Token(TOK_NOT_EQUAL, token_line, token_column); }
-        less_eq { state->column++; return Token(TOK_LESS_EQUAL, token_line, token_column); }
-        greater_eq { state->column++; return Token(TOK_GREATER_EQUAL, token_line, token_column); }
-        and_sym { state->column++; return Token(TOK_AND, token_line, token_column); }
-        or_sym { state->column++; return Token(TOK_OR, token_line, token_column); }
-        diamond { state->column++; return Token(TOK_DIAMOND, token_line, token_column); }
+        times { column_++; return Token(TOK_TIMES, token_line, token_column); }
+        divide { column_++; return Token(TOK_DIVIDE, token_line, token_column); }
+        reshape { column_++; return Token(TOK_RESHAPE, token_line, token_column); }
+        transpose { column_++; return Token(TOK_TRANSPOSE, token_line, token_column); }
+        iota { column_++; return Token(TOK_IOTA, token_line, token_column); }
+        take { column_++; return Token(TOK_TAKE, token_line, token_column); }
+        drop { column_++; return Token(TOK_DROP, token_line, token_column); }
+        reduce_first { column_++; return Token(TOK_REDUCE_FIRST, token_line, token_column); }
+        scan_first { column_++; return Token(TOK_SCAN_FIRST, token_line, token_column); }
+        each { column_++; return Token(TOK_EACH, token_line, token_column); }
+        compose { column_++; return Token(TOK_COMPOSE, token_line, token_column); }
+        commute { column_++; return Token(TOK_COMMUTE, token_line, token_column); }
+        assign { column_++; return Token(TOK_ASSIGN, token_line, token_column); }
+        goto_sym { column_++; return Token(TOK_GOTO, token_line, token_column); }
+        not_equal { column_++; return Token(TOK_NOT_EQUAL, token_line, token_column); }
+        less_eq { column_++; return Token(TOK_LESS_EQUAL, token_line, token_column); }
+        greater_eq { column_++; return Token(TOK_GREATER_EQUAL, token_line, token_column); }
+        and_sym { column_++; return Token(TOK_AND, token_line, token_column); }
+        or_sym { column_++; return Token(TOK_OR, token_line, token_column); }
+        diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
 
         // Outer product (special two-character sequence)
-        compose "." { state->column += 2; return Token(TOK_OUTER_PRODUCT, token_line, token_column); }
+        compose "." { column_ += 2; return Token(TOK_OUTER_PRODUCT, token_line, token_column); }
 
             // Unknown character - error
             * {
-                state->column++;
+                column_++;
                 return Token(TOK_ERROR, token_line, token_column);
             }
         */
