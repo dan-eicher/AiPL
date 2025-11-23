@@ -72,6 +72,26 @@ public:
     void mark(APLHeap* heap) override;
 };
 
+// BinOpK - Parse-time continuation for binary operations
+// Stores the operator name (not a PrimitiveFn*) for GC safety during parsing
+// At runtime, looks up the operator and applies it
+class BinOpK : public Continuation {
+public:
+    const char* op_name;        // Operator symbol (e.g., "+", "×")
+    Continuation* left;         // Left operand continuation
+    Continuation* right;        // Right operand continuation
+
+    BinOpK(const char* op, Continuation* l, Continuation* r)
+        : op_name(op), left(l), right(r) {}
+
+    ~BinOpK() override {
+        // Don't delete left/right - they're GC-managed
+    }
+
+    Value* invoke(Machine* machine) override;
+    void mark(APLHeap* heap) override;
+};
+
 // ArgK - Continuation for function arguments
 // Saves an argument value and continues with next continuation
 class ArgK : public Continuation {

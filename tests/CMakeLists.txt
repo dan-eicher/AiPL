@@ -40,3 +40,8 @@ add_test(NAME MachineTest COMMAND test_machine)
 add_executable(test_primitives test_primitives.cpp)
 target_link_libraries(test_primitives apl_vm GTest::gtest)
 add_test(NAME PrimitivesTest COMMAND test_primitives)
+
+# Parser tests
+add_executable(test_parser test_parser.cpp)
+target_link_libraries(test_parser apl_vm GTest::gtest)
+add_test(NAME ParserTest COMMAND test_parser)

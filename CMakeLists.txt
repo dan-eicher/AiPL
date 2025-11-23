@@ -43,6 +43,7 @@ set(APL_SOURCES
     src/environment.cpp
     src/machine.cpp
     src/primitives.cpp
+    src/parser.cpp
 )
 
 # Build APL VM as a library (build once, link everywhere)

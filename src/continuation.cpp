@@ -45,6 +45,47 @@ void LiteralK::mark(APLHeap* heap) {
     }
 }
 
+// BinOpK implementation
+Value* BinOpK::invoke(Machine* machine) {
+    // APL evaluates right-to-left, so:
+    // 1. Evaluate right operand
+    // 2. Evaluate left operand
+    // 3. Look up operator and apply it
+
+    // Evaluate right operand
+    Value* right_val = right->invoke(machine);
+
+    // Evaluate left operand
+    Value* left_val = left->invoke(machine);
+
+    // Look up the operator from the environment
+    Value* op_val = machine->env->lookup(op_name);
+    if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
+        throw std::runtime_error(std::string("Unknown operator: ") + op_name);
+    }
+
+    // Apply the dyadic form of the primitive function
+    PrimitiveFn* prim_fn = op_val->data.primitive_fn;
+    if (!prim_fn->dyadic) {
+        throw std::runtime_error(std::string("Operator has no dyadic form: ") + op_name);
+    }
+
+    Value* result = prim_fn->dyadic(left_val, right_val);
+
+    machine->ctrl.set_value(result);
+    return result;
+}
+
+void BinOpK::mark(APLHeap* heap) {
+    // Mark both operand continuations
+    if (left) {
+        heap->mark_continuation(left);
+    }
+    if (right) {
+        heap->mark_continuation(right);
+    }
+}
+
 // ArgK implementation
 Value* ArgK::invoke(Machine* machine) {
     // Set the argument value and continue with next continuation
