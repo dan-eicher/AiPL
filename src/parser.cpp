@@ -109,6 +109,23 @@ Continuation* Parser::nud(const Token& token) {
             return lit;
         }
 
+        case TOK_LPAREN: {
+            // Parenthesized expression: parse inner expression with minimum binding power
+            Continuation* inner = parse_expression(BP_NONE);
+            if (!inner) {
+                return nullptr;
+            }
+
+            // Expect closing parenthesis
+            if (at_end() || current().type != TOK_RPAREN) {
+                error_message_ = "Expected ')' after expression";
+                return nullptr;
+            }
+            advance();  // consume ')'
+
+            return inner;
+        }
+
         case TOK_MINUS: {
             // Unary minus: parse as negative literal if followed by number
             // Otherwise it's an error for now (monadic minus not yet implemented)
@@ -181,6 +198,12 @@ int Parser::get_binding_power(const Token& token) {
         case TOK_POWER:  // * is an alias for ×
         case TOK_DIVIDE:
             return BP_OPERATOR;
+
+        // Closing delimiters should never be treated as infix
+        // Give them negative binding power to stop parsing
+        case TOK_RPAREN:
+            return -1;
+
         default:
             return BP_NONE;
     }

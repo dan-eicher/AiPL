@@ -196,6 +196,122 @@ TEST_F(ParserTest, ParseMixedOperators) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
 }
 
+// ============================================================================
+// Parenthesized Expression Tests (Phase 3.2.1)
+// ============================================================================
+
+// Test simple parenthesized literal
+TEST_F(ParserTest, ParseParenthesizedLiteral) {
+    Continuation* k = parser->parse("(42)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+// Test parenthesized expression
+TEST_F(ParserTest, ParseParenthesizedExpression) {
+    Continuation* k = parser->parse("(2 + 3)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test parentheses change evaluation order: 2 × (3 + 4) = 2 × 7 = 14
+TEST_F(ParserTest, ParseParenthesesPrecedence) {
+    Continuation* k = parser->parse("2 * (3 + 4)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
+}
+
+// Test without parentheses for comparison: 2 × 3 + 4 = 2 × (3 + 4) = 2 × 7 = 14 (right-to-left)
+TEST_F(ParserTest, ParseWithoutParentheses) {
+    Continuation* k = parser->parse("2 * 3 + 4");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);  // 2 * (3 + 4) right-to-left
+}
+
+// Test nested parentheses: ((2 + 3) × 4) = 5 × 4 = 20
+TEST_F(ParserTest, ParseNestedParentheses) {
+    Continuation* k = parser->parse("((2 + 3) * 4)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
+}
+
+// Test complex nested expression: (10 - (2 + 3)) × 2 = (10 - 5) × 2 = 5 × 2 = 10
+TEST_F(ParserTest, ParseComplexNested) {
+    Continuation* k = parser->parse("(10 - (2 + 3)) * 2");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test multiple parenthesized subexpressions: (1 + 2) + (3 + 4) = 3 + 7 = 10
+TEST_F(ParserTest, ParseMultipleParentheses) {
+    Continuation* k = parser->parse("(1 + 2) + (3 + 4)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test parentheses with division: (12 ÷ 2) ÷ 3 = 6 ÷ 3 = 2
+TEST_F(ParserTest, ParseParenthesesDivision) {
+    Continuation* k = parser->parse("(12 ÷ 2) ÷ 3");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+// Test unclosed parenthesis error
+TEST_F(ParserTest, ParseUnclosedParenthesis) {
+    Continuation* k = parser->parse("(2 + 3");
+
+    EXPECT_EQ(k, nullptr);
+    EXPECT_NE(parser->get_error(), "");
+}
+
+// Test unmatched closing parenthesis
+TEST_F(ParserTest, ParseUnmatchedClosingParen) {
+    Continuation* k = parser->parse("2 + 3)");
+
+    EXPECT_EQ(k, nullptr);
+    EXPECT_NE(parser->get_error(), "");
+}
+
+// Test empty parentheses error
+TEST_F(ParserTest, ParseEmptyParentheses) {
+    Continuation* k = parser->parse("()");
+
+    EXPECT_EQ(k, nullptr);
+    EXPECT_NE(parser->get_error(), "");
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
