@@ -4,6 +4,7 @@
 #include "parser.h"
 #include "machine.h"
 #include "continuation.h"
+#include "environment.h"
 
 using namespace apl;
 
@@ -14,12 +15,43 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
+        init_global_environment(machine->env);  // Initialize built-in operators
         parser = new Parser(machine->heap);
     }
 
     void TearDown() override {
         delete parser;
         delete machine;
+    }
+
+    // Helper: evaluate parsed continuation using the CEK machine
+    Value* eval(Continuation* k) {
+        // The parsed continuation graph needs to be evaluated
+        // We push HaltK first so execution terminates properly
+        machine->push_kont(machine->heap->allocate_continuation(new HaltK()));
+
+        // For literals with nullptr next, set to pop from stack
+        // For BinOpK, it handles its own evaluation
+        wrap_literals(k);
+
+        // Invoke the root continuation to kick off evaluation
+        // This will recursively evaluate and use the machine's continuation stack
+        Value* result = k->invoke(machine);
+
+        return result;
+    }
+
+    void wrap_literals(Continuation* k) {
+        if (auto* lit = dynamic_cast<LiteralK*>(k)) {
+            if (!lit->next) {
+                // LiteralK with no next should pop from kont_stack
+                // For now just set it to HaltK since our tests don't use the stack yet
+                lit->next = machine->heap->allocate_continuation(new HaltK());
+            }
+        } else if (auto* binop = dynamic_cast<BinOpK*>(k)) {
+            wrap_literals(binop->left);
+            wrap_literals(binop->right);
+        }
     }
 };
 
@@ -30,8 +62,7 @@ TEST_F(ParserTest, ParseLiteral) {
     ASSERT_NE(k, nullptr);
     EXPECT_EQ(parser->get_error(), "");
 
-    // Execute the continuation
-    Value* result = k->invoke(machine);
+    Value* result = eval(k);
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR);
@@ -44,7 +75,7 @@ TEST_F(ParserTest, ParseNegativeLiteral) {
 
     ASSERT_NE(k, nullptr);
 
-    Value* result = k->invoke(machine);
+    Value* result = eval(k);
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), -3.14);
@@ -56,7 +87,7 @@ TEST_F(ParserTest, ParseZero) {
 
     ASSERT_NE(k, nullptr);
 
-    Value* result = k->invoke(machine);
+    Value* result = eval(k);
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -81,11 +112,88 @@ TEST_F(ParserTest, ParseTimeSafety) {
     // NO Values should be allocated during parsing
     EXPECT_EQ(values_before, values_after);
 
-    // Values are only created when we INVOKE
-    k->invoke(machine);
+    // Values are only created when we EVALUATE
+    eval(k);
 
     size_t values_after_invoke = machine->heap->total_size();
     EXPECT_GT(values_after_invoke, values_before);
+}
+
+// Test parsing simple addition
+TEST_F(ParserTest, ParseAddition) {
+    Continuation* k = parser->parse("2 + 3");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test right-to-left evaluation: 2 + 3 × 4 = 2 + 12 = 14
+TEST_F(ParserTest, ParseRightToLeft) {
+    Continuation* k = parser->parse("2 + 3 * 4");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);  // NOT 20!
+}
+
+// Test with APL symbols: 2 + 3 × 4
+TEST_F(ParserTest, ParseAPLSymbols) {
+    Continuation* k = parser->parse("2 + 3 × 4");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
+}
+
+// Test division
+TEST_F(ParserTest, ParseDivision) {
+    Continuation* k = parser->parse("10 ÷ 2");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test subtraction
+TEST_F(ParserTest, ParseSubtraction) {
+    Continuation* k = parser->parse("10 - 3");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+// Test longer chain: 1 + 2 + 3 + 4 = 1 + 2 + 7 = 1 + 9 = 10 (right-to-left)
+TEST_F(ParserTest, ParseLongChain) {
+    Continuation* k = parser->parse("1 + 2 + 3 + 4");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test mixed operators: 10 - 2 * 3 = 10 - 6 = 4
+TEST_F(ParserTest, ParseMixedOperators) {
+    Continuation* k = parser->parse("10 - 2 * 3");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
 }
 
 // Main function
