@@ -3,6 +3,7 @@
 #pragma once
 
 #include <vector>
+#include <string>
 #include "value.h"
 
 namespace apl {
@@ -66,6 +67,26 @@ public:
         : literal_value(val), next(k) {}
 
     ~LiteralK() override {
+        // Don't delete next - it's GC-managed
+    }
+
+    Value* invoke(Machine* machine) override;
+    void mark(APLHeap* heap) override;
+};
+
+// LookupK - Parse-time continuation for variable lookups
+// Stores the variable name (owned std::string for safety)
+// At runtime, looks up the variable in the environment
+class LookupK : public Continuation {
+public:
+    std::string var_name;       // Variable name (owned copy)
+    Continuation* next;         // Next continuation
+
+    LookupK(const char* name, Continuation* k)
+        : var_name(name), next(k) {}
+
+    ~LookupK() override {
+        // var_name is std::string, automatically cleaned up
         // Don't delete next - it's GC-managed
     }
 

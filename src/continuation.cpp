@@ -45,6 +45,36 @@ void LiteralK::mark(APLHeap* heap) {
     }
 }
 
+// LookupK implementation
+Value* LookupK::invoke(Machine* machine) {
+    // Look up the variable in the environment
+    Value* val = machine->env->lookup(var_name.c_str());
+
+    if (!val) {
+        // Variable not found - error
+        machine->halt();
+        return nullptr;
+    }
+
+    machine->ctrl.set_value(val);
+
+    if (next) {
+        return next->invoke(machine);
+    }
+
+    // No next continuation - halt
+    machine->halt();
+    return val;
+}
+
+void LookupK::mark(APLHeap* heap) {
+    // var_name is std::string, doesn't need GC marking
+    // Just mark the next continuation
+    if (next) {
+        heap->mark_continuation(next);
+    }
+}
+
 // StrandK implementation
 Value* StrandK::invoke(Machine* machine) {
     // Evaluate each element continuation and collect the results

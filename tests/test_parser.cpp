@@ -95,7 +95,8 @@ TEST_F(ParserTest, ParseZero) {
 
 // Test parsing failure with invalid input
 TEST_F(ParserTest, ParseInvalidInput) {
-    Continuation* k = parser->parse("abc");
+    // Use @ which is not a valid token
+    Continuation* k = parser->parse("@");
 
     EXPECT_EQ(k, nullptr);
     EXPECT_NE(parser->get_error(), "");
@@ -471,6 +472,73 @@ TEST_F(ParserTest, ParseParenthesizedStrand) {
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
     EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
     EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+// ============================================================================
+// Variable Parsing Tests (Phase 3.2.3)
+// ============================================================================
+
+// Test simple variable lookup
+TEST_F(ParserTest, ParseSimpleVariable) {
+    // Define a variable in the environment
+    Value* val = Value::from_scalar(42.0);
+    machine->env->define("x", val);
+
+    Continuation* k = parser->parse("x");
+    ASSERT_NE(k, nullptr);
+
+    // Check that it parsed as LookupK
+    LookupK* lookup = dynamic_cast<LookupK*>(k);
+    ASSERT_NE(lookup, nullptr);
+    EXPECT_EQ(lookup->var_name, "x");
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+// Test variable in expression
+TEST_F(ParserTest, ParseVariableInExpression) {
+    // Define variables
+    machine->env->define("a", Value::from_scalar(10.0));
+    machine->env->define("b", Value::from_scalar(5.0));
+
+    Continuation* k = parser->parse("a + b");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+// Test variable in strand
+TEST_F(ParserTest, ParseVariableInStrand) {
+    // Define variable
+    machine->env->define("x", Value::from_scalar(5.0));
+
+    Continuation* k = parser->parse("1 x 3");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+// Test undefined variable error
+TEST_F(ParserTest, ParseUndefinedVariable) {
+    Continuation* k = parser->parse("undefined");
+    ASSERT_NE(k, nullptr);
+
+    // This should parse fine but fail at eval time
+    Value* result = eval(k);
+    EXPECT_EQ(result, nullptr);  // Should return nullptr on undefined variable
 }
 
 // Main function

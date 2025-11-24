@@ -196,6 +196,14 @@ Continuation* Parser::nud(const Token& token) {
             return nullptr;
         }
 
+        case TOK_NAME: {
+            // Variable reference - create LookupK
+            const char* name = token.name;
+            LookupK* lookup = new LookupK(name, nullptr);
+            heap_->allocate_continuation(lookup);
+            return lookup;
+        }
+
         default:
             error_message_ = std::string("Unexpected token in prefix position: ") + token_type_name(token.type);
             return nullptr;
