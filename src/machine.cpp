@@ -10,45 +10,34 @@ namespace apl {
 // Execute the machine until halt
 // This is the main trampoline loop that drives the CEK machine
 Value* Machine::execute() {
-    while (ctrl.mode != ExecMode::HALTED) {
-        // If we have an abrupt completion, handle it
+    while (!kont_stack.empty()) {
+        // Pop next continuation from stack
+        Continuation* k = kont_stack.back();
+        kont_stack.pop_back();
+
+        // Invoke continuation
+        // If it returns non-nullptr, that's the final result
+        Value* result = k->invoke(this);
+
+        if (result != nullptr) {
+            // Continuation returned final result - halt
+            ctrl.halt();
+            ctrl.value = result;
+            return result;
+        }
+
+        // nullptr means continue - check for completions
         if (ctrl.completion && !ctrl.completion->is_normal()) {
             handle_completion();
             continue;
         }
 
-        // If we have a normal completion, extract the value
-        if (ctrl.completion && ctrl.completion->is_normal()) {
-            ctrl.value = ctrl.completion->value;
-            delete ctrl.completion;
-            ctrl.completion = nullptr;
-        }
-
-        // If control has a value, pop continuation and invoke it
-        if (ctrl.value) {
-            Continuation* k = pop_kont();
-            if (!k) {
-                // No more continuations, halt with current value
-                ctrl.halt();
-                return ctrl.value;
-            }
-
-            // Invoke continuation (may modify ctrl.value or ctrl.completion)
-            k->invoke(this);
-            // Don't delete k - it's GC-managed now
-
-            // Check for GC periodically
-            maybe_gc();
-            continue;
-        }
-
-        // If we reach here with no value and no completion, we're done
-        if (!ctrl.value && !ctrl.completion) {
-            ctrl.halt();
-            return nullptr;
-        }
+        // Check for GC periodically
+        maybe_gc();
     }
 
+    // Stack empty - halt and return current value
+    ctrl.halt();
     return ctrl.value;
 }
 

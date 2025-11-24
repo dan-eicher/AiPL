@@ -23,10 +23,6 @@ public:
     Continuation() : marked(false), in_old_generation(false) {}
     virtual ~Continuation() {}
 
-    // Execute this continuation
-    // Returns the result value (or nullptr if execution should continue)
-    virtual Value* invoke(Machine* machine) = 0;
-
     // Mark all Values and Continuations referenced by this continuation for GC
     virtual void mark(APLHeap* heap) = 0;
 
@@ -46,13 +42,24 @@ public:
         (void)label;  // Unused
         return false;
     }
+
+protected:
+    // Execute this continuation
+    // Returns the result value (or nullptr if execution should continue)
+    // PROTECTED: Only Machine should call this via the trampoline
+    virtual Value* invoke(Machine* machine) = 0;
+
+    // Grant Machine access to invoke()
+    friend class Machine;
 };
 
 // HaltK - Terminal continuation that stops execution
 class HaltK : public Continuation {
 public:
-    Value* invoke(Machine* machine) override;
     void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
 };
 
 // LiteralK - Parse-time continuation for literal values
@@ -61,17 +68,16 @@ public:
 class LiteralK : public Continuation {
 public:
     double literal_value;       // The literal number
-    Continuation* next;         // Next continuation
 
-    LiteralK(double val, Continuation* k)
-        : literal_value(val), next(k) {}
+    LiteralK(double val)
+        : literal_value(val) {}
 
-    ~LiteralK() override {
-        // Don't delete next - it's GC-managed
-    }
+    ~LiteralK() override {}
 
-    Value* invoke(Machine* machine) override;
     void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
 };
 
 // LookupK - Parse-time continuation for variable lookups
@@ -80,18 +86,16 @@ public:
 class LookupK : public Continuation {
 public:
     std::string var_name;       // Variable name (owned copy)
-    Continuation* next;         // Next continuation
 
-    LookupK(const char* name, Continuation* k)
-        : var_name(name), next(k) {}
+    LookupK(const char* name)
+        : var_name(name) {}
 
-    ~LookupK() override {
-        // var_name is std::string, automatically cleaned up
-        // Don't delete next - it's GC-managed
-    }
+    ~LookupK() override {}
 
-    Value* invoke(Machine* machine) override;
     void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
 };
 
 // StrandK - Parse-time continuation for array strands
@@ -101,38 +105,96 @@ public:
 class StrandK : public Continuation {
 public:
     std::vector<Continuation*> elements;  // Continuation for each element
-    Continuation* next;                   // Next continuation
 
-    StrandK(const std::vector<Continuation*>& elems, Continuation* k)
-        : elements(elems), next(k) {}
+    StrandK(const std::vector<Continuation*>& elems)
+        : elements(elems) {}
 
     ~StrandK() override {
-        // Don't delete elements or next - they're GC-managed
+        // Don't delete elements - they're GC-managed
     }
 
-    Value* invoke(Machine* machine) override;
     void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
 };
 
-// BinOpK - Parse-time continuation for binary operations
-// Stores the operator name (not a PrimitiveFn*) for GC safety during parsing
-// At runtime, looks up the operator and applies it
-class BinOpK : public Continuation {
+// MonadicK - Monadic function application (e.g., -x, ⍳x)
+// Evaluates operand, then applies monadic function
+class MonadicK : public Continuation {
 public:
-    const char* op_name;        // Operator symbol (e.g., "+", "×")
-    Continuation* left;         // Left operand continuation
-    Continuation* right;        // Right operand continuation
+    PrimitiveFn* prim_fn;       // The function to apply
+    Continuation* operand;      // Operand to evaluate
 
-    BinOpK(const char* op, Continuation* l, Continuation* r)
-        : op_name(op), left(l), right(r) {}
+    MonadicK(PrimitiveFn* fn, Continuation* op)
+        : prim_fn(fn), operand(op) {}
 
-    ~BinOpK() override {
-        // Don't delete left/right - they're GC-managed
+    ~MonadicK() override {
+        // Don't delete operand - it's GC-managed
     }
 
-    Value* invoke(Machine* machine) override;
     void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
 };
+
+// DyadicK - Dyadic function application (e.g., x+y, x×y)
+// Evaluates operands right-to-left, then applies dyadic function
+class DyadicK : public Continuation {
+public:
+    PrimitiveFn* prim_fn;       // The function to apply
+    Continuation* left;         // Left operand
+    Continuation* right;        // Right operand
+
+    DyadicK(PrimitiveFn* fn, Continuation* l, Continuation* r)
+        : prim_fn(fn), left(l), right(r) {}
+
+    ~DyadicK() override {
+        // Don't delete operands - they're GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for DyadicK - evaluates left after right is done
+class EvalDyadicLeftK : public Continuation {
+public:
+    PrimitiveFn* prim_fn;
+    Continuation* left;
+    Value* right_val;           // Saved right value (set at runtime)
+
+    EvalDyadicLeftK(PrimitiveFn* fn, Continuation* l, Value* r)
+        : prim_fn(fn), left(l), right_val(r) {}
+
+    ~EvalDyadicLeftK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation to apply dyadic function after both operands evaluated
+class ApplyDyadicK : public Continuation {
+public:
+    PrimitiveFn* prim_fn;
+    Value* right_val;           // Saved right value
+
+    ApplyDyadicK(PrimitiveFn* fn, Value* r)
+        : prim_fn(fn), right_val(r) {}
+
+    ~ApplyDyadicK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 
 // ArgK - Continuation for function arguments
 // Saves an argument value and continues with next continuation
@@ -148,8 +210,10 @@ public:
         // Don't delete next - it's GC-managed
     }
 
-    Value* invoke(Machine* machine) override;
     void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
 };
 
 // FrameK - Stack frame continuation for function calls
@@ -166,11 +230,13 @@ public:
         // Don't delete return_k - it's GC-managed
     }
 
-    Value* invoke(Machine* machine) override;
     void mark(APLHeap* heap) override;
 
     // FrameK marks function boundaries
     bool is_function_boundary() const override { return true; }
+
+protected:
+    Value* invoke(Machine* machine) override;
 };
 
 } // namespace apl

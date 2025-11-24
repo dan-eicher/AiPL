@@ -10,14 +10,14 @@
 
 namespace apl {
 
-// Forward declaration
-class APLHeap;
+// Forward declarations
+class Machine;
 
 // Pratt parser that builds continuation graphs
 // Integrates with Lexer for on-demand tokenization
 class Parser {
 public:
-    Parser(APLHeap* heap) : heap_(heap), lexer_(nullptr), current_token_() {}
+    Parser(Machine* machine) : machine_(machine), lexer_(nullptr), current_token_() {}
 
     // Parse an APL expression and return the continuation graph
     // Returns nullptr on parse failure
@@ -27,7 +27,7 @@ public:
     const std::string& get_error() const { return error_message_; }
 
 private:
-    APLHeap* heap_;
+    Machine* machine_;
     std::string error_message_;
     std::string input_;  // Keep input alive for lexer
 

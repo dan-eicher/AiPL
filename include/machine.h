@@ -73,16 +73,6 @@ public:
         return k;
     }
 
-    // Pop continuation and invoke it
-    Value* pop_kont_and_invoke() {
-        Continuation* k = pop_kont();
-        if (!k) {
-            ctrl.halt();
-            return ctrl.value;
-        }
-        return k->invoke(this);
-    }
-
     // Unwind stack to a boundary (for RETURN/BREAK/CONTINUE)
     bool unwind_to_boundary(bool (*predicate)(Continuation*), const char* label = nullptr);
 

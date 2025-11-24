@@ -24,25 +24,15 @@ void HaltK::mark(APLHeap* heap) {
 // LiteralK implementation
 Value* LiteralK::invoke(Machine* machine) {
     // Convert the literal double to a Value* at runtime
-    // This is safe because we're no longer in parse-time
     Value* val = machine->heap->allocate_scalar(literal_value);
     machine->ctrl.set_value(val);
 
-    if (next) {
-        return next->invoke(machine);
-    }
-
-    // No next continuation - halt
-    machine->halt();
-    return val;
+    return nullptr;  // Continue trampoline
 }
 
 void LiteralK::mark(APLHeap* heap) {
-    // LiteralK only has a double (not a Value*), so nothing to mark there
-    // Just mark the next continuation
-    if (next) {
-        heap->mark_continuation(next);
-    }
+    // LiteralK only has a double, nothing to mark
+    (void)heap;  // Unused
 }
 
 // LookupK implementation
@@ -57,60 +47,21 @@ Value* LookupK::invoke(Machine* machine) {
     }
 
     machine->ctrl.set_value(val);
-
-    if (next) {
-        return next->invoke(machine);
-    }
-
-    // No next continuation - halt
-    machine->halt();
-    return val;
+    return nullptr;  // Continue trampoline
 }
 
 void LookupK::mark(APLHeap* heap) {
     // var_name is std::string, doesn't need GC marking
-    // Just mark the next continuation
-    if (next) {
-        heap->mark_continuation(next);
-    }
+    (void)heap;  // Unused
 }
 
 // StrandK implementation
 Value* StrandK::invoke(Machine* machine) {
-    // Evaluate each element continuation and collect the results
-    std::vector<double> data;
-
-    for (Continuation* elem : elements) {
-        Value* elem_val = elem->invoke(machine);
-
-        // Each element should evaluate to a scalar (for now)
-        // TODO: In full APL, strands can nest and need flattening
-        if (elem_val->tag == ValueType::SCALAR) {
-            data.push_back(elem_val->as_scalar());
-        } else {
-            // For now, error on non-scalar strand elements
-            // Full APL would flatten nested arrays
-            machine->halt();
-            return nullptr;
-        }
-    }
-
-    // Create Eigen vector from collected data
-    Eigen::VectorXd vec(data.size());
-    for (size_t i = 0; i < data.size(); ++i) {
-        vec(i) = data[i];
-    }
-
-    Value* val = Value::from_vector(vec);
-    machine->ctrl.set_value(val);
-
-    if (next) {
-        return next->invoke(machine);
-    }
-
-    // No next continuation - halt
-    machine->halt();
-    return val;
+    // TODO: Implement with collector continuation pattern
+    // Needs auxiliary continuations to evaluate each element and collect results
+    // For now, throw error
+    (void)machine;
+    throw std::runtime_error("StrandK not yet implemented with trampoline");
 }
 
 void StrandK::mark(APLHeap* heap) {
@@ -120,46 +71,39 @@ void StrandK::mark(APLHeap* heap) {
             heap->mark_continuation(elem);
         }
     }
+}
 
-    // Mark next continuation
-    if (next) {
-        heap->mark_continuation(next);
+// MonadicK implementation
+Value* MonadicK::invoke(Machine* machine) {
+    // TODO: Implement with auxiliary continuation pattern like DyadicK
+    // For now, throw error
+    (void)machine;
+    throw std::runtime_error("MonadicK not yet implemented with trampoline");
+}
+
+void MonadicK::mark(APLHeap* heap) {
+    if (operand) {
+        heap->mark_continuation(operand);
     }
 }
 
-// BinOpK implementation
-Value* BinOpK::invoke(Machine* machine) {
-    // APL evaluates right-to-left, so:
-    // 1. Evaluate right operand
-    // 2. Evaluate left operand
-    // 3. Look up operator and apply it
+// DyadicK implementation
+Value* DyadicK::invoke(Machine* machine) {
+    // APL evaluates right-to-left: right operand first, then left, then apply
+    // Use auxiliary continuations to manage the multi-step process
 
-    // Evaluate right operand
-    Value* right_val = right->invoke(machine);
+    // Allocate auxiliary continuation to evaluate left after right completes
+    EvalDyadicLeftK* eval_left = new EvalDyadicLeftK(prim_fn, left, nullptr);
+    machine->heap->allocate_continuation(eval_left);
 
-    // Evaluate left operand
-    Value* left_val = left->invoke(machine);
+    // Push work in REVERSE order (stack is LIFO)
+    machine->push_kont(eval_left);  // Will execute after right
+    machine->push_kont(right);       // Will execute now
 
-    // Look up the operator from the environment
-    Value* op_val = machine->env->lookup(op_name);
-    if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
-        throw std::runtime_error(std::string("Unknown operator: ") + op_name);
-    }
-
-    // Apply the dyadic form of the primitive function
-    PrimitiveFn* prim_fn = op_val->data.primitive_fn;
-    if (!prim_fn->dyadic) {
-        throw std::runtime_error(std::string("Operator has no dyadic form: ") + op_name);
-    }
-
-    Value* result = prim_fn->dyadic(left_val, right_val);
-
-    machine->ctrl.set_value(result);
-    return result;
+    return nullptr;  // Continue trampoline
 }
 
-void BinOpK::mark(APLHeap* heap) {
-    // Mark both operand continuations
+void DyadicK::mark(APLHeap* heap) {
     if (left) {
         heap->mark_continuation(left);
     }
@@ -168,18 +112,43 @@ void BinOpK::mark(APLHeap* heap) {
     }
 }
 
+// EvalDyadicLeftK implementation
+Value* EvalDyadicLeftK::invoke(Machine* machine) {
+    // Right operand has been evaluated - its value is in ctrl.value
+    // Save the right value and set up left evaluation
+    right_val = machine->ctrl.value;
+
+    // Allocate auxiliary continuation to apply function after left evaluates
+    ApplyDyadicK* apply = new ApplyDyadicK(prim_fn, right_val);
+    machine->heap->allocate_continuation(apply);
+
+    // Push work in reverse order
+    machine->push_kont(apply);   // Will execute after left
+    machine->push_kont(left);     // Will execute now
+
+    return nullptr;  // Continue trampoline
+}
+
+void EvalDyadicLeftK::mark(APLHeap* heap) {
+    if (left) {
+        heap->mark_continuation(left);
+    }
+    if (right_val) {
+        heap->mark_value(right_val);
+    }
+}
+
+
 // ArgK implementation
 Value* ArgK::invoke(Machine* machine) {
     // Set the argument value and continue with next continuation
     machine->ctrl.set_value(arg_value);
 
     if (next) {
-        return next->invoke(machine);
+        machine->push_kont(next);
     }
 
-    // No next continuation - halt
-    machine->halt();
-    return arg_value;
+    return nullptr;  // Continue trampoline
 }
 
 void ArgK::mark(APLHeap* heap) {
@@ -194,18 +163,40 @@ void ArgK::mark(APLHeap* heap) {
     }
 }
 
-// FrameK implementation
-Value* FrameK::invoke(Machine* machine) {
-    // Function frame - set the current value and return
-    // The return continuation will handle what happens next
+// ApplyDyadicK implementation
+Value* ApplyDyadicK::invoke(Machine* machine) {
+    // Both operands have been evaluated
+    // Right value is saved in right_val
+    // Left value is in ctrl.value
+    Value* left_val = machine->ctrl.value;
 
-    if (return_k) {
-        return return_k->invoke(machine);
+    if (!prim_fn->dyadic) {
+        throw std::runtime_error("Operator has no dyadic form");
     }
 
-    // No return continuation - halt
-    machine->halt();
-    return machine->ctrl.value;
+    // Apply the dyadic function
+    Value* result = prim_fn->dyadic(left_val, right_val);
+    machine->ctrl.set_value(result);
+
+    return nullptr;  // Continue trampoline
+}
+
+void ApplyDyadicK::mark(APLHeap* heap) {
+    // Mark the saved right value
+    if (right_val) {
+        heap->mark_value(right_val);
+    }
+}
+
+// FrameK implementation
+Value* FrameK::invoke(Machine* machine) {
+    // Function frame - push return continuation onto stack
+
+    if (return_k) {
+        machine->push_kont(return_k);
+    }
+
+    return nullptr;  // Continue trampoline
 }
 
 void FrameK::mark(APLHeap* heap) {

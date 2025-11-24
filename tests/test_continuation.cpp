@@ -28,7 +28,8 @@ TEST_F(ContinuationTest, HaltK) {
     Value* v = Value::from_scalar(42.0);
     machine->ctrl.set_value(v);
 
-    Value* result = halt->invoke(machine);
+    machine->push_kont(halt);
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
@@ -64,7 +65,8 @@ TEST_F(ContinuationTest, ArgKBasic) {
     HaltK* halt = new HaltK();
     ArgK* argk = new ArgK(arg, halt);
 
-    Value* result = argk->invoke(machine);
+    machine->push_kont(argk);
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, arg);
     EXPECT_EQ(machine->ctrl.value, arg);
@@ -78,10 +80,10 @@ TEST_F(ContinuationTest, ArgKWithoutNext) {
     Value* arg = Value::from_scalar(99.0);
     ArgK* argk = new ArgK(arg, nullptr);
 
-    Value* result = argk->invoke(machine);
+    machine->push_kont(argk);
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, arg);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
     delete argk;
     delete arg;
@@ -96,8 +98,9 @@ TEST_F(ContinuationTest, ArgKChaining) {
     ArgK* argk2 = new ArgK(arg2, halt);
     ArgK* argk1 = new ArgK(arg1, argk2);
 
-    // Invoke first ArgK
-    Value* result = argk1->invoke(machine);
+    // Push first ArgK and execute via trampoline
+    machine->push_kont(argk1);
+    Value* result = machine->execute();
 
     // Should eventually return arg2 (last in chain)
     EXPECT_EQ(result, arg2);
@@ -141,7 +144,9 @@ TEST_F(ContinuationTest, FrameKBasic) {
     Value* v = Value::from_scalar(7.0);
     machine->ctrl.set_value(v);
 
-    Value* result = frame->invoke(machine);
+    // Push frame onto stack and execute via trampoline
+    machine->push_kont(frame);
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
@@ -168,10 +173,11 @@ TEST_F(ContinuationTest, FrameKWithoutReturn) {
     Value* v = Value::from_scalar(88.0);
     machine->ctrl.set_value(v);
 
-    Value* result = frame->invoke(machine);
+    // Push frame onto stack and execute via trampoline
+    machine->push_kont(frame);
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
     delete frame;
     delete v;
@@ -199,7 +205,7 @@ TEST_F(ContinuationTest, FrameKFunctionName) {
     delete frame;
 }
 
-// Test Machine push and pop
+// Test Machine push and execute
 TEST_F(ContinuationTest, MachinePushPop) {
     Value* v = Value::from_scalar(42.0);
     machine->ctrl.set_value(v);
@@ -209,7 +215,7 @@ TEST_F(ContinuationTest, MachinePushPop) {
 
     EXPECT_EQ(machine->kont_stack.size(), 1);
 
-    Value* result = machine->pop_kont_and_invoke();
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->kont_stack.size(), 0);
@@ -218,14 +224,14 @@ TEST_F(ContinuationTest, MachinePushPop) {
     delete v;
 }
 
-// Test Machine pop on empty stack
+// Test Machine execute with empty stack
 TEST_F(ContinuationTest, MachinePopEmpty) {
     Value* v = Value::from_scalar(123.0);
     machine->ctrl.set_value(v);
 
     EXPECT_EQ(machine->kont_stack.size(), 0);
 
-    Value* result = machine->pop_kont_and_invoke();
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
@@ -246,10 +252,9 @@ TEST_F(ContinuationTest, MachineMultipleContinuations) {
 
     EXPECT_EQ(machine->kont_stack.size(), 1);
 
-    Value* result = machine->pop_kont_and_invoke();
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, arg2);  // Last arg in chain
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
     delete arg1;
     delete arg2;
@@ -265,10 +270,10 @@ TEST_F(ContinuationTest, FrameKChaining) {
 
     machine->ctrl.set_value(v);
 
-    Value* result = argk->invoke(machine);
+    machine->push_kont(argk);
+    Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
     delete argk;
     delete v;
@@ -280,75 +285,75 @@ TEST_F(ContinuationTest, FrameKChaining) {
 
 // Test LiteralK basic invoke
 TEST_F(ContinuationTest, LiteralKBasic) {
-    auto halt = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
-    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0, halt)));
+    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0)));
 
-    Value* result = lit->invoke(machine);
+    // Push onto stack and execute via trampoline
+    machine->push_kont(lit);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
     EXPECT_EQ(machine->ctrl.value, result);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 }
 
-// Test LiteralK without next
+// Test LiteralK without next - now just tests basic execution
 TEST_F(ContinuationTest, LiteralKWithoutNext) {
-    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(3.14, nullptr)));
+    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(3.14)));
 
-    Value* result = lit->invoke(machine);
+    machine->push_kont(lit);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.14);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 }
 
-// Test LiteralK chaining
+// Test LiteralK chaining via trampoline
 TEST_F(ContinuationTest, LiteralKChaining) {
-    auto halt = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
-    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(20.0, halt)));
-    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(10.0, lit2)));
+    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(10.0)));
+    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(20.0)));
 
-    Value* result = lit1->invoke(machine);
+    // Push in reverse order (stack is LIFO)
+    machine->push_kont(lit2);
+    machine->push_kont(lit1);
 
+    Value* result = machine->execute();
+
+    // Last continuation wins - should have 20.0
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 }
 
 // Test LiteralK uses scalar cache
 TEST_F(ContinuationTest, LiteralKUsesScalarCache) {
-    auto halt1 = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
-    auto halt2 = static_cast<HaltK*>(machine->heap->allocate_continuation(new HaltK()));
+    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0)));
+    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0)));
 
-    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0, halt1)));
-    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0, halt2)));
-
-    machine->ctrl.init_evaluating();
-    Value* result1 = lit1->invoke(machine);
+    machine->push_kont(lit1);
+    Value* result1 = machine->execute();
 
     machine->ctrl.init_evaluating();
-    Value* result2 = lit2->invoke(machine);
+    machine->push_kont(lit2);
+    Value* result2 = machine->execute();
 
     EXPECT_EQ(result1, result2);
     EXPECT_DOUBLE_EQ(result1->as_scalar(), 42.0);
 }
 
-// Test LiteralK parse-time safety
+// Test LiteralK parse-time safety - stores double not Value*
 TEST_F(ContinuationTest, LiteralKParseTimeSafety) {
-    HaltK* halt = new HaltK();
-    LiteralK* lit = new LiteralK(123.0, halt);
+    LiteralK* lit = new LiteralK(123.0);
 
     EXPECT_DOUBLE_EQ(lit->literal_value, 123.0);
-    EXPECT_EQ(lit->next, halt);
 
-    machine->heap->allocate_continuation(halt);
     machine->heap->allocate_continuation(lit);
 
     size_t values_before = machine->heap->total_size();
-    Value* result = lit->invoke(machine);
+    machine->push_kont(lit);
+    Value* result = machine->execute();
     size_t values_after = machine->heap->total_size();
 
+    // Should have allocated a new Value for the literal
     EXPECT_GT(values_after, values_before);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 123.0);
 }

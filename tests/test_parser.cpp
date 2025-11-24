@@ -16,7 +16,7 @@ protected:
     void SetUp() override {
         machine = new Machine();
         init_global_environment(machine->env);  // Initialize built-in operators
-        parser = new Parser(machine->heap);
+        parser = new Parser(machine);
     }
 
     void TearDown() override {
@@ -27,32 +27,13 @@ protected:
     // Helper: evaluate parsed continuation using the CEK machine
     Value* eval(Continuation* k) {
         // The parsed continuation graph needs to be evaluated
-        // We push HaltK first so execution terminates properly
-        machine->push_kont(machine->heap->allocate_continuation(new HaltK()));
-
-        // For literals with nullptr next, set to pop from stack
-        // For BinOpK, it handles its own evaluation
-        wrap_literals(k);
-
-        // Invoke the root continuation to kick off evaluation
-        // This will recursively evaluate and use the machine's continuation stack
-        Value* result = k->invoke(machine);
+        // Push continuation onto stack and execute via trampoline
+        machine->push_kont(k);
+        Value* result = machine->execute();
 
         return result;
     }
 
-    void wrap_literals(Continuation* k) {
-        if (auto* lit = dynamic_cast<LiteralK*>(k)) {
-            if (!lit->next) {
-                // LiteralK with no next should pop from kont_stack
-                // For now just set it to HaltK since our tests don't use the stack yet
-                lit->next = machine->heap->allocate_continuation(new HaltK());
-            }
-        } else if (auto* binop = dynamic_cast<BinOpK*>(k)) {
-            wrap_literals(binop->left);
-            wrap_literals(binop->right);
-        }
-    }
 };
 
 // Test parsing a simple literal
@@ -126,6 +107,33 @@ TEST_F(ParserTest, ParseAddition) {
     ASSERT_NE(k, nullptr);
 
     Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test DyadicK with trampoline
+TEST_F(ParserTest, TestDyadicKWithTrampoline) {
+    // Manually construct a DyadicK: 2 + 3
+    LiteralK* left = new LiteralK(2.0);
+    LiteralK* right = new LiteralK(3.0);
+
+    // Look up the + primitive
+    Value* plus_val = machine->env->lookup("+");
+    ASSERT_NE(plus_val, nullptr);
+    ASSERT_EQ(plus_val->tag, ValueType::PRIMITIVE);
+    PrimitiveFn* plus_fn = plus_val->data.primitive_fn;
+
+    DyadicK* dyadic = new DyadicK(plus_fn, left, right);
+
+    // Allocate in heap for GC
+    machine->heap->allocate_continuation(left);
+    machine->heap->allocate_continuation(right);
+    machine->heap->allocate_continuation(dyadic);
+
+    // Use trampoline instead of direct invoke
+    machine->push_kont(dyadic);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);

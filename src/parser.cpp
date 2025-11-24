@@ -1,7 +1,7 @@
 // APL Parser implementation using manual Pratt parsing
 
 #include "parser.h"
-#include "heap.h"
+#include "machine.h"
 #include "continuation.h"
 #include <stdexcept>
 #include <cstdlib>
@@ -137,8 +137,8 @@ Continuation* Parser::parse_expression(int min_bp) {
                 elements.push_back(right);
             }
 
-            StrandK* new_strand = new StrandK(elements, nullptr);
-            heap_->allocate_continuation(new_strand);
+            StrandK* new_strand = new StrandK(elements);
+            machine_->heap->allocate_continuation(new_strand);
             left = new_strand;
         } else {
             // Regular infix operator
@@ -159,8 +159,8 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_NUMBER: {
             // Single number - create LiteralK
             double value = token.number;
-            LiteralK* lit = new LiteralK(value, nullptr);
-            heap_->allocate_continuation(lit);
+            LiteralK* lit = new LiteralK(value);
+            machine_->heap->allocate_continuation(lit);
             return lit;
         }
 
@@ -188,8 +188,8 @@ Continuation* Parser::nud(const Token& token) {
                 Token num = current();
                 advance();
                 double value = -num.number;
-                LiteralK* lit = new LiteralK(value, nullptr);
-                heap_->allocate_continuation(lit);
+                LiteralK* lit = new LiteralK(value);
+                machine_->heap->allocate_continuation(lit);
                 return lit;
             }
             error_message_ = "Monadic operators not yet implemented";
@@ -199,8 +199,8 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_NAME: {
             // Variable reference - create LookupK
             const char* name = token.name;
-            LookupK* lookup = new LookupK(name, nullptr);
-            heap_->allocate_continuation(lookup);
+            LookupK* lookup = new LookupK(name);
+            machine_->heap->allocate_continuation(lookup);
             return lookup;
         }
 
@@ -243,11 +243,20 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         return nullptr;
     }
 
-    // Create binary operation continuation
-    BinOpK* binop = new BinOpK(op_name, left, right);
-    heap_->allocate_continuation(binop);
+    // Look up the primitive function from environment
+    Value* op_val = machine_->env->lookup(op_name);
+    if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
+        error_message_ = std::string("Unknown operator: ") + op_name;
+        return nullptr;
+    }
 
-    return binop;
+    PrimitiveFn* prim_fn = op_val->data.primitive_fn;
+
+    // Create dyadic operation continuation
+    DyadicK* dyadic = new DyadicK(prim_fn, left, right);
+    machine_->heap->allocate_continuation(dyadic);
+
+    return dyadic;
 }
 
 // Get binding power for a token
