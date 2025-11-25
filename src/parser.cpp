@@ -181,19 +181,50 @@ Continuation* Parser::nud(const Token& token) {
             return inner;
         }
 
-        case TOK_MINUS: {
-            // Unary minus: parse as negative literal if followed by number
-            // Otherwise it's an error for now (monadic minus not yet implemented)
-            if (!at_end() && current().type == TOK_NUMBER) {
-                Token num = current();
-                advance();
-                double value = -num.number;
-                LiteralK* lit = new LiteralK(value);
-                machine_->heap->allocate_continuation(lit);
-                return lit;
+        case TOK_MINUS:
+        case TOK_PLUS:
+        case TOK_TIMES:
+        case TOK_POWER:
+        case TOK_DIVIDE: {
+            // Monadic operator in prefix position
+            // Parse the operand and create MonadicK continuation
+
+            // Determine operator name
+            const char* op_name = nullptr;
+            switch (token.type) {
+                case TOK_PLUS:   op_name = "+"; break;
+                case TOK_MINUS:  op_name = "-"; break;
+                case TOK_TIMES:  op_name = "×"; break;
+                case TOK_POWER:  op_name = "*"; break;
+                case TOK_DIVIDE: op_name = "÷"; break;
+                default: break;
             }
-            error_message_ = "Monadic operators not yet implemented";
-            return nullptr;
+
+            // Look up the primitive function
+            Value* op_val = machine_->env->lookup(op_name);
+            if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
+                error_message_ = std::string("Unknown operator: ") + op_name;
+                return nullptr;
+            }
+
+            PrimitiveFn* prim_fn = op_val->data.primitive_fn;
+
+            // Check that it has a monadic form
+            if (!prim_fn->monadic) {
+                error_message_ = std::string("Operator has no monadic form: ") + op_name;
+                return nullptr;
+            }
+
+            // Parse the operand with high binding power (monadic binds tighter than dyadic)
+            Continuation* operand = parse_expression(BP_OPERATOR + 50);
+            if (!operand) {
+                return nullptr;
+            }
+
+            // Create MonadicK continuation
+            MonadicK* monadic = new MonadicK(prim_fn, operand);
+            machine_->heap->allocate_continuation(monadic);
+            return monadic;
         }
 
         case TOK_NAME: {

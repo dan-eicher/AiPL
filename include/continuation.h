@@ -178,6 +178,22 @@ protected:
     Value* invoke(Machine* machine) override;
 };
 
+// Auxiliary continuation to apply monadic function after operand evaluated
+class ApplyMonadicK : public Continuation {
+public:
+    PrimitiveFn* prim_fn;
+
+    ApplyMonadicK(PrimitiveFn* fn)
+        : prim_fn(fn) {}
+
+    ~ApplyMonadicK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 // Auxiliary continuation to apply dyadic function after both operands evaluated
 class ApplyDyadicK : public Continuation {
 public:

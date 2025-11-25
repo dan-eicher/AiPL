@@ -103,10 +103,18 @@ void StrandK::mark(APLHeap* heap) {
 
 // MonadicK implementation
 Value* MonadicK::invoke(Machine* machine) {
-    // TODO: Implement with auxiliary continuation pattern like DyadicK
-    // For now, throw error
-    (void)machine;
-    throw std::runtime_error("MonadicK not yet implemented with trampoline");
+    // Monadic function application: evaluate operand, then apply function
+    // Strategy: push operand continuation, then push auxiliary to apply function
+
+    // Create auxiliary continuation to apply function after operand evaluates
+    ApplyMonadicK* apply = new ApplyMonadicK(prim_fn);
+    machine->heap->allocate_continuation(apply);
+
+    // Push in reverse order (stack is LIFO)
+    machine->push_kont(apply);    // Will execute after operand
+    machine->push_kont(operand);  // Evaluate operand now
+
+    return nullptr;  // Continue trampoline
 }
 
 void MonadicK::mark(APLHeap* heap) {
@@ -166,6 +174,27 @@ void EvalDyadicLeftK::mark(APLHeap* heap) {
     }
 }
 
+
+// ApplyMonadicK implementation
+Value* ApplyMonadicK::invoke(Machine* machine) {
+    // Operand has been evaluated - its value is in ctrl.value
+    Value* operand_val = machine->ctrl.value;
+
+    if (!prim_fn->monadic) {
+        throw std::runtime_error("Operator has no monadic form");
+    }
+
+    // Apply the monadic function
+    Value* result = prim_fn->monadic(operand_val);
+    machine->ctrl.set_value(result);
+
+    return nullptr;  // Continue trampoline
+}
+
+void ApplyMonadicK::mark(APLHeap* heap) {
+    // ApplyMonadicK has no Values to mark, only the function pointer
+    (void)heap;  // Unused
+}
 
 // ArgK implementation
 Value* ArgK::invoke(Machine* machine) {

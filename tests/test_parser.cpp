@@ -549,6 +549,131 @@ TEST_F(ParserTest, ParseUndefinedVariable) {
     EXPECT_EQ(result, nullptr);  // Should return nullptr on undefined variable
 }
 
+// ============================================================================
+// Monadic Operator Tests
+// ============================================================================
+
+// Test simple negation: -5 = -5
+TEST_F(ParserTest, ParseMonadicNegate) {
+    Continuation* k = parser->parse("-5");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+// Test negation with expression: -(2 + 3) = -5
+TEST_F(ParserTest, ParseMonadicNegateExpression) {
+    Continuation* k = parser->parse("-(2 + 3)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+// Test reciprocal: ÷4 = 0.25
+TEST_F(ParserTest, ParseMonadicReciprocal) {
+    Continuation* k = parser->parse("÷4");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.25);
+}
+
+// Test exponential: *0 = 1 (e^0)
+TEST_F(ParserTest, ParseMonadicExponential) {
+    Continuation* k = parser->parse("*0");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// Test exponential: *1 = e
+TEST_F(ParserTest, ParseMonadicExponentialE) {
+    Continuation* k = parser->parse("*1");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), 2.71828, 0.0001);
+}
+
+// Test identity/conjugate: +5 = 5
+TEST_F(ParserTest, ParseMonadicIdentity) {
+    Continuation* k = parser->parse("+5");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test signum: ×5 = 1, ×(-5) = -1, ×0 = 0
+TEST_F(ParserTest, ParseMonadicSignum) {
+    Continuation* k1 = parser->parse("×5");
+    ASSERT_NE(k1, nullptr);
+    Value* r1 = eval(k1);
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    Continuation* k2 = parser->parse("×(-5)");
+    ASSERT_NE(k2, nullptr);
+    Value* r2 = eval(k2);
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), -1.0);
+
+    Continuation* k3 = parser->parse("×0");
+    ASSERT_NE(k3, nullptr);
+    Value* r3 = eval(k3);
+    EXPECT_DOUBLE_EQ(r3->as_scalar(), 0.0);
+}
+
+// Test monadic with dyadic: 3 - -5 = 3 - (-5) = 8
+TEST_F(ParserTest, ParseMonadicInDyadicContext) {
+    Continuation* k = parser->parse("3 - -5");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
+// Test monadic with strand: (-1) 2 (-3) (parentheses disambiguate)
+TEST_F(ParserTest, ParseMonadicInStrand) {
+    Continuation* k = parser->parse("(-1) 2 (-3)");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::VECTOR);
+    EXPECT_EQ(result->rows(), 3);
+    Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
+}
+
+// Test double negation: --5 = 5
+TEST_F(ParserTest, ParseDoubleNegation) {
+    Continuation* k = parser->parse("--5");
+    ASSERT_NE(k, nullptr);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
