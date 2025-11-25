@@ -98,6 +98,43 @@ protected:
     Value* invoke(Machine* machine) override;
 };
 
+// AssignK - Assignment continuation for variable definition
+// Evaluates the expression, then binds the result to a variable name
+// Syntax: name ← expression
+class AssignK : public Continuation {
+public:
+    std::string var_name;       // Variable name to assign to (owned copy)
+    Continuation* expr;         // Expression to evaluate
+
+    AssignK(const char* name, Continuation* e)
+        : var_name(name), expr(e) {}
+
+    ~AssignK() override {
+        // Don't delete expr - it's GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for AssignK - performs the actual binding after expression is evaluated
+class PerformAssignK : public Continuation {
+public:
+    std::string var_name;       // Variable name to assign to
+
+    PerformAssignK(const char* name)
+        : var_name(name) {}
+
+    ~PerformAssignK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 // StrandK - Parse-time continuation for array strands
 // Stores a vector of continuations representing the strand elements
 // At runtime, evaluates each element and combines them into a vector Value*
@@ -286,6 +323,104 @@ public:
 
     // FrameK marks function boundaries
     bool is_function_boundary() const override { return true; }
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// ApplyFunctionK - Apply a function value (from a variable) to arguments
+// This implements the currying transformation: determines at runtime whether to use monadic or dyadic form
+// Parser creates this when it sees a function reference (variable) being applied but doesn't know which form
+//
+// Structure for "f x":     ApplyFunctionK(LookupK("f"), nullptr, LiteralK(x))  → monadic
+// Structure for "x f y":   ApplyFunctionK(LookupK("f"), LookupK("x"), LiteralK(y)) → dyadic
+//
+// At eval time, evaluates the function reference and arguments, then dispatches based on what's available
+class ApplyFunctionK : public Continuation {
+public:
+    Continuation* fn_cont;      // Continuation to get the function value (e.g., LookupK)
+    Continuation* left_arg;     // Left argument (nullptr for monadic)
+    Continuation* right_arg;    // Right argument (always present)
+
+    ApplyFunctionK(Continuation* fn, Continuation* left, Continuation* right)
+        : fn_cont(fn), left_arg(left), right_arg(right) {}
+
+    ~ApplyFunctionK() override {
+        // Don't delete - all are GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for ApplyFunctionK - evaluates left arg after right is done (dyadic case)
+class EvalApplyFunctionLeftK : public Continuation {
+public:
+    Continuation* fn_cont;
+    Continuation* left_arg;
+    Value* right_val;           // Saved right value (set at runtime)
+
+    EvalApplyFunctionLeftK(Continuation* fn, Continuation* left, Value* right)
+        : fn_cont(fn), left_arg(left), right_val(right) {}
+
+    ~EvalApplyFunctionLeftK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for ApplyFunctionK - evaluates function after arg is done (monadic case)
+class EvalApplyFunctionMonadicK : public Continuation {
+public:
+    Continuation* fn_cont;
+    Value* arg_val;             // Saved argument value (set at runtime)
+
+    EvalApplyFunctionMonadicK(Continuation* fn, Value* arg)
+        : fn_cont(fn), arg_val(arg) {}
+
+    ~EvalApplyFunctionMonadicK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for ApplyFunctionK - evaluates function after both args are done (dyadic case)
+class EvalApplyFunctionDyadicK : public Continuation {
+public:
+    Continuation* fn_cont;
+    Value* left_val;            // Saved left argument value (set at runtime)
+    Value* right_val;           // Saved right argument value
+
+    EvalApplyFunctionDyadicK(Continuation* fn, Value* left, Value* right)
+        : fn_cont(fn), left_val(left), right_val(right) {}
+
+    ~EvalApplyFunctionDyadicK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation to apply function after both args and function are evaluated
+class DispatchFunctionK : public Continuation {
+public:
+    Value* fn_val;              // The function value
+    Value* left_val;            // Left argument (nullptr for monadic)
+    Value* right_val;           // Right argument
+
+    DispatchFunctionK(Value* fn, Value* left, Value* right)
+        : fn_val(fn), left_val(left), right_val(right) {}
+
+    ~DispatchFunctionK() override {}
+
+    void mark(APLHeap* heap) override;
 
 protected:
     Value* invoke(Machine* machine) override;

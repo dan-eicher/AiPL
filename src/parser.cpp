@@ -12,6 +12,7 @@ namespace apl {
 // APL has uniform precedence, so all operators have the same binding power
 // This gives us right-to-left evaluation
 const int BP_NONE = 0;
+const int BP_ASSIGN = 5;         // Assignment has lowest precedence
 const int BP_OPERATOR = 10;      // All dyadic operators have same precedence
 const int BP_JUXTAPOSE = 100;    // Juxtaposition (strands) binds tightest
 
@@ -36,6 +37,7 @@ Continuation* Parser::parse(const std::string& input) {
     }
 
     // Parse expression starting with minimum binding power
+    // Assignment is handled naturally as a low-precedence infix operator
     Continuation* result = parse_expression(BP_NONE);
 
     if (!result) {
@@ -113,14 +115,17 @@ Continuation* Parser::parse_expression(int min_bp) {
         }
 
         if (is_juxtaposition) {
-            // Juxtaposition: recursively parse the right operand and form a strand
+            // Juxtaposition: recursively parse the right operand
             // For right-associativity, pass the same bp
             Continuation* right = parse_expression(bp);
             if (!right) {
                 return nullptr;
             }
 
-            // Combine left and right into a strand
+            // Simple strand formation - parser is type-agnostic
+            // Per Grammar G2, all values/functions share same syntactic category
+            // Juxtaposition ALWAYS means strand at parse time
+            // The semantic interpretation (function application vs strand) happens at eval time
             std::vector<Continuation*> elements;
 
             // If left is already a strand, extend it
@@ -243,7 +248,31 @@ Continuation* Parser::nud(const Token& token) {
 
 // Left denotation: handles infix position (binary operators)
 Continuation* Parser::led(Continuation* left, const Token& token) {
-    // Determine operator name
+    // Handle assignment specially
+    if (token.type == TOK_ASSIGN) {
+        // Left side must be a LookupK (variable name)
+        LookupK* lookup = dynamic_cast<LookupK*>(left);
+        if (!lookup) {
+            error_message_ = "Left side of assignment must be a variable name";
+            return nullptr;
+        }
+
+        // Parse the right side (the value to assign)
+        int bp = get_binding_power(token);
+        Continuation* right = parse_expression(bp);
+
+        if (!right) {
+            return nullptr;
+        }
+
+        // Create AssignK continuation
+        AssignK* assign = new AssignK(lookup->var_name.c_str(), right);
+        machine_->heap->allocate_continuation(assign);
+
+        return assign;
+    }
+
+    // Determine operator name for regular operators
     const char* op_name = nullptr;
 
     switch (token.type) {
@@ -294,7 +323,11 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 int Parser::get_binding_power(const Token& token) {
     // In APL, all operators have the same precedence
     // Right-to-left evaluation is achieved through right-associativity
+    // Assignment has lowest precedence
     switch (token.type) {
+        case TOK_ASSIGN:
+            return BP_ASSIGN;
+
         case TOK_PLUS:
         case TOK_MINUS:
         case TOK_TIMES:

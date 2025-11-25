@@ -55,6 +55,45 @@ void LookupK::mark(APLHeap* heap) {
     (void)heap;  // Unused
 }
 
+// AssignK implementation
+Value* AssignK::invoke(Machine* machine) {
+    // Assignment: evaluate expression, then bind to variable
+    // Use auxiliary continuation to capture the result
+
+    PerformAssignK* perform = new PerformAssignK(var_name.c_str());
+    machine->heap->allocate_continuation(perform);
+
+    machine->push_kont(perform);
+    machine->push_kont(expr);
+
+    return nullptr;  // Continue trampoline
+}
+
+void AssignK::mark(APLHeap* heap) {
+    if (expr) {
+        heap->mark_continuation(expr);
+    }
+}
+
+// PerformAssignK implementation
+Value* PerformAssignK::invoke(Machine* machine) {
+    // Expression has been evaluated - result is in ctrl.value
+    // Bind it to the variable name
+    Value* val = machine->ctrl.value;
+
+    machine->env->define(var_name.c_str(), val);
+
+    // Assignment expression returns the assigned value
+    machine->ctrl.set_value(val);
+
+    return nullptr;  // Continue trampoline
+}
+
+void PerformAssignK::mark(APLHeap* heap) {
+    // var_name is std::string, doesn't need GC marking
+    (void)heap;  // Unused
+}
+
 // StrandK implementation
 Value* StrandK::invoke(Machine* machine) {
     // Strand: evaluate elements right-to-left and collect into vector
@@ -304,6 +343,83 @@ Value* BuildStrandK::invoke(Machine* machine) {
         return nullptr;
     }
 
+    // CURRYING TRANSFORMATION (Georgeff et al. paper, page 121)
+    // Check if any element is a function - if so, apply it with proper permutation
+    // g' = λx. λy. if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
+    //
+    // Pattern matching for function application:
+    // [f x] -> monadic: f(x)
+    // [f x y] -> dyadic: x f y  (note: function is first in strand)
+    // [x f y] -> dyadic: x f y  (note: function is second in strand - "permute" reorders)
+    //
+    // The paper's "permute" function handles the reordering based on positions
+
+    // First, check if there's a function in the strand
+    PrimitiveFn* prim = nullptr;
+    int fn_index = -1;
+
+    for (size_t i = 0; i < values.size(); i++) {
+        if (values[i]->tag == ValueType::PRIMITIVE) {
+            prim = values[i]->data.primitive_fn;
+            fn_index = i;
+            break;
+        }
+    }
+
+    if (prim != nullptr) {
+        // Pattern: [f x] - monadic application
+        if (values.size() == 2 && fn_index == 0) {
+            Value* arg = values[1];
+
+            if (!prim->monadic) {
+                throw std::runtime_error("Function has no monadic form");
+            }
+
+            // Apply monadic function
+            Value* result = prim->monadic(arg);
+            result = machine->heap->allocate(result);
+            machine->ctrl.set_value(result);
+            return nullptr;
+        }
+
+        // Pattern: [f x y] - dyadic application (function first)
+        if (values.size() == 3 && fn_index == 0) {
+            Value* left_arg = values[1];
+            Value* right_arg = values[2];
+
+            if (!prim->dyadic) {
+                throw std::runtime_error("Function has no dyadic form");
+            }
+
+            // Apply dyadic function: x f y
+            Value* result = prim->dyadic(left_arg, right_arg);
+            result = machine->heap->allocate(result);
+            machine->ctrl.set_value(result);
+            return nullptr;
+        }
+
+        // Pattern: [x f y] - dyadic application (function in middle - APL infix notation)
+        if (values.size() == 3 && fn_index == 1) {
+            Value* left_arg = values[0];
+            Value* right_arg = values[2];
+
+            if (!prim->dyadic) {
+                throw std::runtime_error("Function has no dyadic form");
+            }
+
+            // Apply dyadic function: x f y
+            Value* result = prim->dyadic(left_arg, right_arg);
+            result = machine->heap->allocate(result);
+            machine->ctrl.set_value(result);
+            return nullptr;
+        }
+
+        // TODO: Higher-order operators and other patterns
+        // For now, fall through to regular vector formation (or error)
+        throw std::runtime_error("Unsupported function application pattern in strand");
+    }
+
+    // Regular vector formation (no function application)
     // Create a vector to hold the values
     size_t count = values.size();
     Eigen::VectorXd vec(count);
@@ -350,6 +466,177 @@ void FrameK::mark(APLHeap* heap) {
     // Mark return continuation
     if (return_k) {
         heap->mark_continuation(return_k);
+    }
+}
+
+// ApplyFunctionK implementation
+// Implements runtime dispatch for function application (currying transformation)
+Value* ApplyFunctionK::invoke(Machine* machine) {
+    // Strategy: Evaluate all components right-to-left, then dispatch based on what we got
+    // 1. Evaluate right_arg
+    // 2. Evaluate left_arg (if present)
+    // 3. Evaluate fn_cont to get the function value
+    // 4. Dispatch: if left_arg is null → monadic, else → dyadic
+
+    // Use auxiliary continuations to manage multi-step evaluation
+    // Similar to DyadicK but with runtime type checking
+
+    if (left_arg) {
+        // Dyadic case: evaluate right, then left, then function, then apply
+        EvalApplyFunctionLeftK* eval_left = new EvalApplyFunctionLeftK(fn_cont, left_arg, nullptr);
+        machine->heap->allocate_continuation(eval_left);
+
+        machine->push_kont(eval_left);
+        machine->push_kont(right_arg);
+    } else {
+        // Monadic case: evaluate right, then function, then apply
+        EvalApplyFunctionMonadicK* eval_fn = new EvalApplyFunctionMonadicK(fn_cont, nullptr);
+        machine->heap->allocate_continuation(eval_fn);
+
+        machine->push_kont(eval_fn);
+        machine->push_kont(right_arg);
+    }
+
+    return nullptr;
+}
+
+void ApplyFunctionK::mark(APLHeap* heap) {
+    if (fn_cont) {
+        heap->mark_continuation(fn_cont);
+    }
+    if (left_arg) {
+        heap->mark_continuation(left_arg);
+    }
+    if (right_arg) {
+        heap->mark_continuation(right_arg);
+    }
+}
+
+// EvalApplyFunctionLeftK implementation
+Value* EvalApplyFunctionLeftK::invoke(Machine* machine) {
+    // Right argument has been evaluated - save it
+    right_val = machine->ctrl.value;
+
+    // Now evaluate left argument, then function, then dispatch
+    // Create continuation that will evaluate function after left arg
+    EvalApplyFunctionDyadicK* eval_fn = new EvalApplyFunctionDyadicK(fn_cont, nullptr, right_val);
+    machine->heap->allocate_continuation(eval_fn);
+
+    machine->push_kont(eval_fn);
+    machine->push_kont(left_arg);
+
+    return nullptr;
+}
+
+void EvalApplyFunctionLeftK::mark(APLHeap* heap) {
+    if (fn_cont) {
+        heap->mark_continuation(fn_cont);
+    }
+    if (left_arg) {
+        heap->mark_continuation(left_arg);
+    }
+    if (right_val) {
+        heap->mark_value(right_val);
+    }
+}
+
+// EvalApplyFunctionMonadicK implementation
+Value* EvalApplyFunctionMonadicK::invoke(Machine* machine) {
+    // Argument has been evaluated - save it
+    arg_val = machine->ctrl.value;
+
+    // Now evaluate the function continuation, then dispatch (monadic case)
+    DispatchFunctionK* dispatch = new DispatchFunctionK(nullptr, nullptr, arg_val);
+    machine->heap->allocate_continuation(dispatch);
+
+    machine->push_kont(dispatch);
+    machine->push_kont(fn_cont);
+
+    return nullptr;
+}
+
+void EvalApplyFunctionMonadicK::mark(APLHeap* heap) {
+    if (fn_cont) {
+        heap->mark_continuation(fn_cont);
+    }
+    if (arg_val) {
+        heap->mark_value(arg_val);
+    }
+}
+
+// EvalApplyFunctionDyadicK implementation
+Value* EvalApplyFunctionDyadicK::invoke(Machine* machine) {
+    // Left argument has been evaluated - save it
+    left_val = machine->ctrl.value;
+
+    // Now evaluate the function continuation, then dispatch (dyadic case)
+    DispatchFunctionK* dispatch = new DispatchFunctionK(nullptr, left_val, right_val);
+    machine->heap->allocate_continuation(dispatch);
+
+    machine->push_kont(dispatch);
+    machine->push_kont(fn_cont);
+
+    return nullptr;
+}
+
+void EvalApplyFunctionDyadicK::mark(APLHeap* heap) {
+    if (fn_cont) {
+        heap->mark_continuation(fn_cont);
+    }
+    if (left_val) {
+        heap->mark_value(left_val);
+    }
+    if (right_val) {
+        heap->mark_value(right_val);
+    }
+}
+
+// DispatchFunctionK implementation
+// This is where the actual currying transformation happens:
+// g' = λx. λy. if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
+Value* DispatchFunctionK::invoke(Machine* machine) {
+    // Function has been evaluated - it's in ctrl.value
+    fn_val = machine->ctrl.value;
+
+    // Check that fn_val is actually a function
+    if (!fn_val->is_primitive()) {
+        // TODO: Handle closures and other function types
+        throw std::runtime_error("ApplyFunctionK: expected function value");
+    }
+
+    PrimitiveFn* prim_fn = fn_val->data.primitive_fn;
+
+    // Determine monadic vs dyadic based on what arguments we have
+    if (left_val == nullptr) {
+        // Monadic case: only right argument
+        if (!prim_fn->monadic) {
+            throw std::runtime_error("Function has no monadic form");
+        }
+
+        Value* result = prim_fn->monadic(right_val);
+        machine->ctrl.set_value(result);
+    } else {
+        // Dyadic case: both arguments
+        if (!prim_fn->dyadic) {
+            throw std::runtime_error("Function has no dyadic form");
+        }
+
+        Value* result = prim_fn->dyadic(left_val, right_val);
+        machine->ctrl.set_value(result);
+    }
+
+    return nullptr;
+}
+
+void DispatchFunctionK::mark(APLHeap* heap) {
+    if (fn_val) {
+        heap->mark_value(fn_val);
+    }
+    if (left_val) {
+        heap->mark_value(left_val);
+    }
+    if (right_val) {
+        heap->mark_value(right_val);
     }
 }
 

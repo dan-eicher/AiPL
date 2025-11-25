@@ -674,6 +674,111 @@ TEST_F(ParserTest, ParseDoubleNegation) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 }
 
+// ========== Assignment Tests ==========
+
+// Test basic assignment: x ← 5
+TEST_F(ParserTest, ParseBasicAssignment) {
+    Continuation* k = parser->parse("x ← 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+
+    // Check that x is now in the environment
+    Value* x = machine->env->lookup("x");
+    ASSERT_NE(x, nullptr);
+    EXPECT_TRUE(x->is_scalar());
+    EXPECT_DOUBLE_EQ(x->as_scalar(), 5.0);
+}
+
+// Test assignment with expression: y ← 3 + 4
+TEST_F(ParserTest, ParseAssignmentWithExpression) {
+    Continuation* k = parser->parse("y ← 3 + 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+
+    // Check environment
+    Value* y = machine->env->lookup("y");
+    ASSERT_NE(y, nullptr);
+    EXPECT_DOUBLE_EQ(y->as_scalar(), 7.0);
+}
+
+// Test variable lookup after assignment
+TEST_F(ParserTest, AssignmentThenLookup) {
+    // First assign
+    Continuation* k1 = parser->parse("z ← 10");
+    ASSERT_NE(k1, nullptr);
+    eval(k1);
+
+    // Then use the variable
+    Continuation* k2 = parser->parse("z");
+    ASSERT_NE(k2, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k2);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test variable in expression after assignment: z + 5
+TEST_F(ParserTest, AssignmentThenUseInExpression) {
+    // Assign z ← 10
+    Continuation* k1 = parser->parse("z ← 10");
+    ASSERT_NE(k1, nullptr);
+    eval(k1);
+
+    // Use z in expression
+    Continuation* k2 = parser->parse("z + 5");
+    ASSERT_NE(k2, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k2);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+// Test function assignment and monadic application: f ← +, then f 3
+TEST_F(ParserTest, FunctionAssignmentMonadic) {
+    // First, manually add + to a variable for testing
+    // (We can't parse "f ← +" yet because + is a token, not a name)
+    Value* plus_fn = machine->env->lookup("+");
+    ASSERT_NE(plus_fn, nullptr) << "+ should be in global environment";
+    machine->env->define("f", plus_fn);
+
+    // Now parse "f 3" - should apply f (which is +) monadically to 3
+    // Monadic + is identity, so result should be 3
+    Continuation* k = parser->parse("f 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+// Test function assignment and dyadic application: f ← +, then 2 f 3
+TEST_F(ParserTest, FunctionAssignmentDyadic) {
+    // Manually add + to variable f
+    Value* plus_fn = machine->env->lookup("+");
+    ASSERT_NE(plus_fn, nullptr);
+    machine->env->define("f", plus_fn);
+
+    // Parse "2 f 3" - should apply f (which is +) dyadically: 2 + 3 = 5
+    Continuation* k = parser->parse("2 f 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
