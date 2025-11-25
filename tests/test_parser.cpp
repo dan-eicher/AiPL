@@ -779,6 +779,93 @@ TEST_F(ParserTest, FunctionAssignmentDyadic) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 }
 
+// Array operation tests
+TEST_F(ParserTest, IotaMonadic) {
+    // Parse "⍳ 5" - should generate vector [0 1 2 3 4]
+    Continuation* k = parser->parse("⍳ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);
+}
+
+TEST_F(ParserTest, RavelMonadic) {
+    // Parse ", 1 2 3" - ravel of vector is identity
+    Continuation* k = parser->parse(", 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+TEST_F(ParserTest, ShapeMonadic) {
+    // Parse "⍴ 1 2 3" - should return shape [3]
+    Continuation* k = parser->parse("⍴ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 1);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 3.0);
+}
+
+TEST_F(ParserTest, ReshapeDyadic) {
+    // Parse "2 3 ⍴ ⍳ 6" - reshape iota(6) into 2x3 matrix
+    Continuation* k = parser->parse("2 3 ⍴ ⍳ 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_FALSE(result->is_vector());  // Should be a 2D matrix
+    EXPECT_FALSE(result->is_scalar());
+
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 5.0);
+}
+
+TEST_F(ParserTest, CatenateDyadic) {
+    // Parse "1 2 , 3 4" - concatenate two vectors
+    Continuation* k = parser->parse("1 2 , 3 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

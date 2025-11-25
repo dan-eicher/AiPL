@@ -190,18 +190,24 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_PLUS:
         case TOK_TIMES:
         case TOK_POWER:
-        case TOK_DIVIDE: {
+        case TOK_DIVIDE:
+        case TOK_RESHAPE:
+        case TOK_RAVEL:
+        case TOK_IOTA: {
             // Monadic operator in prefix position
             // Parse the operand and create MonadicK continuation
 
             // Determine operator name
             const char* op_name = nullptr;
             switch (token.type) {
-                case TOK_PLUS:   op_name = "+"; break;
-                case TOK_MINUS:  op_name = "-"; break;
-                case TOK_TIMES:  op_name = "×"; break;
-                case TOK_POWER:  op_name = "*"; break;
-                case TOK_DIVIDE: op_name = "÷"; break;
+                case TOK_PLUS:    op_name = "+"; break;
+                case TOK_MINUS:   op_name = "-"; break;
+                case TOK_TIMES:   op_name = "×"; break;
+                case TOK_POWER:   op_name = "*"; break;
+                case TOK_DIVIDE:  op_name = "÷"; break;
+                case TOK_RESHAPE: op_name = "⍴"; break;
+                case TOK_RAVEL:   op_name = ","; break;
+                case TOK_IOTA:    op_name = "⍳"; break;
                 default: break;
             }
 
@@ -289,6 +295,12 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         case TOK_DIVIDE:
             op_name = "÷";
             break;
+        case TOK_RESHAPE:
+            op_name = "⍴";
+            break;
+        case TOK_RAVEL:
+            op_name = ",";
+            break;
         default:
             error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
             return nullptr;
@@ -333,6 +345,9 @@ int Parser::get_binding_power(const Token& token) {
         case TOK_TIMES:
         case TOK_POWER:  // * is an alias for ×
         case TOK_DIVIDE:
+        case TOK_RESHAPE:
+        case TOK_RAVEL:
+        case TOK_IOTA:
             return BP_OPERATOR;
 
         // Closing delimiters should never be treated as infix
