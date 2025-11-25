@@ -216,6 +216,42 @@ protected:
     Value* invoke(Machine* machine) override;
 };
 
+// Auxiliary continuation for StrandK - evaluates remaining strand elements right-to-left
+// Maintains an accumulator of already-evaluated values (in left-to-right order)
+// Evaluates next element from the right, prepends to accumulator, repeats
+class EvalStrandElementK : public Continuation {
+public:
+    std::vector<Continuation*> remaining_elements;  // Elements left to evaluate (left-to-right order)
+    std::vector<Value*> evaluated_values;           // Values evaluated so far (left-to-right order)
+
+    EvalStrandElementK(const std::vector<Continuation*>& remaining, const std::vector<Value*>& evaluated)
+        : remaining_elements(remaining), evaluated_values(evaluated) {}
+
+    ~EvalStrandElementK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation to build the final strand vector from collected values
+// All elements have been evaluated, now construct the vector Value
+class BuildStrandK : public Continuation {
+public:
+    std::vector<Value*> values;  // All evaluated strand elements (left-to-right order)
+
+    BuildStrandK(const std::vector<Value*>& vals)
+        : values(vals) {}
+
+    ~BuildStrandK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 // FrameK - Stack frame continuation for function calls
 // Marks function boundaries and saves return continuation
 class FrameK : public Continuation {

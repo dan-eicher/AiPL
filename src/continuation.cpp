@@ -57,11 +57,39 @@ void LookupK::mark(APLHeap* heap) {
 
 // StrandK implementation
 Value* StrandK::invoke(Machine* machine) {
-    // TODO: Implement with collector continuation pattern
-    // Needs auxiliary continuations to evaluate each element and collect results
-    // For now, throw error
-    (void)machine;
-    throw std::runtime_error("StrandK not yet implemented with trampoline");
+    // Strand: evaluate elements right-to-left and collect into vector
+    // Strategy: use auxiliary continuations to maintain accumulator
+
+    if (elements.empty()) {
+        // Empty strand - create empty vector
+        Eigen::VectorXd empty_vec(0);
+        Value* val = Value::from_vector(empty_vec);
+        val = machine->heap->allocate(val);
+        machine->ctrl.set_value(val);
+        return nullptr;
+    }
+
+    if (elements.size() == 1) {
+        // Single element - just evaluate it directly (no need for vector wrapper)
+        machine->push_kont(elements[0]);
+        return nullptr;
+    }
+
+    // Multiple elements: evaluate right-to-left using auxiliary continuation
+    // Start by evaluating the rightmost element
+    // The remaining elements will be evaluated by EvalStrandElementK
+
+    std::vector<Continuation*> remaining(elements.begin(), elements.end() - 1);
+    std::vector<Value*> evaluated;  // Empty accumulator
+
+    EvalStrandElementK* eval_next = new EvalStrandElementK(remaining, evaluated);
+    machine->heap->allocate_continuation(eval_next);
+
+    // Push in reverse order (stack is LIFO)
+    machine->push_kont(eval_next);         // Will execute after rightmost element
+    machine->push_kont(elements.back());   // Evaluate rightmost element now
+
+    return nullptr;  // Continue trampoline
 }
 
 void StrandK::mark(APLHeap* heap) {
@@ -185,6 +213,96 @@ void ApplyDyadicK::mark(APLHeap* heap) {
     // Mark the saved right value
     if (right_val) {
         heap->mark_value(right_val);
+    }
+}
+
+// EvalStrandElementK implementation
+Value* EvalStrandElementK::invoke(Machine* machine) {
+    // An element has just been evaluated - its value is in ctrl.value
+    // Add it to the FRONT of evaluated_values (we're going right-to-left)
+    Value* current_val = machine->ctrl.value;
+    evaluated_values.insert(evaluated_values.begin(), current_val);
+
+    if (remaining_elements.empty()) {
+        // No more elements to evaluate - build the final strand
+        BuildStrandK* build = new BuildStrandK(evaluated_values);
+        machine->heap->allocate_continuation(build);
+        machine->push_kont(build);
+        return nullptr;
+    }
+
+    // More elements to evaluate - take the rightmost remaining element
+    Continuation* next_elem = remaining_elements.back();
+    std::vector<Continuation*> new_remaining(remaining_elements.begin(), remaining_elements.end() - 1);
+
+    // Create new EvalStrandElementK for the next iteration
+    EvalStrandElementK* eval_next = new EvalStrandElementK(new_remaining, evaluated_values);
+    machine->heap->allocate_continuation(eval_next);
+
+    // Push in reverse order
+    machine->push_kont(eval_next);   // Will execute after next element
+    machine->push_kont(next_elem);   // Evaluate next element now
+
+    return nullptr;  // Continue trampoline
+}
+
+void EvalStrandElementK::mark(APLHeap* heap) {
+    // Mark remaining continuations
+    for (Continuation* elem : remaining_elements) {
+        if (elem) {
+            heap->mark_continuation(elem);
+        }
+    }
+
+    // Mark evaluated values
+    for (Value* val : evaluated_values) {
+        if (val) {
+            heap->mark_value(val);
+        }
+    }
+}
+
+// BuildStrandK implementation
+Value* BuildStrandK::invoke(Machine* machine) {
+    // All elements have been evaluated - build the vector
+    // values are already in left-to-right order
+
+    if (values.empty()) {
+        Eigen::VectorXd empty_vec(0);
+        Value* val = Value::from_vector(empty_vec);
+        val = machine->heap->allocate(val);
+        machine->ctrl.set_value(val);
+        return nullptr;
+    }
+
+    // Create a vector to hold the values
+    size_t count = values.size();
+    Eigen::VectorXd vec(count);
+
+    for (size_t i = 0; i < count; i++) {
+        Value* val = values[i];
+        if (val->is_scalar()) {
+            vec(i) = val->as_scalar();
+        } else {
+            // For now, if element is not a scalar, we have a problem
+            // APL allows nested arrays, but we haven't implemented that yet
+            throw std::runtime_error("Strand elements must be scalars (nested arrays not yet implemented)");
+        }
+    }
+
+    Value* result = Value::from_vector(vec);
+    result = machine->heap->allocate(result);
+    machine->ctrl.set_value(result);
+
+    return nullptr;  // Continue trampoline
+}
+
+void BuildStrandK::mark(APLHeap* heap) {
+    // Mark all values
+    for (Value* val : values) {
+        if (val) {
+            heap->mark_value(val);
+        }
     }
 }
 
