@@ -45,3 +45,8 @@ add_test(NAME PrimitivesTest COMMAND test_primitives)
 add_executable(test_parser test_parser.cpp)
 target_link_libraries(test_parser apl_vm GTest::gtest)
 add_test(NAME ParserTest COMMAND test_parser)
+
+# Statement tests (Phase 3.3)
+add_executable(test_statements test_statements.cpp)
+target_link_libraries(test_statements apl_vm GTest::gtest)
+add_test(NAME StatementTest COMMAND test_statements)

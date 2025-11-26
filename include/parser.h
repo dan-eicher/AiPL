@@ -23,6 +23,11 @@ public:
     // Returns nullptr on parse failure
     Continuation* parse(const std::string& input);
 
+    // Parse a multi-statement program (Phase 3.3)
+    // Statements separated by newlines or diamonds (⋄)
+    // Returns a SeqK continuation or nullptr on parse failure
+    Continuation* parse_program(const std::string& input);
+
     // Get the last error message (if parse failed)
     const std::string& get_error() const { return error_message_; }
 
@@ -47,6 +52,10 @@ private:
     const Token& current() const { return current_token_; }
     void advance();  // Calls lexer->next_token()
     bool at_end() const { return current_token_.type == TOK_EOF; }
+
+    // Statement separator helpers (Phase 3.3)
+    void skip_separators();  // Skip newlines, diamonds, and comments
+    bool is_separator(const Token& token) const;
 };
 
 } // namespace apl

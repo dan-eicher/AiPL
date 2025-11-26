@@ -426,4 +426,42 @@ protected:
     Value* invoke(Machine* machine) override;
 };
 
+// SeqK - Sequence continuation for executing multiple statements
+// Executes statements in order, left-to-right
+// The result of the last statement becomes the final result
+class SeqK : public Continuation {
+public:
+    std::vector<Continuation*> statements;  // Statements to execute in order
+
+    SeqK(const std::vector<Continuation*>& stmts)
+        : statements(stmts) {}
+
+    ~SeqK() override {
+        // Don't delete statements - they're GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for SeqK - executes remaining statements
+// Maintains index of next statement to execute
+class ExecNextStatementK : public Continuation {
+public:
+    std::vector<Continuation*> statements;  // All statements
+    size_t next_index;                      // Index of next statement to execute
+
+    ExecNextStatementK(const std::vector<Continuation*>& stmts, size_t idx)
+        : statements(stmts), next_index(idx) {}
+
+    ~ExecNextStatementK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 } // namespace apl

@@ -640,4 +640,70 @@ void DispatchFunctionK::mark(APLHeap* heap) {
     }
 }
 
+// SeqK implementation - execute statements in sequence
+Value* SeqK::invoke(Machine* machine) {
+    if (statements.empty()) {
+        // Empty sequence returns null/unit value (scalar 0)
+        Value* val = machine->heap->allocate_scalar(0.0);
+        machine->ctrl.set_value(val);
+        return nullptr;
+    }
+
+    if (statements.size() == 1) {
+        // Single statement - just push it directly
+        machine->push_kont(statements[0]);
+        return nullptr;
+    }
+
+    // Multiple statements - push auxiliary continuation and first statement
+    // ExecNextStatementK will handle the remaining statements
+    auto* next_k = new ExecNextStatementK(statements, 1);
+    machine->heap->allocate_continuation(next_k);
+    machine->push_kont(next_k);
+    machine->push_kont(statements[0]);
+
+    return nullptr;
+}
+
+void SeqK::mark(APLHeap* heap) {
+    for (Continuation* stmt : statements) {
+        if (stmt) {
+            heap->mark_continuation(stmt);
+        }
+    }
+}
+
+// ExecNextStatementK implementation - execute remaining statements
+Value* ExecNextStatementK::invoke(Machine* machine) {
+    // The previous statement has been executed and its result is in machine->ctrl.value
+    // We discard that result (unless it's the last statement)
+
+    if (next_index >= statements.size()) {
+        // All statements executed - current value is the result
+        return nullptr;
+    }
+
+    if (next_index == statements.size() - 1) {
+        // Last statement - just push it
+        machine->push_kont(statements[next_index]);
+        return nullptr;
+    }
+
+    // More statements to execute - push continuation for next iteration
+    auto* next_k = new ExecNextStatementK(statements, next_index + 1);
+    machine->heap->allocate_continuation(next_k);
+    machine->push_kont(next_k);
+    machine->push_kont(statements[next_index]);
+
+    return nullptr;
+}
+
+void ExecNextStatementK::mark(APLHeap* heap) {
+    for (Continuation* stmt : statements) {
+        if (stmt) {
+            heap->mark_continuation(stmt);
+        }
+    }
+}
+
 } // namespace apl

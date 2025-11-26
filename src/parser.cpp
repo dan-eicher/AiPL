@@ -82,6 +82,12 @@ Continuation* Parser::parse_expression(int min_bp) {
     // Continue while the next operator has higher binding power
     while (!at_end()) {
         Token next = current();
+
+        // Phase 3.3: Stop if we hit a statement separator
+        if (is_separator(next)) {
+            break;
+        }
+
         int bp = get_binding_power(next);
 
         // Check for juxtaposition (implicit strand formation)
@@ -365,6 +371,75 @@ void Parser::advance() {
     if (lexer_ && !at_end()) {
         current_token_ = lexer_->next_token();
     }
+}
+
+// Check if token is a statement separator (Phase 3.3)
+bool Parser::is_separator(const Token& token) const {
+    return token.type == TOK_NEWLINE ||
+           token.type == TOK_DIAMOND ||
+           token.type == TOK_COMMENT;
+}
+
+// Skip statement separators (newlines, diamonds, comments)
+void Parser::skip_separators() {
+    while (!at_end() && is_separator(current_token_)) {
+        advance();
+    }
+}
+
+// Parse a multi-statement program (Phase 3.3)
+Continuation* Parser::parse_program(const std::string& input) {
+    error_message_.clear();
+
+    // Keep input alive for lexer lifetime
+    input_ = input;
+
+    // Create lexer for on-demand tokenization
+    lexer_ = new Lexer(input_.c_str());
+
+    // Get first token
+    current_token_ = lexer_->next_token();
+
+    if (current_token_.type == TOK_ERROR) {
+        error_message_ = "Lexer error";
+        delete lexer_;
+        lexer_ = nullptr;
+        return nullptr;
+    }
+
+    // Skip any leading separators
+    skip_separators();
+
+    std::vector<Continuation*> statements;
+
+    // Parse statements until EOF
+    while (!at_end()) {
+        // Parse one statement (expression)
+        Continuation* stmt = parse_expression(BP_NONE);
+
+        if (!stmt) {
+            if (error_message_.empty()) {
+                error_message_ = "Failed to parse statement";
+            }
+            delete lexer_;
+            lexer_ = nullptr;
+            return nullptr;
+        }
+
+        statements.push_back(stmt);
+
+        // Skip statement separators
+        skip_separators();
+    }
+
+    delete lexer_;
+    lexer_ = nullptr;
+
+    // Always wrap in SeqK for consistency
+    // SeqK handles empty and single-statement cases efficiently
+    auto* seq = new SeqK(statements);
+    machine_->heap->allocate_continuation(seq);
+    return seq;
 }
 
 } // namespace apl
