@@ -2,6 +2,7 @@
 
 #include "continuation.h"
 #include "machine.h"
+#include "completion.h"
 
 namespace apl {
 
@@ -951,6 +952,63 @@ void ForIterateK::mark(APLHeap* heap) {
     if (body) {
         heap->mark_continuation(body);
     }
+}
+
+// LeaveK implementation - exit from loop
+Value* LeaveK::invoke(Machine* machine) {
+    // Create BREAK completion record
+    auto* comp = APLCompletion::break_completion(nullptr);
+    machine->ctrl.set_completion(comp);
+
+    // The completion will be handled by the machine's trampoline
+    return nullptr;
+}
+
+void LeaveK::mark(APLHeap* heap) {
+    // LeaveK has no references
+    (void)heap;
+}
+
+// ReturnK implementation - return from function
+Value* ReturnK::invoke(Machine* machine) {
+    if (value_expr) {
+        // Need to evaluate the return value first
+        // Push auxiliary continuation to create RETURN after evaluation
+        auto* create_return_k = new CreateReturnK();
+        machine->heap->allocate_continuation(create_return_k);
+        machine->push_kont(create_return_k);
+        machine->push_kont(value_expr);
+    } else {
+        // No value - return 0
+        Value* zero = machine->heap->allocate_scalar(0.0);
+        auto* comp = APLCompletion::return_value(zero);
+        machine->ctrl.set_completion(comp);
+    }
+
+    return nullptr;
+}
+
+void ReturnK::mark(APLHeap* heap) {
+    if (value_expr) {
+        heap->mark_continuation(value_expr);
+    }
+}
+
+// CreateReturnK implementation - create RETURN completion from evaluated value
+Value* CreateReturnK::invoke(Machine* machine) {
+    // Value is in machine->ctrl.value
+    Value* return_val = machine->ctrl.value;
+
+    // Create RETURN completion record
+    auto* comp = APLCompletion::return_value(return_val);
+    machine->ctrl.set_completion(comp);
+
+    return nullptr;
+}
+
+void CreateReturnK::mark(APLHeap* heap) {
+    // CreateReturnK has no references
+    (void)heap;
 }
 
 } // namespace apl

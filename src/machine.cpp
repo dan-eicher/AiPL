@@ -54,6 +54,7 @@ void Machine::handle_completion() {
             // Normal completion - just extract the value and continue
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
+            delete comp;
             break;
 
         case CompletionType::RETURN: {
@@ -70,6 +71,7 @@ void Machine::handle_completion() {
             // Set value and clear completion
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
+            delete comp;
             break;
         }
 
@@ -88,6 +90,7 @@ void Machine::handle_completion() {
             pop_kont();  // Remove the loop continuation
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
+            delete comp;
             break;
         }
 
@@ -105,6 +108,7 @@ void Machine::handle_completion() {
             // For CONTINUE, we re-invoke the loop continuation
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
+            delete comp;
 
             // The loop continuation will handle the continue
             Continuation* loop_k = kont_stack.back();
@@ -114,13 +118,14 @@ void Machine::handle_completion() {
             break;
         }
 
-        case CompletionType::THROW:
+        case CompletionType::THROW: {
             // For now, just throw a C++ exception
             // Later phases will implement proper APL error handling
-            throw std::runtime_error(
-                std::string("APL Error: ") +
-                (comp->target ? comp->target : "unspecified")
-            );
+            std::string error_msg = std::string("APL Error: ") +
+                (comp->target ? comp->target : "unspecified");
+            delete comp;
+            throw std::runtime_error(error_msg);
+        }
     }
 }
 
@@ -140,9 +145,9 @@ bool Machine::unwind_to_boundary(bool (*predicate)(Continuation*), const char* l
             }
 
             // Unwind everything after this point
+            // Don't delete - continuations are GC-managed
             while (kont_stack.back() != k) {
-                Continuation* to_remove = pop_kont();
-                delete to_remove;
+                pop_kont();
             }
 
             return true;

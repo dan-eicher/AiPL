@@ -13,6 +13,7 @@ PrimitiveFn prim_minus   = { "-", fn_negate, fn_subtract };
 PrimitiveFn prim_times   = { "×", fn_signum, fn_multiply };
 PrimitiveFn prim_divide  = { "÷", fn_reciprocal, fn_divide };
 PrimitiveFn prim_star    = { "*", fn_exponential, fn_power };
+PrimitiveFn prim_equal   = { "=", nullptr, fn_equal };  // No monadic form for equals
 
 // Array operation primitives
 PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
@@ -262,6 +263,57 @@ Value* fn_power(Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result = lmat->array().pow(rmat->array());
     // Preserve vector/matrix distinction
+    if (lhs->is_vector() && rhs->is_vector()) {
+        return Value::from_vector(result.col(0));
+    }
+    return Value::from_matrix(result);
+}
+
+// Equality (=)
+Value* fn_equal(Value* lhs, Value* rhs) {
+    // Fast path: scalar = scalar
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        return Value::from_scalar(lhs->data.scalar == rhs->data.scalar ? 1.0 : 0.0);
+    }
+
+    // Scalar extension
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar == rmat->data()[i]) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
+        return Value::from_matrix(result);
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] == rhs->data.scalar) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            return Value::from_vector(result.col(0));
+        }
+        return Value::from_matrix(result);
+    }
+
+    // Array = Array: element-wise equality
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        throw std::runtime_error("LENGTH ERROR: mismatched shapes in equality");
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] == rmat->data()[i]) ? 1.0 : 0.0;
+    }
+
     if (lhs->is_vector() && rhs->is_vector()) {
         return Value::from_vector(result.col(0));
     }

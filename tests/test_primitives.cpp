@@ -173,6 +173,54 @@ TEST(PrimitivesTest, PowerScalars) {
     delete result;
 }
 
+TEST(PrimitivesTest, EqualScalars) {
+    Value* a = Value::from_scalar(5.0);
+    Value* b = Value::from_scalar(5.0);
+    Value* result = fn_equal(a, b);
+
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // True
+
+    delete a;
+    delete b;
+    delete result;
+}
+
+TEST(PrimitivesTest, NotEqualScalars) {
+    Value* a = Value::from_scalar(5.0);
+    Value* b = Value::from_scalar(3.0);
+    Value* result = fn_equal(a, b);
+
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // False
+
+    delete a;
+    delete b;
+    delete result;
+}
+
+TEST(PrimitivesTest, EqualVectors) {
+    Eigen::VectorXd vec_a(3);
+    vec_a << 1.0, 2.0, 3.0;
+    Eigen::VectorXd vec_b(3);
+    vec_b << 1.0, 5.0, 3.0;
+
+    Value* a = Value::from_vector(vec_a);
+    Value* b = Value::from_vector(vec_b);
+    Value* result = fn_equal(a, b);
+
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    ASSERT_EQ(res_mat->size(), 3);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 1.0);  // 1=1 is true
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);  // 2=5 is false
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 1.0);  // 3=3 is true
+
+    delete a;
+    delete b;
+    delete result;
+}
+
 // ============================================================================
 // Monadic Arithmetic Tests
 // ============================================================================

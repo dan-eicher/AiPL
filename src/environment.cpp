@@ -30,6 +30,7 @@ void init_global_environment(Environment* env) {
     env->define("×", Value::from_primitive(&prim_times));
     env->define("÷", Value::from_primitive(&prim_divide));
     env->define("*", Value::from_primitive(&prim_star));
+    env->define("=", Value::from_primitive(&prim_equal));
 
     // Array operations
     env->define("⍴", Value::from_primitive(&prim_rho));

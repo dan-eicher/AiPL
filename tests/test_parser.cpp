@@ -866,6 +866,44 @@ TEST_F(ParserTest, CatenateDyadic) {
     EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
 }
 
+TEST_F(ParserTest, EqualDyadicTrue) {
+    // Parse "5 = 5" - equality test (true)
+    Continuation* k = parser->parse("5 = 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 1 = true
+}
+
+TEST_F(ParserTest, EqualDyadicFalse) {
+    // Parse "5 = 3" - equality test (false)
+    Continuation* k = parser->parse("5 = 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 0 = false
+}
+
+TEST_F(ParserTest, EqualDyadicVector) {
+    // Parse "1 2 3 = 1 5 3" - element-wise equality
+    Continuation* k = parser->parse("1 2 3 = 1 5 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 1=1 true
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 2=5 false
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // 3=3 true
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -517,6 +517,89 @@ TEST_F(StatementTest, ForMultipleStatements) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 33.0);
 }
 
+// ============================================================================
+// Leave/Return Tests
+// ============================================================================
+
+// Test :Leave from While loop
+TEST_F(StatementTest, LeaveFromWhile) {
+    Continuation* k = parser->parse_program(
+        "i ← 5\n"
+        ":While 1\n"
+        "  i ← i - 1\n"
+        "  :If i\n"
+        "    :Leave\n"
+        "  :EndIf\n"
+        ":EndWhile\n"
+        "i"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // Loop exits when i becomes 0 after decrement, leaving i at 0
+    // Wait no - we decrement first, then check. So: i=5, dec to 4 (truthy, Leave)
+    // After :Leave, we still need to evaluate final 'i' statement
+    ASSERT_NE(result, nullptr) << "Result should not be null after Leave";
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+}
+
+// Test :Leave from For loop
+TEST_F(StatementTest, LeaveFromFor) {
+    Continuation* k = parser->parse_program(
+        "sum ← 0\n"
+        ":For x :In 10 20 30 40 50\n"
+        "  sum ← sum + x\n"
+        "  :If sum = 60\n"
+        "    :Leave\n"
+        "  :EndIf\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // sum progression: 10, 30, 60
+    // When sum=60: sum=60 is 1 (truthy), Leave
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 60.0);
+}
+
+// Test :Leave from nested loops (exits innermost)
+TEST_F(StatementTest, LeaveFromNested) {
+    Continuation* k = parser->parse_program(
+        "count ← 0\n"
+        ":For i :In 1 2 3\n"
+        "  :For j :In 1 2 3\n"
+        "    count ← count + 1\n"
+        "    :If count - 2\n"
+        "      :Leave\n"
+        "    :EndIf\n"
+        "  :EndFor\n"
+        ":EndFor\n"
+        "count"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // First inner loop: count=1 (1-2=-1, truthy, Leave), exits with count=1
+    // Wait, we want to test nested loop exit, so let's do it differently
+    // Inner loop: j=1, count=1 (1-2=-1, truthy, Leave after first iteration)
+    // This would exit too early. Let me reconsider...
+    // Actually: count=1, check 1-2=-1 (truthy), Leave → count=1
+    // Then second outer: count=2, check 2-2=0 (falsy), continue
+    // count=3, check 3-2=1 (truthy), Leave → count=3
+    // Third outer: count=4, check 4-2=2 (truthy), Leave → count=4
+    // Total: 1, 3, 4 → final count=4
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

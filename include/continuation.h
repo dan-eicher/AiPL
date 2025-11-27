@@ -544,6 +544,9 @@ public:
 
     void mark(APLHeap* heap) override;
 
+    // CheckWhileCondK also marks loop boundaries for :Leave
+    bool is_loop_boundary() const override { return true; }
+
 protected:
     Value* invoke(Machine* machine) override;
 };
@@ -585,6 +588,57 @@ public:
         : var_name(var), array(arr), body(loop_body), index(idx) {}
 
     ~ForIterateK() override {}
+
+    void mark(APLHeap* heap) override;
+
+    // ForIterateK also marks loop boundaries for :Leave
+    bool is_loop_boundary() const override { return true; }
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// LeaveK - Exit from loop (Phase 3.3.5)
+// Syntax: :Leave
+// Creates BREAK completion record to unwind to loop boundary
+class LeaveK : public Continuation {
+public:
+    LeaveK() {}
+
+    ~LeaveK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// ReturnK - Return from function (Phase 3.3.5)
+// Syntax: :Return [value]
+// Creates RETURN completion record to unwind to function boundary
+class ReturnK : public Continuation {
+public:
+    Continuation* value_expr;    // Optional value to return (nullptr for unit)
+
+    ReturnK(Continuation* val = nullptr)
+        : value_expr(val) {}
+
+    ~ReturnK() override {
+        // Don't delete value_expr - it's GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for ReturnK - creates RETURN completion after value is evaluated
+class CreateReturnK : public Continuation {
+public:
+    CreateReturnK() {}
+
+    ~CreateReturnK() override {}
 
     void mark(APLHeap* heap) override;
 

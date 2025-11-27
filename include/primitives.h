@@ -24,6 +24,7 @@ Value* fn_subtract(Value* lhs, Value* rhs);  // - dyadic (subtraction)
 Value* fn_multiply(Value* lhs, Value* rhs);  // × dyadic (multiplication)
 Value* fn_divide(Value* lhs, Value* rhs);    // ÷ dyadic (division)
 Value* fn_power(Value* lhs, Value* rhs);     // * dyadic (power)
+Value* fn_equal(Value* lhs, Value* rhs);     // = dyadic (equality)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -31,6 +32,7 @@ extern PrimitiveFn prim_minus;     // - symbol
 extern PrimitiveFn prim_times;     // × symbol
 extern PrimitiveFn prim_divide;    // ÷ symbol
 extern PrimitiveFn prim_star;      // * symbol
+extern PrimitiveFn prim_equal;     // = symbol
 
 // Array operation functions
 Value* fn_shape(Value* omega);                    // ⍴ monadic (get shape)

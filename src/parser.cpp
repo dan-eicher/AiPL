@@ -199,7 +199,8 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_DIVIDE:
         case TOK_RESHAPE:
         case TOK_RAVEL:
-        case TOK_IOTA: {
+        case TOK_IOTA:
+        case TOK_EQUAL: {
             // Monadic operator in prefix position
             // Parse the operand and create MonadicK continuation
 
@@ -214,6 +215,7 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_RESHAPE: op_name = "⍴"; break;
                 case TOK_RAVEL:   op_name = ","; break;
                 case TOK_IOTA:    op_name = "⍳"; break;
+                case TOK_EQUAL:   op_name = "="; break;
                 default: break;
             }
 
@@ -418,6 +420,33 @@ Continuation* Parser::nud(const Token& token) {
             return for_k;
         }
 
+        case TOK_LEAVE: {
+            // :Leave - exit from loop
+            LeaveK* leave_k = new LeaveK();
+            machine_->heap->allocate_continuation(leave_k);
+            return leave_k;
+        }
+
+        case TOK_RETURN: {
+            // :Return [value] - return from function
+            skip_separators();
+
+            // Check if there's a return value
+            Continuation* value_expr = nullptr;
+            if (!at_end() && !is_separator(current())) {
+                // Parse return value expression
+                value_expr = parse_expression(BP_NONE);
+                if (!value_expr) {
+                    return nullptr;
+                }
+            }
+
+            // Create ReturnK continuation
+            ReturnK* return_k = new ReturnK(value_expr);
+            machine_->heap->allocate_continuation(return_k);
+            return return_k;
+        }
+
         default:
             error_message_ = std::string("Unexpected token in prefix position: ") + token_type_name(token.type);
             return nullptr;
@@ -472,6 +501,9 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             break;
         case TOK_RAVEL:
             op_name = ",";
+            break;
+        case TOK_EQUAL:
+            op_name = "=";
             break;
         default:
             error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
