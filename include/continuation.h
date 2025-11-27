@@ -507,4 +507,45 @@ protected:
     Value* invoke(Machine* machine) override;
 };
 
+// WhileK - Loop execution (Phase 3.3.3)
+// Syntax: :While condition ... :EndWhile
+// Marks loop boundary for :Leave support
+class WhileK : public Continuation {
+public:
+    Continuation* condition;     // Condition to evaluate before each iteration
+    Continuation* body;          // Loop body to execute
+
+    WhileK(Continuation* cond, Continuation* loop_body)
+        : condition(cond), body(loop_body) {}
+
+    ~WhileK() override {
+        // Don't delete - all are GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+    // WhileK marks loop boundaries for :Leave
+    bool is_loop_boundary() const override { return true; }
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for WhileK - checks condition before iteration
+class CheckWhileCondK : public Continuation {
+public:
+    Continuation* condition;     // Condition to re-evaluate
+    Continuation* body;          // Body to execute if true
+
+    CheckWhileCondK(Continuation* cond, Continuation* loop_body)
+        : condition(cond), body(loop_body) {}
+
+    ~CheckWhileCondK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 } // namespace apl

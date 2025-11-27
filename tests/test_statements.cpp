@@ -293,6 +293,122 @@ TEST_F(StatementTest, IfMultipleStatements) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
 }
 
+// ============================================================================
+// While Loop Tests
+// ============================================================================
+
+// Test simple while loop with counter
+TEST_F(StatementTest, WhileSimple) {
+    Continuation* k = parser->parse_program(
+        "i ← 1\n"
+        "sum ← 0\n"
+        ":While i - 5\n"
+        "  sum ← sum + i\n"
+        "  i ← i + 1\n"
+        ":EndWhile\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // When i=1: sum=1, i=2
+    // When i=2: sum=3, i=3
+    // When i=3: sum=6, i=4
+    // When i=4: sum=10, i=5
+    // When i=5: condition is 0 (false), exit
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test while loop that never executes (false condition)
+TEST_F(StatementTest, WhileNeverExecutes) {
+    Continuation* k = parser->parse_program(
+        "x ← 5\n"
+        ":While 0\n"
+        "  x ← 10\n"
+        ":EndWhile\n"
+        "x"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // x should remain 5
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test while loop with expression condition
+TEST_F(StatementTest, WhileExpressionCondition) {
+    Continuation* k = parser->parse_program(
+        "n ← 10\n"
+        ":While n\n"
+        "  n ← n - 1\n"
+        ":EndWhile\n"
+        "n"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // n counts down to 0
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// Test nested while loops
+TEST_F(StatementTest, WhileNested) {
+    Continuation* k = parser->parse_program(
+        "sum ← 0\n"
+        "i ← 0\n"
+        ":While i - 3\n"
+        "  j ← 0\n"
+        "  :While j - 2\n"
+        "    sum ← sum + 1\n"
+        "    j ← j + 1\n"
+        "  :EndWhile\n"
+        "  i ← i + 1\n"
+        ":EndWhile\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // 3 outer iterations × 2 inner iterations = 6
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+// Test while loop modifying multiple variables
+TEST_F(StatementTest, WhileMultipleVariables) {
+    Continuation* k = parser->parse_program(
+        "a ← 1\n"
+        "b ← 1\n"
+        "n ← 5\n"
+        ":While n\n"
+        "  c ← a + b\n"
+        "  a ← b\n"
+        "  b ← c\n"
+        "  n ← n - 1\n"
+        ":EndWhile\n"
+        "b"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // Fibonacci: 1,1,2,3,5,8,13 - after 5 iterations, b = 13
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 13.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

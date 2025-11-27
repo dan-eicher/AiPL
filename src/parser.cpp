@@ -316,6 +316,47 @@ Continuation* Parser::nud(const Token& token) {
             return if_k;
         }
 
+        case TOK_WHILE: {
+            // :While condition ... :EndWhile
+            // Parse condition
+            skip_separators();
+            Continuation* condition = parse_expression(BP_NONE);
+            if (!condition) {
+                return nullptr;
+            }
+
+            skip_separators();
+
+            // Parse loop body (statements until :EndWhile)
+            std::vector<Continuation*> body_stmts;
+            while (!at_end() && current().type != TOK_ENDWHILE) {
+                Continuation* stmt = parse_expression(BP_NONE);
+                if (!stmt) {
+                    return nullptr;
+                }
+                body_stmts.push_back(stmt);
+                skip_separators();
+            }
+
+            Continuation* body = nullptr;
+            if (!body_stmts.empty()) {
+                body = new SeqK(body_stmts);
+                machine_->heap->allocate_continuation(body);
+            }
+
+            // Expect :EndWhile
+            if (at_end() || current().type != TOK_ENDWHILE) {
+                error_message_ = "Expected :EndWhile";
+                return nullptr;
+            }
+            advance();  // consume :EndWhile
+
+            // Create WhileK continuation
+            WhileK* while_k = new WhileK(condition, body);
+            machine_->heap->allocate_continuation(while_k);
+            return while_k;
+        }
+
         default:
             error_message_ = std::string("Unexpected token in prefix position: ") + token_type_name(token.type);
             return nullptr;

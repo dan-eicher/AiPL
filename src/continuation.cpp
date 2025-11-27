@@ -785,4 +785,80 @@ void SelectBranchK::mark(APLHeap* heap) {
     }
 }
 
+// WhileK implementation - check condition and loop
+Value* WhileK::invoke(Machine* machine) {
+    // Push auxiliary continuation to check condition
+    auto* check_k = new CheckWhileCondK(condition, body);
+    machine->heap->allocate_continuation(check_k);
+    machine->push_kont(check_k);
+
+    // Push condition to evaluate first
+    machine->push_kont(condition);
+
+    return nullptr;
+}
+
+void WhileK::mark(APLHeap* heap) {
+    if (condition) {
+        heap->mark_continuation(condition);
+    }
+    if (body) {
+        heap->mark_continuation(body);
+    }
+}
+
+// CheckWhileCondK implementation - check condition and decide whether to loop
+Value* CheckWhileCondK::invoke(Machine* machine) {
+    // Condition result is in machine->ctrl.value
+    Value* cond_val = machine->ctrl.value;
+
+    if (!cond_val) {
+        // Error: no condition value
+        machine->halt();
+        return nullptr;
+    }
+
+    // APL convention: 0 is false, non-zero is true
+    bool is_true = false;
+
+    if (cond_val->is_scalar()) {
+        is_true = (cond_val->as_scalar() != 0.0);
+    } else {
+        // For arrays, use first element
+        const Eigen::MatrixXd* mat = cond_val->as_matrix();
+        if (mat->size() > 0) {
+            is_true = ((*mat)(0, 0) != 0.0);
+        }
+    }
+
+    if (is_true) {
+        // Condition is true - execute body then check again
+        // Push ourselves back to check after body executes
+        auto* check_k = new CheckWhileCondK(condition, body);
+        machine->heap->allocate_continuation(check_k);
+        machine->push_kont(check_k);
+
+        // Push condition to evaluate after body
+        machine->push_kont(condition);
+
+        // Push body to execute now
+        if (body) {
+            machine->push_kont(body);
+        }
+    }
+    // If false, just exit - loop is done
+    // Result remains the condition value
+
+    return nullptr;
+}
+
+void CheckWhileCondK::mark(APLHeap* heap) {
+    if (condition) {
+        heap->mark_continuation(condition);
+    }
+    if (body) {
+        heap->mark_continuation(body);
+    }
+}
+
 } // namespace apl
