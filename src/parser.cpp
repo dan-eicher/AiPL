@@ -252,6 +252,70 @@ Continuation* Parser::nud(const Token& token) {
             return lookup;
         }
 
+        case TOK_IF: {
+            // :If condition ... :Else ... :EndIf
+            // Parse condition (expression until separator)
+            skip_separators();
+            Continuation* condition = parse_expression(BP_NONE);
+            if (!condition) {
+                return nullptr;
+            }
+
+            skip_separators();
+
+            // Parse then-branch (statements until :Else or :EndIf)
+            std::vector<Continuation*> then_stmts;
+            while (!at_end() && current().type != TOK_ELSE && current().type != TOK_ENDIF) {
+                Continuation* stmt = parse_expression(BP_NONE);
+                if (!stmt) {
+                    return nullptr;
+                }
+                then_stmts.push_back(stmt);
+                skip_separators();
+            }
+
+            Continuation* then_branch = nullptr;
+            if (!then_stmts.empty()) {
+                then_branch = new SeqK(then_stmts);
+                machine_->heap->allocate_continuation(then_branch);
+            }
+
+            // Check for :Else
+            Continuation* else_branch = nullptr;
+            if (!at_end() && current().type == TOK_ELSE) {
+                advance();  // consume :Else
+                skip_separators();
+
+                // Parse else-branch (statements until :EndIf)
+                std::vector<Continuation*> else_stmts;
+                while (!at_end() && current().type != TOK_ENDIF) {
+                    Continuation* stmt = parse_expression(BP_NONE);
+                    if (!stmt) {
+                        return nullptr;
+                    }
+                    else_stmts.push_back(stmt);
+                    skip_separators();
+                }
+
+                if (!else_stmts.empty()) {
+                    else_branch = new SeqK(else_stmts);
+                    machine_->heap->allocate_continuation(else_branch);
+                }
+            }
+
+            // Expect :EndIf
+            if (at_end() || current().type != TOK_ENDIF) {
+                error_message_ = "Expected :EndIf";
+                return nullptr;
+            }
+            advance();  // consume :EndIf
+
+            // Create IfK continuation
+            IfK* if_k = new IfK(condition, then_branch, else_branch);
+            machine_->heap->allocate_continuation(if_k);
+            return if_k;
+        }
+
         default:
             error_message_ = std::string("Unexpected token in prefix position: ") + token_type_name(token.type);
             return nullptr;

@@ -170,6 +170,129 @@ TEST_F(StatementTest, SequenceWithArrays) {
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
 }
 
+// ============================================================================
+// If/Else Conditional Tests
+// ============================================================================
+
+// Test simple if with true condition
+TEST_F(StatementTest, IfTrue) {
+    Continuation* k = parser->parse_program(":If 1\nx ← 42\n:EndIf\nx");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+// Test simple if with false condition
+TEST_F(StatementTest, IfFalse) {
+    Continuation* k = parser->parse_program("x ← 10\n:If 0\nx ← 42\n:EndIf\nx");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // x should remain 10 since condition was false
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test if-else with true condition
+TEST_F(StatementTest, IfElseTrue) {
+    Continuation* k = parser->parse_program(":If 1\nx ← 100\n:Else\nx ← 200\n:EndIf\nx");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
+}
+
+// Test if-else with false condition
+TEST_F(StatementTest, IfElseFalse) {
+    Continuation* k = parser->parse_program(":If 0\nx ← 100\n:Else\nx ← 200\n:EndIf\nx");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 200.0);
+}
+
+// Test if with expression condition
+TEST_F(StatementTest, IfExpressionCondition) {
+    Continuation* k = parser->parse_program("x ← 5\n:If x - 3\ny ← 10\n:Else\ny ← 20\n:EndIf\ny");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // x - 3 = 2, which is non-zero (true), so y = 10
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test nested if statements
+TEST_F(StatementTest, NestedIf) {
+    Continuation* k = parser->parse_program(
+        "x ← 5\n"
+        ":If x\n"
+        "  :If x - 3\n"
+        "    y ← 100\n"
+        "  :Else\n"
+        "    y ← 50\n"
+        "  :EndIf\n"
+        ":Else\n"
+        "  y ← 0\n"
+        ":EndIf\n"
+        "y"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // x is 5 (true), x - 3 is 2 (true), so y = 100
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
+}
+
+// Test if without else branch (false condition)
+TEST_F(StatementTest, IfWithoutElseFalse) {
+    Continuation* k = parser->parse_program("x ← 5\n:If 0\nx ← 10\n:EndIf\nx");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // x should remain 5
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test multiple statements in if branches
+TEST_F(StatementTest, IfMultipleStatements) {
+    Continuation* k = parser->parse_program(
+        ":If 1\n"
+        "a ← 10\n"
+        "b ← 20\n"
+        "c ← a + b\n"
+        ":EndIf\n"
+        "c"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

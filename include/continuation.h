@@ -464,4 +464,47 @@ protected:
     Value* invoke(Machine* machine) override;
 };
 
+// ============================================================================
+// Control Flow Continuations (Phase 3.3.2)
+// ============================================================================
+
+// IfK - Conditional execution
+// Evaluates condition, then executes either then_branch or else_branch
+// Syntax: :If condition ... :Else ... :EndIf
+class IfK : public Continuation {
+public:
+    Continuation* condition;     // Condition to evaluate
+    Continuation* then_branch;   // Execute if condition is true (non-zero)
+    Continuation* else_branch;   // Execute if condition is false (zero) - can be nullptr
+
+    IfK(Continuation* cond, Continuation* then_b, Continuation* else_b)
+        : condition(cond), then_branch(then_b), else_branch(else_b) {}
+
+    ~IfK() override {
+        // Don't delete - all are GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for IfK - selects branch after condition is evaluated
+class SelectBranchK : public Continuation {
+public:
+    Continuation* then_branch;   // Execute if condition was true
+    Continuation* else_branch;   // Execute if condition was false (can be nullptr)
+
+    SelectBranchK(Continuation* then_b, Continuation* else_b)
+        : then_branch(then_b), else_branch(else_b) {}
+
+    ~SelectBranchK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 } // namespace apl

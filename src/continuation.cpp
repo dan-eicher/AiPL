@@ -706,4 +706,83 @@ void ExecNextStatementK::mark(APLHeap* heap) {
     }
 }
 
+// ============================================================================
+// Control Flow Continuations (Phase 3.3.2)
+// ============================================================================
+
+// IfK implementation - evaluate condition, then select branch
+Value* IfK::invoke(Machine* machine) {
+    // Push auxiliary continuation to select branch after condition is evaluated
+    auto* select_k = new SelectBranchK(then_branch, else_branch);
+    machine->heap->allocate_continuation(select_k);
+    machine->push_kont(select_k);
+
+    // Push condition to evaluate
+    machine->push_kont(condition);
+
+    return nullptr;
+}
+
+void IfK::mark(APLHeap* heap) {
+    if (condition) {
+        heap->mark_continuation(condition);
+    }
+    if (then_branch) {
+        heap->mark_continuation(then_branch);
+    }
+    if (else_branch) {
+        heap->mark_continuation(else_branch);
+    }
+}
+
+// SelectBranchK implementation - select branch based on condition result
+Value* SelectBranchK::invoke(Machine* machine) {
+    // Condition result is in machine->ctrl.value
+    Value* cond_val = machine->ctrl.value;
+
+    if (!cond_val) {
+        // Error: no condition value
+        machine->halt();
+        return nullptr;
+    }
+
+    // APL convention: 0 is false, non-zero is true
+    // For arrays, we'll use the first element
+    bool is_true = false;
+
+    if (cond_val->is_scalar()) {
+        is_true = (cond_val->as_scalar() != 0.0);
+    } else {
+        // For arrays, use first element
+        const Eigen::MatrixXd* mat = cond_val->as_matrix();
+        if (mat->size() > 0) {
+            is_true = ((*mat)(0, 0) != 0.0);
+        }
+    }
+
+    // Select and push the appropriate branch
+    if (is_true) {
+        if (then_branch) {
+            machine->push_kont(then_branch);
+        }
+    } else {
+        if (else_branch) {
+            machine->push_kont(else_branch);
+        }
+    }
+
+    // If no branch was selected (e.g., false with no else), just continue
+    // The result remains whatever the condition evaluated to
+    return nullptr;
+}
+
+void SelectBranchK::mark(APLHeap* heap) {
+    if (then_branch) {
+        heap->mark_continuation(then_branch);
+    }
+    if (else_branch) {
+        heap->mark_continuation(else_branch);
+    }
+}
+
 } // namespace apl
