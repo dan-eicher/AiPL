@@ -548,4 +548,48 @@ protected:
     Value* invoke(Machine* machine) override;
 };
 
+// ForK - For loop iteration over array elements (Phase 3.3.4)
+// Syntax: :For var :In array ... :EndFor
+// Marks loop boundary for :Leave support
+class ForK : public Continuation {
+public:
+    std::string var_name;        // Iterator variable name
+    Continuation* array_expr;    // Expression that produces the array
+    Continuation* body;          // Loop body to execute
+
+    ForK(const char* var, Continuation* arr, Continuation* loop_body)
+        : var_name(var), array_expr(arr), body(loop_body) {}
+
+    ~ForK() override {
+        // Don't delete - all are GC-managed
+    }
+
+    void mark(APLHeap* heap) override;
+
+    // ForK marks loop boundaries for :Leave
+    bool is_loop_boundary() const override { return true; }
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for ForK - iterates over array elements
+class ForIterateK : public Continuation {
+public:
+    std::string var_name;        // Iterator variable name
+    Value* array;                // Array to iterate over
+    Continuation* body;          // Loop body
+    size_t index;                // Current iteration index
+
+    ForIterateK(const char* var, Value* arr, Continuation* loop_body, size_t idx)
+        : var_name(var), array(arr), body(loop_body), index(idx) {}
+
+    ~ForIterateK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
 } // namespace apl

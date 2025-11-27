@@ -109,6 +109,7 @@ Token Lexer::next_token() {
         ":While" { column_ += 6; return Token(TOK_WHILE, token_line, token_column); }
         ":EndWhile" { column_ += 9; return Token(TOK_ENDWHILE, token_line, token_column); }
         ":For" { column_ += 4; return Token(TOK_FOR, token_line, token_column); }
+        ":In" { column_ += 3; return Token(TOK_IN, token_line, token_column); }
         ":EndFor" { column_ += 7; return Token(TOK_ENDFOR, token_line, token_column); }
         ":Leave" { column_ += 6; return Token(TOK_LEAVE, token_line, token_column); }
         ":Return" { column_ += 7; return Token(TOK_RETURN, token_line, token_column); }

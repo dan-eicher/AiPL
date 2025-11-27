@@ -50,6 +50,7 @@ const char* token_type_name(TokenType type) {
         case TOK_WHILE: return ":While";
         case TOK_ENDWHILE: return ":EndWhile";
         case TOK_FOR: return ":For";
+        case TOK_IN: return ":In";
         case TOK_ENDFOR: return ":EndFor";
         case TOK_LEAVE: return ":Leave";
         case TOK_RETURN: return ":Return";

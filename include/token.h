@@ -66,6 +66,7 @@ enum TokenType {
     TOK_WHILE,          // :While
     TOK_ENDWHILE,       // :EndWhile
     TOK_FOR,            // :For
+    TOK_IN,             // :In
     TOK_ENDFOR,         // :EndFor
     TOK_LEAVE,          // :Leave
     TOK_RETURN,         // :Return

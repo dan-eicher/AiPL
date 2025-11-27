@@ -357,6 +357,67 @@ Continuation* Parser::nud(const Token& token) {
             return while_k;
         }
 
+        case TOK_FOR: {
+            // :For var :In array ... :EndFor
+            skip_separators();
+
+            // Expect variable name
+            if (at_end() || current().type != TOK_NAME) {
+                error_message_ = "Expected variable name after :For";
+                return nullptr;
+            }
+            const char* var_name = current().name;
+            advance();  // consume variable name
+
+            skip_separators();
+
+            // Expect :In
+            if (at_end() || current().type != TOK_IN) {
+                error_message_ = "Expected :In after variable name";
+                return nullptr;
+            }
+            advance();  // consume :In
+
+            skip_separators();
+
+            // Parse array expression
+            Continuation* array_expr = parse_expression(BP_NONE);
+            if (!array_expr) {
+                return nullptr;
+            }
+
+            skip_separators();
+
+            // Parse loop body (statements until :EndFor)
+            std::vector<Continuation*> body_stmts;
+            while (!at_end() && current().type != TOK_ENDFOR) {
+                Continuation* stmt = parse_expression(BP_NONE);
+                if (!stmt) {
+                    return nullptr;
+                }
+                body_stmts.push_back(stmt);
+                skip_separators();
+            }
+
+            Continuation* body = nullptr;
+            if (!body_stmts.empty()) {
+                body = new SeqK(body_stmts);
+                machine_->heap->allocate_continuation(body);
+            }
+
+            // Expect :EndFor
+            if (at_end() || current().type != TOK_ENDFOR) {
+                error_message_ = "Expected :EndFor";
+                return nullptr;
+            }
+            advance();  // consume :EndFor
+
+            // Create ForK continuation
+            ForK* for_k = new ForK(var_name, array_expr, body);
+            machine_->heap->allocate_continuation(for_k);
+            return for_k;
+        }
+
         default:
             error_message_ = std::string("Unexpected token in prefix position: ") + token_type_name(token.type);
             return nullptr;

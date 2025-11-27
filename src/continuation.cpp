@@ -861,4 +861,96 @@ void CheckWhileCondK::mark(APLHeap* heap) {
     }
 }
 
+// ForK implementation - evaluate array and start iteration
+Value* ForK::invoke(Machine* machine) {
+    // Push auxiliary continuation to start iteration after array is evaluated
+    auto* iterate_k = new ForIterateK(var_name.c_str(), nullptr, body, 0);
+    machine->heap->allocate_continuation(iterate_k);
+    machine->push_kont(iterate_k);
+
+    // Push array expression to evaluate
+    machine->push_kont(array_expr);
+
+    return nullptr;
+}
+
+void ForK::mark(APLHeap* heap) {
+    if (array_expr) {
+        heap->mark_continuation(array_expr);
+    }
+    if (body) {
+        heap->mark_continuation(body);
+    }
+}
+
+// ForIterateK implementation - iterate over array elements
+Value* ForIterateK::invoke(Machine* machine) {
+    // First call: array is in machine->ctrl.value
+    if (array == nullptr) {
+        array = machine->ctrl.value;
+        if (!array) {
+            machine->halt();
+            return nullptr;
+        }
+    }
+
+    // Get array dimensions
+    size_t total_elements = 0;
+    const Eigen::MatrixXd* mat = nullptr;
+
+    if (array->is_scalar()) {
+        // Scalar: iterate once
+        total_elements = 1;
+    } else {
+        mat = array->as_matrix();
+        total_elements = mat->size();
+    }
+
+    // Check if we're done iterating
+    if (index >= total_elements) {
+        // Loop finished - result is the last iteration's value (or scalar 0 if empty)
+        if (total_elements == 0) {
+            Value* zero = machine->heap->allocate_scalar(0.0);
+            machine->ctrl.set_value(zero);
+        }
+        return nullptr;
+    }
+
+    // Get current element
+    Value* element = nullptr;
+    if (array->is_scalar()) {
+        element = array;
+    } else {
+        // Arrays stored column-major in Eigen
+        size_t row = index % mat->rows();
+        size_t col = index / mat->rows();
+        double val = (*mat)(row, col);
+        element = machine->heap->allocate_scalar(val);
+    }
+
+    // Bind iterator variable to current element
+    machine->env->define(var_name.c_str(), element);
+
+    // Push continuation for next iteration
+    auto* next_k = new ForIterateK(var_name.c_str(), array, body, index + 1);
+    machine->heap->allocate_continuation(next_k);
+    machine->push_kont(next_k);
+
+    // Push body to execute
+    if (body) {
+        machine->push_kont(body);
+    }
+
+    return nullptr;
+}
+
+void ForIterateK::mark(APLHeap* heap) {
+    if (array) {
+        heap->mark_value(array);
+    }
+    if (body) {
+        heap->mark_continuation(body);
+    }
+}
+
 } // namespace apl

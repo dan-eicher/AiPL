@@ -409,6 +409,114 @@ TEST_F(StatementTest, WhileMultipleVariables) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 13.0);
 }
 
+// ============================================================================
+// For Loop Tests
+// ============================================================================
+
+// Test simple for loop over vector
+TEST_F(StatementTest, ForSimple) {
+    Continuation* k = parser->parse_program(
+        "sum ← 0\n"
+        ":For x :In 1 2 3 4 5\n"
+        "  sum ← sum + x\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // sum = 1+2+3+4+5 = 15
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+// Test for loop over scalar (single iteration)
+TEST_F(StatementTest, ForScalar) {
+    Continuation* k = parser->parse_program(
+        "result ← 0\n"
+        ":For x :In 42\n"
+        "  result ← x\n"
+        ":EndFor\n"
+        "result"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+// Test for loop with expression array
+TEST_F(StatementTest, ForExpression) {
+    Continuation* k = parser->parse_program(
+        "arr ← 10 20 30\n"
+        "sum ← 0\n"
+        ":For val :In arr\n"
+        "  sum ← sum + val\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // sum = 10+20+30 = 60
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 60.0);
+}
+
+// Test nested for loops
+TEST_F(StatementTest, ForNested) {
+    Continuation* k = parser->parse_program(
+        "sum ← 0\n"
+        ":For i :In 1 2 3\n"
+        "  :For j :In 10 20\n"
+        "    sum ← sum + i + j\n"
+        "  :EndFor\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // i=1: j=10 (11), j=20 (21) -> 32
+    // i=2: j=10 (12), j=20 (22) -> 34
+    // i=3: j=10 (13), j=20 (23) -> 36
+    // Total: 32+34+36 = 102
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 102.0);
+}
+
+// Test for loop with multiple statements
+TEST_F(StatementTest, ForMultipleStatements) {
+    Continuation* k = parser->parse_program(
+        "sum ← 0\n"
+        "product ← 1\n"
+        ":For x :In 2 3 4\n"
+        "  sum ← sum + x\n"
+        "  product ← product × x\n"
+        ":EndFor\n"
+        "sum + product"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+
+    // sum = 2+3+4 = 9
+    // product = 2*3*4 = 24
+    // result = 9+24 = 33
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 33.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
