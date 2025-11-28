@@ -254,6 +254,71 @@ Continuation* Parser::nud(const Token& token) {
             return lookup;
         }
 
+        case TOK_ALPHA: {
+            // ⍺ (alpha) - left argument in dfn
+            LookupK* lookup = new LookupK("⍺");
+            machine_->heap->allocate_continuation(lookup);
+            return lookup;
+        }
+
+        case TOK_OMEGA: {
+            // ⍵ (omega) - right argument in dfn
+            LookupK* lookup = new LookupK("⍵");
+            machine_->heap->allocate_continuation(lookup);
+            return lookup;
+        }
+
+        case TOK_LBRACE: {
+            // Dfn definition: {body}
+            // Parse body until } (same logic as parse_program but stops at })
+            // NOTE: { has already been consumed by parse_expression before calling nud()
+
+            skip_separators();
+            std::vector<Continuation*> statements;
+
+            // Parse statements until }
+            // Each statement is one complete expression
+            while (!at_end() && current().type != TOK_RBRACE) {
+                Continuation* stmt = parse_expression(BP_NONE);
+                if (!stmt) {
+                    return nullptr;
+                }
+                statements.push_back(stmt);
+
+                // Skip separators between statements (⋄ or newlines)
+                skip_separators();
+
+                // After skipping separators, we should either be at } or at the start of next statement
+            }
+
+            // Expect closing brace
+            if (current().type != TOK_RBRACE) {
+                error_message_ = "Expected } to close dfn";
+                return nullptr;
+            }
+            advance();  // consume }
+
+            // Create body continuation
+            Continuation* body;
+            if (statements.empty()) {
+                // Empty dfn body - return 0
+                body = new LiteralK(0.0);
+                machine_->heap->allocate_continuation(body);
+            } else if (statements.size() == 1) {
+                // Single expression - use directly
+                body = statements[0];
+            } else {
+                // Multiple statements - wrap in SeqK
+                body = new SeqK(statements);
+                machine_->heap->allocate_continuation(body);
+            }
+
+            // Create ClosureLiteralK with the body
+            ClosureLiteralK* closure_lit = new ClosureLiteralK(body);
+            machine_->heap->allocate_continuation(closure_lit);
+            return closure_lit;
+        }
+
         case TOK_IF: {
             // :If condition ... :Else ... :EndIf
             // Parse condition (expression until separator)
@@ -479,6 +544,61 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         return assign;
     }
 
+    // Handle dfn application (e.g., "3 {⍺+⍵} 5")
+    if (token.type == TOK_LBRACE) {
+        // Parse the dfn body
+        // NOTE: { has already been consumed by parse_expression before calling led()
+        skip_separators();
+        std::vector<Continuation*> statements;
+
+        // Parse statements until }
+        while (!at_end() && current().type != TOK_RBRACE) {
+            Continuation* stmt = parse_expression(BP_NONE);
+            if (!stmt) {
+                return nullptr;
+            }
+            statements.push_back(stmt);
+            skip_separators();
+        }
+
+        // Expect closing brace
+        if (current().type != TOK_RBRACE) {
+            error_message_ = "Expected } to close dfn";
+            return nullptr;
+        }
+        advance();  // consume }
+
+        // Create body continuation
+        Continuation* body;
+        if (statements.empty()) {
+            body = new LiteralK(0.0);
+            machine_->heap->allocate_continuation(body);
+        } else if (statements.size() == 1) {
+            body = statements[0];
+        } else {
+            body = new SeqK(statements);
+            machine_->heap->allocate_continuation(body);
+        }
+
+        // Create ClosureLiteralK for the dfn
+        ClosureLiteralK* closure_lit = new ClosureLiteralK(body);
+        machine_->heap->allocate_continuation(closure_lit);
+
+        // Parse the right argument
+        int bp = get_binding_power(token);  // Use operator binding power for dfns
+        Continuation* right = parse_expression(bp);
+
+        if (!right) {
+            return nullptr;
+        }
+
+        // Create ApplyFunctionK for dyadic application: left {dfn} right
+        ApplyFunctionK* apply = new ApplyFunctionK(closure_lit, left, right);
+        machine_->heap->allocate_continuation(apply);
+
+        return apply;
+    }
+
     // Determine operator name for regular operators
     const char* op_name = nullptr;
 
@@ -552,11 +672,13 @@ int Parser::get_binding_power(const Token& token) {
         case TOK_RESHAPE:
         case TOK_RAVEL:
         case TOK_IOTA:
+        case TOK_LBRACE:  // Dfns can be used as dyadic functions
             return BP_OPERATOR;
 
         // Closing delimiters should never be treated as infix
         // Give them negative binding power to stop parsing
         case TOK_RPAREN:
+        case TOK_RBRACE:
             return -1;
 
         default:

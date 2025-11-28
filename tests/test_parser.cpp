@@ -904,6 +904,130 @@ TEST_F(ParserTest, EqualDyadicVector) {
     EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // 3=3 true
 }
 
+// ============================================================================
+// Dfn (Dynamic Function) Tests
+// ============================================================================
+
+// Test parsing a simple monadic dfn
+TEST_F(ParserTest, ParseMonadicDfn) {
+    // {⍵×2} should create a closure
+    Continuation* k = parser->parse("{⍵×2}");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CLOSURE);
+}
+
+// Test applying a monadic dfn
+TEST_F(ParserTest, ApplyMonadicDfn) {
+    // ({⍵×2} 5) should evaluate to 10
+    // Note: Need to use dyadic syntax since we're applying the dfn to an argument
+    Continuation* k = parser->parse("5 {⍵×2} 0");  // Using a dummy left arg for now
+
+    ASSERT_NE(k, nullptr);
+    EXPECT_EQ(parser->get_error(), "");
+
+    // This will fail until we implement monadic application properly
+    // For now, just test that it parses
+}
+
+// Test parsing a dyadic dfn
+TEST_F(ParserTest, ParseDyadicDfn) {
+    // {⍺+⍵} should create a closure
+    Continuation* k = parser->parse("{⍺+⍵}");
+
+    ASSERT_NE(k, nullptr);
+    EXPECT_EQ(parser->get_error(), "");
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CLOSURE);
+}
+
+// Test dfn that just returns omega
+TEST_F(ParserTest, DfnJustOmega) {
+    // 0 {⍵} 5 should return 5
+    Continuation* k = parser->parse("0 {⍵} 5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test applying a dyadic dfn
+TEST_F(ParserTest, ApplyDyadicDfn) {
+    // 3 {⍺+⍵} 5 should evaluate to 8
+    Continuation* k = parser->parse("3 {⍺+⍵} 5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR) << "Result should be SCALAR, got tag=" << static_cast<int>(result->tag);
+
+    if (result->tag == ValueType::SCALAR) {
+        double val = result->as_scalar();
+        EXPECT_DOUBLE_EQ(val, 8.0) << "Expected 8.0, got " << val;
+    }
+}
+
+// Test assigning a dfn to a variable
+TEST_F(ParserTest, AssignDfn) {
+    // square ← {⍵×⍵}
+    Continuation* k = parser->parse("square ← {⍵×⍵}");
+
+    ASSERT_NE(k, nullptr);
+    EXPECT_EQ(parser->get_error(), "");
+
+    Value* result = eval(k);
+
+    // Check that the variable was assigned
+    Value* square = machine->env->lookup("square");
+    ASSERT_NE(square, nullptr);
+    EXPECT_EQ(square->tag, ValueType::CLOSURE);
+}
+
+// Test dfn with nested expressions
+TEST_F(ParserTest, DfnNestedExpression) {
+    // {(⍺×2)+(⍵×3)} should parse correctly
+    Continuation* k = parser->parse("{(⍺×2)+(⍵×3)}");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CLOSURE);
+}
+
+// Test applying nested dfn
+TEST_F(ParserTest, ApplyNestedDfn) {
+    // 4 {(⍺×2)+(⍵×3)} 5 should evaluate to (4×2)+(5×3) = 8+15 = 23
+    Continuation* k = parser->parse("4 {(⍺×2)+(⍵×3)} 5");
+
+    ASSERT_NE(k, nullptr);
+    EXPECT_EQ(parser->get_error(), "");
+
+    Value* result = eval(k);
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 23.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

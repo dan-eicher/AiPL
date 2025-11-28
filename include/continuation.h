@@ -11,6 +11,7 @@ namespace apl {
 // Forward declarations
 class Machine;
 class APLHeap;
+class Environment;
 
 // Abstract Continuation base class
 // Represents "what to do next" in the CEK machine
@@ -73,6 +74,24 @@ public:
         : literal_value(val) {}
 
     ~LiteralK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// ClosureLiteralK - Parse-time continuation for closure literals (dfns)
+// Stores a Continuation* (the function body) directly
+// At runtime, this gets converted to a CLOSURE Value* by the Machine
+class ClosureLiteralK : public Continuation {
+public:
+    Continuation* body;         // The function body continuation graph
+
+    ClosureLiteralK(Continuation* b)
+        : body(b) {}
+
+    ~ClosureLiteralK() override {}
 
     void mark(APLHeap* heap) override;
 
@@ -639,6 +658,47 @@ public:
     CreateReturnK() {}
 
     ~CreateReturnK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// Function Call Continuations (Phase 4.3)
+// ============================================================================
+
+// FunctionCallK - Apply a function (CLOSURE) to arguments
+// Marks function boundary for :Return support
+class FunctionCallK : public Continuation {
+public:
+    Value* fn_value;             // CLOSURE value to call
+    Value* left_arg;             // Left argument (⍺), nullptr for monadic
+    Value* right_arg;            // Right argument (⍵)
+
+    FunctionCallK(Value* fn, Value* left, Value* right)
+        : fn_value(fn), left_arg(left), right_arg(right) {}
+
+    ~FunctionCallK() override {}
+
+    void mark(APLHeap* heap) override;
+
+    // FunctionCallK marks function boundaries for :Return
+    bool is_function_boundary() const override { return true; }
+
+protected:
+    Value* invoke(Machine* machine) override;
+};
+
+// RestoreEnvK - Restore environment after function call
+class RestoreEnvK : public Continuation {
+public:
+    Environment* saved_env;
+
+    RestoreEnvK(Environment* env) : saved_env(env) {}
+
+    ~RestoreEnvK() override {}
 
     void mark(APLHeap* heap) override;
 

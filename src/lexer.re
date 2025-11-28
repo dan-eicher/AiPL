@@ -66,6 +66,8 @@ Lexer::Lexer(const char* input)
     and_sym = "∧";       // U+2227
     or_sym = "∨";        // U+2228
     diamond = "⋄";       // U+22C4
+    alpha_sym = "⍺";     // U+237A (left argument)
+    omega_sym = "⍵";     // U+2375 (right argument)
 
     // Comments (⍝ to end of line)
     comment = "⍝" [^\n]*;  // U+235D
@@ -162,6 +164,8 @@ Token Lexer::next_token() {
         and_sym { column_++; return Token(TOK_AND, token_line, token_column); }
         or_sym { column_++; return Token(TOK_OR, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
+        alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
+        omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }
 
         // Outer product (special two-character sequence)
         compose "." { column_ += 2; return Token(TOK_OUTER_PRODUCT, token_line, token_column); }

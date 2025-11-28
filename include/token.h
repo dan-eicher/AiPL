@@ -72,9 +72,11 @@ enum TokenType {
     TOK_RETURN,         // :Return
     TOK_GOTO,           // →
 
-    // Dfn delimiters
+    // Dfn delimiters and arguments
     TOK_LBRACE,         // {
     TOK_RBRACE,         // }
+    TOK_ALPHA,          // ⍺ (left argument)
+    TOK_OMEGA,          // ⍵ (right argument)
 
     // Special
     TOK_DIAMOND,        // ⋄ (statement separator)

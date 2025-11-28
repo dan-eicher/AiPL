@@ -36,6 +36,23 @@ void LiteralK::mark(APLHeap* heap) {
     (void)heap;  // Unused
 }
 
+// ClosureLiteralK implementation
+Value* ClosureLiteralK::invoke(Machine* machine) {
+    // Convert the continuation body to a CLOSURE Value* at runtime
+    Value* closure = Value::from_closure(body);
+    Value* heap_closure = machine->heap->allocate(closure);
+    machine->ctrl.set_value(heap_closure);
+
+    return nullptr;  // Continue trampoline
+}
+
+void ClosureLiteralK::mark(APLHeap* heap) {
+    // Mark the body continuation graph
+    if (body) {
+        heap->mark_continuation(body);
+    }
+}
+
 // LookupK implementation
 Value* LookupK::invoke(Machine* machine) {
     // Look up the variable in the environment
@@ -599,9 +616,17 @@ Value* DispatchFunctionK::invoke(Machine* machine) {
     // Function has been evaluated - it's in ctrl.value
     fn_val = machine->ctrl.value;
 
-    // Check that fn_val is actually a function
+    // Handle CLOSURE values (dfns)
+    if (fn_val->tag == ValueType::CLOSURE) {
+        // Call the closure using FunctionCallK
+        FunctionCallK* call_k = new FunctionCallK(fn_val, left_val, right_val);
+        machine->heap->allocate_continuation(call_k);
+        machine->push_kont(call_k);
+        return nullptr;
+    }
+
+    // Check that fn_val is actually a primitive function
     if (!fn_val->is_primitive()) {
-        // TODO: Handle closures and other function types
         throw std::runtime_error("ApplyFunctionK: expected function value");
     }
 
@@ -1008,6 +1033,80 @@ Value* CreateReturnK::invoke(Machine* machine) {
 
 void CreateReturnK::mark(APLHeap* heap) {
     // CreateReturnK has no references
+    (void)heap;
+}
+
+// ============================================================================
+// Function Call Continuations (Phase 4.3)
+// ============================================================================
+
+// FunctionCallK implementation - apply function to arguments
+Value* FunctionCallK::invoke(Machine* machine) {
+    // fn_value should be a CLOSURE
+    if (!fn_value || fn_value->tag != ValueType::CLOSURE) {
+        machine->halt();
+        return nullptr;
+    }
+
+    // Get the function body continuation graph
+    Continuation* body = fn_value->data.closure;
+    if (!body) {
+        machine->halt();
+        return nullptr;
+    }
+
+    // Create new environment for function scope
+    Environment* call_env = new Environment();
+    call_env->parent = machine->env;  // Capture parent for closures
+
+    // Bind arguments in function environment
+    if (right_arg) {
+        call_env->define("⍵", right_arg);
+    }
+    if (left_arg) {
+        call_env->define("⍺", left_arg);
+    }
+
+    // Save current environment
+    Environment* saved_env = machine->env;
+
+    // Switch to function environment
+    machine->env = call_env;
+
+    // Push restore environment continuation (executes after function returns)
+    RestoreEnvK* restore_k = new RestoreEnvK(saved_env);
+    machine->heap->allocate_continuation(restore_k);
+    machine->push_kont(restore_k);
+
+    // Execute function body
+    machine->push_kont(body);
+
+    return nullptr;
+}
+
+void FunctionCallK::mark(APLHeap* heap) {
+    if (fn_value) {
+        heap->mark_value(fn_value);
+    }
+    if (left_arg) {
+        heap->mark_value(left_arg);
+    }
+    if (right_arg) {
+        heap->mark_value(right_arg);
+    }
+}
+
+// RestoreEnvK implementation - restore environment after function call
+Value* RestoreEnvK::invoke(Machine* machine) {
+    // Restore the saved environment
+    machine->env = saved_env;
+
+    // Result value is already in machine->ctrl.value
+    return nullptr;
+}
+
+void RestoreEnvK::mark(APLHeap* heap) {
+    // saved_env will be marked by machine's environment chain
     (void)heap;
 }
 

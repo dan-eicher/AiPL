@@ -334,6 +334,19 @@ TEST_F(LexerTest, ScientificNotation) {
     EXPECT_DOUBLE_EQ(tokens[2].number, 3.5e+10);
 }
 
+// Test dfn tokens (braces and alpha/omega)
+TEST_F(LexerTest, DfnTokens) {
+    auto tokens = tokenize("{⍺+⍵}");
+
+    ASSERT_EQ(tokens.size(), 6);  // { ⍺ + ⍵ } EOF
+    EXPECT_EQ(tokens[0].type, TOK_LBRACE);
+    EXPECT_EQ(tokens[1].type, TOK_ALPHA);
+    EXPECT_EQ(tokens[2].type, TOK_PLUS);
+    EXPECT_EQ(tokens[3].type, TOK_OMEGA);
+    EXPECT_EQ(tokens[4].type, TOK_RBRACE);
+    EXPECT_EQ(tokens[5].type, TOK_EOF);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
