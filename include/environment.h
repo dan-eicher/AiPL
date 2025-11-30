@@ -3,14 +3,23 @@
 #pragma once
 
 #include "value.h"
+#include "heap.h"
 #include <unordered_map>
 #include <string>
 
 namespace apl {
 
 // Environment - Maps names to values
-// Simple implementation for Phase 1; will be expanded later
-class Environment {
+// Now GC-managed for proper memory safety
+class Environment : public GCObject {
+private:
+    // Only APLHeap can allocate/deallocate Environment objects
+    friend class APLHeap;
+
+    // Private new/delete operators enforce heap-only allocation
+    void* operator new(size_t size) { return ::operator new(size); }
+    void operator delete(void* ptr) { ::operator delete(ptr); }
+
 public:
     // Parent environment for lexical scoping
     Environment* parent;
@@ -19,12 +28,12 @@ public:
     std::unordered_map<std::string, Value*> bindings;
 
     // Constructor
-    Environment(Environment* p = nullptr) : parent(p) {}
+    Environment(Environment* p = nullptr) : GCObject(), parent(p) {}
 
     // Destructor
-    ~Environment() {
+    ~Environment() override {
         // Don't delete values - they're managed by the heap
-        // Don't delete parent - it's managed externally
+        // Don't delete parent - it's managed by the heap
     }
 
     // Lookup a variable
@@ -62,11 +71,11 @@ public:
         return false;  // Not found
     }
 
-    // Mark all values for GC
-    void mark(class APLHeap* heap);
+    // Mark all values for GC (override from GCObject)
+    void mark(APLHeap* heap) override;
 };
 
 // Initialize the global environment with built-in primitives
-void init_global_environment(Environment* env);
+void init_global_environment(Machine* machine);
 
 } // namespace apl

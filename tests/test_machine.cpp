@@ -52,8 +52,8 @@ TEST_F(MachineTest, ShouldContinue) {
 
 // Test push and pop continuation
 TEST_F(MachineTest, PushPopKont) {
-    Continuation* k1 = new HaltK();
-    Continuation* k2 = new HaltK();
+    Continuation* k1 = machine->heap->allocate<HaltK>();
+    Continuation* k2 = machine->heap->allocate<HaltK>();
 
     machine->push_kont(k1);
     EXPECT_EQ(machine->kont_stack.size(), 1);
@@ -69,8 +69,8 @@ TEST_F(MachineTest, PushPopKont) {
     EXPECT_EQ(popped, k1);
     EXPECT_EQ(machine->kont_stack.size(), 0);
 
-    delete k1;
-    delete k2;
+    // GC will clean up -     delete k1;
+    // GC will clean up -     delete k2;
 }
 
 // Test pop from empty stack
@@ -83,7 +83,7 @@ TEST_F(MachineTest, PopEmptyStack) {
 TEST_F(MachineTest, ExecuteWithHaltK) {
     Value* v = machine->heap->allocate_scalar(42.0);
     machine->ctrl.value = v;
-    machine->push_kont(new HaltK());
+    machine->push_kont(machine->heap->allocate<HaltK>());
 
     Value* result = machine->execute();
 
@@ -140,7 +140,7 @@ TEST_F(MachineTest, NestedEnvironment) {
     Value* v1 = machine->heap->allocate_scalar(1.0);
     machine->env->define("a", v1);
 
-    Environment* child = new Environment(machine->env);
+    Environment* child = machine->heap->allocate<Environment>(machine->env);
     Value* v2 = machine->heap->allocate_scalar(2.0);
     child->define("b", v2);
 
@@ -156,7 +156,7 @@ TEST_F(MachineTest, NestedEnvironment) {
     result = machine->env->lookup("b");
     EXPECT_EQ(result, nullptr);
 
-    delete child;
+    // GC will clean up -     delete child;
 }
 
 // Test nested environment shadowing
@@ -164,7 +164,7 @@ TEST_F(MachineTest, NestedEnvironmentShadowing) {
     Value* v1 = machine->heap->allocate_scalar(10.0);
     machine->env->define("x", v1);
 
-    Environment* child = new Environment(machine->env);
+    Environment* child = machine->heap->allocate<Environment>(machine->env);
     Value* v2 = machine->heap->allocate_scalar(20.0);
     child->define("x", v2);
 
@@ -178,13 +178,14 @@ TEST_F(MachineTest, NestedEnvironmentShadowing) {
     EXPECT_EQ(result, v1);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
 
-    delete child;
+    // GC will clean up -     delete child;
 }
 
 // Test normal completion handling
 TEST_F(MachineTest, NormalCompletion) {
     Value* v = machine->heap->allocate_scalar(42.0);
-    machine->ctrl.completion = APLCompletion::normal(v);
+    machine->ctrl.completion = nullptr;  // nullptr = NORMAL
+    machine->ctrl.value = v;
 
     machine->handle_completion();
 
@@ -197,10 +198,10 @@ TEST_F(MachineTest, ReturnCompletion) {
     Value* v = machine->heap->allocate_scalar(99.0);
 
     // Push a FrameK (function boundary)
-    machine->push_kont(new FrameK("test_func", nullptr));
-    machine->push_kont(new HaltK());  // Some other continuation
+    machine->push_kont(machine->heap->allocate<FrameK>("test_func", nullptr));
+    machine->push_kont(machine->heap->allocate<HaltK>());  // Some other continuation
 
-    machine->ctrl.completion = APLCompletion::return_value(v);
+    machine->ctrl.completion = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, v, nullptr);
 
     machine->handle_completion();
 
@@ -213,7 +214,7 @@ TEST_F(MachineTest, ReturnCompletion) {
 // Test return outside of function
 TEST_F(MachineTest, ReturnOutsideFunction) {
     Value* v = machine->heap->allocate_scalar(1.0);
-    machine->ctrl.completion = APLCompletion::return_value(v);
+    machine->ctrl.completion = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, v, nullptr);
 
     EXPECT_THROW(machine->handle_completion(), std::runtime_error);
 }
@@ -225,7 +226,7 @@ TEST_F(MachineTest, FunctionCacheEmpty) {
 
 // Test function cache insertion
 TEST_F(MachineTest, FunctionCacheInsertion) {
-    Continuation* k = new HaltK();
+    Continuation* k = machine->heap->allocate<HaltK>();
     machine->function_cache["test_func"] = k;
 
     EXPECT_EQ(machine->function_cache.size(), 1);
@@ -254,9 +255,9 @@ TEST_F(MachineTest, GCWithEnvironment) {
 
 // Test multiple continuations on stack
 TEST_F(MachineTest, MultipleContinuations) {
-    Continuation* k1 = new HaltK();
-    Continuation* k2 = new FrameK("func", nullptr);
-    Continuation* k3 = new HaltK();
+    Continuation* k1 = machine->heap->allocate<HaltK>();
+    Continuation* k2 = machine->heap->allocate<FrameK>("func", nullptr);
+    Continuation* k3 = machine->heap->allocate<HaltK>();
 
     machine->push_kont(k1);
     machine->push_kont(k2);
@@ -270,10 +271,10 @@ TEST_F(MachineTest, MultipleContinuations) {
 
 // Test unwind to boundary
 TEST_F(MachineTest, UnwindToBoundary) {
-    machine->push_kont(new HaltK());
-    machine->push_kont(new FrameK("boundary", nullptr));  // Boundary
-    machine->push_kont(new HaltK());
-    machine->push_kont(new HaltK());
+    machine->push_kont(machine->heap->allocate<HaltK>());
+    machine->push_kont(machine->heap->allocate<FrameK>("boundary", nullptr));  // Boundary
+    machine->push_kont(machine->heap->allocate<HaltK>());
+    machine->push_kont(machine->heap->allocate<HaltK>());
 
     EXPECT_EQ(machine->kont_stack.size(), 4);
 
@@ -289,8 +290,8 @@ TEST_F(MachineTest, UnwindToBoundary) {
 
 // Test unwind to boundary not found
 TEST_F(MachineTest, UnwindToBoundaryNotFound) {
-    machine->push_kont(new HaltK());
-    machine->push_kont(new HaltK());
+    machine->push_kont(machine->heap->allocate<HaltK>());
+    machine->push_kont(machine->heap->allocate<HaltK>());
 
     bool found = machine->unwind_to_boundary(
         [](Continuation* k) { return k->is_function_boundary(); }
@@ -340,7 +341,7 @@ TEST_F(MachineTest, NestedEnvironmentMark) {
     Value* v1 = machine->heap->allocate_scalar(1.0);
     machine->env->define("a", v1);
 
-    Environment* child = new Environment(machine->env);
+    Environment* child = machine->heap->allocate<Environment>(machine->env);
     Value* v2 = machine->heap->allocate_scalar(2.0);
     child->define("b", v2);
 
@@ -351,7 +352,7 @@ TEST_F(MachineTest, NestedEnvironmentMark) {
     EXPECT_TRUE(v1->marked);
     EXPECT_TRUE(v2->marked);
 
-    delete child;
+    // GC will clean up -     delete child;
 }
 
 // Main function

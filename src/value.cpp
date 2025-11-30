@@ -100,67 +100,7 @@ const Eigen::MatrixXd* Value::as_matrix() const {
     return const_cast<Value*>(this)->as_matrix();
 }
 
-// Factory methods
-Value* Value::from_scalar(double d) {
-    Value* val = new Value();
-    val->tag = ValueType::SCALAR;
-    val->data.scalar = d;
-    val->promoted_matrix_ = nullptr;
-    val->marked = false;
-    val->in_old_generation = false;
-    return val;
-}
-
-Value* Value::from_vector(const Eigen::VectorXd& v) {
-    Value* val = new Value();
-    val->tag = ValueType::VECTOR;
-    val->promoted_matrix_ = nullptr;
-
-    // Store vector as n×1 matrix (zero-copy using Eigen::Map)
-    // We need to allocate a new matrix and copy the data
-    // since we don't own the input vector
-    val->data.matrix = new Eigen::MatrixXd(v.size(), 1);
-    val->data.matrix->col(0) = v;
-
-    return val;
-}
-
-Value* Value::from_matrix(const Eigen::MatrixXd& m) {
-    Value* val = new Value();
-    val->tag = ValueType::MATRIX;
-    val->promoted_matrix_ = nullptr;
-
-    // Allocate and copy matrix data
-    val->data.matrix = new Eigen::MatrixXd(m);
-
-    return val;
-}
-
-Value* Value::from_primitive(PrimitiveFn* fn) {
-    Value* val = new Value();
-    val->tag = ValueType::PRIMITIVE;
-    val->data.primitive_fn = fn;
-    val->promoted_matrix_ = nullptr;
-    return val;
-}
-
-Value* Value::from_closure(Continuation* body) {
-    Value* val = new Value();
-    val->tag = ValueType::CLOSURE;
-    val->data.closure = body;
-    val->promoted_matrix_ = nullptr;
-    return val;
-}
-
-Value* Value::from_operator(PrimitiveOp* op) {
-    Value* val = new Value();
-    val->tag = ValueType::OPERATOR;
-    val->data.op = op;
-    val->promoted_matrix_ = nullptr;
-    return val;
-}
-
-void Value::mark_references(APLHeap* heap) {
+void Value::mark(APLHeap* heap) {
     // If this is a CLOSURE, mark the continuation graph
     if (tag == ValueType::CLOSURE && data.closure) {
         heap->mark_continuation(data.closure);

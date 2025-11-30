@@ -10,12 +10,27 @@ namespace apl {
 class Value;
 class Continuation;
 class APLHeap;
+class Machine;
+
+// GCObject base class - defined here to avoid circular dependencies
+// This is the base for all garbage-collected objects
+class GCObject {
+public:
+    bool marked;                // Mark bit for GC
+    bool in_old_generation;     // True if in old generation
+
+    GCObject() : marked(false), in_old_generation(false) {}
+    virtual ~GCObject() = default;
+
+    // Mark all objects referenced by this object for GC
+    virtual void mark(APLHeap* heap) = 0;
+};
 
 // Primitive function - can have both monadic and dyadic forms
 struct PrimitiveFn {
     const char* name;  // For debugging
-    Value* (*monadic)(Value* omega);           // Monadic form (can be nullptr)
-    Value* (*dyadic)(Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
+    Value* (*monadic)(Machine* m, Value* omega);           // Monadic form (can be nullptr)
+    Value* (*dyadic)(Machine* m, Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
 };
 
 // Forward declaration for operators
@@ -32,7 +47,15 @@ enum class ValueType {
 };
 
 // Value class - tagged union for all APL values
-class Value {
+class Value : public GCObject {
+private:
+    // Only APLHeap can allocate/deallocate Value objects
+    friend class APLHeap;
+
+    // Private new/delete operators enforce heap-only allocation
+    void* operator new(size_t size) { return ::operator new(size); }
+    void operator delete(void* ptr) { ::operator delete(ptr); }
+
 public:
     ValueType tag;
 
@@ -49,12 +72,8 @@ public:
         ~Data() {}  // Manual cleanup required
     } data;
 
-    // GC metadata
-    bool marked;                // Mark bit for GC
-    bool in_old_generation;     // True if in old generation
-
-    // Constructors
-    Value() : tag(ValueType::SCALAR), marked(false), in_old_generation(false) {
+    // Constructors (public so factory methods work, but new/delete are private)
+    Value() : GCObject(), tag(ValueType::SCALAR) {
         data.scalar = 0.0;
         promoted_matrix_ = nullptr;
     }
@@ -81,16 +100,8 @@ public:
     Eigen::MatrixXd* as_matrix();              // Get matrix (with lazy scalar promotion)
     const Eigen::MatrixXd* as_matrix() const;  // Const version
 
-    // Factory methods for creating values
-    static Value* from_scalar(double d);
-    static Value* from_vector(const Eigen::VectorXd& v);     // Zero-copy wrapping
-    static Value* from_matrix(const Eigen::MatrixXd& m);
-    static Value* from_primitive(PrimitiveFn* fn);
-    static Value* from_closure(Continuation* body);
-    static Value* from_operator(PrimitiveOp* op);
-
-    // GC support - mark all objects this Value references
-    void mark_references(APLHeap* heap);
+    // GC support - mark all objects this Value references (override from GCObject)
+    void mark(APLHeap* heap) override;
 
 private:
     // Helper for lazy scalar promotion

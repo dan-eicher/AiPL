@@ -38,6 +38,7 @@ set(APL_SOURCES
     src/lexer.cpp
     src/value.cpp
     src/continuation.cpp
+    src/completion.cpp
     src/heap.cpp
     src/environment.cpp
     src/machine.cpp

@@ -15,15 +15,22 @@ class Environment;
 
 // Abstract Continuation base class
 // Represents "what to do next" in the CEK machine
-class Continuation {
-public:
-    // GC metadata (same pattern as Value)
-    bool marked;
-    bool in_old_generation;
+class Continuation : public GCObject {
+private:
+    // Only APLHeap can allocate Continuation objects
+    friend class APLHeap;
 
-    Continuation() : marked(false), in_old_generation(false) {}
+    // Private new operator enforces heap-only allocation
+    void* operator new(size_t size) { return ::operator new(size); }
+
+protected:
+    // Protected delete allows derived class destructors to work
+    void operator delete(void* ptr) { ::operator delete(ptr); }
+
+    Continuation() : GCObject() {}
     virtual ~Continuation() {}
 
+public:
     // Mark all Values and Continuations referenced by this continuation for GC
     virtual void mark(APLHeap* heap) = 0;
 
@@ -100,11 +107,11 @@ protected:
 };
 
 // LookupK - Parse-time continuation for variable lookups
-// Stores the variable name (owned std::string for safety)
+// Stores the variable name (interned pointer from StringPool)
 // At runtime, looks up the variable in the environment
 class LookupK : public Continuation {
 public:
-    std::string var_name;       // Variable name (owned copy)
+    const char* var_name;       // Variable name (interned pointer)
 
     LookupK(const char* name)
         : var_name(name) {}
@@ -122,7 +129,7 @@ protected:
 // Syntax: name ← expression
 class AssignK : public Continuation {
 public:
-    std::string var_name;       // Variable name to assign to (owned copy)
+    const char* var_name;       // Variable name to assign to (interned pointer)
     Continuation* expr;         // Expression to evaluate
 
     AssignK(const char* name, Continuation* e)
@@ -141,7 +148,7 @@ protected:
 // Auxiliary continuation for AssignK - performs the actual binding after expression is evaluated
 class PerformAssignK : public Continuation {
 public:
-    std::string var_name;       // Variable name to assign to
+    const char* var_name;       // Variable name to assign to (interned pointer)
 
     PerformAssignK(const char* name)
         : var_name(name) {}
@@ -575,7 +582,7 @@ protected:
 // Marks loop boundary for :Leave support
 class ForK : public Continuation {
 public:
-    std::string var_name;        // Iterator variable name
+    const char* var_name;        // Iterator variable name (interned pointer)
     Continuation* array_expr;    // Expression that produces the array
     Continuation* body;          // Loop body to execute
 
@@ -598,7 +605,7 @@ protected:
 // Auxiliary continuation for ForK - iterates over array elements
 class ForIterateK : public Continuation {
 public:
-    std::string var_name;        // Iterator variable name
+    const char* var_name;        // Iterator variable name (interned pointer)
     Value* array;                // Array to iterate over
     Continuation* body;          // Loop body
     size_t index;                // Current iteration index

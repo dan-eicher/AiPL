@@ -3,7 +3,11 @@
 #include "heap.h"
 #include "machine.h"
 #include "continuation.h"
+#include "environment.h"
 #include <algorithm>
+#include <stdexcept>
+#include <iostream>
+#include <cstdlib>
 
 namespace apl {
 
@@ -11,19 +15,53 @@ namespace apl {
 APLHeap::~APLHeap() {
     // Clean up all Values
     for (Value* v : young_objects) {
+        if (!v) {
+            std::cerr << "GC ERROR: nullptr found in young_objects during heap destruction - indicates double-deletion or corruption" << std::endl;
+            std::abort();
+        }
         delete v;
     }
     for (Value* v : old_objects) {
+        if (!v) {
+            std::cerr << "GC ERROR: nullptr found in old_objects during heap destruction - indicates double-deletion or corruption" << std::endl;
+            std::abort();
+        }
         delete v;
     }
     // Scalar cache shares pointers with young/old, so don't double-delete
 
     // Clean up all Continuations
     for (Continuation* k : young_continuations) {
+        if (!k) {
+            std::cerr << "GC ERROR: nullptr found in young_continuations during heap destruction - indicates double-deletion or corruption" << std::endl;
+            std::abort();
+        }
         delete k;
     }
     for (Continuation* k : old_continuations) {
+        if (!k) {
+            std::cerr << "GC ERROR: nullptr found in old_continuations during heap destruction - indicates double-deletion or corruption" << std::endl;
+            std::abort();
+        }
         delete k;
+    }
+
+    // Clean up all Completions (no old generation)
+    for (APLCompletion* c : completions) {
+        if (!c) {
+            std::cerr << "GC ERROR: nullptr found in completions during heap destruction - indicates double-deletion or corruption" << std::endl;
+            std::abort();
+        }
+        delete c;
+    }
+
+    // Clean up all Environments (no old generation)
+    for (Environment* e : environments) {
+        if (!e) {
+            std::cerr << "GC ERROR: nullptr found in environments during heap destruction - indicates double-deletion or corruption" << std::endl;
+            std::abort();
+        }
+        delete e;
     }
 }
 
@@ -32,8 +70,8 @@ Value* APLHeap::allocate(Value* val) {
     if (!val) return nullptr;
 
     // Check if GC is needed
-    if (should_gc() && !gc_in_progress) {
-        collect(nullptr);  // Will implement with Machine later
+    if (should_gc() && !gc_in_progress && machine_) {
+        collect(machine_);
     }
 
     // Add to young generation
@@ -60,7 +98,9 @@ Value* APLHeap::allocate_scalar(double d) {
         }
 
         // Create and cache
-        Value* val = Value::from_scalar(d);
+        Value* val = new Value();
+        val->tag = ValueType::SCALAR;
+        val->data.scalar = d;
         young_objects.push_back(val);
         bytes_allocated += sizeof(Value);
         scalar_cache[idx] = val;
@@ -69,11 +109,47 @@ Value* APLHeap::allocate_scalar(double d) {
     }
 
     // Non-cacheable scalar - regular allocation
-    Value* val = Value::from_scalar(d);
+    Value* val = new Value();
+    val->tag = ValueType::SCALAR;
+    val->data.scalar = d;
     return allocate(val);
 }
 
-// Allocate a continuation in the heap
+// Allocate a vector
+Value* APLHeap::allocate_vector(const Eigen::VectorXd& v) {
+    Value* val = new Value();
+    val->tag = ValueType::VECTOR;
+    // Store vector as n×1 matrix
+    val->data.matrix = new Eigen::MatrixXd(v.size(), 1);
+    val->data.matrix->col(0) = v;
+    return allocate(val);
+}
+
+// Allocate a matrix
+Value* APLHeap::allocate_matrix(const Eigen::MatrixXd& m) {
+    Value* val = new Value();
+    val->tag = ValueType::MATRIX;
+    val->data.matrix = new Eigen::MatrixXd(m);
+    return allocate(val);
+}
+
+// Allocate a primitive function value
+Value* APLHeap::allocate_primitive(PrimitiveFn* fn) {
+    Value* val = new Value();
+    val->tag = ValueType::PRIMITIVE;
+    val->data.primitive_fn = fn;
+    return allocate(val);
+}
+
+// Allocate a closure (user-defined function)
+Value* APLHeap::allocate_closure(Continuation* body) {
+    Value* val = new Value();
+    val->tag = ValueType::CLOSURE;
+    val->data.closure = body;
+    return allocate(val);
+}
+
+// Allocate a continuation in the heap (private - only called by template allocate)
 Continuation* APLHeap::allocate_continuation(Continuation* k) {
     if (!k) return nullptr;
 
@@ -89,6 +165,42 @@ Continuation* APLHeap::allocate_continuation(Continuation* k) {
     bytes_allocated += sizeof(Continuation);
 
     return k;
+}
+
+// Allocate a completion in the heap (private - only called by template allocate)
+APLCompletion* APLHeap::allocate_completion(APLCompletion* comp) {
+    if (!comp) return nullptr;
+
+    // Check if GC is needed
+    if (should_gc() && !gc_in_progress) {
+        collect(nullptr);
+    }
+
+    // Add to completions list (no generational separation)
+    comp->marked = false;
+    comp->in_old_generation = false;  // Always false for completions
+    completions.push_back(comp);
+    bytes_allocated += sizeof(APLCompletion);
+
+    return comp;
+}
+
+// Allocate an environment in the heap (private - only called by template allocate)
+Environment* APLHeap::allocate_environment(Environment* env) {
+    if (!env) return nullptr;
+
+    // Check if GC is needed
+    if (should_gc() && !gc_in_progress) {
+        collect(nullptr);
+    }
+
+    // Add to environments list (no generational separation - they're GC roots)
+    env->marked = false;
+    env->in_old_generation = false;  // Always false for environments
+    environments.push_back(env);
+    bytes_allocated += sizeof(Environment);
+
+    return env;
 }
 
 // Trigger appropriate garbage collection
@@ -128,6 +240,9 @@ void APLHeap::minor_gc(Machine* machine) {
     auto it = young_objects.begin();
     while (it != young_objects.end()) {
         Value* val = *it;
+        if (!val) {
+            throw std::runtime_error("GC ERROR: nullptr found in young_objects during minor GC - indicates corruption");
+        }
         if (!val->marked) {
             // Unmarked - reclaim
             bytes_allocated -= sizeof(Value);
@@ -195,9 +310,9 @@ void APLHeap::mark_from_roots(Machine* machine) {
         mark_value(machine->ctrl.value);
     }
 
-    // Mark values in completion record
-    if (machine->ctrl.completion && machine->ctrl.completion->value) {
-        mark_value(machine->ctrl.completion->value);
+    // Mark completion in control register (they're GC objects now!)
+    if (machine->ctrl.completion) {
+        mark_completion(machine->ctrl.completion);
     }
 
     // Mark continuations on kont_stack (they're GC objects now!)
@@ -214,9 +329,12 @@ void APLHeap::mark_from_roots(Machine* machine) {
         }
     }
 
-    // Mark values in environment
+    // Mark environment (GC root - now GC-managed)
     if (machine->env) {
-        machine->env->mark(this);
+        if (!machine->env->marked) {
+            machine->env->marked = true;
+            machine->env->mark(this);  // Will recursively mark parent envs
+        }
     }
 }
 
@@ -228,7 +346,7 @@ void APLHeap::mark_value(Value* val) {
     val->marked = true;
 
     // Mark objects this value references (e.g., CLOSURE continuation graphs)
-    val->mark_references(this);
+    val->mark(this);
 }
 
 // Mark a continuation and its transitive references
@@ -242,12 +360,26 @@ void APLHeap::mark_continuation(Continuation* k) {
     k->mark(this);
 }
 
+// Mark a completion and its transitive references
+void APLHeap::mark_completion(APLCompletion* comp) {
+    if (!comp) return;
+    if (comp->marked) return;  // Already marked
+
+    comp->marked = true;
+
+    // Mark values this completion references
+    comp->mark(this);
+}
+
 // Sweep unmarked objects from both generations
 void APLHeap::sweep() {
     // Sweep young generation
     auto it_young = young_objects.begin();
     while (it_young != young_objects.end()) {
         Value* val = *it_young;
+        if (!val) {
+            throw std::runtime_error("GC ERROR: nullptr found in young_objects during sweep - indicates corruption");
+        }
         if (!val->marked) {
             bytes_allocated -= sizeof(Value);
             if (val->is_array() && val->data.matrix) {
@@ -276,6 +408,9 @@ void APLHeap::sweep() {
     auto it_old = old_objects.begin();
     while (it_old != old_objects.end()) {
         Value* val = *it_old;
+        if (!val) {
+            throw std::runtime_error("GC ERROR: nullptr found in old_objects during sweep - indicates corruption");
+        }
         if (!val->marked) {
             bytes_allocated -= sizeof(Value);
             if (val->is_array() && val->data.matrix) {
@@ -293,6 +428,9 @@ void APLHeap::sweep() {
     auto it_young_cont = young_continuations.begin();
     while (it_young_cont != young_continuations.end()) {
         Continuation* k = *it_young_cont;
+        if (!k) {
+            throw std::runtime_error("GC ERROR: nullptr found in young_continuations during sweep - indicates corruption");
+        }
         if (!k->marked) {
             bytes_allocated -= sizeof(Continuation);
             delete k;
@@ -306,12 +444,47 @@ void APLHeap::sweep() {
     auto it_old_cont = old_continuations.begin();
     while (it_old_cont != old_continuations.end()) {
         Continuation* k = *it_old_cont;
+        if (!k) {
+            throw std::runtime_error("GC ERROR: nullptr found in old_continuations during sweep - indicates corruption");
+        }
         if (!k->marked) {
             bytes_allocated -= sizeof(Continuation);
             delete k;
             it_old_cont = old_continuations.erase(it_old_cont);
         } else {
             ++it_old_cont;
+        }
+    }
+
+    // Sweep completions (no generational separation)
+    auto it_comp = completions.begin();
+    while (it_comp != completions.end()) {
+        APLCompletion* c = *it_comp;
+        if (!c) {
+            throw std::runtime_error("GC ERROR: nullptr found in completions during sweep - indicates corruption");
+        }
+        if (!c->marked) {
+            bytes_allocated -= sizeof(APLCompletion);
+            delete c;
+            it_comp = completions.erase(it_comp);
+        } else {
+            ++it_comp;
+        }
+    }
+
+    // Sweep environments (no generational separation)
+    auto it_env = environments.begin();
+    while (it_env != environments.end()) {
+        Environment* e = *it_env;
+        if (!e) {
+            throw std::runtime_error("GC ERROR: nullptr found in environments during sweep - indicates corruption");
+        }
+        if (!e->marked) {
+            bytes_allocated -= sizeof(Environment);
+            delete e;
+            it_env = environments.erase(it_env);
+        } else {
+            ++it_env;
         }
     }
 }
@@ -322,6 +495,9 @@ void APLHeap::promote_survivors() {
     auto it = young_objects.begin();
     while (it != young_objects.end()) {
         Value* val = *it;
+        if (!val) {
+            throw std::runtime_error("GC ERROR: nullptr found in young_objects during promotion - indicates corruption");
+        }
         if (val->marked && !val->in_old_generation) {
             // Promote to old generation
             val->in_old_generation = true;
@@ -336,6 +512,9 @@ void APLHeap::promote_survivors() {
     auto it_cont = young_continuations.begin();
     while (it_cont != young_continuations.end()) {
         Continuation* k = *it_cont;
+        if (!k) {
+            throw std::runtime_error("GC ERROR: nullptr found in young_continuations during promotion - indicates corruption");
+        }
         if (k->marked && !k->in_old_generation) {
             // Promote to old generation
             k->in_old_generation = true;
@@ -345,6 +524,8 @@ void APLHeap::promote_survivors() {
             ++it_cont;
         }
     }
+
+    // Completions are never promoted (always short-lived)
 }
 
 // Clear all mark bits
@@ -360,6 +541,12 @@ void APLHeap::clear_marks() {
     }
     for (Continuation* k : old_continuations) {
         k->marked = false;
+    }
+    for (APLCompletion* c : completions) {
+        c->marked = false;
+    }
+    for (Environment* e : environments) {
+        e->marked = false;
     }
 }
 

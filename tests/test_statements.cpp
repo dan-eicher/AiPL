@@ -15,7 +15,7 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
-        init_global_environment(machine->env);  // Initialize built-in operators
+        init_global_environment(machine);  // Initialize built-in operators
         parser = new Parser(machine);
     }
 

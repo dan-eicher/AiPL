@@ -13,6 +13,9 @@
 
 namespace apl {
 
+// Forward declaration
+class Parser;
+
 // Machine - The CEK machine execution engine
 class Machine {
 public:
@@ -25,28 +28,18 @@ public:
     APLHeap* heap;                          // Garbage-collected heap
     StringPool string_pool;                 // Interned strings
 
+    // Parser (owned by machine)
+    Parser* parser;
+
     // Caches for optimization
     std::unordered_map<std::string, Continuation*> function_cache;
     // guard_cache will be added in later phases when we implement optimization
 
     // Constructor
-    Machine() {
-        heap = new APLHeap();
-        env = new Environment();  // Global environment
-    }
+    Machine();
 
     // Destructor
-    ~Machine() {
-        // Clear continuation references (heap will delete them)
-        kont_stack.clear();
-        function_cache.clear();
-
-        // Clean up environment chain (not GC-managed)
-        delete env;
-
-        // Clean up heap (deletes all GC objects: Values AND Continuations)
-        delete heap;
-    }
+    ~Machine();
 
     // Execution methods
 

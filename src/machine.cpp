@@ -3,9 +3,32 @@
 #include "machine.h"
 #include "continuation.h"
 #include "completion.h"
+#include "parser.h"
 #include <stdexcept>
 
 namespace apl {
+
+// Constructor
+Machine::Machine() {
+    heap = new APLHeap();
+    heap->set_machine(this);  // Give heap back-pointer for GC
+    env = heap->allocate<Environment>();  // Global environment (GC-managed)
+    parser = new Parser(this);  // Parser owned by machine
+}
+
+// Destructor
+Machine::~Machine() {
+    // Delete parser first (it doesn't own anything, just references machine)
+    delete parser;
+
+    // Clear continuation references (heap will delete them)
+    kont_stack.clear();
+    function_cache.clear();
+
+    // Environment is GC-managed, heap will delete it
+    // Clean up heap (deletes all GC objects: Values, Continuations, Completions, Environments)
+    delete heap;
+}
 
 // Execute the machine until halt
 // This is the main trampoline loop that drives the CEK machine
@@ -54,7 +77,7 @@ void Machine::handle_completion() {
             // Normal completion - just extract the value and continue
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
-            delete comp;
+            // GC will clean up comp
             break;
 
         case CompletionType::RETURN: {
@@ -71,7 +94,7 @@ void Machine::handle_completion() {
             // Set value and clear completion
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
-            delete comp;
+            // GC will clean up comp
             break;
         }
 
@@ -90,7 +113,7 @@ void Machine::handle_completion() {
             pop_kont();  // Remove the loop continuation
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
-            delete comp;
+            // GC will clean up comp
             break;
         }
 
@@ -108,7 +131,7 @@ void Machine::handle_completion() {
             // For CONTINUE, we re-invoke the loop continuation
             ctrl.value = comp->value;
             ctrl.completion = nullptr;
-            delete comp;
+            // GC will clean up comp
 
             // The loop continuation will handle the continue
             Continuation* loop_k = kont_stack.back();
@@ -123,7 +146,7 @@ void Machine::handle_completion() {
             // Later phases will implement proper APL error handling
             std::string error_msg = std::string("APL Error: ") +
                 (comp->target ? comp->target : "unspecified");
-            delete comp;
+            // GC will clean up comp (after exception is thrown)
             throw std::runtime_error(error_msg);
         }
     }

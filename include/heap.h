@@ -5,15 +5,22 @@
 #include "value.h"
 #include <vector>
 #include <cstddef>
+#include <type_traits>
+#include <utility>
 
 namespace apl {
 
 // Forward declarations
 class Machine;
 class Continuation;
+class APLCompletion;
+class Environment;
 
 // APLHeap - Generational heap with specialized zones
 class APLHeap {
+private:
+    Machine* machine_;  // Back-pointer to owning machine (for GC)
+
 public:
     // Generational zones for Values
     std::vector<Value*> young_objects;      // Short-lived allocations
@@ -22,6 +29,12 @@ public:
     // Generational zones for Continuations
     std::vector<Continuation*> young_continuations;  // Short-lived continuations
     std::vector<Continuation*> old_continuations;    // Long-lived continuations
+
+    // Completions (always short-lived, no old generation needed)
+    std::vector<APLCompletion*> completions;
+
+    // Environments (GC roots, no generational separation needed)
+    std::vector<Environment*> environments;
 
     // Scalar cache for common values (-128 to 127)
     Value* scalar_cache[256];
@@ -39,7 +52,8 @@ public:
 
     // Constructor
     APLHeap(size_t young_cap = 4096, size_t old_cap = 16384)
-        : bytes_allocated(0),
+        : machine_(nullptr),
+          bytes_allocated(0),
           gc_threshold(young_cap * sizeof(Value)),
           minor_gc_count(0),
           major_gc_count(0),
@@ -56,17 +70,41 @@ public:
         }
     }
 
+    // Set the owning machine (called by Machine constructor)
+    void set_machine(Machine* m) { machine_ = m; }
+
     // Destructor (implemented in .cpp to avoid incomplete type issues)
     ~APLHeap();
 
-    // Allocate a new Value in the heap
-    Value* allocate(Value* val);
+    // --- Public Allocation API ---
 
     // Allocate a scalar (with cache checking)
     Value* allocate_scalar(double d);
 
-    // Allocate a continuation in the heap
-    Continuation* allocate_continuation(Continuation* k);
+    // Convenient Value allocation helpers
+    Value* allocate_vector(const Eigen::VectorXd& v);
+    Value* allocate_matrix(const Eigen::MatrixXd& m);
+    Value* allocate_primitive(PrimitiveFn* fn);
+    Value* allocate_closure(Continuation* body);
+    // Template-based allocation interface (unified allocation)
+    template<typename T, typename... Args>
+    T* allocate(Args&&... args) {
+        T* obj = new T(std::forward<Args>(args)...);
+
+        // Register with appropriate GC list based on type
+        if constexpr (std::is_base_of<Value, T>::value) {
+            return static_cast<T*>(allocate(static_cast<Value*>(obj)));
+        } else if constexpr (std::is_base_of<Continuation, T>::value) {
+            return static_cast<T*>(allocate_continuation(static_cast<Continuation*>(obj)));
+        } else if constexpr (std::is_base_of<APLCompletion, T>::value) {
+            return static_cast<T*>(allocate_completion(static_cast<APLCompletion*>(obj)));
+        } else if constexpr (std::is_base_of<Environment, T>::value) {
+            return static_cast<T*>(allocate_environment(static_cast<Environment*>(obj)));
+        } else {
+            // Unknown type - just return it (will cause errors if not intended)
+            return obj;
+        }
+    }
 
     // Garbage collection
     void minor_gc(Machine* machine);    // Collect young generation
@@ -77,6 +115,7 @@ public:
     void mark_from_roots(Machine* machine);
     void mark_value(Value* val);
     void mark_continuation(Continuation* k);
+    void mark_completion(APLCompletion* comp);
 
     // Sweep phase - reclaim unmarked values
     void sweep();
@@ -90,6 +129,7 @@ public:
     }
 
     // Statistics
+
     size_t young_size() const { return young_objects.size(); }
     size_t old_size() const { return old_objects.size(); }
     size_t total_size() const { return young_size() + old_size(); }
@@ -98,6 +138,16 @@ public:
     void clear_marks();
 
 private:
+    // --- Internal Allocation Helpers ---
+
+    // Allocate a new Value in the heap (called by template allocate() only)
+    Value* allocate(Value* val);
+
+    // Internal allocation helpers (called by template allocate() only)
+    Continuation* allocate_continuation(Continuation* k);
+    APLCompletion* allocate_completion(APLCompletion* comp);
+    Environment* allocate_environment(Environment* env);
+
     // Add to scalar cache
     void cache_scalar(Value* val);
 };

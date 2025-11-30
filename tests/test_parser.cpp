@@ -15,13 +15,12 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
-        init_global_environment(machine->env);  // Initialize built-in operators
-        parser = new Parser(machine);
+        init_global_environment(machine);  // Initialize built-in operators
+        parser = machine->parser;  // Use machine's parser
     }
 
     void TearDown() override {
-        delete parser;
-        delete machine;
+        delete machine;  // Machine will delete its parser
     }
 
     // Helper: evaluate parsed continuation using the CEK machine
@@ -115,8 +114,8 @@ TEST_F(ParserTest, ParseAddition) {
 // Test DyadicK with trampoline
 TEST_F(ParserTest, TestDyadicKWithTrampoline) {
     // Manually construct a DyadicK: 2 + 3
-    LiteralK* left = new LiteralK(2.0);
-    LiteralK* right = new LiteralK(3.0);
+    LiteralK* left = machine->heap->allocate<LiteralK>(2.0);
+    LiteralK* right = machine->heap->allocate<LiteralK>(3.0);
 
     // Look up the + primitive
     Value* plus_val = machine->env->lookup("+");
@@ -124,12 +123,9 @@ TEST_F(ParserTest, TestDyadicKWithTrampoline) {
     ASSERT_EQ(plus_val->tag, ValueType::PRIMITIVE);
     PrimitiveFn* plus_fn = plus_val->data.primitive_fn;
 
-    DyadicK* dyadic = new DyadicK(plus_fn, left, right);
+    DyadicK* dyadic = machine->heap->allocate<DyadicK>(plus_fn, left, right);
 
     // Allocate in heap for GC
-    machine->heap->allocate_continuation(left);
-    machine->heap->allocate_continuation(right);
-    machine->heap->allocate_continuation(dyadic);
 
     // Use trampoline instead of direct invoke
     machine->push_kont(dyadic);
@@ -489,7 +485,7 @@ TEST_F(ParserTest, ParseParenthesizedStrand) {
 // Test simple variable lookup
 TEST_F(ParserTest, ParseSimpleVariable) {
     // Define a variable in the environment
-    Value* val = Value::from_scalar(42.0);
+    Value* val = machine->heap->allocate_scalar(42.0);
     machine->env->define("x", val);
 
     Continuation* k = parser->parse("x");
@@ -498,7 +494,7 @@ TEST_F(ParserTest, ParseSimpleVariable) {
     // Check that it parsed as LookupK
     LookupK* lookup = dynamic_cast<LookupK*>(k);
     ASSERT_NE(lookup, nullptr);
-    EXPECT_EQ(lookup->var_name, "x");
+    EXPECT_STREQ(lookup->var_name, "x");
 
     Value* result = eval(k);
     ASSERT_NE(result, nullptr);
@@ -509,8 +505,8 @@ TEST_F(ParserTest, ParseSimpleVariable) {
 // Test variable in expression
 TEST_F(ParserTest, ParseVariableInExpression) {
     // Define variables
-    machine->env->define("a", Value::from_scalar(10.0));
-    machine->env->define("b", Value::from_scalar(5.0));
+    machine->env->define("a", machine->heap->allocate_scalar(10.0));
+    machine->env->define("b", machine->heap->allocate_scalar(5.0));
 
     Continuation* k = parser->parse("a + b");
     ASSERT_NE(k, nullptr);
@@ -524,7 +520,7 @@ TEST_F(ParserTest, ParseVariableInExpression) {
 // Test variable in strand
 TEST_F(ParserTest, ParseVariableInStrand) {
     // Define variable
-    machine->env->define("x", Value::from_scalar(5.0));
+    machine->env->define("x", machine->heap->allocate_scalar(5.0));
 
     Continuation* k = parser->parse("1 x 3");
     ASSERT_NE(k, nullptr);
@@ -766,10 +762,11 @@ TEST_F(ParserTest, FunctionAssignmentMonadic) {
 TEST_F(ParserTest, FunctionAssignmentDyadic) {
     // Manually add + to variable f
     Value* plus_fn = machine->env->lookup("+");
-    ASSERT_NE(plus_fn, nullptr);
+    ASSERT_NE(plus_fn, nullptr) << "+ should be in global environment";
     machine->env->define("f", plus_fn);
 
-    // Parse "2 f 3" - should apply f (which is +) dyadically: 2 + 3 = 5
+    // Now parse "2 f 3" - should apply f (which is +) dyadically to 2 and 3
+    // Dyadic + is addition, so result should be 5
     Continuation* k = parser->parse("2 f 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -1026,6 +1023,119 @@ TEST_F(ParserTest, ApplyNestedDfn) {
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 23.0);
+}
+
+// ============================================================================
+// GC Integration Tests (Phase 5.2)
+// ============================================================================
+
+// Test that GC can run during parsing without breaking anything
+TEST_F(ParserTest, GCDuringParsing) {
+    // Force a GC before parsing
+    machine->heap->collect(machine);
+
+    size_t heap_size_before = machine->heap->total_size();
+
+    // Parse a complex expression
+    Continuation* k = parser->parse("((1+2)×(3+4))+(5×6)");
+    ASSERT_NE(k, nullptr);
+
+    // Force another GC after parsing
+    machine->heap->collect(machine);
+
+    // Execute the parsed continuation
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 51.0);  // (3×7)+30 = 21+30 = 51
+
+    // Verify heap is stable
+    size_t heap_size_after = machine->heap->total_size();
+    EXPECT_GT(heap_size_after, 0);  // Heap should have objects
+}
+
+// Test that parser can handle large expressions without leaking
+TEST_F(ParserTest, LargeExpressionGC) {
+    // Build a large nested expression that creates 100+ continuations
+    // Expression: 1+2+3+4+...+50 (creates many continuation nodes)
+    std::string expr = "1";
+    for (int i = 2; i <= 50; i++) {
+        expr += "+" + std::to_string(i);
+    }
+
+    // Parse the large expression
+    Continuation* k = parser->parse(expr.c_str());
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Execute it
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1275.0);  // Sum 1 to 50 = 50×51/2 = 1275
+
+    // Force GC - should not crash or corrupt heap
+    machine->heap->collect(machine);
+
+    // Verify heap is still functional after GC
+    Continuation* k2 = parser->parse("1+2+3");
+    ASSERT_NE(k2, nullptr);
+    Value* result2 = eval(k2);
+    EXPECT_DOUBLE_EQ(result2->as_scalar(), 6.0);
+}
+
+// Test that parser doesn't leak continuations across multiple parses
+TEST_F(ParserTest, ParserNoLeakAcrossParses) {
+    // Parse and execute several expressions
+    for (int i = 0; i < 10; i++) {
+        Continuation* k = parser->parse("1+2+3+4+5");
+        ASSERT_NE(k, nullptr);
+
+        Value* result = eval(k);
+        ASSERT_NE(result, nullptr);
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+
+        // Force GC between iterations
+        machine->heap->collect(machine);
+    }
+
+    // After all iterations, heap should be stable (not growing unbounded)
+    size_t final_size = machine->heap->total_size();
+    EXPECT_GT(final_size, 0);
+
+    // Parse one more time and verify heap is still reasonable
+    size_t before_last = machine->heap->total_size();
+    Continuation* k = parser->parse("1+2+3+4+5");
+    ASSERT_NE(k, nullptr);
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+
+    size_t after_last = machine->heap->total_size();
+    // Heap shouldn't grow dramatically for the same expression
+    EXPECT_LT(after_last, before_last * 2);
+}
+
+// Test GC during complex nested parsing
+TEST_F(ParserTest, GCWithNestedExpressions) {
+    // Create deeply nested expression
+    std::string expr = "(((((1+2)+3)+4)+5)+6)";
+
+    Continuation* k = parser->parse(expr.c_str());
+    ASSERT_NE(k, nullptr);
+
+    // Force GC while continuation graph exists
+    machine->heap->collect(machine);
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 21.0);
+
+    // GC after execution
+    machine->heap->collect(machine);
+
+    // Verify heap is still functional
+    Continuation* k2 = parser->parse("10+20");
+    ASSERT_NE(k2, nullptr);
+    Value* result2 = eval(k2);
+    EXPECT_DOUBLE_EQ(result2->as_scalar(), 30.0);
 }
 
 // Main function

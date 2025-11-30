@@ -39,8 +39,7 @@ void LiteralK::mark(APLHeap* heap) {
 // ClosureLiteralK implementation
 Value* ClosureLiteralK::invoke(Machine* machine) {
     // Convert the continuation body to a CLOSURE Value* at runtime
-    Value* closure = Value::from_closure(body);
-    Value* heap_closure = machine->heap->allocate(closure);
+    Value* heap_closure = machine->heap->allocate_closure(body);
     machine->ctrl.set_value(heap_closure);
 
     return nullptr;  // Continue trampoline
@@ -56,7 +55,7 @@ void ClosureLiteralK::mark(APLHeap* heap) {
 // LookupK implementation
 Value* LookupK::invoke(Machine* machine) {
     // Look up the variable in the environment
-    Value* val = machine->env->lookup(var_name.c_str());
+    Value* val = machine->env->lookup(var_name);
 
     if (!val) {
         // Variable not found - error
@@ -69,7 +68,7 @@ Value* LookupK::invoke(Machine* machine) {
 }
 
 void LookupK::mark(APLHeap* heap) {
-    // var_name is std::string, doesn't need GC marking
+    // var_name is interned const char*, doesn't need GC marking
     (void)heap;  // Unused
 }
 
@@ -78,8 +77,7 @@ Value* AssignK::invoke(Machine* machine) {
     // Assignment: evaluate expression, then bind to variable
     // Use auxiliary continuation to capture the result
 
-    PerformAssignK* perform = new PerformAssignK(var_name.c_str());
-    machine->heap->allocate_continuation(perform);
+    PerformAssignK* perform = machine->heap->allocate<PerformAssignK>(var_name);
 
     machine->push_kont(perform);
     machine->push_kont(expr);
@@ -99,7 +97,7 @@ Value* PerformAssignK::invoke(Machine* machine) {
     // Bind it to the variable name
     Value* val = machine->ctrl.value;
 
-    machine->env->define(var_name.c_str(), val);
+    machine->env->define(var_name, val);
 
     // Assignment expression returns the assigned value
     machine->ctrl.set_value(val);
@@ -108,7 +106,7 @@ Value* PerformAssignK::invoke(Machine* machine) {
 }
 
 void PerformAssignK::mark(APLHeap* heap) {
-    // var_name is std::string, doesn't need GC marking
+    // var_name is interned const char*, doesn't need GC marking
     (void)heap;  // Unused
 }
 
@@ -120,8 +118,7 @@ Value* StrandK::invoke(Machine* machine) {
     if (elements.empty()) {
         // Empty strand - create empty vector
         Eigen::VectorXd empty_vec(0);
-        Value* val = Value::from_vector(empty_vec);
-        val = machine->heap->allocate(val);
+        Value* val = machine->heap->allocate_vector(empty_vec);
         machine->ctrl.set_value(val);
         return nullptr;
     }
@@ -139,8 +136,7 @@ Value* StrandK::invoke(Machine* machine) {
     std::vector<Continuation*> remaining(elements.begin(), elements.end() - 1);
     std::vector<Value*> evaluated;  // Empty accumulator
 
-    EvalStrandElementK* eval_next = new EvalStrandElementK(remaining, evaluated);
-    machine->heap->allocate_continuation(eval_next);
+    EvalStrandElementK* eval_next = machine->heap->allocate<EvalStrandElementK>(remaining, evaluated);
 
     // Push in reverse order (stack is LIFO)
     machine->push_kont(eval_next);         // Will execute after rightmost element
@@ -164,8 +160,7 @@ Value* MonadicK::invoke(Machine* machine) {
     // Strategy: push operand continuation, then push auxiliary to apply function
 
     // Create auxiliary continuation to apply function after operand evaluates
-    ApplyMonadicK* apply = new ApplyMonadicK(prim_fn);
-    machine->heap->allocate_continuation(apply);
+    ApplyMonadicK* apply = machine->heap->allocate<ApplyMonadicK>(prim_fn);
 
     // Push in reverse order (stack is LIFO)
     machine->push_kont(apply);    // Will execute after operand
@@ -186,8 +181,7 @@ Value* DyadicK::invoke(Machine* machine) {
     // Use auxiliary continuations to manage the multi-step process
 
     // Allocate auxiliary continuation to evaluate left after right completes
-    EvalDyadicLeftK* eval_left = new EvalDyadicLeftK(prim_fn, left, nullptr);
-    machine->heap->allocate_continuation(eval_left);
+    EvalDyadicLeftK* eval_left = machine->heap->allocate<EvalDyadicLeftK>(prim_fn, left, nullptr);
 
     // Push work in REVERSE order (stack is LIFO)
     machine->push_kont(eval_left);  // Will execute after right
@@ -212,8 +206,7 @@ Value* EvalDyadicLeftK::invoke(Machine* machine) {
     right_val = machine->ctrl.value;
 
     // Allocate auxiliary continuation to apply function after left evaluates
-    ApplyDyadicK* apply = new ApplyDyadicK(prim_fn, right_val);
-    machine->heap->allocate_continuation(apply);
+    ApplyDyadicK* apply = machine->heap->allocate<ApplyDyadicK>(prim_fn, right_val);
 
     // Push work in reverse order
     machine->push_kont(apply);   // Will execute after left
@@ -242,7 +235,7 @@ Value* ApplyMonadicK::invoke(Machine* machine) {
     }
 
     // Apply the monadic function
-    Value* result = prim_fn->monadic(operand_val);
+    Value* result = prim_fn->monadic(machine, operand_val);
     machine->ctrl.set_value(result);
 
     return nullptr;  // Continue trampoline
@@ -289,7 +282,7 @@ Value* ApplyDyadicK::invoke(Machine* machine) {
     }
 
     // Apply the dyadic function
-    Value* result = prim_fn->dyadic(left_val, right_val);
+    Value* result = prim_fn->dyadic(machine, left_val, right_val);
     machine->ctrl.set_value(result);
 
     return nullptr;  // Continue trampoline
@@ -311,8 +304,7 @@ Value* EvalStrandElementK::invoke(Machine* machine) {
 
     if (remaining_elements.empty()) {
         // No more elements to evaluate - build the final strand
-        BuildStrandK* build = new BuildStrandK(evaluated_values);
-        machine->heap->allocate_continuation(build);
+        BuildStrandK* build = machine->heap->allocate<BuildStrandK>(evaluated_values);
         machine->push_kont(build);
         return nullptr;
     }
@@ -322,8 +314,7 @@ Value* EvalStrandElementK::invoke(Machine* machine) {
     std::vector<Continuation*> new_remaining(remaining_elements.begin(), remaining_elements.end() - 1);
 
     // Create new EvalStrandElementK for the next iteration
-    EvalStrandElementK* eval_next = new EvalStrandElementK(new_remaining, evaluated_values);
-    machine->heap->allocate_continuation(eval_next);
+    EvalStrandElementK* eval_next = machine->heap->allocate<EvalStrandElementK>(new_remaining, evaluated_values);
 
     // Push in reverse order
     machine->push_kont(eval_next);   // Will execute after next element
@@ -355,8 +346,7 @@ Value* BuildStrandK::invoke(Machine* machine) {
 
     if (values.empty()) {
         Eigen::VectorXd empty_vec(0);
-        Value* val = Value::from_vector(empty_vec);
-        val = machine->heap->allocate(val);
+        Value* val = machine->heap->allocate_vector(empty_vec);
         machine->ctrl.set_value(val);
         return nullptr;
     }
@@ -394,8 +384,7 @@ Value* BuildStrandK::invoke(Machine* machine) {
             }
 
             // Apply monadic function
-            Value* result = prim->monadic(arg);
-            result = machine->heap->allocate(result);
+            Value* result = prim->monadic(machine, arg);
             machine->ctrl.set_value(result);
             return nullptr;
         }
@@ -410,8 +399,7 @@ Value* BuildStrandK::invoke(Machine* machine) {
             }
 
             // Apply dyadic function: x f y
-            Value* result = prim->dyadic(left_arg, right_arg);
-            result = machine->heap->allocate(result);
+            Value* result = prim->dyadic(machine, left_arg, right_arg);
             machine->ctrl.set_value(result);
             return nullptr;
         }
@@ -426,8 +414,7 @@ Value* BuildStrandK::invoke(Machine* machine) {
             }
 
             // Apply dyadic function: x f y
-            Value* result = prim->dyadic(left_arg, right_arg);
-            result = machine->heap->allocate(result);
+            Value* result = prim->dyadic(machine, left_arg, right_arg);
             machine->ctrl.set_value(result);
             return nullptr;
         }
@@ -453,8 +440,7 @@ Value* BuildStrandK::invoke(Machine* machine) {
         }
     }
 
-    Value* result = Value::from_vector(vec);
-    result = machine->heap->allocate(result);
+    Value* result = machine->heap->allocate_vector(vec);
     machine->ctrl.set_value(result);
 
     return nullptr;  // Continue trampoline
@@ -501,15 +487,13 @@ Value* ApplyFunctionK::invoke(Machine* machine) {
 
     if (left_arg) {
         // Dyadic case: evaluate right, then left, then function, then apply
-        EvalApplyFunctionLeftK* eval_left = new EvalApplyFunctionLeftK(fn_cont, left_arg, nullptr);
-        machine->heap->allocate_continuation(eval_left);
+        EvalApplyFunctionLeftK* eval_left = machine->heap->allocate<EvalApplyFunctionLeftK>(fn_cont, left_arg, nullptr);
 
         machine->push_kont(eval_left);
         machine->push_kont(right_arg);
     } else {
         // Monadic case: evaluate right, then function, then apply
-        EvalApplyFunctionMonadicK* eval_fn = new EvalApplyFunctionMonadicK(fn_cont, nullptr);
-        machine->heap->allocate_continuation(eval_fn);
+        EvalApplyFunctionMonadicK* eval_fn = machine->heap->allocate<EvalApplyFunctionMonadicK>(fn_cont, nullptr);
 
         machine->push_kont(eval_fn);
         machine->push_kont(right_arg);
@@ -537,8 +521,7 @@ Value* EvalApplyFunctionLeftK::invoke(Machine* machine) {
 
     // Now evaluate left argument, then function, then dispatch
     // Create continuation that will evaluate function after left arg
-    EvalApplyFunctionDyadicK* eval_fn = new EvalApplyFunctionDyadicK(fn_cont, nullptr, right_val);
-    machine->heap->allocate_continuation(eval_fn);
+    EvalApplyFunctionDyadicK* eval_fn = machine->heap->allocate<EvalApplyFunctionDyadicK>(fn_cont, nullptr, right_val);
 
     machine->push_kont(eval_fn);
     machine->push_kont(left_arg);
@@ -564,8 +547,7 @@ Value* EvalApplyFunctionMonadicK::invoke(Machine* machine) {
     arg_val = machine->ctrl.value;
 
     // Now evaluate the function continuation, then dispatch (monadic case)
-    DispatchFunctionK* dispatch = new DispatchFunctionK(nullptr, nullptr, arg_val);
-    machine->heap->allocate_continuation(dispatch);
+    DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, arg_val);
 
     machine->push_kont(dispatch);
     machine->push_kont(fn_cont);
@@ -588,8 +570,7 @@ Value* EvalApplyFunctionDyadicK::invoke(Machine* machine) {
     left_val = machine->ctrl.value;
 
     // Now evaluate the function continuation, then dispatch (dyadic case)
-    DispatchFunctionK* dispatch = new DispatchFunctionK(nullptr, left_val, right_val);
-    machine->heap->allocate_continuation(dispatch);
+    DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(nullptr, left_val, right_val);
 
     machine->push_kont(dispatch);
     machine->push_kont(fn_cont);
@@ -619,8 +600,7 @@ Value* DispatchFunctionK::invoke(Machine* machine) {
     // Handle CLOSURE values (dfns)
     if (fn_val->tag == ValueType::CLOSURE) {
         // Call the closure using FunctionCallK
-        FunctionCallK* call_k = new FunctionCallK(fn_val, left_val, right_val);
-        machine->heap->allocate_continuation(call_k);
+        FunctionCallK* call_k = machine->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
         machine->push_kont(call_k);
         return nullptr;
     }
@@ -639,7 +619,7 @@ Value* DispatchFunctionK::invoke(Machine* machine) {
             throw std::runtime_error("Function has no monadic form");
         }
 
-        Value* result = prim_fn->monadic(right_val);
+        Value* result = prim_fn->monadic(machine, right_val);
         machine->ctrl.set_value(result);
     } else {
         // Dyadic case: both arguments
@@ -647,7 +627,7 @@ Value* DispatchFunctionK::invoke(Machine* machine) {
             throw std::runtime_error("Function has no dyadic form");
         }
 
-        Value* result = prim_fn->dyadic(left_val, right_val);
+        Value* result = prim_fn->dyadic(machine, left_val, right_val);
         machine->ctrl.set_value(result);
     }
 
@@ -683,8 +663,7 @@ Value* SeqK::invoke(Machine* machine) {
 
     // Multiple statements - push auxiliary continuation and first statement
     // ExecNextStatementK will handle the remaining statements
-    auto* next_k = new ExecNextStatementK(statements, 1);
-    machine->heap->allocate_continuation(next_k);
+    auto* next_k = machine->heap->allocate<ExecNextStatementK>(statements, 1);
     machine->push_kont(next_k);
     machine->push_kont(statements[0]);
 
@@ -716,8 +695,7 @@ Value* ExecNextStatementK::invoke(Machine* machine) {
     }
 
     // More statements to execute - push continuation for next iteration
-    auto* next_k = new ExecNextStatementK(statements, next_index + 1);
-    machine->heap->allocate_continuation(next_k);
+    auto* next_k = machine->heap->allocate<ExecNextStatementK>(statements, next_index + 1);
     machine->push_kont(next_k);
     machine->push_kont(statements[next_index]);
 
@@ -739,8 +717,7 @@ void ExecNextStatementK::mark(APLHeap* heap) {
 // IfK implementation - evaluate condition, then select branch
 Value* IfK::invoke(Machine* machine) {
     // Push auxiliary continuation to select branch after condition is evaluated
-    auto* select_k = new SelectBranchK(then_branch, else_branch);
-    machine->heap->allocate_continuation(select_k);
+    auto* select_k = machine->heap->allocate<SelectBranchK>(then_branch, else_branch);
     machine->push_kont(select_k);
 
     // Push condition to evaluate
@@ -814,8 +791,7 @@ void SelectBranchK::mark(APLHeap* heap) {
 // WhileK implementation - check condition and loop
 Value* WhileK::invoke(Machine* machine) {
     // Push auxiliary continuation to check condition
-    auto* check_k = new CheckWhileCondK(condition, body);
-    machine->heap->allocate_continuation(check_k);
+    auto* check_k = machine->heap->allocate<CheckWhileCondK>(condition, body);
     machine->push_kont(check_k);
 
     // Push condition to evaluate first
@@ -860,8 +836,7 @@ Value* CheckWhileCondK::invoke(Machine* machine) {
     if (is_true) {
         // Condition is true - execute body then check again
         // Push ourselves back to check after body executes
-        auto* check_k = new CheckWhileCondK(condition, body);
-        machine->heap->allocate_continuation(check_k);
+        auto* check_k = machine->heap->allocate<CheckWhileCondK>(condition, body);
         machine->push_kont(check_k);
 
         // Push condition to evaluate after body
@@ -890,8 +865,7 @@ void CheckWhileCondK::mark(APLHeap* heap) {
 // ForK implementation - evaluate array and start iteration
 Value* ForK::invoke(Machine* machine) {
     // Push auxiliary continuation to start iteration after array is evaluated
-    auto* iterate_k = new ForIterateK(var_name.c_str(), nullptr, body, 0);
-    machine->heap->allocate_continuation(iterate_k);
+    auto* iterate_k = machine->heap->allocate<ForIterateK>(var_name, nullptr, body, 0);
     machine->push_kont(iterate_k);
 
     // Push array expression to evaluate
@@ -955,11 +929,10 @@ Value* ForIterateK::invoke(Machine* machine) {
     }
 
     // Bind iterator variable to current element
-    machine->env->define(var_name.c_str(), element);
+    machine->env->define(var_name, element);
 
     // Push continuation for next iteration
-    auto* next_k = new ForIterateK(var_name.c_str(), array, body, index + 1);
-    machine->heap->allocate_continuation(next_k);
+    auto* next_k = machine->heap->allocate<ForIterateK>(var_name, array, body, index + 1);
     machine->push_kont(next_k);
 
     // Push body to execute
@@ -982,7 +955,7 @@ void ForIterateK::mark(APLHeap* heap) {
 // LeaveK implementation - exit from loop
 Value* LeaveK::invoke(Machine* machine) {
     // Create BREAK completion record
-    auto* comp = APLCompletion::break_completion(nullptr);
+    auto* comp = machine->heap->allocate<APLCompletion>(CompletionType::BREAK, nullptr, nullptr);
     machine->ctrl.set_completion(comp);
 
     // The completion will be handled by the machine's trampoline
@@ -999,14 +972,13 @@ Value* ReturnK::invoke(Machine* machine) {
     if (value_expr) {
         // Need to evaluate the return value first
         // Push auxiliary continuation to create RETURN after evaluation
-        auto* create_return_k = new CreateReturnK();
-        machine->heap->allocate_continuation(create_return_k);
+        auto* create_return_k = machine->heap->allocate<CreateReturnK>();
         machine->push_kont(create_return_k);
         machine->push_kont(value_expr);
     } else {
         // No value - return 0
         Value* zero = machine->heap->allocate_scalar(0.0);
-        auto* comp = APLCompletion::return_value(zero);
+        auto* comp = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, zero, nullptr);
         machine->ctrl.set_completion(comp);
     }
 
@@ -1025,7 +997,7 @@ Value* CreateReturnK::invoke(Machine* machine) {
     Value* return_val = machine->ctrl.value;
 
     // Create RETURN completion record
-    auto* comp = APLCompletion::return_value(return_val);
+    auto* comp = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, return_val, nullptr);
     machine->ctrl.set_completion(comp);
 
     return nullptr;
@@ -1055,9 +1027,8 @@ Value* FunctionCallK::invoke(Machine* machine) {
         return nullptr;
     }
 
-    // Create new environment for function scope
-    Environment* call_env = new Environment();
-    call_env->parent = machine->env;  // Capture parent for closures
+    // Create new environment for function scope (GC-managed)
+    Environment* call_env = machine->heap->allocate<Environment>(machine->env);  // Parent for closures
 
     // Bind arguments in function environment
     if (right_arg) {
@@ -1074,8 +1045,7 @@ Value* FunctionCallK::invoke(Machine* machine) {
     machine->env = call_env;
 
     // Push restore environment continuation (executes after function returns)
-    RestoreEnvK* restore_k = new RestoreEnvK(saved_env);
-    machine->heap->allocate_continuation(restore_k);
+    RestoreEnvK* restore_k = machine->heap->allocate<RestoreEnvK>(saved_env);
     machine->push_kont(restore_k);
 
     // Execute function body

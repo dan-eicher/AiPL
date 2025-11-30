@@ -7,6 +7,9 @@
 
 namespace apl {
 
+// Forward declarations
+class APLHeap;
+
 // Completion types for control flow
 enum class CompletionType {
     NORMAL,      // Normal evaluation - continue execution
@@ -19,38 +22,30 @@ enum class CompletionType {
 // Completion record structure
 // Represents the result of evaluating an expression or statement
 // Used for structured control flow (returns, breaks, exceptions)
-struct APLCompletion {
+// Now GC-managed for proper memory management
+struct APLCompletion : public GCObject {
+private:
+    // Only APLHeap can allocate/deallocate APLCompletion objects
+    friend class APLHeap;
+
+    // Private new/delete operators enforce heap-only allocation
+    void* operator new(size_t size) { return ::operator new(size); }
+    void operator delete(void* ptr) { ::operator delete(ptr); }
+
+public:
     CompletionType type;    // Type of completion
     Value* value;           // Result value (nullptr for non-value completions)
     const char* target;     // Target label for break/continue (nullptr if not used)
 
-    // Constructors
+    // Constructors (public so heap's template allocate works, but new/delete are private)
     APLCompletion()
-        : type(CompletionType::NORMAL), value(nullptr), target(nullptr) {}
+        : GCObject(), type(CompletionType::NORMAL), value(nullptr), target(nullptr) {}
 
     APLCompletion(CompletionType t, Value* v = nullptr, const char* tgt = nullptr)
-        : type(t), value(v), target(tgt) {}
+        : GCObject(), type(t), value(v), target(tgt) {}
 
-    // Factory methods for common completion types
-    static APLCompletion* normal(Value* v) {
-        return new APLCompletion(CompletionType::NORMAL, v, nullptr);
-    }
-
-    static APLCompletion* return_value(Value* v) {
-        return new APLCompletion(CompletionType::RETURN, v, nullptr);
-    }
-
-    static APLCompletion* break_completion(const char* label = nullptr) {
-        return new APLCompletion(CompletionType::BREAK, nullptr, label);
-    }
-
-    static APLCompletion* continue_completion(const char* label = nullptr) {
-        return new APLCompletion(CompletionType::CONTINUE, nullptr, label);
-    }
-
-    static APLCompletion* throw_error(Value* error_value) {
-        return new APLCompletion(CompletionType::THROW, error_value, nullptr);
-    }
+    // GC support
+    void mark(APLHeap* heap) override;
 
     // Query methods
     bool is_normal() const { return type == CompletionType::NORMAL; }

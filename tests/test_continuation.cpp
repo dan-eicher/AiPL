@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 #include "continuation.h"
+#include "heap.h"
 #include "machine.h"
 #include "value.h"
 
@@ -10,9 +11,11 @@ using namespace apl;
 class ContinuationTest : public ::testing::Test {
 protected:
     Machine* machine;
+    APLHeap* heap;  // Convenience pointer to machine->heap
 
     void SetUp() override {
         machine = new Machine();
+        heap = machine->heap;  // Use machine's heap
         machine->ctrl.init_evaluating();
     }
 
@@ -23,9 +26,9 @@ protected:
 
 // Test HaltK
 TEST_F(ContinuationTest, HaltK) {
-    HaltK* halt = new HaltK();
+    HaltK* halt = heap->allocate<HaltK>();
 
-    Value* v = Value::from_scalar(42.0);
+    Value* v = machine->heap->allocate_scalar(42.0);
     machine->ctrl.set_value(v);
 
     machine->push_kont(halt);
@@ -34,36 +37,36 @@ TEST_F(ContinuationTest, HaltK) {
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
-    delete halt;
-    delete v;
+    // GC will clean up halt
+    // GC will clean up v
 }
 
 // Test HaltK mark (should do nothing)
 TEST_F(ContinuationTest, HaltKMark) {
-    HaltK* halt = new HaltK();
+    HaltK* halt = heap->allocate<HaltK>();
 
     // Should not crash
     halt->mark(nullptr);
 
-    delete halt;
+    // GC will clean up halt
 }
 
 // Test HaltK is not a boundary
 TEST_F(ContinuationTest, HaltKNotBoundary) {
-    HaltK* halt = new HaltK();
+    HaltK* halt = heap->allocate<HaltK>();
 
     EXPECT_FALSE(halt->is_function_boundary());
     EXPECT_FALSE(halt->is_loop_boundary());
     EXPECT_FALSE(halt->matches_label("any"));
 
-    delete halt;
+    // GC will clean up halt
 }
 
 // Test ArgK basic
 TEST_F(ContinuationTest, ArgKBasic) {
-    Value* arg = Value::from_scalar(10.0);
-    HaltK* halt = new HaltK();
-    ArgK* argk = new ArgK(arg, halt);
+    Value* arg = machine->heap->allocate_scalar(10.0);
+    HaltK* halt = heap->allocate<HaltK>();
+    ArgK* argk = heap->allocate<ArgK>(arg, halt);
 
     machine->push_kont(argk);
     Value* result = machine->execute();
@@ -71,32 +74,32 @@ TEST_F(ContinuationTest, ArgKBasic) {
     EXPECT_EQ(result, arg);
     EXPECT_EQ(machine->ctrl.value, arg);
 
-    delete argk;  // Will also delete halt
-    delete arg;
+    // GC will clean up -     delete argk;  // Will also delete halt
+    // GC will clean up -     delete arg;
 }
 
 // Test ArgK without next
 TEST_F(ContinuationTest, ArgKWithoutNext) {
-    Value* arg = Value::from_scalar(99.0);
-    ArgK* argk = new ArgK(arg, nullptr);
+    Value* arg = machine->heap->allocate_scalar(99.0);
+    ArgK* argk = heap->allocate<ArgK>(arg, nullptr);
 
     machine->push_kont(argk);
     Value* result = machine->execute();
 
     EXPECT_EQ(result, arg);
 
-    delete argk;
-    delete arg;
+    // GC will clean up argk
+    // GC will clean up -     delete arg;
 }
 
 // Test ArgK chaining
 TEST_F(ContinuationTest, ArgKChaining) {
-    Value* arg1 = Value::from_scalar(1.0);
-    Value* arg2 = Value::from_scalar(2.0);
+    Value* arg1 = machine->heap->allocate_scalar(1.0);
+    Value* arg2 = machine->heap->allocate_scalar(2.0);
 
-    HaltK* halt = new HaltK();
-    ArgK* argk2 = new ArgK(arg2, halt);
-    ArgK* argk1 = new ArgK(arg1, argk2);
+    HaltK* halt = heap->allocate<HaltK>();
+    ArgK* argk2 = heap->allocate<ArgK>(arg2, halt);
+    ArgK* argk1 = heap->allocate<ArgK>(arg1, argk2);
 
     // Push first ArgK and execute via trampoline
     machine->push_kont(argk1);
@@ -106,42 +109,42 @@ TEST_F(ContinuationTest, ArgKChaining) {
     EXPECT_EQ(result, arg2);
     EXPECT_EQ(machine->ctrl.value, arg2);
 
-    delete argk1;  // Will cascade delete
-    delete arg1;
-    delete arg2;
+    // GC will clean up -     delete argk1;  // Will cascade delete
+    // GC will clean up -     delete arg1;
+    // GC will clean up -     delete arg2;
 }
 
 // Test ArgK mark
 TEST_F(ContinuationTest, ArgKMark) {
-    Value* arg = Value::from_scalar(5.0);
-    ArgK* argk = new ArgK(arg, nullptr);
+    Value* arg = machine->heap->allocate_scalar(5.0);
+    ArgK* argk = heap->allocate<ArgK>(arg, nullptr);
 
     // Should not crash with nullptr heap
     argk->mark(nullptr);
 
-    delete argk;
-    delete arg;
+    // GC will clean up argk
+    // GC will clean up -     delete arg;
 }
 
 // Test ArgK is not a boundary
 TEST_F(ContinuationTest, ArgKNotBoundary) {
-    Value* arg = Value::from_scalar(1.0);
-    ArgK* argk = new ArgK(arg, nullptr);
+    Value* arg = machine->heap->allocate_scalar(1.0);
+    ArgK* argk = heap->allocate<ArgK>(arg, nullptr);
 
     EXPECT_FALSE(argk->is_function_boundary());
     EXPECT_FALSE(argk->is_loop_boundary());
     EXPECT_FALSE(argk->matches_label("label"));
 
-    delete argk;
-    delete arg;
+    // GC will clean up argk
+    // GC will clean up -     delete arg;
 }
 
 // Test FrameK basic
 TEST_F(ContinuationTest, FrameKBasic) {
-    HaltK* halt = new HaltK();
-    FrameK* frame = new FrameK("test_func", halt);
+    HaltK* halt = heap->allocate<HaltK>();
+    FrameK* frame = heap->allocate<FrameK>("test_func", halt);
 
-    Value* v = Value::from_scalar(7.0);
+    Value* v = machine->heap->allocate_scalar(7.0);
     machine->ctrl.set_value(v);
 
     // Push frame onto stack and execute via trampoline
@@ -151,26 +154,26 @@ TEST_F(ContinuationTest, FrameKBasic) {
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
-    delete frame;  // Will also delete halt
-    delete v;
+    // GC will clean up frame and halt
+    // GC will clean up v
 }
 
 // Test FrameK is function boundary
 TEST_F(ContinuationTest, FrameKIsFunctionBoundary) {
-    FrameK* frame = new FrameK("my_func", nullptr);
+    FrameK* frame = heap->allocate<FrameK>("my_func", nullptr);
 
     EXPECT_TRUE(frame->is_function_boundary());
     EXPECT_FALSE(frame->is_loop_boundary());
     EXPECT_FALSE(frame->matches_label("label"));
 
-    delete frame;
+    // GC will clean up frame
 }
 
 // Test FrameK without return continuation
 TEST_F(ContinuationTest, FrameKWithoutReturn) {
-    FrameK* frame = new FrameK("func", nullptr);
+    FrameK* frame = heap->allocate<FrameK>("func", nullptr);
 
-    Value* v = Value::from_scalar(88.0);
+    Value* v = machine->heap->allocate_scalar(88.0);
     machine->ctrl.set_value(v);
 
     // Push frame onto stack and execute via trampoline
@@ -179,38 +182,38 @@ TEST_F(ContinuationTest, FrameKWithoutReturn) {
 
     EXPECT_EQ(result, v);
 
-    delete frame;
-    delete v;
+    // GC will clean up frame
+    // GC will clean up v
 }
 
 // Test FrameK mark
 TEST_F(ContinuationTest, FrameKMark) {
-    HaltK* halt = new HaltK();
-    FrameK* frame = new FrameK("test", halt);
+    HaltK* halt = heap->allocate<HaltK>();
+    FrameK* frame = heap->allocate<FrameK>("test", halt);
 
     // Should not crash
     frame->mark(nullptr);
 
-    delete frame;
+    // GC will clean up frame
 }
 
 // Test FrameK function name
 TEST_F(ContinuationTest, FrameKFunctionName) {
     const char* name = "my_function";
-    FrameK* frame = new FrameK(name, nullptr);
+    FrameK* frame = heap->allocate<FrameK>(name, nullptr);
 
     EXPECT_EQ(frame->function_name, name);
     EXPECT_STREQ(frame->function_name, "my_function");
 
-    delete frame;
+    // GC will clean up frame
 }
 
 // Test Machine push and execute
 TEST_F(ContinuationTest, MachinePushPop) {
-    Value* v = Value::from_scalar(42.0);
+    Value* v = machine->heap->allocate_scalar(42.0);
     machine->ctrl.set_value(v);
 
-    HaltK* halt = new HaltK();
+    HaltK* halt = heap->allocate<HaltK>();
     machine->push_kont(halt);
 
     EXPECT_EQ(machine->kont_stack.size(), 1);
@@ -221,12 +224,12 @@ TEST_F(ContinuationTest, MachinePushPop) {
     EXPECT_EQ(machine->kont_stack.size(), 0);
     EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
-    delete v;
+    // GC will clean up v
 }
 
 // Test Machine execute with empty stack
 TEST_F(ContinuationTest, MachinePopEmpty) {
-    Value* v = Value::from_scalar(123.0);
+    Value* v = machine->heap->allocate_scalar(123.0);
     machine->ctrl.set_value(v);
 
     EXPECT_EQ(machine->kont_stack.size(), 0);
@@ -236,17 +239,17 @@ TEST_F(ContinuationTest, MachinePopEmpty) {
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
 
-    delete v;
+    // GC will clean up v
 }
 
 // Test Machine with multiple continuations
 TEST_F(ContinuationTest, MachineMultipleContinuations) {
-    Value* arg1 = Value::from_scalar(10.0);
-    Value* arg2 = Value::from_scalar(20.0);
+    Value* arg1 = machine->heap->allocate_scalar(10.0);
+    Value* arg2 = machine->heap->allocate_scalar(20.0);
 
-    HaltK* halt = new HaltK();
-    ArgK* argk2 = new ArgK(arg2, halt);
-    ArgK* argk1 = new ArgK(arg1, argk2);
+    HaltK* halt = heap->allocate<HaltK>();
+    ArgK* argk2 = heap->allocate<ArgK>(arg2, halt);
+    ArgK* argk1 = heap->allocate<ArgK>(arg1, argk2);
 
     machine->push_kont(argk1);
 
@@ -256,17 +259,17 @@ TEST_F(ContinuationTest, MachineMultipleContinuations) {
 
     EXPECT_EQ(result, arg2);  // Last arg in chain
 
-    delete arg1;
-    delete arg2;
+    // GC will clean up -     delete arg1;
+    // GC will clean up -     delete arg2;
 }
 
 // Test continuation chaining with FrameK
 TEST_F(ContinuationTest, FrameKChaining) {
-    Value* v = Value::from_scalar(99.0);
+    Value* v = machine->heap->allocate_scalar(99.0);
 
-    HaltK* halt = new HaltK();
-    FrameK* frame = new FrameK("outer", halt);
-    ArgK* argk = new ArgK(v, frame);
+    HaltK* halt = heap->allocate<HaltK>();
+    FrameK* frame = heap->allocate<FrameK>("outer", halt);
+    ArgK* argk = heap->allocate<ArgK>(v, frame);
 
     machine->ctrl.set_value(v);
 
@@ -275,8 +278,8 @@ TEST_F(ContinuationTest, FrameKChaining) {
 
     EXPECT_EQ(result, v);
 
-    delete argk;
-    delete v;
+    // GC will clean up argk
+    // GC will clean up v
 }
 
 // ============================================================================
@@ -285,7 +288,7 @@ TEST_F(ContinuationTest, FrameKChaining) {
 
 // Test LiteralK basic invoke
 TEST_F(ContinuationTest, LiteralKBasic) {
-    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0)));
+    auto lit = static_cast<LiteralK*>(machine->heap->allocate<LiteralK>(42.0));
 
     // Push onto stack and execute via trampoline
     machine->push_kont(lit);
@@ -299,7 +302,7 @@ TEST_F(ContinuationTest, LiteralKBasic) {
 
 // Test LiteralK without next - now just tests basic execution
 TEST_F(ContinuationTest, LiteralKWithoutNext) {
-    auto lit = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(3.14)));
+    auto lit = static_cast<LiteralK*>(machine->heap->allocate<LiteralK>(3.14));
 
     machine->push_kont(lit);
     Value* result = machine->execute();
@@ -310,8 +313,8 @@ TEST_F(ContinuationTest, LiteralKWithoutNext) {
 
 // Test LiteralK chaining via trampoline
 TEST_F(ContinuationTest, LiteralKChaining) {
-    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(10.0)));
-    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(20.0)));
+    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate<LiteralK>(10.0));
+    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate<LiteralK>(20.0));
 
     // Push in reverse order (stack is LIFO)
     machine->push_kont(lit2);
@@ -326,8 +329,8 @@ TEST_F(ContinuationTest, LiteralKChaining) {
 
 // Test LiteralK uses scalar cache
 TEST_F(ContinuationTest, LiteralKUsesScalarCache) {
-    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0)));
-    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate_continuation(new LiteralK(42.0)));
+    auto lit1 = static_cast<LiteralK*>(machine->heap->allocate<LiteralK>(42.0));
+    auto lit2 = static_cast<LiteralK*>(machine->heap->allocate<LiteralK>(42.0));
 
     machine->push_kont(lit1);
     Value* result1 = machine->execute();
@@ -342,11 +345,11 @@ TEST_F(ContinuationTest, LiteralKUsesScalarCache) {
 
 // Test LiteralK parse-time safety - stores double not Value*
 TEST_F(ContinuationTest, LiteralKParseTimeSafety) {
-    LiteralK* lit = new LiteralK(123.0);
+    LiteralK* lit = heap->allocate<LiteralK>(123.0);
 
     EXPECT_DOUBLE_EQ(lit->literal_value, 123.0);
 
-    machine->heap->allocate_continuation(lit);
+    // lit is already heap-allocated, no need to register again
 
     size_t values_before = machine->heap->total_size();
     machine->push_kont(lit);

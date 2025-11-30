@@ -27,30 +27,25 @@ public:
           value(nullptr),
           completion(nullptr) {}
 
-    // Destructor
-    ~Control() {
-        cleanup();
-    }
+    // No destructor needed - completion is GC-managed
 
     // Initialize for evaluation
     void init_evaluating() {
-        cleanup();
         mode = ExecMode::EVALUATING;
-        completion = APLCompletion::normal(nullptr);
+        value = nullptr;
+        completion = nullptr;  // nullptr = NORMAL completion
     }
 
     // Set completion record
     void set_completion(APLCompletion* comp) {
-        if (completion) {
-            delete completion;
-        }
+        // No delete - GC will handle it
         completion = comp;
     }
 
-    // Set value (creates NORMAL completion)
+    // Set value (NORMAL completion - use nullptr)
     void set_value(Value* v) {
         value = v;
-        set_completion(APLCompletion::normal(v));
+        completion = nullptr;  // nullptr = NORMAL completion
     }
 
     // Halt execution
@@ -58,25 +53,14 @@ public:
         mode = ExecMode::HALTED;
     }
 
-    // Check if execution should continue
+    // Check if execution should continue (nullptr = NORMAL)
     bool should_continue() const {
-        return mode != ExecMode::HALTED &&
-               completion &&
-               completion->is_normal();
+        return mode != ExecMode::HALTED && completion == nullptr;
     }
 
-    // Check for abrupt completion
+    // Check for abrupt completion (non-null = abrupt)
     bool has_abrupt_completion() const {
-        return completion && completion->is_abrupt();
-    }
-
-private:
-    void cleanup() {
-        // Don't delete value - it's managed by the heap
-        if (completion) {
-            delete completion;
-            completion = nullptr;
-        }
+        return completion != nullptr;
     }
 };
 
