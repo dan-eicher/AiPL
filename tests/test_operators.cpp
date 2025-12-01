@@ -287,6 +287,64 @@ TEST_F(OperatorsTest, InnerProductDimensionMismatch) {
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
+// ========================================================================
+// Each Operator Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, EachScalar) {
+    // -¨5 → -5
+    Value* omega = machine->heap->allocate_scalar(5.0);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    op_each(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), -5.0);
+}
+
+TEST_F(OperatorsTest, EachVector) {
+    // -¨1 2 3 → -1 -2 -3
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* omega = machine->heap->allocate_vector(vec);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    op_each(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_vector());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 1);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*result)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*result)(2, 0), -3.0);
+}
+
+TEST_F(OperatorsTest, EachMatrix) {
+    // ÷¨ on 2×2 matrix (reciprocal of each element)
+    Eigen::MatrixXd mat(2, 2);
+    mat << 1, 2,
+           4, 5;
+    Value* omega = machine->heap->allocate_matrix(mat);
+    Value* fn = machine->heap->allocate_primitive(&prim_divide);  // ÷ monadic is reciprocal
+
+    op_each(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_matrix());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 1.0);    // 1/1
+    EXPECT_DOUBLE_EQ((*result)(0, 1), 0.5);    // 1/2
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 0.25);   // 1/4
+    EXPECT_DOUBLE_EQ((*result)(1, 1), 0.2);    // 1/5
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

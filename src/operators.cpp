@@ -308,10 +308,71 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 // ========================================================================
 // Each Operator: f¨B (monadic) or A f¨B (dyadic)
 // ========================================================================
-// Placeholder - to be implemented
+// Applies function to each element independently
+// Result has same shape as argument(s)
 
 void op_each(Machine* m, Value* f, Value* omega) {
-    m->push_kont(m->heap->allocate<ThrowErrorK>("NOT IMPLEMENTED: each operator"));
+    // Validate that f is a function
+    if (!f || !f->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: each operator requires a function operand"));
+        return;
+    }
+
+    // For now, only support primitive functions
+    if (!f->is_primitive()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: each operator currently only supports primitive functions"));
+        return;
+    }
+
+    PrimitiveFn* fn = f->data.primitive_fn;
+
+    // f must have monadic form
+    if (!fn->monadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: each operator requires function with monadic form"));
+        return;
+    }
+
+    // Apply function to each element
+    if (omega->is_scalar()) {
+        // Scalar case: just apply function
+        fn->monadic(m, omega);
+        return;
+    }
+
+    // Array case: apply to each element
+    const Eigen::MatrixXd* omega_mat = omega->as_matrix();
+    int rows = omega_mat->rows();
+    int cols = omega_mat->cols();
+
+    Eigen::MatrixXd result(rows, cols);
+
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            double val = (*omega_mat)(i, j);
+            Value* temp = m->heap->allocate_scalar(val);
+
+            fn->monadic(m, temp);
+
+            if (!m->kont_stack.empty() && dynamic_cast<ThrowErrorK*>(m->kont_stack.back())) {
+                return;  // Error in function
+            }
+
+            Value* item_result = m->ctrl.value;
+            if (!item_result || !item_result->is_scalar()) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: each operator function must return scalar"));
+                return;
+            }
+
+            result(i, j) = item_result->as_scalar();
+        }
+    }
+
+    // Return result with same shape as input
+    if (omega->is_vector()) {
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+    }
 }
 
 // ========================================================================
