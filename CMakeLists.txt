@@ -43,6 +43,7 @@ set(APL_SOURCES
     src/environment.cpp
     src/machine.cpp
     src/primitives.cpp
+    src/operators.cpp
     src/parser.cpp
 )
 

@@ -34,8 +34,16 @@ struct PrimitiveFn {
     void (*dyadic)(Machine* m, Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
 };
 
-// Forward declaration for operators
-struct PrimitiveOp;
+// Operator structures - operators take functions and return derived functions
+// Monadic operator: takes one function operand
+// Dyadic operator: takes two function operands
+struct PrimitiveOp {
+    const char* name;  // For debugging
+    // Monadic operator: f OP B  (e.g., f/ for reduce, f¨ for each)
+    void (*monadic)(Machine* m, Value* f, Value* omega);
+    // Dyadic operator: A f OP g B  (e.g., f.g for inner product)
+    void (*dyadic)(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs);
+};
 
 // Value type enumeration
 enum class ValueType {
@@ -44,7 +52,7 @@ enum class ValueType {
     MATRIX,     // 2D array
     PRIMITIVE,  // Primitive function (C function pointer)
     CLOSURE,    // User-defined function (continuation graph)
-    OPERATOR    // Higher-order operator
+    OPERATOR    // Higher-order operator (takes functions, returns derived functions)
 };
 
 // Value class - tagged union for all APL values

@@ -50,3 +50,8 @@ add_test(NAME ParserTest COMMAND test_parser)
 add_executable(test_statements test_statements.cpp)
 target_link_libraries(test_statements apl_vm GTest::gtest)
 add_test(NAME StatementTest COMMAND test_statements)
+
+# Operator tests (Phase 5)
+add_executable(test_operators test_operators.cpp)
+target_link_libraries(test_operators apl_vm GTest::gtest)
+add_test(NAME OperatorsTest COMMAND test_operators)
