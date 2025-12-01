@@ -537,9 +537,8 @@ TEST_F(ParserTest, ParseUndefinedVariable) {
     Continuation* k = parser->parse("undefined");
     ASSERT_NE(k, nullptr);
 
-    // This should parse fine but fail at eval time
-    Value* result = eval(k);
-    EXPECT_EQ(result, nullptr);  // Should return nullptr on undefined variable
+    // Phase 1: Now throws exception instead of returning nullptr
+    EXPECT_THROW(eval(k), std::runtime_error);
 }
 
 // ============================================================================

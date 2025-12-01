@@ -3,6 +3,7 @@
 #include "primitives.h"
 #include "value.h"
 #include "machine.h"
+#include "continuation.h"
 #include <cmath>
 #include <stdexcept>
 
@@ -29,10 +30,11 @@ PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
 // ============================================================================
 
 // Addition (+)
-Value* fn_add(Machine* m, Value* lhs, Value* rhs) {
+void fn_add(Machine* m, Value* lhs, Value* rhs) {
     // Fast path: scalar + scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        return m->heap->allocate_scalar(lhs->data.scalar + rhs->data.scalar);
+        m->ctrl.set_value(m->heap->allocate_scalar(lhs->data.scalar + rhs->data.scalar));
+        return;
     }
 
     // Scalar extension using Eigen broadcasting
@@ -41,9 +43,11 @@ Value* fn_add(Machine* m, Value* lhs, Value* rhs) {
             lhs->data.scalar + rhs->as_matrix()->array();
         // Preserve vector/matrix distinction
         if (rhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     if (rhs->is_scalar()) {
@@ -51,9 +55,11 @@ Value* fn_add(Machine* m, Value* lhs, Value* rhs) {
             lhs->as_matrix()->array() + rhs->data.scalar;
         // Preserve vector/matrix distinction
         if (lhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     // Array + Array: element-wise
@@ -62,22 +68,25 @@ Value* fn_add(Machine* m, Value* lhs, Value* rhs) {
 
     // Shape checking
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        throw std::runtime_error("LENGTH ERROR: mismatched shapes in addition");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in addition"));
+        return;
     }
 
     Eigen::MatrixXd result = lmat->array() + rmat->array();
     // Preserve vector/matrix distinction
     if (lhs->is_vector() && rhs->is_vector()) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // Subtraction (-)
-Value* fn_subtract(Machine* m, Value* lhs, Value* rhs) {
+void fn_subtract(Machine* m, Value* lhs, Value* rhs) {
     // Fast path: scalar - scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        return m->heap->allocate_scalar(lhs->data.scalar - rhs->data.scalar);
+        m->ctrl.set_value(m->heap->allocate_scalar(lhs->data.scalar - rhs->data.scalar));
+        return;
     }
 
     // Scalar extension
@@ -86,9 +95,11 @@ Value* fn_subtract(Machine* m, Value* lhs, Value* rhs) {
             lhs->data.scalar - rhs->as_matrix()->array();
         // Preserve vector/matrix distinction
         if (rhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     if (rhs->is_scalar()) {
@@ -96,9 +107,11 @@ Value* fn_subtract(Machine* m, Value* lhs, Value* rhs) {
             lhs->as_matrix()->array() - rhs->data.scalar;
         // Preserve vector/matrix distinction
         if (lhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     // Array - Array
@@ -106,22 +119,25 @@ Value* fn_subtract(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        throw std::runtime_error("LENGTH ERROR: mismatched shapes in subtraction");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in subtraction"));
+        return;
     }
 
     Eigen::MatrixXd result = lmat->array() - rmat->array();
     // Preserve vector/matrix distinction
     if (lhs->is_vector() && rhs->is_vector()) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // Multiplication (×)
-Value* fn_multiply(Machine* m, Value* lhs, Value* rhs) {
+void fn_multiply(Machine* m, Value* lhs, Value* rhs) {
     // Fast path: scalar × scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        return m->heap->allocate_scalar(lhs->data.scalar * rhs->data.scalar);
+        m->ctrl.set_value(m->heap->allocate_scalar(lhs->data.scalar * rhs->data.scalar));
+        return;
     }
 
     // Scalar extension
@@ -130,9 +146,11 @@ Value* fn_multiply(Machine* m, Value* lhs, Value* rhs) {
             lhs->data.scalar * rhs->as_matrix()->array();
         // Preserve vector/matrix distinction
         if (rhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     if (rhs->is_scalar()) {
@@ -140,9 +158,11 @@ Value* fn_multiply(Machine* m, Value* lhs, Value* rhs) {
             lhs->as_matrix()->array() * rhs->data.scalar;
         // Preserve vector/matrix distinction
         if (lhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     // Array × Array: element-wise multiplication
@@ -150,25 +170,29 @@ Value* fn_multiply(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        throw std::runtime_error("LENGTH ERROR: mismatched shapes in multiplication");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in multiplication"));
+        return;
     }
 
     Eigen::MatrixXd result = lmat->array() * rmat->array();
     // Preserve vector/matrix distinction
     if (lhs->is_vector() && rhs->is_vector()) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // Division (÷)
-Value* fn_divide(Machine* m, Value* lhs, Value* rhs) {
+void fn_divide(Machine* m, Value* lhs, Value* rhs) {
     // Fast path: scalar ÷ scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
         if (rhs->data.scalar == 0.0) {
-            throw std::runtime_error("DOMAIN ERROR: division by zero");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            return;
         }
-        return m->heap->allocate_scalar(lhs->data.scalar / rhs->data.scalar);
+        m->ctrl.set_value(m->heap->allocate_scalar(lhs->data.scalar / rhs->data.scalar));
+        return;
     }
 
     // Scalar extension
@@ -176,28 +200,34 @@ Value* fn_divide(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         // Check for zeros in divisor
         if ((rmat->array() == 0.0).any()) {
-            throw std::runtime_error("DOMAIN ERROR: division by zero");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            return;
         }
         Eigen::MatrixXd result =
             lhs->data.scalar / rmat->array();
         // Preserve vector/matrix distinction
         if (rhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     if (rhs->is_scalar()) {
         if (rhs->data.scalar == 0.0) {
-            throw std::runtime_error("DOMAIN ERROR: division by zero");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            return;
         }
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() / rhs->data.scalar;
         // Preserve vector/matrix distinction
         if (lhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     // Array ÷ Array
@@ -205,27 +235,31 @@ Value* fn_divide(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        throw std::runtime_error("LENGTH ERROR: mismatched shapes in division");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in division"));
+        return;
     }
 
     // Check for zeros in divisor
     if ((rmat->array() == 0.0).any()) {
-        throw std::runtime_error("DOMAIN ERROR: division by zero");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+        return;
     }
 
     Eigen::MatrixXd result = lmat->array() / rmat->array();
     // Preserve vector/matrix distinction
     if (lhs->is_vector() && rhs->is_vector()) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // Power (*)
-Value* fn_power(Machine* m, Value* lhs, Value* rhs) {
+void fn_power(Machine* m, Value* lhs, Value* rhs) {
     // Fast path: scalar * scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        return m->heap->allocate_scalar(std::pow(lhs->data.scalar, rhs->data.scalar));
+        m->ctrl.set_value(m->heap->allocate_scalar(std::pow(lhs->data.scalar, rhs->data.scalar)));
+        return;
     }
 
     // Scalar extension
@@ -238,9 +272,11 @@ Value* fn_power(Machine* m, Value* lhs, Value* rhs) {
         }
         // Preserve vector/matrix distinction
         if (rhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     if (rhs->is_scalar()) {
@@ -249,9 +285,11 @@ Value* fn_power(Machine* m, Value* lhs, Value* rhs) {
             lhs->as_matrix()->array().pow(rhs->data.scalar);
         // Preserve vector/matrix distinction
         if (lhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     // Array * Array: element-wise power
@@ -259,22 +297,25 @@ Value* fn_power(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        throw std::runtime_error("LENGTH ERROR: mismatched shapes in power");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in power"));
+        return;
     }
 
     Eigen::MatrixXd result = lmat->array().pow(rmat->array());
     // Preserve vector/matrix distinction
     if (lhs->is_vector() && rhs->is_vector()) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // Equality (=)
-Value* fn_equal(Machine* m, Value* lhs, Value* rhs) {
+void fn_equal(Machine* m, Value* lhs, Value* rhs) {
     // Fast path: scalar = scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        return m->heap->allocate_scalar(lhs->data.scalar == rhs->data.scalar ? 1.0 : 0.0);
+        m->ctrl.set_value(m->heap->allocate_scalar(lhs->data.scalar == rhs->data.scalar ? 1.0 : 0.0));
+        return;
     }
 
     // Scalar extension
@@ -285,9 +326,11 @@ Value* fn_equal(Machine* m, Value* lhs, Value* rhs) {
             result(i) = (lhs->data.scalar == rmat->data()[i]) ? 1.0 : 0.0;
         }
         if (rhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     if (rhs->is_scalar()) {
@@ -297,9 +340,11 @@ Value* fn_equal(Machine* m, Value* lhs, Value* rhs) {
             result(i) = (lmat->data()[i] == rhs->data.scalar) ? 1.0 : 0.0;
         }
         if (lhs->is_vector()) {
-            return m->heap->allocate_vector(result.col(0));
+            m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+        } else {
+            m->ctrl.set_value(m->heap->allocate_matrix(result));
         }
-        return m->heap->allocate_matrix(result);
+        return;
     }
 
     // Array = Array: element-wise equality
@@ -307,7 +352,8 @@ Value* fn_equal(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        throw std::runtime_error("LENGTH ERROR: mismatched shapes in equality");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in equality"));
+        return;
     }
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
@@ -316,9 +362,10 @@ Value* fn_equal(Machine* m, Value* lhs, Value* rhs) {
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // ============================================================================
@@ -326,32 +373,35 @@ Value* fn_equal(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Conjugate/Identity (+)
-Value* fn_conjugate(Machine* m, Value* omega) {
+void fn_conjugate(Machine* m, Value* omega) {
     // For real numbers, identity just returns the value
     if (omega->is_scalar()) {
-        return m->heap->allocate_scalar(omega->data.scalar);
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->data.scalar));
+        return;
     }
 
     // For arrays, return a copy
-    return m->heap->allocate_matrix(*omega->as_matrix());
+    m->ctrl.set_value(m->heap->allocate_matrix(*omega->as_matrix()));
 }
 
 // Negation (-)
-Value* fn_negate(Machine* m, Value* omega) {
+void fn_negate(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        return m->heap->allocate_scalar(-omega->data.scalar);
+        m->ctrl.set_value(m->heap->allocate_scalar(-omega->data.scalar));
+        return;
     }
 
     Eigen::MatrixXd result = -omega->as_matrix()->array();
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // Signum/Sign (×)
-Value* fn_signum(Machine* m, Value* omega) {
+void fn_signum(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         double sign = (val > 0.0) ? 1.0 : (val < 0.0) ? -1.0 : 0.0;
-        return m->heap->allocate_scalar(sign);
+        m->ctrl.set_value(m->heap->allocate_scalar(sign));
+        return;
     }
 
     // For arrays, apply sign element-wise
@@ -365,36 +415,40 @@ Value* fn_signum(Machine* m, Value* omega) {
         }
     }
 
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // Reciprocal (÷)
-Value* fn_reciprocal(Machine* m, Value* omega) {
+void fn_reciprocal(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         if (omega->data.scalar == 0.0) {
-            throw std::runtime_error("DOMAIN ERROR: reciprocal of zero");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reciprocal of zero"));
+            return;
         }
-        return m->heap->allocate_scalar(1.0 / omega->data.scalar);
+        m->ctrl.set_value(m->heap->allocate_scalar(1.0 / omega->data.scalar));
+        return;
     }
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for zeros
     if ((mat->array() == 0.0).any()) {
-        throw std::runtime_error("DOMAIN ERROR: reciprocal of zero");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reciprocal of zero"));
+        return;
     }
 
     Eigen::MatrixXd result = 1.0 / mat->array();
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // Exponential (*)
-Value* fn_exponential(Machine* m, Value* omega) {
+void fn_exponential(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        return m->heap->allocate_scalar(std::exp(omega->data.scalar));
+        m->ctrl.set_value(m->heap->allocate_scalar(std::exp(omega->data.scalar)));
+        return;
     }
 
     Eigen::MatrixXd result = omega->as_matrix()->array().exp();
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // ============================================================================
@@ -402,11 +456,12 @@ Value* fn_exponential(Machine* m, Value* omega) {
 // ============================================================================
 
 // Shape (⍴) - monadic: returns shape as vector
-Value* fn_shape(Machine* m, Value* omega) {
+void fn_shape(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         // Scalar has empty shape
         Eigen::VectorXd shape(0);
-        return m->heap->allocate_vector(shape);
+        m->ctrl.set_value(m->heap->allocate_vector(shape));
+        return;
     }
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -415,21 +470,23 @@ Value* fn_shape(Machine* m, Value* omega) {
         // Vector shape is just its length
         Eigen::VectorXd shape(1);
         shape(0) = mat->rows();
-        return m->heap->allocate_vector(shape);
+        m->ctrl.set_value(m->heap->allocate_vector(shape));
+        return;
     }
 
     // Matrix shape is (rows, cols)
     Eigen::VectorXd shape(2);
     shape(0) = mat->rows();
     shape(1) = mat->cols();
-    return m->heap->allocate_vector(shape);
+    m->ctrl.set_value(m->heap->allocate_vector(shape));
 }
 
 // Reshape (⍴) - dyadic: reshape rhs to shape given by lhs
-Value* fn_reshape(Machine* m, Value* lhs, Value* rhs) {
+void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
     // lhs must be a scalar or vector specifying new shape
     if (!lhs->is_scalar() && !lhs->is_vector()) {
-        throw std::runtime_error("RANK ERROR: left argument to reshape must be scalar or vector");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: left argument to reshape must be scalar or vector"));
+        return;
     }
 
     // Get target shape
@@ -440,10 +497,12 @@ Value* fn_reshape(Machine* m, Value* lhs, Value* rhs) {
         double dim = lhs->as_scalar();
         // Validate: must be non-negative integer
         if (dim < 0.0) {
-            throw std::runtime_error("DOMAIN ERROR: reshape dimension must be non-negative");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be non-negative"));
+            return;
         }
         if (dim != std::floor(dim)) {
-            throw std::runtime_error("DOMAIN ERROR: reshape dimension must be an integer");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be an integer"));
+            return;
         }
         target_rows = static_cast<int>(dim);
         target_cols = 1;
@@ -454,10 +513,12 @@ Value* fn_reshape(Machine* m, Value* lhs, Value* rhs) {
             double dim = (*shape_mat)(0, 0);
             // Validate: must be non-negative integer
             if (dim < 0.0) {
-                throw std::runtime_error("DOMAIN ERROR: reshape dimension must be non-negative");
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be non-negative"));
+                return;
             }
             if (dim != std::floor(dim)) {
-                throw std::runtime_error("DOMAIN ERROR: reshape dimension must be an integer");
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be an integer"));
+                return;
             }
             target_rows = static_cast<int>(dim);
             target_cols = 1;
@@ -467,15 +528,18 @@ Value* fn_reshape(Machine* m, Value* lhs, Value* rhs) {
             double dim2 = (*shape_mat)(1, 0);
             // Validate: must be non-negative integers
             if (dim1 < 0.0 || dim2 < 0.0) {
-                throw std::runtime_error("DOMAIN ERROR: reshape dimensions must be non-negative");
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimensions must be non-negative"));
+                return;
             }
             if (dim1 != std::floor(dim1) || dim2 != std::floor(dim2)) {
-                throw std::runtime_error("DOMAIN ERROR: reshape dimensions must be integers");
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimensions must be integers"));
+                return;
             }
             target_rows = static_cast<int>(dim1);
             target_cols = static_cast<int>(dim2);
         } else {
-            throw std::runtime_error("RANK ERROR: reshape shape must have 1 or 2 elements");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: reshape shape must have 1 or 2 elements"));
+            return;
         }
     }
 
@@ -494,7 +558,8 @@ Value* fn_reshape(Machine* m, Value* lhs, Value* rhs) {
 
     // Validate: target size must match source size (no cycling/truncating for now)
     if (target_size != static_cast<int>(source.size())) {
-        throw std::runtime_error("LENGTH ERROR: reshape size must match array size");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: reshape size must match array size"));
+        return;
     }
 
     // Build result by cycling through source data
@@ -504,79 +569,88 @@ Value* fn_reshape(Machine* m, Value* lhs, Value* rhs) {
     }
 
     if (target_cols == 1) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // Ravel (,) - monadic: flatten to vector
-Value* fn_ravel(Machine* m, Value* omega) {
+void fn_ravel(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         Eigen::VectorXd v(1);
         v(0) = omega->as_scalar();
-        return m->heap->allocate_vector(v);
+        m->ctrl.set_value(m->heap->allocate_vector(v));
+        return;
     }
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Flatten in column-major order
     Eigen::VectorXd result = Eigen::Map<const Eigen::VectorXd>(mat->data(), mat->size());
-    return m->heap->allocate_vector(result);
+    m->ctrl.set_value(m->heap->allocate_vector(result));
 }
 
 // Catenate (,) - dyadic: concatenate arrays
-Value* fn_catenate(Machine* m, Value* lhs, Value* rhs) {
+void fn_catenate(Machine* m, Value* lhs, Value* rhs) {
     // Convert both to matrices for uniform handling
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     // For vectors or compatible matrices, concatenate along first dimension
     if (lmat->cols() != rmat->cols()) {
-        throw std::runtime_error("LENGTH ERROR: incompatible shapes for catenation");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: incompatible shapes for catenation"));
+        return;
     }
 
     Eigen::MatrixXd result(lmat->rows() + rmat->rows(), lmat->cols());
     result << *lmat, *rmat;
 
     if (result.cols() == 1) {
-        return m->heap->allocate_vector(result.col(0));
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
     }
-    return m->heap->allocate_matrix(result);
 }
 
 // Transpose (⍉) - monadic: reverse dimensions
-Value* fn_transpose(Machine* m, Value* omega) {
+void fn_transpose(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         // Scalar transpose is identity
-        return m->heap->allocate_scalar(omega->as_scalar());
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
     }
 
     if (omega->is_vector()) {
         // Vector transpose gives a 1×n matrix
         const Eigen::MatrixXd* vec = omega->as_matrix();
         Eigen::MatrixXd result = vec->transpose();
-        return m->heap->allocate_matrix(result);
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+        return;
     }
 
     // Matrix transpose
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->transpose();
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // Iota (⍳) - monadic: generate indices from 0 to n-1
-Value* fn_iota(Machine* m, Value* omega) {
+void fn_iota(Machine* m, Value* omega) {
     if (!omega->is_scalar()) {
-        throw std::runtime_error("RANK ERROR: iota argument must be scalar");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: iota argument must be scalar"));
+        return;
     }
 
     double val = omega->as_scalar();
 
     // Validate: must be non-negative integer
     if (val < 0.0) {
-        throw std::runtime_error("DOMAIN ERROR: iota argument must be non-negative");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: iota argument must be non-negative"));
+        return;
     }
     if (val != std::floor(val)) {
-        throw std::runtime_error("DOMAIN ERROR: iota argument must be an integer");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: iota argument must be an integer"));
+        return;
     }
 
     int n = static_cast<int>(val);
@@ -585,13 +659,14 @@ Value* fn_iota(Machine* m, Value* omega) {
     for (int i = 0; i < n; ++i) {
         result(i) = i;
     }
-    return m->heap->allocate_vector(result);
+    m->ctrl.set_value(m->heap->allocate_vector(result));
 }
 
 // Take (↑) - dyadic: take first n elements
-Value* fn_take(Machine* m, Value* lhs, Value* rhs) {
+void fn_take(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
-        throw std::runtime_error("RANK ERROR: take count must be scalar");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: take count must be scalar"));
+        return;
     }
 
     int n = static_cast<int>(lhs->as_scalar());
@@ -600,7 +675,8 @@ Value* fn_take(Machine* m, Value* lhs, Value* rhs) {
         // Taking from scalar: replicate
         Eigen::VectorXd result(std::abs(n));
         result.setConstant(rhs->as_scalar());
-        return m->heap->allocate_vector(result);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
     }
 
     const Eigen::MatrixXd* mat = rhs->as_matrix();
@@ -623,7 +699,8 @@ Value* fn_take(Machine* m, Value* lhs, Value* rhs) {
                 result(i) = (src_idx >= 0) ? (*mat)(src_idx, 0) : 0.0;
             }
         }
-        return m->heap->allocate_vector(result);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
     }
 
     // For matrices, take rows
@@ -651,13 +728,14 @@ Value* fn_take(Machine* m, Value* lhs, Value* rhs) {
         }
     }
 
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // Drop (↓) - dyadic: drop first n elements
-Value* fn_drop(Machine* m, Value* lhs, Value* rhs) {
+void fn_drop(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
-        throw std::runtime_error("RANK ERROR: drop count must be scalar");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: drop count must be scalar"));
+        return;
     }
 
     int n = static_cast<int>(lhs->as_scalar());
@@ -665,7 +743,8 @@ Value* fn_drop(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         // Dropping from scalar gives empty vector
         Eigen::VectorXd result(0);
-        return m->heap->allocate_vector(result);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
     }
 
     const Eigen::MatrixXd* mat = rhs->as_matrix();
@@ -677,7 +756,8 @@ Value* fn_drop(Machine* m, Value* lhs, Value* rhs) {
         if (abs_n >= len) {
             // Drop everything
             Eigen::VectorXd result(0);
-            return m->heap->allocate_vector(result);
+            m->ctrl.set_value(m->heap->allocate_vector(result));
+            return;
         }
 
         int result_len = len - abs_n;
@@ -694,7 +774,8 @@ Value* fn_drop(Machine* m, Value* lhs, Value* rhs) {
                 result(i) = (*mat)(i, 0);
             }
         }
-        return m->heap->allocate_vector(result);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
     }
 
     // For matrices, drop rows
@@ -704,7 +785,8 @@ Value* fn_drop(Machine* m, Value* lhs, Value* rhs) {
     if (abs_n >= rows) {
         // Drop everything - return empty matrix
         Eigen::MatrixXd result(0, mat->cols());
-        return m->heap->allocate_matrix(result);
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+        return;
     }
 
     int result_rows = rows - abs_n;
@@ -716,7 +798,7 @@ Value* fn_drop(Machine* m, Value* lhs, Value* rhs) {
         result = mat->topRows(result_rows);
     }
 
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // ============================================================================
@@ -724,19 +806,22 @@ Value* fn_drop(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Reduce (/) - apply dyadic function between elements, right to left
-Value* fn_reduce(Machine* m, Value* func, Value* omega) {
+void fn_reduce(Machine* m, Value* func, Value* omega) {
     if (!func->is_function()) {
-        throw std::runtime_error("DOMAIN ERROR: reduce requires a function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a function"));
+        return;
     }
 
     PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
-        throw std::runtime_error("DOMAIN ERROR: reduce requires a dyadic function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a dyadic function"));
+        return;
     }
 
     if (omega->is_scalar()) {
         // Reducing a scalar is identity
-        return m->heap->allocate_scalar(omega->as_scalar());
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
     }
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -745,21 +830,24 @@ Value* fn_reduce(Machine* m, Value* func, Value* omega) {
         // Reduce vector to scalar
         int len = mat->rows();
         if (len == 0) {
-            throw std::runtime_error("LENGTH ERROR: cannot reduce empty vector");
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: cannot reduce empty vector"));
+            return;
         }
         if (len == 1) {
-            return m->heap->allocate_scalar((*mat)(0, 0));
+            m->ctrl.set_value(m->heap->allocate_scalar((*mat)(0, 0)));
+            return;
         }
 
         // Right-to-left reduction (APL standard: first f (f/rest))
         Value* acc = m->heap->allocate_scalar((*mat)(len - 1, 0));
         for (int i = len - 2; i >= 0; --i) {
             Value* elem = m->heap->allocate_scalar((*mat)(i, 0));
-            Value* result = fn->dyadic(m, elem, acc);
+            fn->dyadic(m, elem, acc);
             // GC will clean up elem and old acc
-            acc = result;
+            acc = m->ctrl.value;
         }
-        return acc;
+        m->ctrl.set_value(acc);
+        return;
     }
 
     // For matrix, reduce along last axis (columns)
@@ -768,7 +856,8 @@ Value* fn_reduce(Machine* m, Value* func, Value* omega) {
     int cols = mat->cols();
 
     if (cols == 0) {
-        throw std::runtime_error("LENGTH ERROR: cannot reduce empty dimension");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: cannot reduce empty dimension"));
+        return;
     }
 
     Eigen::VectorXd result(rows);
@@ -778,35 +867,39 @@ Value* fn_reduce(Machine* m, Value* func, Value* omega) {
         Value* acc = m->heap->allocate_scalar((*mat)(r, cols - 1));
         for (int c = cols - 2; c >= 0; --c) {
             Value* elem = m->heap->allocate_scalar((*mat)(r, c));
-            Value* new_acc = fn->dyadic(m, elem, acc);
+            fn->dyadic(m, elem, acc);
             // GC will clean up elem and old acc
-            acc = new_acc;
+            acc = m->ctrl.value;
         }
         result(r) = acc->as_scalar();
         // GC will clean up acc
     }
 
-    return m->heap->allocate_vector(result);
+    m->ctrl.set_value(m->heap->allocate_vector(result));
 }
 
 // Reduce-first (⌿) - reduce along first axis (rows)
-Value* fn_reduce_first(Machine* m, Value* func, Value* omega) {
+void fn_reduce_first(Machine* m, Value* func, Value* omega) {
     if (!func->is_function()) {
-        throw std::runtime_error("DOMAIN ERROR: reduce-first requires a function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce-first requires a function"));
+        return;
     }
 
     PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
-        throw std::runtime_error("DOMAIN ERROR: reduce-first requires a dyadic function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce-first requires a dyadic function"));
+        return;
     }
 
     if (omega->is_scalar()) {
-        return m->heap->allocate_scalar(omega->as_scalar());
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
     }
 
     if (omega->is_vector()) {
         // For vector, same as regular reduce
-        return fn_reduce(m, func, omega);
+        fn_reduce(m, func, omega);
+        return;
     }
 
     // For matrix, reduce along first axis (rows)
@@ -816,7 +909,8 @@ Value* fn_reduce_first(Machine* m, Value* func, Value* omega) {
     int cols = mat->cols();
 
     if (rows == 0) {
-        throw std::runtime_error("LENGTH ERROR: cannot reduce empty dimension");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: cannot reduce empty dimension"));
+        return;
     }
 
     Eigen::VectorXd result(cols);
@@ -826,30 +920,33 @@ Value* fn_reduce_first(Machine* m, Value* func, Value* omega) {
         Value* acc = m->heap->allocate_scalar((*mat)(rows - 1, c));
         for (int r = rows - 2; r >= 0; --r) {
             Value* elem = m->heap->allocate_scalar((*mat)(r, c));
-            Value* new_acc = fn->dyadic(m, elem, acc);
+            fn->dyadic(m, elem, acc);
             // GC will clean up elem and old acc
-            acc = new_acc;
+            acc = m->ctrl.value;
         }
         result(c) = acc->as_scalar();
         // GC will clean up acc
     }
 
-    return m->heap->allocate_vector(result);
+    m->ctrl.set_value(m->heap->allocate_vector(result));
 }
 
 // Scan (\) - apply dyadic function cumulatively, right to left
-Value* fn_scan(Machine* m, Value* func, Value* omega) {
+void fn_scan(Machine* m, Value* func, Value* omega) {
     if (!func->is_function()) {
-        throw std::runtime_error("DOMAIN ERROR: scan requires a function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
+        return;
     }
 
     PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
-        throw std::runtime_error("DOMAIN ERROR: scan requires a dyadic function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a dyadic function"));
+        return;
     }
 
     if (omega->is_scalar()) {
-        return m->heap->allocate_scalar(omega->as_scalar());
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
     }
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -857,7 +954,8 @@ Value* fn_scan(Machine* m, Value* func, Value* omega) {
     if (omega->is_vector()) {
         int len = mat->rows();
         if (len == 0) {
-            return m->heap->allocate_vector(Eigen::VectorXd(0));
+            m->ctrl.set_value(m->heap->allocate_vector(Eigen::VectorXd(0)));
+            return;
         }
 
         Eigen::VectorXd result(len);
@@ -868,14 +966,16 @@ Value* fn_scan(Machine* m, Value* func, Value* omega) {
 
         for (int i = len - 2; i >= 0; --i) {
             Value* elem = m->heap->allocate_scalar((*mat)(i, 0));
-            Value* new_acc = fn->dyadic(m, elem, acc);
+            fn->dyadic(m, elem, acc);
+            Value* new_acc = m->ctrl.value;
             result(i) = new_acc->as_scalar();
             // GC will clean up elem and old acc
             acc = new_acc;
         }
         // GC will clean up acc
 
-        return m->heap->allocate_vector(result);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
     }
 
     // For matrix, scan along last axis (columns)
@@ -891,7 +991,8 @@ Value* fn_scan(Machine* m, Value* func, Value* omega) {
 
         for (int c = cols - 2; c >= 0; --c) {
             Value* elem = m->heap->allocate_scalar((*mat)(r, c));
-            Value* new_acc = fn->dyadic(m, elem, acc);
+            fn->dyadic(m, elem, acc);
+            Value* new_acc = m->ctrl.value;
             result(r, c) = new_acc->as_scalar();
             // GC will clean up elem and old acc
             acc = new_acc;
@@ -899,27 +1000,31 @@ Value* fn_scan(Machine* m, Value* func, Value* omega) {
         // GC will clean up acc
     }
 
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 // Scan-first (⍀) - scan along first axis (rows)
-Value* fn_scan_first(Machine* m, Value* func, Value* omega) {
+void fn_scan_first(Machine* m, Value* func, Value* omega) {
     if (!func->is_function()) {
-        throw std::runtime_error("DOMAIN ERROR: scan-first requires a function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan-first requires a function"));
+        return;
     }
 
     PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
-        throw std::runtime_error("DOMAIN ERROR: scan-first requires a dyadic function");
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan-first requires a dyadic function"));
+        return;
     }
 
     if (omega->is_scalar()) {
-        return m->heap->allocate_scalar(omega->as_scalar());
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
     }
 
     if (omega->is_vector()) {
         // For vector, same as regular scan
-        return fn_scan(m, func, omega);
+        fn_scan(m, func, omega);
+        return;
     }
 
     // For matrix, scan along first axis (rows)
@@ -936,7 +1041,8 @@ Value* fn_scan_first(Machine* m, Value* func, Value* omega) {
 
         for (int r = rows - 2; r >= 0; --r) {
             Value* elem = m->heap->allocate_scalar((*mat)(r, c));
-            Value* new_acc = fn->dyadic(m, elem, acc);
+            fn->dyadic(m, elem, acc);
+            Value* new_acc = m->ctrl.value;
             result(r, c) = new_acc->as_scalar();
             // GC will clean up elem and old acc
             acc = new_acc;
@@ -944,7 +1050,7 @@ Value* fn_scan_first(Machine* m, Value* func, Value* omega) {
         // GC will clean up acc
     }
 
-    return m->heap->allocate_matrix(result);
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
 }
 
 } // namespace apl

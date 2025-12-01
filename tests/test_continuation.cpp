@@ -16,7 +16,7 @@ protected:
     void SetUp() override {
         machine = new Machine();
         heap = machine->heap;  // Use machine's heap
-        machine->ctrl.init_evaluating();
+        // Phase 1: No more init_evaluating() - machine is ready to go
     }
 
     void TearDown() override {
@@ -35,7 +35,7 @@ TEST_F(ContinuationTest, HaltK) {
     Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+    // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
     // GC will clean up halt
     // GC will clean up v
@@ -152,7 +152,7 @@ TEST_F(ContinuationTest, FrameKBasic) {
     Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+    // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
     // GC will clean up frame and halt
     // GC will clean up v
@@ -222,7 +222,7 @@ TEST_F(ContinuationTest, MachinePushPop) {
 
     EXPECT_EQ(result, v);
     EXPECT_EQ(machine->kont_stack.size(), 0);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+    // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
     // GC will clean up v
 }
@@ -237,7 +237,7 @@ TEST_F(ContinuationTest, MachinePopEmpty) {
     Value* result = machine->execute();
 
     EXPECT_EQ(result, v);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+    // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
     // GC will clean up v
 }
@@ -335,7 +335,7 @@ TEST_F(ContinuationTest, LiteralKUsesScalarCache) {
     machine->push_kont(lit1);
     Value* result1 = machine->execute();
 
-    machine->ctrl.init_evaluating();
+    // Phase 1: No more init_evaluating() - machine is ready
     machine->push_kont(lit2);
     Value* result2 = machine->execute();
 

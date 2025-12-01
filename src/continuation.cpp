@@ -11,10 +11,10 @@ namespace apl {
 class APLHeap;
 
 // HaltK implementation
-Value* HaltK::invoke(Machine* machine) {
-    // Terminal continuation - halt the machine
-    machine->halt();
-    return machine->ctrl.value;
+void HaltK::invoke(Machine* machine) {
+    // Phase 3.2: Terminal continuation - clear the stack to signal termination
+    // The value is already in ctrl.value
+    machine->kont_stack.clear();
 }
 
 void HaltK::mark(APLHeap* heap) {
@@ -22,13 +22,198 @@ void HaltK::mark(APLHeap* heap) {
     (void)heap;  // Unused
 }
 
+// Completion handler implementations - Phase 2
+// Completions are handled through the continuation stack, not through Machine state
+
+// PropagateCompletionK - Propagates completion up the stack
+// This continuation unwinds the stack until it hits a boundary (CatchReturnK, CatchBreakK, etc.)
+void PropagateCompletionK::invoke(Machine* machine) {
+    // Set the completion value in ctrl
+    if (completion && completion->value) {
+        machine->ctrl.set_value(completion->value);
+    }
+
+    // Unwind the stack until we hit a boundary continuation
+    // Pop continuations until we find one that can handle this completion type
+    while (!machine->kont_stack.empty()) {
+        Continuation* k = machine->kont_stack.back();
+
+        // Check if this is a boundary that can catch our completion
+        if (completion->is_return() && k->is_function_boundary()) {
+            // Found a function boundary - pop it and we're done unwinding
+            // The completion value is already in ctrl.value
+            machine->pop_kont();
+            return;
+        }
+
+        if (completion->is_break() && k->is_loop_boundary()) {
+            // Found a loop boundary - pop it and we're done unwinding
+            // The :Leave exits the loop, value is in ctrl.value
+            machine->pop_kont();
+            return;
+        }
+
+        if (completion->is_continue() && k->is_loop_boundary()) {
+            // Found a loop boundary for continue - need to re-execute loop
+            // For now, just pop and return (continue not fully implemented)
+            machine->pop_kont();
+            return;
+        }
+
+        // Phase 5: Check for error boundaries
+        if (completion->is_throw()) {
+            // Check if this is a CatchErrorK
+            CatchErrorK* catch_err = dynamic_cast<CatchErrorK*>(k);
+            if (catch_err) {
+                // Found an error boundary - pop it and we're done unwinding
+                // The error is "caught" - execution continues normally
+                machine->pop_kont();
+                return;
+            }
+        }
+
+        // Not a boundary for our completion type - pop and continue unwinding
+        machine->pop_kont();
+    }
+
+    // No boundary found - this is an error (unhandled completion)
+    // For THROW completions, convert to C++ exception as last resort
+    if (completion->is_throw()) {
+        const char* msg = completion->target ? completion->target : "Unknown error";
+        throw std::runtime_error(std::string("Uncaught APL error: ") + msg);
+    }
+    throw std::runtime_error("Unhandled completion: no matching boundary found");
+}
+
+void PropagateCompletionK::mark(APLHeap* heap) {
+    if (completion) {
+        heap->mark_completion(completion);
+    }
+}
+
+// CatchReturnK - Catches RETURN completions at function boundaries
+void CatchReturnK::invoke(Machine* machine) {
+    // This is invoked in two cases:
+    // 1. Function body completed normally - just return the value in ctrl
+    // 2. PropagateCompletionK pushed us back - check if there's a completion on stack
+
+    // Check if next item on stack is a PropagateCompletionK with RETURN
+    if (!machine->kont_stack.empty()) {
+        Continuation* next = machine->kont_stack.back();
+        PropagateCompletionK* prop = dynamic_cast<PropagateCompletionK*>(next);
+
+        if (prop && prop->completion && prop->completion->is_return()) {
+            // Pop the PropagateCompletionK - we're handling the return
+            machine->pop_kont();
+            // The return value is already in ctrl.value (set by PropagateCompletionK)
+            // Just continue normally - completion is handled
+            return;
+        }
+    }
+
+    // Normal function completion - value already in ctrl, just continue
+    (void)function_name;  // Unused for now (could be used for debugging)
+}
+
+void CatchReturnK::mark(APLHeap* heap) {
+    // No GC references to mark (function_name is static)
+    (void)heap;
+}
+
+// CatchBreakK - Catches BREAK completions at loop boundaries
+void CatchBreakK::invoke(Machine* machine) {
+    // Check if next item on stack is a PropagateCompletionK with BREAK
+    if (!machine->kont_stack.empty()) {
+        Continuation* next = machine->kont_stack.back();
+        PropagateCompletionK* prop = dynamic_cast<PropagateCompletionK*>(next);
+
+        if (prop && prop->completion && prop->completion->is_break()) {
+            // Pop the PropagateCompletionK - we're handling the break
+            machine->pop_kont();
+            // For :Leave, we typically return the last value or a default
+            // The value is already in ctrl.value
+            // Just continue normally - loop is exited
+            return;
+        }
+    }
+
+    // This shouldn't normally be invoked without a break completion
+    // If we get here, just continue (shouldn't happen in normal execution)
+    (void)label;  // Unused for now (could be used for labeled breaks)
+}
+
+void CatchBreakK::mark(APLHeap* heap) {
+    // No GC references to mark (label is static)
+    (void)heap;
+}
+
+// CatchContinueK - Catches CONTINUE completions at loop boundaries
+void CatchContinueK::invoke(Machine* machine) {
+    // Check if next item on stack is a PropagateCompletionK with CONTINUE
+    if (!machine->kont_stack.empty()) {
+        Continuation* next = machine->kont_stack.back();
+        PropagateCompletionK* prop = dynamic_cast<PropagateCompletionK*>(next);
+
+        if (prop && prop->completion && prop->completion->is_continue()) {
+            // Pop the PropagateCompletionK - we're handling the continue
+            machine->pop_kont();
+            // Re-push the loop continuation to restart the loop
+            if (loop_cont) {
+                machine->push_kont(loop_cont);
+            }
+            return;
+        }
+    }
+
+    // This shouldn't normally be invoked without a continue completion
+    (void)loop_cont;  // Used above
+}
+
+void CatchContinueK::mark(APLHeap* heap) {
+    if (loop_cont) {
+        heap->mark_continuation(loop_cont);
+    }
+}
+
+// CatchErrorK - Catches THROW completions (Phase 5)
+void CatchErrorK::invoke(Machine* machine) {
+    // This is invoked when an error boundary is reached
+    // For now, just continue normally (error boundaries not yet fully implemented)
+    // In the future, this would check for THROW completions and handle them
+    (void)machine;
+}
+
+void CatchErrorK::mark(APLHeap* heap) {
+    // No GC references to mark
+    (void)heap;
+}
+
+// ThrowErrorK - Creates and propagates THROW completion (Phase 5.2)
+void ThrowErrorK::invoke(Machine* machine) {
+    // Create a THROW completion with the error message
+    APLCompletion* throw_comp = machine->heap->allocate<APLCompletion>(
+        CompletionType::THROW,
+        nullptr,  // No value for errors
+        error_message  // Error message in target field
+    );
+
+    // Push PropagateCompletionK to unwind the stack
+    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(throw_comp);
+    machine->push_kont(prop);
+}
+
+void ThrowErrorK::mark(APLHeap* heap) {
+    // No GC references to mark (error_message is static or pooled)
+    (void)heap;
+}
+
 // LiteralK implementation
-Value* LiteralK::invoke(Machine* machine) {
+void LiteralK::invoke(Machine* machine) {
     // Convert the literal double to a Value* at runtime
     Value* val = machine->heap->allocate_scalar(literal_value);
     machine->ctrl.set_value(val);
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void LiteralK::mark(APLHeap* heap) {
@@ -37,12 +222,12 @@ void LiteralK::mark(APLHeap* heap) {
 }
 
 // ClosureLiteralK implementation
-Value* ClosureLiteralK::invoke(Machine* machine) {
+void ClosureLiteralK::invoke(Machine* machine) {
     // Convert the continuation body to a CLOSURE Value* at runtime
     Value* heap_closure = machine->heap->allocate_closure(body);
     machine->ctrl.set_value(heap_closure);
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void ClosureLiteralK::mark(APLHeap* heap) {
@@ -53,18 +238,20 @@ void ClosureLiteralK::mark(APLHeap* heap) {
 }
 
 // LookupK implementation
-Value* LookupK::invoke(Machine* machine) {
+void LookupK::invoke(Machine* machine) {
     // Look up the variable in the environment
     Value* val = machine->env->lookup(var_name);
 
     if (!val) {
-        // Variable not found - error
-        machine->halt();
-        return nullptr;
+        // Variable not found - push THROW completion
+        std::string msg = std::string("VALUE ERROR: Undefined variable: ") + var_name;
+        const char* interned_msg = machine->string_pool.intern(msg.c_str());
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        return;
     }
 
     machine->ctrl.set_value(val);
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void LookupK::mark(APLHeap* heap) {
@@ -73,7 +260,7 @@ void LookupK::mark(APLHeap* heap) {
 }
 
 // AssignK implementation
-Value* AssignK::invoke(Machine* machine) {
+void AssignK::invoke(Machine* machine) {
     // Assignment: evaluate expression, then bind to variable
     // Use auxiliary continuation to capture the result
 
@@ -82,7 +269,7 @@ Value* AssignK::invoke(Machine* machine) {
     machine->push_kont(perform);
     machine->push_kont(expr);
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void AssignK::mark(APLHeap* heap) {
@@ -92,7 +279,7 @@ void AssignK::mark(APLHeap* heap) {
 }
 
 // PerformAssignK implementation
-Value* PerformAssignK::invoke(Machine* machine) {
+void PerformAssignK::invoke(Machine* machine) {
     // Expression has been evaluated - result is in ctrl.value
     // Bind it to the variable name
     Value* val = machine->ctrl.value;
@@ -102,7 +289,7 @@ Value* PerformAssignK::invoke(Machine* machine) {
     // Assignment expression returns the assigned value
     machine->ctrl.set_value(val);
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void PerformAssignK::mark(APLHeap* heap) {
@@ -111,7 +298,7 @@ void PerformAssignK::mark(APLHeap* heap) {
 }
 
 // StrandK implementation
-Value* StrandK::invoke(Machine* machine) {
+void StrandK::invoke(Machine* machine) {
     // Strand: evaluate elements right-to-left and collect into vector
     // Strategy: use auxiliary continuations to maintain accumulator
 
@@ -120,13 +307,13 @@ Value* StrandK::invoke(Machine* machine) {
         Eigen::VectorXd empty_vec(0);
         Value* val = machine->heap->allocate_vector(empty_vec);
         machine->ctrl.set_value(val);
-        return nullptr;
+        return;  // Early exit for empty case
     }
 
     if (elements.size() == 1) {
         // Single element - just evaluate it directly (no need for vector wrapper)
         machine->push_kont(elements[0]);
-        return nullptr;
+        return;  // Early exit for single element
     }
 
     // Multiple elements: evaluate right-to-left using auxiliary continuation
@@ -142,7 +329,7 @@ Value* StrandK::invoke(Machine* machine) {
     machine->push_kont(eval_next);         // Will execute after rightmost element
     machine->push_kont(elements.back());   // Evaluate rightmost element now
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void StrandK::mark(APLHeap* heap) {
@@ -155,7 +342,7 @@ void StrandK::mark(APLHeap* heap) {
 }
 
 // MonadicK implementation
-Value* MonadicK::invoke(Machine* machine) {
+void MonadicK::invoke(Machine* machine) {
     // Monadic function application: evaluate operand, then apply function
     // Strategy: push operand continuation, then push auxiliary to apply function
 
@@ -166,7 +353,7 @@ Value* MonadicK::invoke(Machine* machine) {
     machine->push_kont(apply);    // Will execute after operand
     machine->push_kont(operand);  // Evaluate operand now
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void MonadicK::mark(APLHeap* heap) {
@@ -176,7 +363,7 @@ void MonadicK::mark(APLHeap* heap) {
 }
 
 // DyadicK implementation
-Value* DyadicK::invoke(Machine* machine) {
+void DyadicK::invoke(Machine* machine) {
     // APL evaluates right-to-left: right operand first, then left, then apply
     // Use auxiliary continuations to manage the multi-step process
 
@@ -187,7 +374,7 @@ Value* DyadicK::invoke(Machine* machine) {
     machine->push_kont(eval_left);  // Will execute after right
     machine->push_kont(right);       // Will execute now
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void DyadicK::mark(APLHeap* heap) {
@@ -200,7 +387,7 @@ void DyadicK::mark(APLHeap* heap) {
 }
 
 // EvalDyadicLeftK implementation
-Value* EvalDyadicLeftK::invoke(Machine* machine) {
+void EvalDyadicLeftK::invoke(Machine* machine) {
     // Right operand has been evaluated - its value is in ctrl.value
     // Save the right value and set up left evaluation
     right_val = machine->ctrl.value;
@@ -212,7 +399,7 @@ Value* EvalDyadicLeftK::invoke(Machine* machine) {
     machine->push_kont(apply);   // Will execute after left
     machine->push_kont(left);     // Will execute now
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void EvalDyadicLeftK::mark(APLHeap* heap) {
@@ -226,27 +413,32 @@ void EvalDyadicLeftK::mark(APLHeap* heap) {
 
 
 // ApplyMonadicK implementation
-Value* ApplyMonadicK::invoke(Machine* machine) {
+void ApplyMonadicK::invoke(Machine* machine) {
     // Operand has been evaluated - its value is in ctrl.value
     Value* operand_val = machine->ctrl.value;
 
     // Look up the operator at evaluation time
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
-        throw std::runtime_error(std::string("Unknown operator: ") + op_name);
+        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
+        const char* interned_msg = machine->string_pool.intern(msg.c_str());
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        return;
     }
 
     PrimitiveFn* prim_fn = op_val->data.primitive_fn;
 
     if (!prim_fn->monadic) {
-        throw std::runtime_error(std::string("Operator has no monadic form: ") + op_name);
+        std::string msg = std::string("SYNTAX ERROR: Operator has no monadic form: ") + op_name;
+        const char* interned_msg = machine->string_pool.intern(msg.c_str());
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        return;
     }
 
-    // Apply the monadic function
-    Value* result = prim_fn->monadic(machine, operand_val);
-    machine->ctrl.set_value(result);
+    // Apply the monadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+    prim_fn->monadic(machine, operand_val);
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void ApplyMonadicK::mark(APLHeap* heap) {
@@ -255,7 +447,7 @@ void ApplyMonadicK::mark(APLHeap* heap) {
 }
 
 // ArgK implementation
-Value* ArgK::invoke(Machine* machine) {
+void ArgK::invoke(Machine* machine) {
     // Set the argument value and continue with next continuation
     machine->ctrl.set_value(arg_value);
 
@@ -263,7 +455,7 @@ Value* ArgK::invoke(Machine* machine) {
         machine->push_kont(next);
     }
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void ArgK::mark(APLHeap* heap) {
@@ -279,7 +471,7 @@ void ArgK::mark(APLHeap* heap) {
 }
 
 // ApplyDyadicK implementation
-Value* ApplyDyadicK::invoke(Machine* machine) {
+void ApplyDyadicK::invoke(Machine* machine) {
     // Both operands have been evaluated
     // Right value is saved in right_val
     // Left value is in ctrl.value
@@ -288,20 +480,25 @@ Value* ApplyDyadicK::invoke(Machine* machine) {
     // Look up the operator at evaluation time
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
-        throw std::runtime_error(std::string("Unknown operator: ") + op_name);
+        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
+        const char* interned_msg = machine->string_pool.intern(msg.c_str());
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        return;
     }
 
     PrimitiveFn* prim_fn = op_val->data.primitive_fn;
 
     if (!prim_fn->dyadic) {
-        throw std::runtime_error(std::string("Operator has no dyadic form: ") + op_name);
+        std::string msg = std::string("SYNTAX ERROR: Operator has no dyadic form: ") + op_name;
+        const char* interned_msg = machine->string_pool.intern(msg.c_str());
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        return;
     }
 
-    // Apply the dyadic function
-    Value* result = prim_fn->dyadic(machine, left_val, right_val);
-    machine->ctrl.set_value(result);
+    // Apply the dyadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+    prim_fn->dyadic(machine, left_val, right_val);
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void ApplyDyadicK::mark(APLHeap* heap) {
@@ -312,7 +509,7 @@ void ApplyDyadicK::mark(APLHeap* heap) {
 }
 
 // EvalStrandElementK implementation
-Value* EvalStrandElementK::invoke(Machine* machine) {
+void EvalStrandElementK::invoke(Machine* machine) {
     // An element has just been evaluated - its value is in ctrl.value
     // Add it to the FRONT of evaluated_values (we're going right-to-left)
     Value* current_val = machine->ctrl.value;
@@ -322,7 +519,7 @@ Value* EvalStrandElementK::invoke(Machine* machine) {
         // No more elements to evaluate - build the final strand
         BuildStrandK* build = machine->heap->allocate<BuildStrandK>(evaluated_values);
         machine->push_kont(build);
-        return nullptr;
+        return;  // Early exit - done evaluating elements
     }
 
     // More elements to evaluate - take the rightmost remaining element
@@ -336,7 +533,7 @@ Value* EvalStrandElementK::invoke(Machine* machine) {
     machine->push_kont(eval_next);   // Will execute after next element
     machine->push_kont(next_elem);   // Evaluate next element now
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void EvalStrandElementK::mark(APLHeap* heap) {
@@ -356,7 +553,7 @@ void EvalStrandElementK::mark(APLHeap* heap) {
 }
 
 // BuildStrandK implementation
-Value* BuildStrandK::invoke(Machine* machine) {
+void BuildStrandK::invoke(Machine* machine) {
     // All elements have been evaluated - build the vector
     // values are already in left-to-right order
 
@@ -364,7 +561,7 @@ Value* BuildStrandK::invoke(Machine* machine) {
         Eigen::VectorXd empty_vec(0);
         Value* val = machine->heap->allocate_vector(empty_vec);
         machine->ctrl.set_value(val);
-        return nullptr;
+        return;  // Early exit for empty case
     }
 
     // CURRYING TRANSFORMATION (Georgeff et al. paper, page 121)
@@ -396,13 +593,13 @@ Value* BuildStrandK::invoke(Machine* machine) {
             Value* arg = values[1];
 
             if (!prim->monadic) {
-                throw std::runtime_error("Function has no monadic form");
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no monadic form"));
+                return;
             }
 
-            // Apply monadic function
-            Value* result = prim->monadic(machine, arg);
-            machine->ctrl.set_value(result);
-            return nullptr;
+            // Apply monadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+            prim->monadic(machine, arg);
+            return;  // Early exit after monadic application
         }
 
         // Pattern: [f x y] - dyadic application (function first)
@@ -411,13 +608,13 @@ Value* BuildStrandK::invoke(Machine* machine) {
             Value* right_arg = values[2];
 
             if (!prim->dyadic) {
-                throw std::runtime_error("Function has no dyadic form");
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no dyadic form"));
+                return;
             }
 
-            // Apply dyadic function: x f y
-            Value* result = prim->dyadic(machine, left_arg, right_arg);
-            machine->ctrl.set_value(result);
-            return nullptr;
+            // Apply dyadic function: x f y (sets machine->ctrl.value directly or pushes ThrowErrorK)
+            prim->dyadic(machine, left_arg, right_arg);
+            return;  // Early exit after dyadic application
         }
 
         // Pattern: [x f y] - dyadic application (function in middle - APL infix notation)
@@ -426,18 +623,19 @@ Value* BuildStrandK::invoke(Machine* machine) {
             Value* right_arg = values[2];
 
             if (!prim->dyadic) {
-                throw std::runtime_error("Function has no dyadic form");
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no dyadic form"));
+                return;
             }
 
-            // Apply dyadic function: x f y
-            Value* result = prim->dyadic(machine, left_arg, right_arg);
-            machine->ctrl.set_value(result);
-            return nullptr;
+            // Apply dyadic function: x f y (sets machine->ctrl.value directly or pushes ThrowErrorK)
+            prim->dyadic(machine, left_arg, right_arg);
+            return;  // Early exit after dyadic application
         }
 
         // TODO: Higher-order operators and other patterns
         // For now, fall through to regular vector formation (or error)
-        throw std::runtime_error("Unsupported function application pattern in strand");
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Unsupported function application pattern in strand"));
+        return;
     }
 
     // Regular vector formation (no function application)
@@ -452,14 +650,15 @@ Value* BuildStrandK::invoke(Machine* machine) {
         } else {
             // For now, if element is not a scalar, we have a problem
             // APL allows nested arrays, but we haven't implemented that yet
-            throw std::runtime_error("Strand elements must be scalars (nested arrays not yet implemented)");
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("RANK ERROR: Strand elements must be scalars (nested arrays not yet implemented)"));
+            return;
         }
     }
 
     Value* result = machine->heap->allocate_vector(vec);
     machine->ctrl.set_value(result);
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void BuildStrandK::mark(APLHeap* heap) {
@@ -472,14 +671,20 @@ void BuildStrandK::mark(APLHeap* heap) {
 }
 
 // FrameK implementation
-Value* FrameK::invoke(Machine* machine) {
+void FrameK::invoke(Machine* machine) {
     // Function frame - push return continuation onto stack
+    // Phase 2.2: Also push CatchReturnK to establish function boundary
 
+    // Push the catch handler first (it will be invoked after function body completes)
+    CatchReturnK* catch_k = machine->heap->allocate<CatchReturnK>(function_name);
+    machine->push_kont(catch_k);
+
+    // Then push the function body
     if (return_k) {
         machine->push_kont(return_k);
     }
 
-    return nullptr;  // Continue trampoline
+    // Phase 3.1: No return needed, trampoline continues
 }
 
 void FrameK::mark(APLHeap* heap) {
@@ -491,7 +696,7 @@ void FrameK::mark(APLHeap* heap) {
 
 // ApplyFunctionK implementation
 // Implements runtime dispatch for function application (currying transformation)
-Value* ApplyFunctionK::invoke(Machine* machine) {
+void ApplyFunctionK::invoke(Machine* machine) {
     // Strategy: Evaluate all components right-to-left, then dispatch based on what we got
     // 1. Evaluate right_arg
     // 2. Evaluate left_arg (if present)
@@ -515,7 +720,7 @@ Value* ApplyFunctionK::invoke(Machine* machine) {
         machine->push_kont(right_arg);
     }
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void ApplyFunctionK::mark(APLHeap* heap) {
@@ -531,7 +736,7 @@ void ApplyFunctionK::mark(APLHeap* heap) {
 }
 
 // EvalApplyFunctionLeftK implementation
-Value* EvalApplyFunctionLeftK::invoke(Machine* machine) {
+void EvalApplyFunctionLeftK::invoke(Machine* machine) {
     // Right argument has been evaluated - save it
     right_val = machine->ctrl.value;
 
@@ -542,7 +747,7 @@ Value* EvalApplyFunctionLeftK::invoke(Machine* machine) {
     machine->push_kont(eval_fn);
     machine->push_kont(left_arg);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void EvalApplyFunctionLeftK::mark(APLHeap* heap) {
@@ -558,7 +763,7 @@ void EvalApplyFunctionLeftK::mark(APLHeap* heap) {
 }
 
 // EvalApplyFunctionMonadicK implementation
-Value* EvalApplyFunctionMonadicK::invoke(Machine* machine) {
+void EvalApplyFunctionMonadicK::invoke(Machine* machine) {
     // Argument has been evaluated - save it
     arg_val = machine->ctrl.value;
 
@@ -568,7 +773,7 @@ Value* EvalApplyFunctionMonadicK::invoke(Machine* machine) {
     machine->push_kont(dispatch);
     machine->push_kont(fn_cont);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void EvalApplyFunctionMonadicK::mark(APLHeap* heap) {
@@ -581,7 +786,7 @@ void EvalApplyFunctionMonadicK::mark(APLHeap* heap) {
 }
 
 // EvalApplyFunctionDyadicK implementation
-Value* EvalApplyFunctionDyadicK::invoke(Machine* machine) {
+void EvalApplyFunctionDyadicK::invoke(Machine* machine) {
     // Left argument has been evaluated - save it
     left_val = machine->ctrl.value;
 
@@ -591,7 +796,7 @@ Value* EvalApplyFunctionDyadicK::invoke(Machine* machine) {
     machine->push_kont(dispatch);
     machine->push_kont(fn_cont);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void EvalApplyFunctionDyadicK::mark(APLHeap* heap) {
@@ -609,7 +814,7 @@ void EvalApplyFunctionDyadicK::mark(APLHeap* heap) {
 // DispatchFunctionK implementation
 // This is where the actual currying transformation happens:
 // g' = λx. λy. if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
-Value* DispatchFunctionK::invoke(Machine* machine) {
+void DispatchFunctionK::invoke(Machine* machine) {
     // Function has been evaluated - it's in ctrl.value
     fn_val = machine->ctrl.value;
 
@@ -618,12 +823,13 @@ Value* DispatchFunctionK::invoke(Machine* machine) {
         // Call the closure using FunctionCallK
         FunctionCallK* call_k = machine->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
         machine->push_kont(call_k);
-        return nullptr;
+        return;  // Early exit for closure case
     }
 
     // Check that fn_val is actually a primitive function
     if (!fn_val->is_primitive()) {
-        throw std::runtime_error("ApplyFunctionK: expected function value");
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: expected function value"));
+        return;
     }
 
     PrimitiveFn* prim_fn = fn_val->data.primitive_fn;
@@ -632,22 +838,24 @@ Value* DispatchFunctionK::invoke(Machine* machine) {
     if (left_val == nullptr) {
         // Monadic case: only right argument
         if (!prim_fn->monadic) {
-            throw std::runtime_error("Function has no monadic form");
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no monadic form"));
+            return;
         }
 
-        Value* result = prim_fn->monadic(machine, right_val);
-        machine->ctrl.set_value(result);
+        // Apply monadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+        prim_fn->monadic(machine, right_val);
     } else {
         // Dyadic case: both arguments
         if (!prim_fn->dyadic) {
-            throw std::runtime_error("Function has no dyadic form");
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no dyadic form"));
+            return;
         }
 
-        Value* result = prim_fn->dyadic(machine, left_val, right_val);
-        machine->ctrl.set_value(result);
+        // Apply dyadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+        prim_fn->dyadic(machine, left_val, right_val);
     }
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void DispatchFunctionK::mark(APLHeap* heap) {
@@ -663,18 +871,18 @@ void DispatchFunctionK::mark(APLHeap* heap) {
 }
 
 // SeqK implementation - execute statements in sequence
-Value* SeqK::invoke(Machine* machine) {
+void SeqK::invoke(Machine* machine) {
     if (statements.empty()) {
         // Empty sequence returns null/unit value (scalar 0)
         Value* val = machine->heap->allocate_scalar(0.0);
         machine->ctrl.set_value(val);
-        return nullptr;
+        return;  // Early exit for empty case
     }
 
     if (statements.size() == 1) {
         // Single statement - just push it directly
         machine->push_kont(statements[0]);
-        return nullptr;
+        return;  // Early exit for single statement
     }
 
     // Multiple statements - push auxiliary continuation and first statement
@@ -683,7 +891,7 @@ Value* SeqK::invoke(Machine* machine) {
     machine->push_kont(next_k);
     machine->push_kont(statements[0]);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void SeqK::mark(APLHeap* heap) {
@@ -695,19 +903,19 @@ void SeqK::mark(APLHeap* heap) {
 }
 
 // ExecNextStatementK implementation - execute remaining statements
-Value* ExecNextStatementK::invoke(Machine* machine) {
+void ExecNextStatementK::invoke(Machine* machine) {
     // The previous statement has been executed and its result is in machine->ctrl.value
     // We discard that result (unless it's the last statement)
 
     if (next_index >= statements.size()) {
         // All statements executed - current value is the result
-        return nullptr;
+        return;  // Early exit - done
     }
 
     if (next_index == statements.size() - 1) {
         // Last statement - just push it
         machine->push_kont(statements[next_index]);
-        return nullptr;
+        return;  // Early exit for last statement
     }
 
     // More statements to execute - push continuation for next iteration
@@ -715,7 +923,7 @@ Value* ExecNextStatementK::invoke(Machine* machine) {
     machine->push_kont(next_k);
     machine->push_kont(statements[next_index]);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void ExecNextStatementK::mark(APLHeap* heap) {
@@ -731,7 +939,7 @@ void ExecNextStatementK::mark(APLHeap* heap) {
 // ============================================================================
 
 // IfK implementation - evaluate condition, then select branch
-Value* IfK::invoke(Machine* machine) {
+void IfK::invoke(Machine* machine) {
     // Push auxiliary continuation to select branch after condition is evaluated
     auto* select_k = machine->heap->allocate<SelectBranchK>(then_branch, else_branch);
     machine->push_kont(select_k);
@@ -739,7 +947,7 @@ Value* IfK::invoke(Machine* machine) {
     // Push condition to evaluate
     machine->push_kont(condition);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void IfK::mark(APLHeap* heap) {
@@ -755,14 +963,14 @@ void IfK::mark(APLHeap* heap) {
 }
 
 // SelectBranchK implementation - select branch based on condition result
-Value* SelectBranchK::invoke(Machine* machine) {
+void SelectBranchK::invoke(Machine* machine) {
     // Condition result is in machine->ctrl.value
     Value* cond_val = machine->ctrl.value;
 
     if (!cond_val) {
         // Error: no condition value
-        machine->halt();
-        return nullptr;
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: If condition evaluated to null"));
+        return;
     }
 
     // APL convention: 0 is false, non-zero is true
@@ -792,7 +1000,7 @@ Value* SelectBranchK::invoke(Machine* machine) {
 
     // If no branch was selected (e.g., false with no else), just continue
     // The result remains whatever the condition evaluated to
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void SelectBranchK::mark(APLHeap* heap) {
@@ -805,7 +1013,11 @@ void SelectBranchK::mark(APLHeap* heap) {
 }
 
 // WhileK implementation - check condition and loop
-Value* WhileK::invoke(Machine* machine) {
+void WhileK::invoke(Machine* machine) {
+    // Phase 2.2: Push CatchBreakK to establish loop boundary for :Leave
+    CatchBreakK* catch_k = machine->heap->allocate<CatchBreakK>();
+    machine->push_kont(catch_k);
+
     // Push auxiliary continuation to check condition
     auto* check_k = machine->heap->allocate<CheckWhileCondK>(condition, body);
     machine->push_kont(check_k);
@@ -813,7 +1025,7 @@ Value* WhileK::invoke(Machine* machine) {
     // Push condition to evaluate first
     machine->push_kont(condition);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void WhileK::mark(APLHeap* heap) {
@@ -826,14 +1038,14 @@ void WhileK::mark(APLHeap* heap) {
 }
 
 // CheckWhileCondK implementation - check condition and decide whether to loop
-Value* CheckWhileCondK::invoke(Machine* machine) {
+void CheckWhileCondK::invoke(Machine* machine) {
     // Condition result is in machine->ctrl.value
     Value* cond_val = machine->ctrl.value;
 
     if (!cond_val) {
         // Error: no condition value
-        machine->halt();
-        return nullptr;
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: While condition evaluated to null"));
+        return;
     }
 
     // APL convention: 0 is false, non-zero is true
@@ -866,7 +1078,7 @@ Value* CheckWhileCondK::invoke(Machine* machine) {
     // If false, just exit - loop is done
     // Result remains the condition value
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void CheckWhileCondK::mark(APLHeap* heap) {
@@ -879,7 +1091,11 @@ void CheckWhileCondK::mark(APLHeap* heap) {
 }
 
 // ForK implementation - evaluate array and start iteration
-Value* ForK::invoke(Machine* machine) {
+void ForK::invoke(Machine* machine) {
+    // Phase 2.2: Push CatchBreakK to establish loop boundary for :Leave
+    CatchBreakK* catch_k = machine->heap->allocate<CatchBreakK>();
+    machine->push_kont(catch_k);
+
     // Push auxiliary continuation to start iteration after array is evaluated
     auto* iterate_k = machine->heap->allocate<ForIterateK>(var_name, nullptr, body, 0);
     machine->push_kont(iterate_k);
@@ -887,7 +1103,7 @@ Value* ForK::invoke(Machine* machine) {
     // Push array expression to evaluate
     machine->push_kont(array_expr);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void ForK::mark(APLHeap* heap) {
@@ -900,13 +1116,13 @@ void ForK::mark(APLHeap* heap) {
 }
 
 // ForIterateK implementation - iterate over array elements
-Value* ForIterateK::invoke(Machine* machine) {
+void ForIterateK::invoke(Machine* machine) {
     // First call: array is in machine->ctrl.value
     if (array == nullptr) {
         array = machine->ctrl.value;
         if (!array) {
-            machine->halt();
-            return nullptr;
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: For loop array evaluated to null"));
+            return;
         }
     }
 
@@ -929,7 +1145,7 @@ Value* ForIterateK::invoke(Machine* machine) {
             Value* zero = machine->heap->allocate_scalar(0.0);
             machine->ctrl.set_value(zero);
         }
-        return nullptr;
+        return;  // Early exit - loop done
     }
 
     // Get current element
@@ -956,7 +1172,7 @@ Value* ForIterateK::invoke(Machine* machine) {
         machine->push_kont(body);
     }
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void ForIterateK::mark(APLHeap* heap) {
@@ -969,13 +1185,20 @@ void ForIterateK::mark(APLHeap* heap) {
 }
 
 // LeaveK implementation - exit from loop
-Value* LeaveK::invoke(Machine* machine) {
-    // Create BREAK completion record
-    auto* comp = machine->heap->allocate<APLCompletion>(CompletionType::BREAK, nullptr, nullptr);
-    machine->ctrl.set_completion(comp);
+void LeaveK::invoke(Machine* machine) {
+    // Phase 2.3: Create BREAK completion and propagate it up the stack
+    // This will unwind until we hit a CatchBreakK at a loop boundary
 
-    // The completion will be handled by the machine's trampoline
-    return nullptr;
+    // The current value in ctrl is the result of the :Leave statement (usually the last value)
+    APLCompletion* break_comp = machine->heap->allocate<APLCompletion>(
+        CompletionType::BREAK,
+        machine->ctrl.value,  // The value to return from the loop
+        nullptr  // No label for now
+    );
+
+    // Push PropagateCompletionK to unwind the stack
+    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(break_comp);
+    machine->push_kont(prop);
 }
 
 void LeaveK::mark(APLHeap* heap) {
@@ -984,21 +1207,33 @@ void LeaveK::mark(APLHeap* heap) {
 }
 
 // ReturnK implementation - return from function
-Value* ReturnK::invoke(Machine* machine) {
+void ReturnK::invoke(Machine* machine) {
+    // Phase 2.3: Evaluate the return value, then create RETURN completion
+
     if (value_expr) {
-        // Need to evaluate the return value first
-        // Push auxiliary continuation to create RETURN after evaluation
-        auto* create_return_k = machine->heap->allocate<CreateReturnK>();
-        machine->push_kont(create_return_k);
+        // Need to evaluate the value expression first
+        // Push CreateReturnK to handle the result
+        CreateReturnK* create_k = machine->heap->allocate<CreateReturnK>();
+        machine->push_kont(create_k);
+
+        // Evaluate the value expression
         machine->push_kont(value_expr);
     } else {
-        // No value - return 0
+        // No value expression - return unit/zero
         Value* zero = machine->heap->allocate_scalar(0.0);
-        auto* comp = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, zero, nullptr);
-        machine->ctrl.set_completion(comp);
-    }
+        machine->ctrl.set_value(zero);
 
-    return nullptr;
+        // Create RETURN completion with zero value
+        APLCompletion* return_comp = machine->heap->allocate<APLCompletion>(
+            CompletionType::RETURN,
+            zero,
+            nullptr
+        );
+
+        // Push PropagateCompletionK to unwind the stack
+        PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(return_comp);
+        machine->push_kont(prop);
+    }
 }
 
 void ReturnK::mark(APLHeap* heap) {
@@ -1008,15 +1243,19 @@ void ReturnK::mark(APLHeap* heap) {
 }
 
 // CreateReturnK implementation - create RETURN completion from evaluated value
-Value* CreateReturnK::invoke(Machine* machine) {
-    // Value is in machine->ctrl.value
-    Value* return_val = machine->ctrl.value;
+void CreateReturnK::invoke(Machine* machine) {
+    // Phase 2.3: Value has been evaluated, create RETURN completion
+    // The value is in ctrl.value
 
-    // Create RETURN completion record
-    auto* comp = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, return_val, nullptr);
-    machine->ctrl.set_completion(comp);
+    APLCompletion* return_comp = machine->heap->allocate<APLCompletion>(
+        CompletionType::RETURN,
+        machine->ctrl.value,
+        nullptr
+    );
 
-    return nullptr;
+    // Push PropagateCompletionK to unwind the stack
+    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(return_comp);
+    machine->push_kont(prop);
 }
 
 void CreateReturnK::mark(APLHeap* heap) {
@@ -1029,18 +1268,18 @@ void CreateReturnK::mark(APLHeap* heap) {
 // ============================================================================
 
 // FunctionCallK implementation - apply function to arguments
-Value* FunctionCallK::invoke(Machine* machine) {
+void FunctionCallK::invoke(Machine* machine) {
     // fn_value should be a CLOSURE
     if (!fn_value || fn_value->tag != ValueType::CLOSURE) {
-        machine->halt();
-        return nullptr;
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: Attempted to call non-function value"));
+        return;
     }
 
     // Get the function body continuation graph
     Continuation* body = fn_value->data.closure;
     if (!body) {
-        machine->halt();
-        return nullptr;
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: Function has no body"));
+        return;
     }
 
     // Create new environment for function scope (GC-managed)
@@ -1067,7 +1306,7 @@ Value* FunctionCallK::invoke(Machine* machine) {
     // Execute function body
     machine->push_kont(body);
 
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void FunctionCallK::mark(APLHeap* heap) {
@@ -1083,12 +1322,12 @@ void FunctionCallK::mark(APLHeap* heap) {
 }
 
 // RestoreEnvK implementation - restore environment after function call
-Value* RestoreEnvK::invoke(Machine* machine) {
+void RestoreEnvK::invoke(Machine* machine) {
     // Restore the saved environment
     machine->env = saved_env;
 
     // Result value is already in machine->ctrl.value
-    return nullptr;
+    // Phase 3.1: No return needed
 }
 
 void RestoreEnvK::mark(APLHeap* heap) {

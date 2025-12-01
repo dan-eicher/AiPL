@@ -27,10 +27,11 @@ public:
 };
 
 // Primitive function - can have both monadic and dyadic forms
+// Functions set machine->ctrl.value on success or push ThrowErrorK on error
 struct PrimitiveFn {
     const char* name;  // For debugging
-    Value* (*monadic)(Machine* m, Value* omega);           // Monadic form (can be nullptr)
-    Value* (*dyadic)(Machine* m, Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
+    void (*monadic)(Machine* m, Value* omega);           // Monadic form (can be nullptr)
+    void (*dyadic)(Machine* m, Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
 };
 
 // Forward declaration for operators

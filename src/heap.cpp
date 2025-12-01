@@ -3,6 +3,7 @@
 #include "heap.h"
 #include "machine.h"
 #include "continuation.h"
+#include "completion.h"
 #include "environment.h"
 #include <algorithm>
 #include <stdexcept>
@@ -310,10 +311,8 @@ void APLHeap::mark_from_roots(Machine* machine) {
         mark_value(machine->ctrl.value);
     }
 
-    // Mark completion in control register (they're GC objects now!)
-    if (machine->ctrl.completion) {
-        mark_completion(machine->ctrl.completion);
-    }
+    // Phase 1: No more completion field in Control
+    // Completions will be managed through continuation handlers in Phase 2
 
     // Mark continuations on kont_stack (they're GC objects now!)
     for (Continuation* k : machine->kont_stack) {

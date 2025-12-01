@@ -46,9 +46,6 @@ public:
     // Execute the machine until halt
     Value* execute();
 
-    // Handle completion records
-    void handle_completion();
-
     // Stack manipulation
 
     // Push continuation onto stack
@@ -66,19 +63,11 @@ public:
         return k;
     }
 
-    // Unwind stack to a boundary (for RETURN/BREAK/CONTINUE)
-    bool unwind_to_boundary(bool (*predicate)(Continuation*), const char* label = nullptr);
-
     // Utility methods
 
-    // Halt the machine
-    void halt() {
-        ctrl.halt();
-    }
-
-    // Check if execution should continue
+    // Check if execution should continue (stack not empty)
     bool should_continue() const {
-        return ctrl.mode != ExecMode::HALTED;
+        return !kont_stack.empty();
     }
 
     // Trigger GC if needed

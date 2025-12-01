@@ -12,6 +12,7 @@ namespace apl {
 class Machine;
 class APLHeap;
 class Environment;
+struct APLCompletion;  // Forward declaration for completion records
 
 // Abstract Continuation base class
 // Represents "what to do next" in the CEK machine
@@ -53,9 +54,9 @@ public:
 
 protected:
     // Execute this continuation
-    // Returns the result value (or nullptr if execution should continue)
+    // Phase 3.1: Now returns void, result goes in machine->ctrl.value
     // PROTECTED: Only Machine should call this via the trampoline
-    virtual Value* invoke(Machine* machine) = 0;
+    virtual void invoke(Machine* machine) = 0;
 
     // Grant Machine access to invoke()
     friend class Machine;
@@ -67,7 +68,96 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
+};
+
+// Completion handler continuations - Phase 2
+// These continuations handle APL completion records (RETURN, BREAK, CONTINUE, THROW)
+// in a purely functional way, replacing the imperative handle_completion() approach
+
+// PropagateCompletionK - Default handler that propagates completions up the stack
+// This is pushed automatically when an abrupt completion occurs
+class PropagateCompletionK : public Continuation {
+public:
+    APLCompletion* completion;  // The completion to propagate
+
+    PropagateCompletionK(APLCompletion* comp) : completion(comp) {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// CatchReturnK - Catches RETURN completions at function boundaries
+// Pushed by FrameK to establish function call boundaries
+class CatchReturnK : public Continuation {
+public:
+    const char* function_name;  // For debugging (not GC-managed, assumed static)
+
+    CatchReturnK(const char* name = nullptr) : function_name(name) {}
+
+    void mark(APLHeap* heap) override;
+    bool is_function_boundary() const override { return true; }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// CatchBreakK - Catches BREAK completions at loop boundaries
+// Pushed by WhileK and ForK to establish loop boundaries for :Leave
+class CatchBreakK : public Continuation {
+public:
+    const char* label;  // Optional label for labeled breaks (not GC-managed, assumed static)
+
+    CatchBreakK(const char* lbl = nullptr) : label(lbl) {}
+
+    void mark(APLHeap* heap) override;
+    bool is_loop_boundary() const override { return true; }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// CatchContinueK - Catches CONTINUE completions at loop boundaries
+// Pushed by WhileK and ForK to handle loop continuation
+class CatchContinueK : public Continuation {
+public:
+    Continuation* loop_cont;  // The loop to re-execute (GC-managed)
+
+    CatchContinueK(Continuation* loop) : loop_cont(loop) {}
+
+    void mark(APLHeap* heap) override;
+    bool is_loop_boundary() const override { return true; }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// CatchErrorK - Catches THROW completions for error handling (Phase 5)
+// Can be pushed at any point to establish an error boundary
+class CatchErrorK : public Continuation {
+public:
+    CatchErrorK() {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ThrowErrorK - Creates and propagates a THROW completion (Phase 5.2)
+// Used by primitives and other code to signal errors through completions
+class ThrowErrorK : public Continuation {
+public:
+    const char* error_message;  // Error message (not GC-managed, assumed static or pooled)
+
+    ThrowErrorK(const char* msg) : error_message(msg) {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
 };
 
 // LiteralK - Parse-time continuation for literal values
@@ -85,7 +175,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // ClosureLiteralK - Parse-time continuation for closure literals (dfns)
@@ -103,7 +193,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // LookupK - Parse-time continuation for variable lookups
@@ -121,7 +211,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // AssignK - Assignment continuation for variable definition
@@ -142,7 +232,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for AssignK - performs the actual binding after expression is evaluated
@@ -158,7 +248,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // StrandK - Parse-time continuation for array strands
@@ -179,7 +269,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // MonadicK - Monadic function application (e.g., -x, ⍳x)
@@ -199,7 +289,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // DyadicK - Dyadic function application (e.g., x+y, x×y)
@@ -220,7 +310,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for DyadicK - evaluates left after right is done
@@ -238,7 +328,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation to apply monadic function after operand evaluated
@@ -254,7 +344,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation to apply dyadic function after both operands evaluated
@@ -271,7 +361,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 
@@ -292,7 +382,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for StrandK - evaluates remaining strand elements right-to-left
@@ -311,7 +401,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation to build the final strand vector from collected values
@@ -328,7 +418,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // FrameK - Stack frame continuation for function calls
@@ -351,7 +441,7 @@ public:
     bool is_function_boundary() const override { return true; }
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // ApplyFunctionK - Apply a function value (from a variable) to arguments
@@ -378,7 +468,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for ApplyFunctionK - evaluates left arg after right is done (dyadic case)
@@ -396,7 +486,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for ApplyFunctionK - evaluates function after arg is done (monadic case)
@@ -413,7 +503,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for ApplyFunctionK - evaluates function after both args are done (dyadic case)
@@ -431,7 +521,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation to apply function after both args and function are evaluated
@@ -449,7 +539,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // SeqK - Sequence continuation for executing multiple statements
@@ -469,7 +559,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for SeqK - executes remaining statements
@@ -487,7 +577,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // ============================================================================
@@ -513,7 +603,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for IfK - selects branch after condition is evaluated
@@ -530,7 +620,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // WhileK - Loop execution (Phase 3.3.3)
@@ -554,7 +644,7 @@ public:
     bool is_loop_boundary() const override { return true; }
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for WhileK - checks condition before iteration
@@ -574,7 +664,7 @@ public:
     bool is_loop_boundary() const override { return true; }
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // ForK - For loop iteration over array elements (Phase 3.3.4)
@@ -599,7 +689,7 @@ public:
     bool is_loop_boundary() const override { return true; }
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for ForK - iterates over array elements
@@ -621,7 +711,7 @@ public:
     bool is_loop_boundary() const override { return true; }
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // LeaveK - Exit from loop (Phase 3.3.5)
@@ -636,7 +726,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // ReturnK - Return from function (Phase 3.3.5)
@@ -656,7 +746,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // Auxiliary continuation for ReturnK - creates RETURN completion after value is evaluated
@@ -669,7 +759,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // ============================================================================
@@ -695,7 +785,7 @@ public:
     bool is_function_boundary() const override { return true; }
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 // RestoreEnvK - Restore environment after function call
@@ -710,7 +800,7 @@ public:
     void mark(APLHeap* heap) override;
 
 protected:
-    Value* invoke(Machine* machine) override;
+    void invoke(Machine* machine) override;
 };
 
 } // namespace apl

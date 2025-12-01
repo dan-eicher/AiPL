@@ -26,27 +26,21 @@ TEST_F(MachineTest, Initialization) {
     EXPECT_NE(machine->heap, nullptr);
     EXPECT_NE(machine->env, nullptr);
     EXPECT_EQ(machine->kont_stack.size(), 0);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
-}
-
-// Test halt
-TEST_F(MachineTest, Halt) {
-    machine->halt();
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+    // Phase 1: No more ctrl.mode - halted state is just empty stack
     EXPECT_FALSE(machine->should_continue());
 }
 
-// Test should_continue
+// Test should_continue - now based on stack emptiness
 TEST_F(MachineTest, ShouldContinue) {
-    // Initially halted with no completion
+    // Initially empty stack = halted
     EXPECT_FALSE(machine->should_continue());
 
-    // Set to evaluating with normal completion
-    machine->ctrl.init_evaluating();
+    // Push a continuation = should continue
+    machine->push_kont(machine->heap->allocate<HaltK>());
     EXPECT_TRUE(machine->should_continue());
 
-    // Set to halted
-    machine->ctrl.mode = ExecMode::HALTED;
+    // Pop continuation = halted again
+    machine->pop_kont();
     EXPECT_FALSE(machine->should_continue());
 }
 
@@ -90,20 +84,20 @@ TEST_F(MachineTest, ExecuteWithHaltK) {
     EXPECT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+    // Phase 1: Stack should be empty after execution
+    EXPECT_FALSE(machine->should_continue());
 }
 
 // Test execute with empty stack
 TEST_F(MachineTest, ExecuteEmptyStack) {
     Value* v = machine->heap->allocate_scalar(100.0);
-    machine->ctrl.mode = ExecMode::EVALUATING;
     machine->ctrl.value = v;
 
     Value* result = machine->execute();
 
-    // With empty stack, should halt and return the value
+    // With empty stack, should just return the value
     EXPECT_EQ(result, v);
-    EXPECT_EQ(machine->ctrl.mode, ExecMode::HALTED);
+    EXPECT_FALSE(machine->should_continue());
 }
 
 // Test environment variable lookup
@@ -181,43 +175,9 @@ TEST_F(MachineTest, NestedEnvironmentShadowing) {
     // GC will clean up -     delete child;
 }
 
-// Test normal completion handling
-TEST_F(MachineTest, NormalCompletion) {
-    Value* v = machine->heap->allocate_scalar(42.0);
-    machine->ctrl.completion = nullptr;  // nullptr = NORMAL
-    machine->ctrl.value = v;
-
-    machine->handle_completion();
-
-    EXPECT_EQ(machine->ctrl.value, v);
-    EXPECT_EQ(machine->ctrl.completion, nullptr);
-}
-
-// Test return completion with FrameK
-TEST_F(MachineTest, ReturnCompletion) {
-    Value* v = machine->heap->allocate_scalar(99.0);
-
-    // Push a FrameK (function boundary)
-    machine->push_kont(machine->heap->allocate<FrameK>("test_func", nullptr));
-    machine->push_kont(machine->heap->allocate<HaltK>());  // Some other continuation
-
-    machine->ctrl.completion = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, v, nullptr);
-
-    machine->handle_completion();
-
-    EXPECT_EQ(machine->ctrl.value, v);
-    EXPECT_EQ(machine->ctrl.completion, nullptr);
-    // Should have unwound to the FrameK
-    EXPECT_EQ(machine->kont_stack.size(), 1);
-}
-
-// Test return outside of function
-TEST_F(MachineTest, ReturnOutsideFunction) {
-    Value* v = machine->heap->allocate_scalar(1.0);
-    machine->ctrl.completion = machine->heap->allocate<APLCompletion>(CompletionType::RETURN, v, nullptr);
-
-    EXPECT_THROW(machine->handle_completion(), std::runtime_error);
-}
+// Phase 2 complete: Completion handling now done through continuations
+// Old imperative completion tests removed - new system tested in test_statements.cpp
+// See: LeaveFromWhile, LeaveFromFor, LeaveFromNested for :Leave tests
 
 // Test function cache empty
 TEST_F(MachineTest, FunctionCacheEmpty) {
@@ -231,6 +191,28 @@ TEST_F(MachineTest, FunctionCacheInsertion) {
 
     EXPECT_EQ(machine->function_cache.size(), 1);
     EXPECT_EQ(machine->function_cache["test_func"], k);
+}
+
+// Test function cache survives GC (Phase 4)
+TEST_F(MachineTest, FunctionCacheSurvivesGC) {
+    // Allocate a continuation and add to cache
+    Continuation* cached_k = machine->heap->allocate<HaltK>();
+    machine->function_cache["test_func"] = cached_k;
+
+    // Allocate some other objects that won't be reachable
+    for (int i = 0; i < 100; i++) {
+        machine->heap->allocate<HaltK>();
+    }
+
+    // Force a GC - cached continuation should be marked as a root
+    machine->heap->collect(machine);
+
+    // Cached continuation should be marked (reachable from function_cache)
+    EXPECT_TRUE(cached_k->marked);
+
+    // Cache should still contain the continuation
+    EXPECT_EQ(machine->function_cache.size(), 1);
+    EXPECT_EQ(machine->function_cache["test_func"], cached_k);
 }
 
 // Test GC integration with environment
@@ -269,36 +251,8 @@ TEST_F(MachineTest, MultipleContinuations) {
     EXPECT_EQ(machine->kont_stack[2], k3);
 }
 
-// Test unwind to boundary
-TEST_F(MachineTest, UnwindToBoundary) {
-    machine->push_kont(machine->heap->allocate<HaltK>());
-    machine->push_kont(machine->heap->allocate<FrameK>("boundary", nullptr));  // Boundary
-    machine->push_kont(machine->heap->allocate<HaltK>());
-    machine->push_kont(machine->heap->allocate<HaltK>());
-
-    EXPECT_EQ(machine->kont_stack.size(), 4);
-
-    bool found = machine->unwind_to_boundary(
-        [](Continuation* k) { return k->is_function_boundary(); }
-    );
-
-    EXPECT_TRUE(found);
-    // Should unwind to the FrameK
-    EXPECT_EQ(machine->kont_stack.size(), 2);
-    EXPECT_TRUE(machine->kont_stack.back()->is_function_boundary());
-}
-
-// Test unwind to boundary not found
-TEST_F(MachineTest, UnwindToBoundaryNotFound) {
-    machine->push_kont(machine->heap->allocate<HaltK>());
-    machine->push_kont(machine->heap->allocate<HaltK>());
-
-    bool found = machine->unwind_to_boundary(
-        [](Continuation* k) { return k->is_function_boundary(); }
-    );
-
-    EXPECT_FALSE(found);
-}
+// Phase 2.4: Removed unwind_to_boundary tests - unwinding now done by PropagateCompletionK
+// Stack unwinding is tested through :Leave and :Return integration tests
 
 // Test string pool
 TEST_F(MachineTest, StringPool) {

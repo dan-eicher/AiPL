@@ -1,303 +1,122 @@
 // Completion records tests
+// Phase 2 complete: Completion handling now done through continuations
+// Integration tests for :Leave and :Return are in test_statements.cpp
 
 #include <gtest/gtest.h>
-#include "completion.h"
-#include "control.h"
-#include "value.h"
-#include "heap.h"
+#include "machine.h"
+#include "continuation.h"
 
-using namespace apl;
+// Placeholder test - actual completion testing done via statement tests
+TEST(CompletionTest, CompletionHandlingViaStatements) {
+    // Completion system tested through :Leave and :Return in test_statements.cpp
+    // See: LeaveFromWhile, LeaveFromFor, LeaveFromNested
+    EXPECT_TRUE(true);
+}
 
-class CompletionTest : public ::testing::Test {
-protected:
-    APLHeap* heap;
+// Phase 5.3: Test error propagation through THROW completions
+TEST(CompletionTest, ErrorPropagationUncaught) {
+    apl::Machine machine;
 
-    void SetUp() override {
-        heap = new APLHeap();
+    // Push a HaltK
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+
+    // Push a ThrowErrorK - this will create a THROW completion
+    machine.push_kont(machine.heap->allocate<apl::ThrowErrorK>("Test error"));
+
+    // Execute - should throw C++ exception since no CatchErrorK
+    EXPECT_THROW(machine.execute(), std::runtime_error);
+}
+
+// Test error propagation with catch
+TEST(CompletionTest, ErrorPropagationCaught) {
+    apl::Machine machine;
+
+    // Push a HaltK
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+
+    // Push a CatchErrorK to catch the error
+    machine.push_kont(machine.heap->allocate<apl::CatchErrorK>());
+
+    // Push a ThrowErrorK - this will create a THROW completion
+    machine.push_kont(machine.heap->allocate<apl::ThrowErrorK>("Test error"));
+
+    // Execute - should NOT throw because CatchErrorK catches it
+    EXPECT_NO_THROW(machine.execute());
+}
+
+// Test error propagation through multiple stack frames
+TEST(CompletionTest, ErrorPropagationThroughFrames) {
+    apl::Machine machine;
+
+    // Push a HaltK
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+
+    // Push a CatchErrorK at outer level
+    machine.push_kont(machine.heap->allocate<apl::CatchErrorK>());
+
+    // Push several normal continuations
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+
+    // Push a ThrowErrorK deep in the stack
+    machine.push_kont(machine.heap->allocate<apl::ThrowErrorK>("Deep error"));
+
+    // Execute - should unwind through all the HaltKs and catch at CatchErrorK
+    EXPECT_NO_THROW(machine.execute());
+}
+
+// Test error with message
+TEST(CompletionTest, ErrorMessagePreserved) {
+    apl::Machine machine;
+
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+    machine.push_kont(machine.heap->allocate<apl::ThrowErrorK>("Custom error message"));
+
+    // Should throw with our custom message
+    try {
+        machine.execute();
+        FAIL() << "Expected exception to be thrown";
+    } catch (const std::runtime_error& e) {
+        std::string msg(e.what());
+        EXPECT_TRUE(msg.find("Custom error message") != std::string::npos);
     }
-
-    void TearDown() override {
-        delete heap;
-    }
-};
-
-// Test basic NORMAL completion (nullptr optimization)
-TEST_F(CompletionTest, NormalCompletion) {
-    // NORMAL completions are represented by nullptr now
-    APLCompletion* comp = nullptr;
-
-    // We can also test using direct construction for edge cases
-    Value* v = heap->allocate_scalar(42.0);
-    APLCompletion* explicit_normal = heap->allocate<APLCompletion>(CompletionType::NORMAL, v, nullptr);
-
-    EXPECT_TRUE(explicit_normal->is_normal());
-    EXPECT_FALSE(explicit_normal->is_abrupt());
-    EXPECT_FALSE(explicit_normal->is_return());
-    EXPECT_FALSE(explicit_normal->is_break());
-    EXPECT_FALSE(explicit_normal->is_continue());
-    EXPECT_FALSE(explicit_normal->is_throw());
-
-    EXPECT_EQ(explicit_normal->type, CompletionType::NORMAL);
-    EXPECT_EQ(explicit_normal->value, v);
-    EXPECT_EQ(explicit_normal->target, nullptr);
 }
 
-// Test RETURN completion
-TEST_F(CompletionTest, ReturnCompletion) {
-    Value* v = heap->allocate_scalar(99.0);
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::RETURN, v, nullptr);
+// Test multiple error boundaries
+TEST(CompletionTest, NestedErrorBoundaries) {
+    apl::Machine machine;
 
-    EXPECT_FALSE(comp->is_normal());
-    EXPECT_TRUE(comp->is_abrupt());
-    EXPECT_TRUE(comp->is_return());
-    EXPECT_FALSE(comp->is_break());
-    EXPECT_FALSE(comp->is_continue());
-    EXPECT_FALSE(comp->is_throw());
+    // Outer boundary
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+    machine.push_kont(machine.heap->allocate<apl::CatchErrorK>());
 
-    EXPECT_EQ(comp->type, CompletionType::RETURN);
-    EXPECT_EQ(comp->value, v);
-    EXPECT_EQ(comp->target, nullptr);
+    // Some work
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
+
+    // Inner boundary
+    machine.push_kont(machine.heap->allocate<apl::CatchErrorK>());
+
+    // Error thrown here
+    machine.push_kont(machine.heap->allocate<apl::ThrowErrorK>("Inner error"));
+
+    // Should catch at inner boundary, not propagate to outer
+    EXPECT_NO_THROW(machine.execute());
 }
 
-// Test BREAK completion without label
-TEST_F(CompletionTest, BreakWithoutLabel) {
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::BREAK, nullptr, nullptr);
+// Test error doesn't cross function boundaries incorrectly
+TEST(CompletionTest, ErrorRespectsLoopBoundaries) {
+    apl::Machine machine;
 
-    EXPECT_FALSE(comp->is_normal());
-    EXPECT_TRUE(comp->is_abrupt());
-    EXPECT_TRUE(comp->is_break());
-    EXPECT_FALSE(comp->is_return());
-    EXPECT_FALSE(comp->is_continue());
-    EXPECT_FALSE(comp->is_throw());
+    machine.push_kont(machine.heap->allocate<apl::HaltK>());
 
-    EXPECT_EQ(comp->type, CompletionType::BREAK);
-    EXPECT_EQ(comp->value, nullptr);
-    EXPECT_EQ(comp->target, nullptr);
-}
+    // CatchBreakK should NOT catch THROW completions
+    machine.push_kont(machine.heap->allocate<apl::CatchBreakK>());
 
-// Test BREAK completion with label
-TEST_F(CompletionTest, BreakWithLabel) {
-    const char* label = "outer_loop";
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::BREAK, nullptr, label);
+    machine.push_kont(machine.heap->allocate<apl::ThrowErrorK>("Error in loop"));
 
-    EXPECT_TRUE(comp->is_break());
-    EXPECT_EQ(comp->target, label);
-    EXPECT_TRUE(comp->matches_target("outer_loop"));
-    EXPECT_FALSE(comp->matches_target("inner_loop"));
-    EXPECT_FALSE(comp->matches_target(nullptr));
-}
-
-// Test CONTINUE completion
-TEST_F(CompletionTest, ContinueCompletion) {
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::CONTINUE, nullptr, nullptr);
-
-    EXPECT_FALSE(comp->is_normal());
-    EXPECT_TRUE(comp->is_abrupt());
-    EXPECT_TRUE(comp->is_continue());
-    EXPECT_FALSE(comp->is_break());
-    EXPECT_FALSE(comp->is_return());
-    EXPECT_FALSE(comp->is_throw());
-
-    EXPECT_EQ(comp->type, CompletionType::CONTINUE);
-    EXPECT_EQ(comp->value, nullptr);
-}
-
-// Test CONTINUE completion with label
-TEST_F(CompletionTest, ContinueWithLabel) {
-    const char* label = "my_loop";
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::CONTINUE, nullptr, label);
-
-    EXPECT_TRUE(comp->is_continue());
-    EXPECT_TRUE(comp->matches_target("my_loop"));
-    EXPECT_FALSE(comp->matches_target("other_loop"));
-}
-
-// Test THROW completion
-TEST_F(CompletionTest, ThrowCompletion) {
-    Value* error = heap->allocate_scalar(-1.0);  // Error indicator
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::THROW, error, nullptr);
-
-    EXPECT_FALSE(comp->is_normal());
-    EXPECT_TRUE(comp->is_abrupt());
-    EXPECT_TRUE(comp->is_throw());
-    EXPECT_FALSE(comp->is_break());
-    EXPECT_FALSE(comp->is_continue());
-    EXPECT_FALSE(comp->is_return());
-
-    EXPECT_EQ(comp->type, CompletionType::THROW);
-    EXPECT_EQ(comp->value, error);
-}
-
-// Test heap allocation with parameters
-TEST_F(CompletionTest, HeapAllocationWithParams) {
-    Value* v = heap->allocate_scalar(7.0);
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::NORMAL, v, nullptr);
-
-    EXPECT_TRUE(comp->is_normal());
-    EXPECT_EQ(comp->value, v);
-}
-
-// Test heap allocation default parameters
-TEST_F(CompletionTest, HeapAllocationDefault) {
-    APLCompletion* comp = heap->allocate<APLCompletion>();
-
-    EXPECT_TRUE(comp->is_normal());
-    EXPECT_EQ(comp->value, nullptr);
-    EXPECT_EQ(comp->target, nullptr);
-}
-
-// Test all completion types are distinct
-TEST_F(CompletionTest, AllTypesDistinct) {
-    APLCompletion* normal = heap->allocate<APLCompletion>(CompletionType::NORMAL, nullptr, nullptr);
-    APLCompletion* ret = heap->allocate<APLCompletion>(CompletionType::RETURN, nullptr, nullptr);
-    APLCompletion* brk = heap->allocate<APLCompletion>(CompletionType::BREAK, nullptr, nullptr);
-    APLCompletion* cont = heap->allocate<APLCompletion>(CompletionType::CONTINUE, nullptr, nullptr);
-    APLCompletion* thr = heap->allocate<APLCompletion>(CompletionType::THROW, nullptr, nullptr);
-
-    // Each should only match its own type
-    EXPECT_TRUE(normal->is_normal());
-    EXPECT_FALSE(normal->is_return() || normal->is_break() ||
-                 normal->is_continue() || normal->is_throw());
-
-    EXPECT_TRUE(ret->is_return());
-    EXPECT_FALSE(ret->is_normal() || ret->is_break() ||
-                 ret->is_continue() || ret->is_throw());
-
-    EXPECT_TRUE(brk->is_break());
-    EXPECT_FALSE(brk->is_normal() || brk->is_return() ||
-                 brk->is_continue() || brk->is_throw());
-
-    EXPECT_TRUE(cont->is_continue());
-    EXPECT_FALSE(cont->is_normal() || cont->is_return() ||
-                 cont->is_break() || cont->is_throw());
-
-    EXPECT_TRUE(thr->is_throw());
-    EXPECT_FALSE(thr->is_normal() || thr->is_return() ||
-                 thr->is_break() || thr->is_continue());
-}
-
-// Control class tests
-class ControlTest : public ::testing::Test {
-protected:
-    APLHeap* heap;
-
-    void SetUp() override {
-        heap = new APLHeap();
-    }
-
-    void TearDown() override {
-        delete heap;
-    }
-};
-
-// Test Control default construction
-TEST_F(ControlTest, DefaultConstruction) {
-    Control ctrl;
-
-    EXPECT_EQ(ctrl.mode, ExecMode::HALTED);
-    EXPECT_EQ(ctrl.value, nullptr);
-    EXPECT_EQ(ctrl.completion, nullptr);
-}
-
-// Test Control set_value
-TEST_F(ControlTest, SetValue) {
-    Control ctrl;
-    Value* v = heap->allocate_scalar(123.0);
-
-    ctrl.set_value(v);
-
-    EXPECT_EQ(ctrl.value, v);
-    // set_value sets completion to nullptr (NORMAL)
-    EXPECT_EQ(ctrl.completion, nullptr);
-}
-
-// Test Control set_completion
-TEST_F(ControlTest, SetCompletion) {
-    Control ctrl;
-    APLCompletion* comp = heap->allocate<APLCompletion>(CompletionType::RETURN, nullptr, nullptr);
-
-    ctrl.set_completion(comp);
-
-    EXPECT_EQ(ctrl.completion, comp);
-    EXPECT_TRUE(ctrl.completion->is_return());
-}
-
-// Test Control set_completion replaces old
-TEST_F(ControlTest, SetCompletionReplaces) {
-    Control ctrl;
-    APLCompletion* comp1 = heap->allocate<APLCompletion>(CompletionType::NORMAL, nullptr, nullptr);
-    APLCompletion* comp2 = heap->allocate<APLCompletion>(CompletionType::RETURN, nullptr, nullptr);
-
-    ctrl.set_completion(comp1);
-    EXPECT_EQ(ctrl.completion, comp1);
-
-    // Setting new completion replaces old one (GC will clean up)
-    ctrl.set_completion(comp2);
-    EXPECT_EQ(ctrl.completion, comp2);
-    EXPECT_TRUE(ctrl.completion->is_return());
-}
-
-// Test Control halt
-TEST_F(ControlTest, Halt) {
-    Control ctrl;
-    ctrl.mode = ExecMode::EVALUATING;
-
-    ctrl.halt();
-
-    EXPECT_EQ(ctrl.mode, ExecMode::HALTED);
-}
-
-// Test Control should_continue with normal completion
-TEST_F(ControlTest, ShouldContinueNormal) {
-    Control ctrl;
-    ctrl.mode = ExecMode::EVALUATING;
-    ctrl.set_completion(nullptr);  // nullptr = NORMAL
-
-    EXPECT_TRUE(ctrl.should_continue());
-}
-
-// Test Control should_continue when halted
-TEST_F(ControlTest, ShouldContinueHalted) {
-    Control ctrl;
-    ctrl.mode = ExecMode::HALTED;
-    ctrl.set_completion(nullptr);  // nullptr = NORMAL
-
-    EXPECT_FALSE(ctrl.should_continue());
-}
-
-// Test Control should_continue with abrupt completion
-TEST_F(ControlTest, ShouldContinueAbrupt) {
-    Control ctrl;
-    ctrl.mode = ExecMode::EVALUATING;
-    ctrl.set_completion(heap->allocate<APLCompletion>(CompletionType::RETURN, nullptr, nullptr));
-
-    EXPECT_FALSE(ctrl.should_continue());
-}
-
-// Test Control has_abrupt_completion
-TEST_F(ControlTest, HasAbruptCompletion) {
-    Control ctrl;
-
-    ctrl.set_completion(nullptr);  // nullptr = NORMAL
-    EXPECT_FALSE(ctrl.has_abrupt_completion());
-
-    ctrl.set_completion(heap->allocate<APLCompletion>(CompletionType::RETURN, nullptr, nullptr));
-    EXPECT_TRUE(ctrl.has_abrupt_completion());
-
-    ctrl.set_completion(heap->allocate<APLCompletion>(CompletionType::BREAK, nullptr, nullptr));
-    EXPECT_TRUE(ctrl.has_abrupt_completion());
-}
-
-// Test Control init_evaluating
-TEST_F(ControlTest, InitEvaluating) {
-    Control ctrl;
-    ctrl.mode = ExecMode::HALTED;
-
-    ctrl.init_evaluating();
-
-    EXPECT_EQ(ctrl.mode, ExecMode::EVALUATING);
-    // init_evaluating sets completion to nullptr (NORMAL)
-    EXPECT_EQ(ctrl.completion, nullptr);
+    // Should throw because CatchBreakK doesn't catch THROW
+    EXPECT_THROW(machine.execute(), std::runtime_error);
 }
 
 // Main function
