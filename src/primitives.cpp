@@ -805,6 +805,20 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
 // Reduction and Scan Operations
 // ============================================================================
 
+// Identity Elements for Reduction (ISO-13751 Table 5)
+// When reducing an empty vector, return the identity element for the function
+double get_identity_element(PrimitiveFn* fn) {
+    // Match by function pointer
+    if (fn == &prim_plus) return 0.0;      // +/⍬ → 0
+    if (fn == &prim_minus) return 0.0;     // -/⍬ → 0
+    if (fn == &prim_times) return 1.0;     // ×/⍬ → 1
+    if (fn == &prim_divide) return 1.0;    // ÷/⍬ → 1
+    if (fn == &prim_star) return 1.0;      // */⍬ → 1
+
+    // For functions without identity, return NaN
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
 // Reduce (/) - apply dyadic function between elements, right to left
 void fn_reduce(Machine* m, Value* func, Value* omega) {
     if (!func->is_function()) {
@@ -830,7 +844,13 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
         // Reduce vector to scalar
         int len = mat->rows();
         if (len == 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: cannot reduce empty vector"));
+            // Empty vector: return identity element (ISO-13751 Table 5)
+            double identity = get_identity_element(fn);
+            if (std::isnan(identity)) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                return;
+            }
+            m->ctrl.set_value(m->heap->allocate_scalar(identity));
             return;
         }
         if (len == 1) {
@@ -856,7 +876,14 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
     int cols = mat->cols();
 
     if (cols == 0) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: cannot reduce empty dimension"));
+        // Empty dimension: return vector of identity elements
+        double identity = get_identity_element(fn);
+        if (std::isnan(identity)) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+            return;
+        }
+        Eigen::VectorXd result = Eigen::VectorXd::Constant(rows, identity);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
         return;
     }
 
@@ -909,7 +936,14 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega) {
     int cols = mat->cols();
 
     if (rows == 0) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: cannot reduce empty dimension"));
+        // Empty dimension: return row vector of identity elements
+        double identity = get_identity_element(fn);
+        if (std::isnan(identity)) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+            return;
+        }
+        Eigen::VectorXd result = Eigen::VectorXd::Constant(cols, identity);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
         return;
     }
 

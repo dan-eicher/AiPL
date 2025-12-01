@@ -1475,10 +1475,12 @@ TEST_F(PrimitivesTest, ReduceEmptyVector) {
     Eigen::VectorXd v(0);
     Value* vec = machine->heap->allocate_vector(v);
 
-    // Reducing empty vector should throw or return identity
+    // Reducing empty vector now returns identity element (ISO-13751)
     fn_reduce(machine, func, vec);
-    EXPECT_EQ(machine->kont_stack.size(), 1);
-    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // +/⍬ → 0
 
     // GC will clean up -     delete func;
     // GC will clean up -     delete vec;
@@ -1909,4 +1911,51 @@ TEST_F(PrimitivesTest, CompositionNestedReduce) {
     // GC will clean up -     delete func;
     // GC will clean up -     delete row_sums;
     // GC will clean up -     delete total;
+}
+
+// ============================================================================
+// Empty Reduction Tests (Identity Elements)
+// ============================================================================
+
+TEST_F(PrimitivesTest, ReduceEmptyVectorPlus) {
+    // +/⍬ → 0 (identity for addition)
+    Eigen::VectorXd empty_vec(0);
+    Value* vec = machine->heap->allocate_vector(empty_vec);
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, ReduceEmptyVectorTimes) {
+    // ×/⍬ → 1 (identity for multiplication)
+    Eigen::VectorXd empty_vec(0);
+    Value* vec = machine->heap->allocate_vector(empty_vec);
+    Value* func = machine->heap->allocate_primitive(&prim_times);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, ReduceEmptyDimensionMatrix) {
+    // Matrix with 0 columns: each row reduces to identity
+    Eigen::MatrixXd empty_mat(3, 0);  // 3 rows, 0 columns
+    Value* mat = machine->heap->allocate_matrix(empty_mat);
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, func, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 0.0);
 }
