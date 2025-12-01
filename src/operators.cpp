@@ -124,10 +124,185 @@ void op_outer_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 // ========================================================================
 // Inner Product Operator: A f.g B
 // ========================================================================
-// Placeholder - to be implemented
+// Result shape: (¯1↓⍴A),1↓⍴B
+// For vectors: f/A g B (element-wise g, then reduce with f)
+// Example: A +.× B is matrix multiplication
 
 void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
-    m->push_kont(m->heap->allocate<ThrowErrorK>("NOT IMPLEMENTED: inner product"));
+    // Validate that both f and g are functions
+    if (!f || !f->is_function() || !g || !g->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: inner product requires two function operands"));
+        return;
+    }
+
+    // For now, only support primitive functions
+    if (!f->is_primitive() || !g->is_primitive()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: inner product currently only supports primitive functions"));
+        return;
+    }
+
+    PrimitiveFn* f_fn = f->data.primitive_fn;
+    PrimitiveFn* g_fn = g->data.primitive_fn;
+
+    // f must have dyadic form (for reduction)
+    if (!f_fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: left operand of inner product must have dyadic form"));
+        return;
+    }
+
+    // g must have dyadic form
+    if (!g_fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: right operand of inner product must have dyadic form"));
+        return;
+    }
+
+    // Get dimensions
+    int lhs_rows = lhs->rows();
+    int lhs_cols = lhs->cols();
+    int rhs_rows = rhs->rows();
+    int rhs_cols = rhs->cols();
+
+    // Special case: both vectors (1D inner product)
+    if (lhs->is_vector() && rhs->is_vector()) {
+        // For vectors, check that lengths match
+        if (lhs_rows != rhs_rows) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+            return;
+        }
+        int n = lhs_rows;  // Common dimension
+        // Result is scalar: f/A g B
+        const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
+        const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
+
+        // Apply g element-wise
+        double accumulator = 0.0;
+        bool first = true;
+
+        for (int i = 0; i < n; i++) {
+            double lhs_val = (*lhs_mat)(i, 0);
+            double rhs_val = (*rhs_mat)(i, 0);
+
+            // Apply g
+            Value* temp_lhs = m->heap->allocate_scalar(lhs_val);
+            Value* temp_rhs = m->heap->allocate_scalar(rhs_val);
+            g_fn->dyadic(m, temp_lhs, temp_rhs);
+
+            if (!m->kont_stack.empty() && dynamic_cast<ThrowErrorK*>(m->kont_stack.back())) {
+                return;  // Error in g
+            }
+
+            Value* g_result = m->ctrl.value;
+            if (!g_result || !g_result->is_scalar()) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: inner product g must return scalar"));
+                return;
+            }
+
+            // Reduce with f
+            if (first) {
+                accumulator = g_result->as_scalar();
+                first = false;
+            } else {
+                Value* acc_val = m->heap->allocate_scalar(accumulator);
+                Value* new_val = m->heap->allocate_scalar(g_result->as_scalar());
+                f_fn->dyadic(m, acc_val, new_val);
+
+                if (!m->kont_stack.empty() && dynamic_cast<ThrowErrorK*>(m->kont_stack.back())) {
+                    return;  // Error in f
+                }
+
+                Value* f_result = m->ctrl.value;
+                if (!f_result || !f_result->is_scalar()) {
+                    m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: inner product f must return scalar"));
+                    return;
+                }
+
+                accumulator = f_result->as_scalar();
+            }
+        }
+
+        m->ctrl.set_value(m->heap->allocate_scalar(accumulator));
+        return;
+    }
+
+    // General case: matrix inner product
+    // LENGTH constraint: last dimension of A must equal first dimension of B
+    if (lhs_cols != rhs_rows) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+        return;
+    }
+
+    int n = lhs_cols;  // Common dimension
+
+    // Result dimensions: lhs_rows × rhs_cols
+    int result_rows = lhs_rows;
+    int result_cols = rhs_cols;
+
+    Eigen::MatrixXd result(result_rows, result_cols);
+
+    const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
+    const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
+
+    // For each position in result
+    for (int i = 0; i < result_rows; i++) {
+        for (int j = 0; j < result_cols; j++) {
+            // Compute inner product of row i of lhs with column j of rhs
+            double accumulator = 0.0;
+            bool first = true;
+
+            for (int k = 0; k < n; k++) {
+                double lhs_val = (*lhs_mat)(i, k);
+                double rhs_val = (*rhs_mat)(k, j);
+
+                // Apply g
+                Value* temp_lhs = m->heap->allocate_scalar(lhs_val);
+                Value* temp_rhs = m->heap->allocate_scalar(rhs_val);
+                g_fn->dyadic(m, temp_lhs, temp_rhs);
+
+                if (!m->kont_stack.empty() && dynamic_cast<ThrowErrorK*>(m->kont_stack.back())) {
+                    return;  // Error in g
+                }
+
+                Value* g_result = m->ctrl.value;
+                if (!g_result || !g_result->is_scalar()) {
+                    m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: inner product g must return scalar"));
+                    return;
+                }
+
+                // Reduce with f
+                if (first) {
+                    accumulator = g_result->as_scalar();
+                    first = false;
+                } else {
+                    Value* acc_val = m->heap->allocate_scalar(accumulator);
+                    Value* new_val = m->heap->allocate_scalar(g_result->as_scalar());
+                    f_fn->dyadic(m, acc_val, new_val);
+
+                    if (!m->kont_stack.empty() && dynamic_cast<ThrowErrorK*>(m->kont_stack.back())) {
+                        return;  // Error in f
+                    }
+
+                    Value* f_result = m->ctrl.value;
+                    if (!f_result || !f_result->is_scalar()) {
+                        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: inner product f must return scalar"));
+                        return;
+                    }
+
+                    accumulator = f_result->as_scalar();
+                }
+            }
+
+            result(i, j) = accumulator;
+        }
+    }
+
+    // Return result based on shape
+    if (result_rows == 1 && result_cols == 1) {
+        m->ctrl.set_value(m->heap->allocate_scalar(result(0, 0)));
+    } else if (result_cols == 1) {
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+    }
 }
 
 // ========================================================================

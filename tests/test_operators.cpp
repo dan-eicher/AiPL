@@ -173,6 +173,120 @@ TEST_F(OperatorsTest, OuterProductRequiresDyadicFunction) {
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
+// ========================================================================
+// Inner Product Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, InnerProductVectorDotProduct) {
+    // 4 2 1 +.× 1 0 1 → 5 (dot product)
+    Eigen::VectorXd lhs_vec(3);
+    lhs_vec << 4, 2, 1;
+    Value* lhs = machine->heap->allocate_vector(lhs_vec);
+
+    Eigen::VectorXd rhs_vec(3);
+    rhs_vec << 1, 0, 1;
+    Value* rhs = machine->heap->allocate_vector(rhs_vec);
+
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_times);
+
+    machine->kont_stack.clear();
+    op_inner_product(machine, lhs, f, g, rhs);
+
+    // Check for error first
+    if (!machine->kont_stack.empty()) {
+        ThrowErrorK* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+        if (err) {
+            FAIL() << "Unexpected error: " << err->error_message;
+        }
+    }
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 5.0);  // 4*1 + 2*0 + 1*1 = 5
+}
+
+TEST_F(OperatorsTest, InnerProductMatrixMultiplication) {
+    // 2×2 matrix multiplication using +.×
+    // [1 2]  ×  [5 6]  =  [19 22]
+    // [3 4]     [7 8]     [43 50]
+
+    Eigen::MatrixXd lhs_mat(2, 2);
+    lhs_mat << 1, 2,
+               3, 4;
+    Value* lhs = machine->heap->allocate_matrix(lhs_mat);
+
+    Eigen::MatrixXd rhs_mat(2, 2);
+    rhs_mat << 5, 6,
+               7, 8;
+    Value* rhs = machine->heap->allocate_matrix(rhs_mat);
+
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_times);
+
+    op_inner_product(machine, lhs, f, g, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_matrix());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 19.0);  // 1*5 + 2*7 = 19
+    EXPECT_DOUBLE_EQ((*result)(0, 1), 22.0);  // 1*6 + 2*8 = 22
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 43.0);  // 3*5 + 4*7 = 43
+    EXPECT_DOUBLE_EQ((*result)(1, 1), 50.0);  // 3*6 + 4*8 = 50
+}
+
+TEST_F(OperatorsTest, InnerProductMatrixVector) {
+    // Matrix × vector: [1 2] +.× [5]  =  [19]
+    //                  [3 4]       [7]     [43]
+
+    Eigen::MatrixXd lhs_mat(2, 2);
+    lhs_mat << 1, 2,
+               3, 4;
+    Value* lhs = machine->heap->allocate_matrix(lhs_mat);
+
+    Eigen::VectorXd rhs_vec(2);
+    rhs_vec << 5, 7;
+    Value* rhs = machine->heap->allocate_vector(rhs_vec);
+
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_times);
+
+    op_inner_product(machine, lhs, f, g, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_vector());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 1);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 19.0);  // 1*5 + 2*7
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 43.0);  // 3*5 + 4*7
+}
+
+TEST_F(OperatorsTest, InnerProductDimensionMismatch) {
+    // Test LENGTH ERROR when dimensions don't match
+    Eigen::VectorXd lhs_vec(3);
+    lhs_vec << 1, 2, 3;
+    Value* lhs = machine->heap->allocate_vector(lhs_vec);
+
+    Eigen::VectorXd rhs_vec(2);
+    rhs_vec << 4, 5;
+    Value* rhs = machine->heap->allocate_vector(rhs_vec);
+
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_times);
+
+    machine->kont_stack.clear();
+    op_inner_product(machine, lhs, f, g, rhs);
+
+    // Should have pushed a ThrowErrorK
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
