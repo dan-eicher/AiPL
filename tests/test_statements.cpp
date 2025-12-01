@@ -38,7 +38,7 @@ protected:
 
 // Test empty program
 TEST_F(StatementTest, EmptyProgram) {
-    Continuation* k = parser->parse_program("");
+    Continuation* k = parser->parse("");
 
     ASSERT_NE(k, nullptr);
     EXPECT_EQ(parser->get_error(), "");
@@ -53,7 +53,7 @@ TEST_F(StatementTest, EmptyProgram) {
 
 // Test single statement program
 TEST_F(StatementTest, SingleStatement) {
-    Continuation* k = parser->parse_program("42");
+    Continuation* k = parser->parse("42");
 
     ASSERT_NE(k, nullptr);
 
@@ -66,7 +66,7 @@ TEST_F(StatementTest, SingleStatement) {
 
 // Test two statements separated by newline
 TEST_F(StatementTest, TwoStatementsNewline) {
-    Continuation* k = parser->parse_program("x ← 10\nx");
+    Continuation* k = parser->parse("x ← 10\nx");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -85,7 +85,7 @@ TEST_F(StatementTest, TwoStatementsNewline) {
 
 // Test two statements separated by diamond
 TEST_F(StatementTest, TwoStatementsDiamond) {
-    Continuation* k = parser->parse_program("x ← 5 ⋄ x + 3");
+    Continuation* k = parser->parse("x ← 5 ⋄ x + 3");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -99,7 +99,7 @@ TEST_F(StatementTest, TwoStatementsDiamond) {
 
 // Test multiple statements with mixed separators
 TEST_F(StatementTest, MultipleStatementsMixed) {
-    Continuation* k = parser->parse_program("a ← 1\nb ← 2 ⋄ c ← 3\na + b + c");
+    Continuation* k = parser->parse("a ← 1\nb ← 2 ⋄ c ← 3\na + b + c");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -113,7 +113,7 @@ TEST_F(StatementTest, MultipleStatementsMixed) {
 
 // Test statements with leading/trailing separators
 TEST_F(StatementTest, LeadingTrailingSeparators) {
-    Continuation* k = parser->parse_program("\n\n42\n\n");
+    Continuation* k = parser->parse("\n\n42\n\n");
 
     ASSERT_NE(k, nullptr);
 
@@ -125,7 +125,7 @@ TEST_F(StatementTest, LeadingTrailingSeparators) {
 
 // Test multiple assignments
 TEST_F(StatementTest, MultipleAssignments) {
-    Continuation* k = parser->parse_program("x ← 10\ny ← 20\nz ← x + y\nz");
+    Continuation* k = parser->parse("x ← 10\ny ← 20\nz ← x + y\nz");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -142,7 +142,7 @@ TEST_F(StatementTest, MultipleAssignments) {
 
 // Test expressions in sequence
 TEST_F(StatementTest, ExpressionSequence) {
-    Continuation* k = parser->parse_program("1 + 2\n3 * 4\n5 - 1");
+    Continuation* k = parser->parse("1 + 2\n3 * 4\n5 - 1");
 
     ASSERT_NE(k, nullptr);
 
@@ -155,7 +155,7 @@ TEST_F(StatementTest, ExpressionSequence) {
 
 // Test sequence with array operations
 TEST_F(StatementTest, SequenceWithArrays) {
-    Continuation* k = parser->parse_program("vec ← 1 2 3\n⍴ vec");
+    Continuation* k = parser->parse("vec ← 1 2 3\n⍴ vec");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -176,7 +176,7 @@ TEST_F(StatementTest, SequenceWithArrays) {
 
 // Test simple if with true condition
 TEST_F(StatementTest, IfTrue) {
-    Continuation* k = parser->parse_program(":If 1\nx ← 42\n:EndIf\nx");
+    Continuation* k = parser->parse(":If 1\nx ← 42\n:EndIf\nx");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -188,7 +188,7 @@ TEST_F(StatementTest, IfTrue) {
 
 // Test simple if with false condition
 TEST_F(StatementTest, IfFalse) {
-    Continuation* k = parser->parse_program("x ← 10\n:If 0\nx ← 42\n:EndIf\nx");
+    Continuation* k = parser->parse("x ← 10\n:If 0\nx ← 42\n:EndIf\nx");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -201,7 +201,7 @@ TEST_F(StatementTest, IfFalse) {
 
 // Test if-else with true condition
 TEST_F(StatementTest, IfElseTrue) {
-    Continuation* k = parser->parse_program(":If 1\nx ← 100\n:Else\nx ← 200\n:EndIf\nx");
+    Continuation* k = parser->parse(":If 1\nx ← 100\n:Else\nx ← 200\n:EndIf\nx");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -213,7 +213,7 @@ TEST_F(StatementTest, IfElseTrue) {
 
 // Test if-else with false condition
 TEST_F(StatementTest, IfElseFalse) {
-    Continuation* k = parser->parse_program(":If 0\nx ← 100\n:Else\nx ← 200\n:EndIf\nx");
+    Continuation* k = parser->parse(":If 0\nx ← 100\n:Else\nx ← 200\n:EndIf\nx");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -225,7 +225,7 @@ TEST_F(StatementTest, IfElseFalse) {
 
 // Test if with expression condition
 TEST_F(StatementTest, IfExpressionCondition) {
-    Continuation* k = parser->parse_program("x ← 5\n:If x - 3\ny ← 10\n:Else\ny ← 20\n:EndIf\ny");
+    Continuation* k = parser->parse("x ← 5\n:If x - 3\ny ← 10\n:Else\ny ← 20\n:EndIf\ny");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -238,7 +238,7 @@ TEST_F(StatementTest, IfExpressionCondition) {
 
 // Test nested if statements
 TEST_F(StatementTest, NestedIf) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "x ← 5\n"
         ":If x\n"
         "  :If x - 3\n"
@@ -263,7 +263,7 @@ TEST_F(StatementTest, NestedIf) {
 
 // Test if without else branch (false condition)
 TEST_F(StatementTest, IfWithoutElseFalse) {
-    Continuation* k = parser->parse_program("x ← 5\n:If 0\nx ← 10\n:EndIf\nx");
+    Continuation* k = parser->parse("x ← 5\n:If 0\nx ← 10\n:EndIf\nx");
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -276,7 +276,7 @@ TEST_F(StatementTest, IfWithoutElseFalse) {
 
 // Test multiple statements in if branches
 TEST_F(StatementTest, IfMultipleStatements) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         ":If 1\n"
         "a ← 10\n"
         "b ← 20\n"
@@ -299,7 +299,7 @@ TEST_F(StatementTest, IfMultipleStatements) {
 
 // Test simple while loop with counter
 TEST_F(StatementTest, WhileSimple) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "i ← 1\n"
         "sum ← 0\n"
         ":While i - 5\n"
@@ -324,7 +324,7 @@ TEST_F(StatementTest, WhileSimple) {
 
 // Test while loop that never executes (false condition)
 TEST_F(StatementTest, WhileNeverExecutes) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "x ← 5\n"
         ":While 0\n"
         "  x ← 10\n"
@@ -343,7 +343,7 @@ TEST_F(StatementTest, WhileNeverExecutes) {
 
 // Test while loop with expression condition
 TEST_F(StatementTest, WhileExpressionCondition) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "n ← 10\n"
         ":While n\n"
         "  n ← n - 1\n"
@@ -362,7 +362,7 @@ TEST_F(StatementTest, WhileExpressionCondition) {
 
 // Test nested while loops
 TEST_F(StatementTest, WhileNested) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "sum ← 0\n"
         "i ← 0\n"
         ":While i - 3\n"
@@ -387,7 +387,7 @@ TEST_F(StatementTest, WhileNested) {
 
 // Test while loop modifying multiple variables
 TEST_F(StatementTest, WhileMultipleVariables) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "a ← 1\n"
         "b ← 1\n"
         "n ← 5\n"
@@ -415,7 +415,7 @@ TEST_F(StatementTest, WhileMultipleVariables) {
 
 // Test simple for loop over vector
 TEST_F(StatementTest, ForSimple) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "sum ← 0\n"
         ":For x :In 1 2 3 4 5\n"
         "  sum ← sum + x\n"
@@ -434,7 +434,7 @@ TEST_F(StatementTest, ForSimple) {
 
 // Test for loop over scalar (single iteration)
 TEST_F(StatementTest, ForScalar) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "result ← 0\n"
         ":For x :In 42\n"
         "  result ← x\n"
@@ -452,7 +452,7 @@ TEST_F(StatementTest, ForScalar) {
 
 // Test for loop with expression array
 TEST_F(StatementTest, ForExpression) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "arr ← 10 20 30\n"
         "sum ← 0\n"
         ":For val :In arr\n"
@@ -472,7 +472,7 @@ TEST_F(StatementTest, ForExpression) {
 
 // Test nested for loops
 TEST_F(StatementTest, ForNested) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "sum ← 0\n"
         ":For i :In 1 2 3\n"
         "  :For j :In 10 20\n"
@@ -496,7 +496,7 @@ TEST_F(StatementTest, ForNested) {
 
 // Test for loop with multiple statements
 TEST_F(StatementTest, ForMultipleStatements) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "sum ← 0\n"
         "product ← 1\n"
         ":For x :In 2 3 4\n"
@@ -523,7 +523,7 @@ TEST_F(StatementTest, ForMultipleStatements) {
 
 // Test :Leave from While loop
 TEST_F(StatementTest, LeaveFromWhile) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "i ← 5\n"
         ":While 1\n"
         "  i ← i - 1\n"
@@ -547,7 +547,7 @@ TEST_F(StatementTest, LeaveFromWhile) {
 
 // Test :Leave from For loop
 TEST_F(StatementTest, LeaveFromFor) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "sum ← 0\n"
         ":For x :In 10 20 30 40 50\n"
         "  sum ← sum + x\n"
@@ -570,7 +570,7 @@ TEST_F(StatementTest, LeaveFromFor) {
 
 // Test :Leave from nested loops (exits innermost)
 TEST_F(StatementTest, LeaveFromNested) {
-    Continuation* k = parser->parse_program(
+    Continuation* k = parser->parse(
         "count ← 0\n"
         ":For i :In 1 2 3\n"
         "  :For j :In 1 2 3\n"

@@ -117,13 +117,10 @@ TEST_F(ParserTest, TestDyadicKWithTrampoline) {
     LiteralK* left = machine->heap->allocate<LiteralK>(2.0);
     LiteralK* right = machine->heap->allocate<LiteralK>(3.0);
 
-    // Look up the + primitive
-    Value* plus_val = machine->env->lookup("+");
-    ASSERT_NE(plus_val, nullptr);
-    ASSERT_EQ(plus_val->tag, ValueType::PRIMITIVE);
-    PrimitiveFn* plus_fn = plus_val->data.primitive_fn;
+    // Intern the operator name
+    const char* plus_name = machine->string_pool.intern("+");
 
-    DyadicK* dyadic = machine->heap->allocate<DyadicK>(plus_fn, left, right);
+    DyadicK* dyadic = machine->heap->allocate<DyadicK>(plus_name, left, right);
 
     // Allocate in heap for GC
 

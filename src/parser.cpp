@@ -16,7 +16,7 @@ const int BP_ASSIGN = 5;         // Assignment has lowest precedence
 const int BP_OPERATOR = 10;      // All dyadic operators have same precedence
 const int BP_JUXTAPOSE = 100;    // Juxtaposition (strands) binds tightest
 
-// Parse entry point
+// Parse entry point - unified for both single expressions and multi-statement programs
 Continuation* Parser::parse(const std::string& input) {
     error_message_.clear();
 
@@ -36,30 +36,73 @@ Continuation* Parser::parse(const std::string& input) {
         return nullptr;
     }
 
-    // Parse expression starting with minimum binding power
-    // Assignment is handled naturally as a low-precedence infix operator
-    Continuation* result = parse_expression(BP_NONE);
+    // Skip any leading separators
+    skip_separators();
 
-    if (!result) {
-        if (error_message_.empty()) {
-            error_message_ = "Parse failed";
+    std::vector<Continuation*> statements;
+
+    // Parse statements until EOF
+    while (!at_end()) {
+        // Parse one statement (control flow or expression)
+        Continuation* stmt = parse_statement();
+
+        if (!stmt) {
+            if (error_message_.empty()) {
+                error_message_ = "Failed to parse statement";
+            }
+            delete lexer_;
+            lexer_ = nullptr;
+            return nullptr;
         }
-        delete lexer_;
-        lexer_ = nullptr;
-        return nullptr;
-    }
 
-    // Check that we consumed all input
-    if (!at_end()) {
-        error_message_ = "Unexpected input after expression";
-        delete lexer_;
-        lexer_ = nullptr;
-        return nullptr;
+        statements.push_back(stmt);
+
+        // Skip statement separators
+        skip_separators();
     }
 
     delete lexer_;
     lexer_ = nullptr;
-    return result;
+
+    // Handle single statement case: return it directly (backward compatibility)
+    // Handle multiple statements: wrap in SeqK
+    if (statements.size() == 1) {
+        return statements[0];
+    } else {
+        auto* seq = machine_->heap->allocate<SeqK>(statements);
+        return seq;
+    }
+}
+
+// Juxtaposition handler - forms strands from adjacent values
+// Called when we see a token that can start a value in juxtaposition position
+Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
+    // Parse the right operand (don't consume token - it's already current)
+    Continuation* right = parse_expression(bp);
+    if (!right) {
+        return nullptr;
+    }
+
+    // Build strand from left and right
+    // Per Grammar G2, all values/functions share same syntactic category
+    // Juxtaposition ALWAYS means strand at parse time
+    std::vector<Continuation*> elements;
+
+    // If left is already a strand, extend it
+    if (auto* strand = dynamic_cast<StrandK*>(left)) {
+        elements = strand->elements;
+    } else {
+        elements.push_back(left);
+    }
+
+    // If right is a strand, append all its elements
+    if (auto* strand = dynamic_cast<StrandK*>(right)) {
+        elements.insert(elements.end(), strand->elements.begin(), strand->elements.end());
+    } else {
+        elements.push_back(right);
+    }
+
+    return machine_->heap->allocate<StrandK>(elements);
 }
 
 // Core Pratt parsing algorithm
@@ -121,35 +164,11 @@ Continuation* Parser::parse_expression(int min_bp) {
         }
 
         if (is_juxtaposition) {
-            // Juxtaposition: recursively parse the right operand
-            // For right-associativity, pass the same bp
-            Continuation* right = parse_expression(bp);
-            if (!right) {
+            // Juxtaposition: form a strand
+            left = led_juxtapose(left, bp);
+            if (!left) {
                 return nullptr;
             }
-
-            // Simple strand formation - parser is type-agnostic
-            // Per Grammar G2, all values/functions share same syntactic category
-            // Juxtaposition ALWAYS means strand at parse time
-            // The semantic interpretation (function application vs strand) happens at eval time
-            std::vector<Continuation*> elements;
-
-            // If left is already a strand, extend it
-            if (auto* strand = dynamic_cast<StrandK*>(left)) {
-                elements = strand->elements;
-            } else {
-                elements.push_back(left);
-            }
-
-            // If right is a strand, append all its elements
-            if (auto* strand = dynamic_cast<StrandK*>(right)) {
-                elements.insert(elements.end(), strand->elements.begin(), strand->elements.end());
-            } else {
-                elements.push_back(right);
-            }
-
-            StrandK* new_strand = machine_->heap->allocate<StrandK>(elements);
-            left = new_strand;
         } else {
             // Regular infix operator
             advance();
@@ -202,7 +221,7 @@ Continuation* Parser::nud(const Token& token) {
             // Monadic operator in prefix position
             // Parse the operand and create MonadicK continuation
 
-            // Determine operator name
+            // Determine operator name and intern it
             const char* op_name = nullptr;
             switch (token.type) {
                 case TOK_PLUS:    op_name = "+"; break;
@@ -217,20 +236,8 @@ Continuation* Parser::nud(const Token& token) {
                 default: break;
             }
 
-            // Look up the primitive function
-            Value* op_val = machine_->env->lookup(op_name);
-            if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
-                error_message_ = std::string("Unknown operator: ") + op_name;
-                return nullptr;
-            }
-
-            PrimitiveFn* prim_fn = op_val->data.primitive_fn;
-
-            // Check that it has a monadic form
-            if (!prim_fn->monadic) {
-                error_message_ = std::string("Operator has no monadic form: ") + op_name;
-                return nullptr;
-            }
+            // Intern the operator name
+            const char* interned_name = machine_->string_pool.intern(op_name);
 
             // Parse the operand with high binding power (monadic binds tighter than dyadic)
             Continuation* operand = parse_expression(BP_OPERATOR + 50);
@@ -238,8 +245,8 @@ Continuation* Parser::nud(const Token& token) {
                 return nullptr;
             }
 
-            // Create MonadicK continuation
-            MonadicK* monadic = machine_->heap->allocate<MonadicK>(prim_fn, operand);
+            // Create MonadicK continuation (lookup deferred to evaluation time)
+            MonadicK* monadic = machine_->heap->allocate<MonadicK>(interned_name, operand);
             return monadic;
         }
 
@@ -265,235 +272,15 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_LBRACE: {
             // Dfn definition: {body}
-            // Parse body until } (same logic as parse_program but stops at })
             // NOTE: { has already been consumed by parse_expression before calling nud()
-
-            skip_separators();
-            std::vector<Continuation*> statements;
-
-            // Parse statements until }
-            // Each statement is one complete expression
-            while (!at_end() && current().type != TOK_RBRACE) {
-                Continuation* stmt = parse_expression(BP_NONE);
-                if (!stmt) {
-                    return nullptr;
-                }
-                statements.push_back(stmt);
-
-                // Skip separators between statements (⋄ or newlines)
-                skip_separators();
-
-                // After skipping separators, we should either be at } or at the start of next statement
-            }
-
-            // Expect closing brace
-            if (current().type != TOK_RBRACE) {
-                error_message_ = "Expected } to close dfn";
+            Continuation* body = parse_dfn_body();
+            if (!body) {
                 return nullptr;
-            }
-            advance();  // consume }
-
-            // Create body continuation
-            Continuation* body;
-            if (statements.empty()) {
-                // Empty dfn body - return 0
-                body = machine_->heap->allocate<LiteralK>(0.0);
-            } else if (statements.size() == 1) {
-                // Single expression - use directly
-                body = statements[0];
-            } else {
-                // Multiple statements - wrap in SeqK
-                body = machine_->heap->allocate<SeqK>(statements);
             }
 
             // Create ClosureLiteralK with the body
             ClosureLiteralK* closure_lit = machine_->heap->allocate<ClosureLiteralK>(body);
             return closure_lit;
-        }
-
-        case TOK_IF: {
-            // :If condition ... :Else ... :EndIf
-            // Parse condition (expression until separator)
-            skip_separators();
-            Continuation* condition = parse_expression(BP_NONE);
-            if (!condition) {
-                return nullptr;
-            }
-
-            skip_separators();
-
-            // Parse then-branch (statements until :Else or :EndIf)
-            std::vector<Continuation*> then_stmts;
-            while (!at_end() && current().type != TOK_ELSE && current().type != TOK_ENDIF) {
-                Continuation* stmt = parse_expression(BP_NONE);
-                if (!stmt) {
-                    return nullptr;
-                }
-                then_stmts.push_back(stmt);
-                skip_separators();
-            }
-
-            Continuation* then_branch = nullptr;
-            if (!then_stmts.empty()) {
-                then_branch = machine_->heap->allocate<SeqK>(then_stmts);
-            }
-
-            // Check for :Else
-            Continuation* else_branch = nullptr;
-            if (!at_end() && current().type == TOK_ELSE) {
-                advance();  // consume :Else
-                skip_separators();
-
-                // Parse else-branch (statements until :EndIf)
-                std::vector<Continuation*> else_stmts;
-                while (!at_end() && current().type != TOK_ENDIF) {
-                    Continuation* stmt = parse_expression(BP_NONE);
-                    if (!stmt) {
-                        return nullptr;
-                    }
-                    else_stmts.push_back(stmt);
-                    skip_separators();
-                }
-
-                if (!else_stmts.empty()) {
-                    else_branch = machine_->heap->allocate<SeqK>(else_stmts);
-                }
-            }
-
-            // Expect :EndIf
-            if (at_end() || current().type != TOK_ENDIF) {
-                error_message_ = "Expected :EndIf";
-                return nullptr;
-            }
-            advance();  // consume :EndIf
-
-            // Create IfK continuation
-            IfK* if_k = machine_->heap->allocate<IfK>(condition, then_branch, else_branch);
-            return if_k;
-        }
-
-        case TOK_WHILE: {
-            // :While condition ... :EndWhile
-            // Parse condition
-            skip_separators();
-            Continuation* condition = parse_expression(BP_NONE);
-            if (!condition) {
-                return nullptr;
-            }
-
-            skip_separators();
-
-            // Parse loop body (statements until :EndWhile)
-            std::vector<Continuation*> body_stmts;
-            while (!at_end() && current().type != TOK_ENDWHILE) {
-                Continuation* stmt = parse_expression(BP_NONE);
-                if (!stmt) {
-                    return nullptr;
-                }
-                body_stmts.push_back(stmt);
-                skip_separators();
-            }
-
-            Continuation* body = nullptr;
-            if (!body_stmts.empty()) {
-                body = machine_->heap->allocate<SeqK>(body_stmts);
-            }
-
-            // Expect :EndWhile
-            if (at_end() || current().type != TOK_ENDWHILE) {
-                error_message_ = "Expected :EndWhile";
-                return nullptr;
-            }
-            advance();  // consume :EndWhile
-
-            // Create WhileK continuation
-            WhileK* while_k = machine_->heap->allocate<WhileK>(condition, body);
-            return while_k;
-        }
-
-        case TOK_FOR: {
-            // :For var :In array ... :EndFor
-            skip_separators();
-
-            // Expect variable name
-            if (at_end() || current().type != TOK_NAME) {
-                error_message_ = "Expected variable name after :For";
-                return nullptr;
-            }
-            // Intern the variable name in the string pool
-            const char* var_name = machine_->string_pool.intern(current().name);
-            advance();  // consume variable name
-
-            skip_separators();
-
-            // Expect :In
-            if (at_end() || current().type != TOK_IN) {
-                error_message_ = "Expected :In after variable name";
-                return nullptr;
-            }
-            advance();  // consume :In
-
-            skip_separators();
-
-            // Parse array expression
-            Continuation* array_expr = parse_expression(BP_NONE);
-            if (!array_expr) {
-                return nullptr;
-            }
-
-            skip_separators();
-
-            // Parse loop body (statements until :EndFor)
-            std::vector<Continuation*> body_stmts;
-            while (!at_end() && current().type != TOK_ENDFOR) {
-                Continuation* stmt = parse_expression(BP_NONE);
-                if (!stmt) {
-                    return nullptr;
-                }
-                body_stmts.push_back(stmt);
-                skip_separators();
-            }
-
-            Continuation* body = nullptr;
-            if (!body_stmts.empty()) {
-                body = machine_->heap->allocate<SeqK>(body_stmts);
-            }
-
-            // Expect :EndFor
-            if (at_end() || current().type != TOK_ENDFOR) {
-                error_message_ = "Expected :EndFor";
-                return nullptr;
-            }
-            advance();  // consume :EndFor
-
-            // Create ForK continuation
-            ForK* for_k = machine_->heap->allocate<ForK>(var_name, array_expr, body);
-            return for_k;
-        }
-
-        case TOK_LEAVE: {
-            // :Leave - exit from loop
-            LeaveK* leave_k = machine_->heap->allocate<LeaveK>();
-            return leave_k;
-        }
-
-        case TOK_RETURN: {
-            // :Return [value] - return from function
-            skip_separators();
-
-            // Check if there's a return value
-            Continuation* value_expr = nullptr;
-            if (!at_end() && !is_separator(current())) {
-                // Parse return value expression
-                value_expr = parse_expression(BP_NONE);
-                if (!value_expr) {
-                    return nullptr;
-                }
-            }
-
-            // Create ReturnK continuation
-            ReturnK* return_k = machine_->heap->allocate<ReturnK>(value_expr);
-            return return_k;
         }
 
         default:
@@ -531,34 +318,9 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
     if (token.type == TOK_LBRACE) {
         // Parse the dfn body
         // NOTE: { has already been consumed by parse_expression before calling led()
-        skip_separators();
-        std::vector<Continuation*> statements;
-
-        // Parse statements until }
-        while (!at_end() && current().type != TOK_RBRACE) {
-            Continuation* stmt = parse_expression(BP_NONE);
-            if (!stmt) {
-                return nullptr;
-            }
-            statements.push_back(stmt);
-            skip_separators();
-        }
-
-        // Expect closing brace
-        if (current().type != TOK_RBRACE) {
-            error_message_ = "Expected } to close dfn";
+        Continuation* body = parse_dfn_body();
+        if (!body) {
             return nullptr;
-        }
-        advance();  // consume }
-
-        // Create body continuation
-        Continuation* body;
-        if (statements.empty()) {
-            body = machine_->heap->allocate<LiteralK>(0.0);
-        } else if (statements.size() == 1) {
-            body = statements[0];
-        } else {
-            body = machine_->heap->allocate<SeqK>(statements);
         }
 
         // Create ClosureLiteralK for the dfn
@@ -609,6 +371,9 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             return nullptr;
     }
 
+    // Intern the operator name
+    const char* interned_name = machine_->string_pool.intern(op_name);
+
     // For right-associative operators, we parse the right side with the SAME binding power
     // This is the key to right-to-left evaluation in Pratt parsing
     int bp = get_binding_power(token);
@@ -618,19 +383,278 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         return nullptr;
     }
 
-    // Look up the primitive function from environment
-    Value* op_val = machine_->env->lookup(op_name);
-    if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
-        error_message_ = std::string("Unknown operator: ") + op_name;
+    // Create dyadic operation continuation (lookup deferred to evaluation time)
+    DyadicK* dyadic = machine_->heap->allocate<DyadicK>(interned_name, left, right);
+
+    return dyadic;
+}
+
+// Parse dfn body: parses statements from current position until }
+// Assumes { has already been consumed
+// Consumes the closing }
+// Returns the body continuation (wrapped in SeqK if multiple statements)
+Continuation* Parser::parse_dfn_body() {
+    skip_separators();
+
+    // Parse statements until } (dfns use expressions, not statements)
+    std::vector<Continuation*> statements;
+    while (!at_end() && current().type != TOK_RBRACE) {
+        Continuation* stmt = parse_expression(BP_NONE);
+        if (!stmt) {
+            return nullptr;
+        }
+        statements.push_back(stmt);
+        skip_separators();
+    }
+
+    // Expect closing brace
+    if (current().type != TOK_RBRACE) {
+        error_message_ = "Expected } to close dfn";
+        return nullptr;
+    }
+    advance();  // consume }
+
+    // Create body continuation
+    Continuation* body;
+    if (statements.empty()) {
+        // Empty dfn body - return 0
+        body = machine_->heap->allocate<LiteralK>(0.0);
+    } else if (statements.size() == 1) {
+        // Single expression - use directly
+        body = statements[0];
+    } else {
+        // Multiple statements - wrap in SeqK
+        body = machine_->heap->allocate<SeqK>(statements);
+    }
+
+    return body;
+}
+
+// Parse a block of statements until reaching a terminator token
+// Returns a vector of parsed statements
+// Does NOT consume the terminator token
+std::vector<Continuation*> Parser::parse_block_until(TokenType terminator) {
+    std::vector<Continuation*> statements;
+
+    while (!at_end() && current().type != terminator) {
+        Continuation* stmt = parse_statement();
+        if (!stmt) {
+            // Return empty vector on parse failure
+            return std::vector<Continuation*>();
+        }
+        statements.push_back(stmt);
+        skip_separators();
+    }
+
+    return statements;
+}
+
+// Parse :If statement
+Continuation* Parser::parse_if_statement() {
+    // :If has already been consumed by parse_statement()
+    skip_separators();
+    Continuation* condition = parse_expression(BP_NONE);
+    if (!condition) {
         return nullptr;
     }
 
-    PrimitiveFn* prim_fn = op_val->data.primitive_fn;
+    skip_separators();
 
-    // Create dyadic operation continuation via heap
-    DyadicK* dyadic = machine_->heap->allocate<DyadicK>(prim_fn, left, right);
+    // Parse then-branch (statements until :Else or :EndIf)
+    // Can't use parse_block_until here because we need to stop at TWO different tokens
+    std::vector<Continuation*> then_stmts;
+    while (!at_end() && current().type != TOK_ELSE && current().type != TOK_ENDIF) {
+        Continuation* stmt = parse_statement();
+        if (!stmt) {
+            return nullptr;
+        }
+        then_stmts.push_back(stmt);
+        skip_separators();
+    }
 
-    return dyadic;
+    Continuation* then_branch = nullptr;
+    if (!then_stmts.empty()) {
+        then_branch = machine_->heap->allocate<SeqK>(then_stmts);
+    }
+
+    // Check for :Else
+    Continuation* else_branch = nullptr;
+    if (!at_end() && current().type == TOK_ELSE) {
+        advance();  // consume :Else
+        skip_separators();
+
+        // Parse else-branch (statements until :EndIf)
+        std::vector<Continuation*> else_stmts = parse_block_until(TOK_ENDIF);
+        if (else_stmts.empty() && !at_end() && current().type != TOK_ENDIF) {
+            // parse_block_until returned empty due to error
+            return nullptr;
+        }
+
+        if (!else_stmts.empty()) {
+            else_branch = machine_->heap->allocate<SeqK>(else_stmts);
+        }
+    }
+
+    // Expect :EndIf
+    if (at_end() || current().type != TOK_ENDIF) {
+        error_message_ = "Expected :EndIf";
+        return nullptr;
+    }
+    advance();  // consume :EndIf
+
+    // Create IfK continuation
+    IfK* if_k = machine_->heap->allocate<IfK>(condition, then_branch, else_branch);
+    return if_k;
+}
+
+// Parse :While statement
+Continuation* Parser::parse_while_statement() {
+    // :While has already been consumed by parse_statement()
+    skip_separators();
+    Continuation* condition = parse_expression(BP_NONE);
+    if (!condition) {
+        return nullptr;
+    }
+
+    skip_separators();
+
+    // Parse loop body (statements until :EndWhile)
+    std::vector<Continuation*> body_stmts = parse_block_until(TOK_ENDWHILE);
+    if (body_stmts.empty() && !at_end() && current().type != TOK_ENDWHILE) {
+        // parse_block_until returned empty due to error
+        return nullptr;
+    }
+
+    Continuation* body = nullptr;
+    if (!body_stmts.empty()) {
+        body = machine_->heap->allocate<SeqK>(body_stmts);
+    }
+
+    // Expect :EndWhile
+    if (at_end() || current().type != TOK_ENDWHILE) {
+        error_message_ = "Expected :EndWhile";
+        return nullptr;
+    }
+    advance();  // consume :EndWhile
+
+    // Create WhileK continuation
+    WhileK* while_k = machine_->heap->allocate<WhileK>(condition, body);
+    return while_k;
+}
+
+// Parse :For statement
+Continuation* Parser::parse_for_statement() {
+    // :For has already been consumed by parse_statement()
+    skip_separators();
+
+    // Expect variable name
+    if (at_end() || current().type != TOK_NAME) {
+        error_message_ = "Expected variable name after :For";
+        return nullptr;
+    }
+    // Intern the variable name in the string pool
+    const char* var_name = machine_->string_pool.intern(current().name);
+    advance();  // consume variable name
+
+    skip_separators();
+
+    // Expect :In
+    if (at_end() || current().type != TOK_IN) {
+        error_message_ = "Expected :In after variable name";
+        return nullptr;
+    }
+    advance();  // consume :In
+
+    skip_separators();
+
+    // Parse array expression
+    Continuation* array_expr = parse_expression(BP_NONE);
+    if (!array_expr) {
+        return nullptr;
+    }
+
+    skip_separators();
+
+    // Parse loop body (statements until :EndFor)
+    std::vector<Continuation*> body_stmts = parse_block_until(TOK_ENDFOR);
+    if (body_stmts.empty() && !at_end() && current().type != TOK_ENDFOR) {
+        // parse_block_until returned empty due to error
+        return nullptr;
+    }
+
+    Continuation* body = nullptr;
+    if (!body_stmts.empty()) {
+        body = machine_->heap->allocate<SeqK>(body_stmts);
+    }
+
+    // Expect :EndFor
+    if (at_end() || current().type != TOK_ENDFOR) {
+        error_message_ = "Expected :EndFor";
+        return nullptr;
+    }
+    advance();  // consume :EndFor
+
+    // Create ForK continuation
+    ForK* for_k = machine_->heap->allocate<ForK>(var_name, array_expr, body);
+    return for_k;
+}
+
+// Parse :Return statement
+Continuation* Parser::parse_return_statement() {
+    // :Return has already been consumed by parse_statement()
+    skip_separators();
+
+    // Check if there's a return value
+    Continuation* value_expr = nullptr;
+    if (!at_end() && !is_separator(current())) {
+        // Parse return value expression
+        value_expr = parse_expression(BP_NONE);
+        if (!value_expr) {
+            return nullptr;
+        }
+    }
+
+    // Create ReturnK continuation
+    ReturnK* return_k = machine_->heap->allocate<ReturnK>(value_expr);
+    return return_k;
+}
+
+// Parse :Leave statement
+Continuation* Parser::parse_leave_statement() {
+    // :Leave has already been consumed by parse_statement()
+    // Create LeaveK continuation
+    LeaveK* leave_k = machine_->heap->allocate<LeaveK>();
+    return leave_k;
+}
+
+// Parse statement: checks for control flow keywords, otherwise falls through to parse_expression
+Continuation* Parser::parse_statement() {
+    // Check if current token is a control flow keyword
+    switch (current().type) {
+        case TOK_IF:
+            advance();  // consume :If
+            return parse_if_statement();
+
+        case TOK_WHILE:
+            advance();  // consume :While
+            return parse_while_statement();
+
+        case TOK_FOR:
+            advance();  // consume :For
+            return parse_for_statement();
+
+        case TOK_RETURN:
+            advance();  // consume :Return
+            return parse_return_statement();
+
+        case TOK_LEAVE:
+            advance();  // consume :Leave
+            return parse_leave_statement();
+
+        default:
+            // Not a statement keyword - parse as expression
+            return parse_expression(BP_NONE);
+    }
 }
 
 // Get binding power for a token
@@ -683,60 +707,6 @@ void Parser::skip_separators() {
     while (!at_end() && is_separator(current_token_)) {
         advance();
     }
-}
-
-// Parse a multi-statement program (Phase 3.3)
-Continuation* Parser::parse_program(const std::string& input) {
-    error_message_.clear();
-
-    // Keep input alive for lexer lifetime
-    input_ = input;
-
-    // Create lexer for on-demand tokenization
-    lexer_ = new Lexer(input_.c_str());
-
-    // Get first token
-    current_token_ = lexer_->next_token();
-
-    if (current_token_.type == TOK_ERROR) {
-        error_message_ = "Lexer error";
-        delete lexer_;
-        lexer_ = nullptr;
-        return nullptr;
-    }
-
-    // Skip any leading separators
-    skip_separators();
-
-    std::vector<Continuation*> statements;
-
-    // Parse statements until EOF
-    while (!at_end()) {
-        // Parse one statement (expression)
-        Continuation* stmt = parse_expression(BP_NONE);
-
-        if (!stmt) {
-            if (error_message_.empty()) {
-                error_message_ = "Failed to parse statement";
-            }
-            delete lexer_;
-            lexer_ = nullptr;
-            return nullptr;
-        }
-
-        statements.push_back(stmt);
-
-        // Skip statement separators
-        skip_separators();
-    }
-
-    delete lexer_;
-    lexer_ = nullptr;
-
-    // Always wrap in SeqK for consistency
-    // SeqK handles empty and single-statement cases efficiently
-    auto* seq = machine_->heap->allocate<SeqK>(statements);
-    return seq;
 }
 
 } // namespace apl

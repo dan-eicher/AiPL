@@ -9,6 +9,7 @@ const char* token_type_name(TokenType type) {
         case TOK_EOF: return "EOF";
         case TOK_NUMBER: return "NUMBER";
         case TOK_NAME: return "NAME";
+        case TOK_STRING: return "STRING";
         case TOK_PLUS: return "+";
         case TOK_MINUS: return "-";
         case TOK_TIMES: return "×";

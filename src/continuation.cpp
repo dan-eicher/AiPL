@@ -160,7 +160,7 @@ Value* MonadicK::invoke(Machine* machine) {
     // Strategy: push operand continuation, then push auxiliary to apply function
 
     // Create auxiliary continuation to apply function after operand evaluates
-    ApplyMonadicK* apply = machine->heap->allocate<ApplyMonadicK>(prim_fn);
+    ApplyMonadicK* apply = machine->heap->allocate<ApplyMonadicK>(op_name);
 
     // Push in reverse order (stack is LIFO)
     machine->push_kont(apply);    // Will execute after operand
@@ -181,7 +181,7 @@ Value* DyadicK::invoke(Machine* machine) {
     // Use auxiliary continuations to manage the multi-step process
 
     // Allocate auxiliary continuation to evaluate left after right completes
-    EvalDyadicLeftK* eval_left = machine->heap->allocate<EvalDyadicLeftK>(prim_fn, left, nullptr);
+    EvalDyadicLeftK* eval_left = machine->heap->allocate<EvalDyadicLeftK>(op_name, left, nullptr);
 
     // Push work in REVERSE order (stack is LIFO)
     machine->push_kont(eval_left);  // Will execute after right
@@ -206,7 +206,7 @@ Value* EvalDyadicLeftK::invoke(Machine* machine) {
     right_val = machine->ctrl.value;
 
     // Allocate auxiliary continuation to apply function after left evaluates
-    ApplyDyadicK* apply = machine->heap->allocate<ApplyDyadicK>(prim_fn, right_val);
+    ApplyDyadicK* apply = machine->heap->allocate<ApplyDyadicK>(op_name, right_val);
 
     // Push work in reverse order
     machine->push_kont(apply);   // Will execute after left
@@ -230,8 +230,16 @@ Value* ApplyMonadicK::invoke(Machine* machine) {
     // Operand has been evaluated - its value is in ctrl.value
     Value* operand_val = machine->ctrl.value;
 
+    // Look up the operator at evaluation time
+    Value* op_val = machine->env->lookup(op_name);
+    if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
+        throw std::runtime_error(std::string("Unknown operator: ") + op_name);
+    }
+
+    PrimitiveFn* prim_fn = op_val->data.primitive_fn;
+
     if (!prim_fn->monadic) {
-        throw std::runtime_error("Operator has no monadic form");
+        throw std::runtime_error(std::string("Operator has no monadic form: ") + op_name);
     }
 
     // Apply the monadic function
@@ -277,8 +285,16 @@ Value* ApplyDyadicK::invoke(Machine* machine) {
     // Left value is in ctrl.value
     Value* left_val = machine->ctrl.value;
 
+    // Look up the operator at evaluation time
+    Value* op_val = machine->env->lookup(op_name);
+    if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
+        throw std::runtime_error(std::string("Unknown operator: ") + op_name);
+    }
+
+    PrimitiveFn* prim_fn = op_val->data.primitive_fn;
+
     if (!prim_fn->dyadic) {
-        throw std::runtime_error("Operator has no dyadic form");
+        throw std::runtime_error(std::string("Operator has no dyadic form: ") + op_name);
     }
 
     // Apply the dyadic function

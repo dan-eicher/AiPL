@@ -186,11 +186,11 @@ protected:
 // Evaluates operand, then applies monadic function
 class MonadicK : public Continuation {
 public:
-    PrimitiveFn* prim_fn;       // The function to apply
+    const char* op_name;        // Operator name (interned pointer, e.g., "+", "-", "⍳")
     Continuation* operand;      // Operand to evaluate
 
-    MonadicK(PrimitiveFn* fn, Continuation* op)
-        : prim_fn(fn), operand(op) {}
+    MonadicK(const char* name, Continuation* op)
+        : op_name(name), operand(op) {}
 
     ~MonadicK() override {
         // Don't delete operand - it's GC-managed
@@ -206,12 +206,12 @@ protected:
 // Evaluates operands right-to-left, then applies dyadic function
 class DyadicK : public Continuation {
 public:
-    PrimitiveFn* prim_fn;       // The function to apply
+    const char* op_name;        // Operator name (interned pointer, e.g., "+", "-", "×")
     Continuation* left;         // Left operand
     Continuation* right;        // Right operand
 
-    DyadicK(PrimitiveFn* fn, Continuation* l, Continuation* r)
-        : prim_fn(fn), left(l), right(r) {}
+    DyadicK(const char* name, Continuation* l, Continuation* r)
+        : op_name(name), left(l), right(r) {}
 
     ~DyadicK() override {
         // Don't delete operands - they're GC-managed
@@ -226,12 +226,12 @@ protected:
 // Auxiliary continuation for DyadicK - evaluates left after right is done
 class EvalDyadicLeftK : public Continuation {
 public:
-    PrimitiveFn* prim_fn;
+    const char* op_name;        // Operator name (interned pointer)
     Continuation* left;
     Value* right_val;           // Saved right value (set at runtime)
 
-    EvalDyadicLeftK(PrimitiveFn* fn, Continuation* l, Value* r)
-        : prim_fn(fn), left(l), right_val(r) {}
+    EvalDyadicLeftK(const char* name, Continuation* l, Value* r)
+        : op_name(name), left(l), right_val(r) {}
 
     ~EvalDyadicLeftK() override {}
 
@@ -244,10 +244,10 @@ protected:
 // Auxiliary continuation to apply monadic function after operand evaluated
 class ApplyMonadicK : public Continuation {
 public:
-    PrimitiveFn* prim_fn;
+    const char* op_name;        // Operator name (interned pointer)
 
-    ApplyMonadicK(PrimitiveFn* fn)
-        : prim_fn(fn) {}
+    ApplyMonadicK(const char* name)
+        : op_name(name) {}
 
     ~ApplyMonadicK() override {}
 
@@ -260,11 +260,11 @@ protected:
 // Auxiliary continuation to apply dyadic function after both operands evaluated
 class ApplyDyadicK : public Continuation {
 public:
-    PrimitiveFn* prim_fn;
+    const char* op_name;        // Operator name (interned pointer)
     Value* right_val;           // Saved right value
 
-    ApplyDyadicK(PrimitiveFn* fn, Value* r)
-        : prim_fn(fn), right_val(r) {}
+    ApplyDyadicK(const char* name, Value* r)
+        : op_name(name), right_val(r) {}
 
     ~ApplyDyadicK() override {}
 

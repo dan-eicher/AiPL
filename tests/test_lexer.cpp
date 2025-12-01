@@ -222,6 +222,99 @@ TEST_F(LexerTest, Diamond) {
     EXPECT_EQ(tokens[2].type, TOK_NAME);
 }
 
+// Test column tracking with UTF-8 characters
+TEST_F(LexerTest, UTF8ColumnTracking) {
+    auto tokens = tokenize("× ÷ ⍴");
+
+    // × is at column 0 (2 bytes in UTF-8)
+    // space at byte 2
+    // ÷ is at column 2 (should account for × being 1 char, not 2 bytes)
+    // space at byte 5
+    // ⍴ is at column 4
+    EXPECT_EQ(tokens[0].column, 0);  // ×
+    EXPECT_EQ(tokens[1].column, 2);  // ÷ (× took 1 column + 1 space)
+    EXPECT_EQ(tokens[2].column, 4);  // ⍴ (× ÷ took 2 columns + 2 spaces)
+    EXPECT_EQ(tokens[3].type, TOK_EOF);
+}
+
+// Test column tracking with keywords
+TEST_F(LexerTest, KeywordColumnTracking) {
+    auto tokens = tokenize(":EndWhile x");
+
+    // :EndWhile is 9 characters
+    // space at 9
+    // x at column 10
+    EXPECT_EQ(tokens[0].column, 0);   // :EndWhile
+    EXPECT_EQ(tokens[1].column, 10);  // x (after :EndWhile + space)
+}
+
+// Test column tracking after comments
+TEST_F(LexerTest, CommentColumnTracking) {
+    auto tokens = tokenize("x ⍝ comment\ny");
+
+    // x at column 0, line 1
+    // newline after comment
+    // y at column 0, line 2
+    EXPECT_EQ(tokens[0].type, TOK_NAME);
+    EXPECT_EQ(tokens[0].column, 0);
+    EXPECT_EQ(tokens[0].line, 1);
+
+    EXPECT_EQ(tokens[1].type, TOK_NEWLINE);
+    EXPECT_EQ(tokens[1].line, 1);
+
+    EXPECT_EQ(tokens[2].type, TOK_NAME);
+    EXPECT_EQ(tokens[2].column, 0);
+    EXPECT_EQ(tokens[2].line, 2);
+}
+
+// Test outer product is single token (not compose + dot)
+TEST_F(LexerTest, OuterProductNotTwoTokens) {
+    auto tokens = tokenize("∘.");
+
+    // Should be ONE token (TOK_OUTER_PRODUCT), not two (TOK_COMPOSE + error)
+    ASSERT_EQ(tokens.size(), 2);  // TOK_OUTER_PRODUCT + TOK_EOF
+    EXPECT_EQ(tokens[0].type, TOK_OUTER_PRODUCT);
+    EXPECT_EQ(tokens[1].type, TOK_EOF);
+}
+
+// Test compose alone still works
+TEST_F(LexerTest, ComposeSeparate) {
+    auto tokens = tokenize("∘");
+
+    ASSERT_EQ(tokens.size(), 2);  // TOK_COMPOSE + TOK_EOF
+    EXPECT_EQ(tokens[0].type, TOK_COMPOSE);
+    EXPECT_EQ(tokens[1].type, TOK_EOF);
+}
+
+// Test string literals
+TEST_F(LexerTest, StringLiterals) {
+    auto tokens = tokenize("'hello' 'world'");
+
+    ASSERT_EQ(tokens.size(), 3);  // 'hello', 'world', EOF
+    EXPECT_EQ(tokens[0].type, TOK_STRING);
+    EXPECT_STREQ(tokens[0].name, "hello");
+    EXPECT_EQ(tokens[1].type, TOK_STRING);
+    EXPECT_STREQ(tokens[1].name, "world");
+}
+
+// Test string literal with escaped quotes
+TEST_F(LexerTest, StringLiteralsWithEscaping) {
+    auto tokens = tokenize("'don''t'");
+
+    ASSERT_EQ(tokens.size(), 2);  // 'don't', EOF
+    EXPECT_EQ(tokens[0].type, TOK_STRING);
+    EXPECT_STREQ(tokens[0].name, "don't");
+}
+
+// Test empty string
+TEST_F(LexerTest, EmptyString) {
+    auto tokens = tokenize("''");
+
+    ASSERT_EQ(tokens.size(), 2);  // '', EOF
+    EXPECT_EQ(tokens[0].type, TOK_STRING);
+    EXPECT_STREQ(tokens[0].name, "");
+}
+
 // Test comments
 TEST_F(LexerTest, Comments) {
     auto tokens = tokenize("a ⍝ this is a comment\nb");

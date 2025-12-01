@@ -9,6 +9,7 @@ enum TokenType {
     TOK_EOF,
     TOK_NUMBER,
     TOK_NAME,
+    TOK_STRING,         // String literal 'hello'
 
     // Arithmetic operators
     TOK_PLUS,           // +

@@ -44,6 +44,9 @@ Lexer::Lexer(const char* input)
     alnum = [a-zA-Z0-9_];
     name = alpha alnum*;
 
+    // String literals (APL uses single quotes, '' for escaped quote)
+    string = "'" ([^'\n] | "''")* "'";
+
     // APL special characters (UTF-8)
     // Using actual Unicode characters (code points)
     times = "×";         // U+00D7
@@ -116,7 +119,44 @@ Token Lexer::next_token() {
         ":Leave" { column_ += 6; return Token(TOK_LEAVE, token_line, token_column); }
         ":Return" { column_ += 7; return Token(TOK_RETURN, token_line, token_column); }
 
-        // Names (must come after keywords)
+        // String literals (must come before names to avoid conflict)
+        string {
+            // Extract string content, handling '' escape sequences
+            size_t len = cursor_ - token_start;
+            column_ += len;
+
+            // Skip opening and closing quotes
+            const char* start = token_start + 1;
+            const char* end = cursor_ - 1;
+
+            // Count actual string length (handling '' -> ')
+            size_t actual_len = 0;
+            for (const char* p = start; p < end; p++) {
+                actual_len++;
+                if (*p == '\'' && p + 1 < end && *(p + 1) == '\'') {
+                    p++;  // Skip second quote in '' pair
+                }
+            }
+
+            // Build unescaped string in temporary buffer
+            char* temp = new char[actual_len + 1];
+            size_t dst = 0;
+            for (const char* p = start; p < end; p++) {
+                temp[dst++] = *p;
+                if (*p == '\'' && p + 1 < end && *(p + 1) == '\'') {
+                    p++;  // Skip second quote in '' pair
+                }
+            }
+            temp[actual_len] = '\0';
+
+            // Allocate in arena and copy
+            char* str = arena_.allocate_string(temp, actual_len);
+            delete[] temp;
+
+            return Token(TOK_STRING, str, token_line, token_column);
+        }
+
+        // Names (must come after keywords and strings)
         name {
             size_t len = cursor_ - token_start;
             char* str = arena_.allocate_string(token_start, len);

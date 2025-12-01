@@ -19,14 +19,12 @@ class Parser {
 public:
     Parser(Machine* machine) : machine_(machine), lexer_(nullptr), current_token_() {}
 
-    // Parse an APL expression and return the continuation graph
+    // Parse APL input and return the continuation graph
+    // - For single expressions: returns the expression continuation
+    // - For multi-statement programs: returns SeqK wrapping all statements
+    // Statements separated by newlines or diamonds (⋄)
     // Returns nullptr on parse failure
     Continuation* parse(const std::string& input);
-
-    // Parse a multi-statement program (Phase 3.3)
-    // Statements separated by newlines or diamonds (⋄)
-    // Returns a SeqK continuation or nullptr on parse failure
-    Continuation* parse_program(const std::string& input);
 
     // Get the last error message (if parse failed)
     const std::string& get_error() const { return error_message_; }
@@ -44,9 +42,22 @@ private:
     Continuation* parse_expression(int min_bp);
     Continuation* nud(const Token& token);  // Null denotation (prefix)
     Continuation* led(Continuation* left, const Token& token);  // Left denotation (infix)
+    Continuation* led_juxtapose(Continuation* left, int bp);  // Juxtaposition (strand formation)
+
+    // Statement parsing
+    Continuation* parse_statement();  // Parse statement or expression
 
     // Binding power lookup
     int get_binding_power(const Token& token);
+
+    // Helper functions
+    Continuation* parse_dfn_body();  // Parse dfn body from { to }
+    std::vector<Continuation*> parse_block_until(TokenType terminator);  // Parse statements until terminator
+    Continuation* parse_if_statement();      // Parse :If/:Else/:EndIf
+    Continuation* parse_while_statement();   // Parse :While/:EndWhile
+    Continuation* parse_for_statement();     // Parse :For/:In/:EndFor
+    Continuation* parse_return_statement();  // Parse :Return
+    Continuation* parse_leave_statement();   // Parse :Leave
 
     // Token stream helpers (unified with lexer)
     const Token& current() const { return current_token_; }
