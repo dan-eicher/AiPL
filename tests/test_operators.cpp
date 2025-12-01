@@ -415,6 +415,763 @@ TEST_F(OperatorsTest, CommuteVectors) {
     EXPECT_DOUBLE_EQ((*result)(2, 0), -27.0);  // 3-30
 }
 
+// ========================================================================
+// Reduce Operator Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, ReduceVector) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, plus_fn, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);  // 1+2+3+4
+}
+
+TEST_F(OperatorsTest, ReduceWithMultiply) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* times_fn = machine->heap->allocate_primitive(&prim_times);
+
+    fn_reduce(machine, times_fn, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 24.0);  // 1*2*3*4
+}
+
+TEST_F(OperatorsTest, ReduceMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, plus_fn, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 2);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 15.0);  // 4+5+6
+}
+
+TEST_F(OperatorsTest, ReduceFirstMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce_first(machine, plus_fn, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);  // 1+4
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 7.0);  // 2+5
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 9.0);  // 3+6
+}
+
+TEST_F(OperatorsTest, ReduceMultiply) {
+    Value* func = machine->heap->allocate_primitive(&prim_times);
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 24.0);  // 1*2*3*4 = 24
+}
+
+TEST_F(OperatorsTest, ReduceSubtract) {
+    Value* func = machine->heap->allocate_primitive(&prim_minus);
+    Eigen::VectorXd v(4);
+    v << 10.0, 3.0, 2.0, 1.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);  // APL right-to-left: 10-(3-(2-1)) = 10-2 = 8
+}
+
+TEST_F(OperatorsTest, ReduceDivide) {
+    Value* func = machine->heap->allocate_primitive(&prim_divide);
+    Eigen::VectorXd v(3);
+    v << 100.0, 5.0, 2.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 40.0);  // APL right-to-left: 100/(5/2) = 100/2.5 = 40
+}
+
+TEST_F(OperatorsTest, ReducePower) {
+    Value* func = machine->heap->allocate_primitive(&prim_star);
+    Eigen::VectorXd v(3);
+    v << 2.0, 3.0, 2.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 512.0);  // right-to-left: 2^(3^2) = 2^9 = 512
+}
+
+TEST_F(OperatorsTest, ReduceSingleElement) {
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    Eigen::VectorXd v(1);
+    v << 42.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyVector) {
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    Eigen::VectorXd v(0);
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // +/⍬ → 0 (identity)
+}
+
+TEST_F(OperatorsTest, ReduceFirstAxis) {
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    Eigen::MatrixXd m(3, 4);
+    m << 1.0, 2.0, 3.0, 4.0,
+         5.0, 6.0, 7.0, 8.0,
+         9.0, 10.0, 11.0, 12.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_reduce_first(machine, func, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 4);
+    EXPECT_EQ(res_mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 15.0);  // 1+5+9
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 18.0);  // 2+6+10
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 21.0);  // 3+7+11
+    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 24.0);  // 4+8+12
+}
+
+TEST_F(OperatorsTest, ReduceEmptyVectorPlus) {
+    Eigen::VectorXd empty_vec(0);
+    Value* vec = machine->heap->allocate_vector(empty_vec);
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // +/⍬ → 0
+}
+
+TEST_F(OperatorsTest, ReduceEmptyVectorTimes) {
+    Eigen::VectorXd empty_vec(0);
+    Value* vec = machine->heap->allocate_vector(empty_vec);
+    Value* func = machine->heap->allocate_primitive(&prim_times);
+
+    fn_reduce(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // ×/⍬ → 1
+}
+
+TEST_F(OperatorsTest, ReduceEmptyDimensionMatrix) {
+    Eigen::MatrixXd empty_mat(3, 0);  // 3 rows, 0 columns
+    Value* mat = machine->heap->allocate_matrix(empty_mat);
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, func, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 0.0);
+}
+
+TEST_F(OperatorsTest, ErrorReduceNonFunction) {
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reduce(machine, vec, vec);
+    EXPECT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// ========================================================================
+// Scan Operator Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, ScanVector) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_scan(machine, plus_fn, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+    // Right-to-left cumulative: [10, 9, 7, 4]
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 10.0);  // 1+(2+(3+4)) = 10
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 9.0);   // 2+(3+4) = 9
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 7.0);   // 3+4 = 7
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 4.0);   // 4
+}
+
+TEST_F(OperatorsTest, ScanMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_scan(machine, plus_fn, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 2);
+    EXPECT_EQ(res->cols(), 3);
+    // Row 0: [6, 5, 3] = [1+2+3, 2+3, 3]
+    // Row 1: [15, 11, 6] = [4+5+6, 5+6, 6]
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 15.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 11.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 2), 6.0);
+}
+
+TEST_F(OperatorsTest, ScanMultiply) {
+    Value* func = machine->heap->allocate_primitive(&prim_times);
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_scan(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 4);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 24.0);  // 1*(2*(3*4)) = 24
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 24.0);  // 2*(3*4) = 24
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 12.0);  // 3*4 = 12
+    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 4.0);   // 4
+}
+
+TEST_F(OperatorsTest, ScanSubtract) {
+    Value* func = machine->heap->allocate_primitive(&prim_minus);
+    Eigen::VectorXd v(5);
+    v << 10.0, 1.0, 1.0, 1.0, 1.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_scan(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 10.0);  // 10-0 = 10
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);   // 1-1 = 0
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 1.0);   // 1-0 = 1
+    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 0.0);   // 1-1 = 0
+    EXPECT_DOUBLE_EQ((*res_mat)(4, 0), 1.0);   // 1
+}
+
+TEST_F(OperatorsTest, ScanDivide) {
+    Value* func = machine->heap->allocate_primitive(&prim_divide);
+    Eigen::VectorXd v(4);
+    v << 100.0, 2.0, 5.0, 2.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_scan(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 125.0);  // 100/(2/(5/2)) = 125
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.8);    // 2/(5/2) = 0.8
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 2.5);    // 5/2 = 2.5
+    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 2.0);    // 2
+}
+
+TEST_F(OperatorsTest, ScanSingleElement) {
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    Eigen::VectorXd v(1);
+    v << 99.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_scan(machine, func, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 1);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 99.0);
+}
+
+TEST_F(OperatorsTest, ScanFirstAxis) {
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    Eigen::MatrixXd m(3, 2);
+    m << 1.0, 2.0,
+         3.0, 4.0,
+         5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_scan_first(machine, func, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 3);
+    EXPECT_EQ(res_mat->cols(), 2);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 9.0);   // 1+(3+5)
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 1), 12.0);  // 2+(4+6)
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 8.0);   // 3+5
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 1), 10.0);  // 4+6
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 5.0);   // 5
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 1), 6.0);   // 6
+}
+
+TEST_F(OperatorsTest, ErrorScanNonFunction) {
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_scan(machine, vec, vec);
+    EXPECT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// ========================================================================
+// Composition Tests with Reduce/Scan
+// ========================================================================
+
+TEST_F(OperatorsTest, CompositionIotaTakeReduce) {
+    Value* n = machine->heap->allocate_scalar(10.0);
+    fn_iota(machine, n);
+
+    Value* iota_result = machine->ctrl.value;
+
+    Value* five = machine->heap->allocate_scalar(5.0);
+    fn_take(machine, five, iota_result);
+
+    Value* taken = machine->ctrl.value;
+
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    fn_reduce(machine, func, taken);
+
+    Value* sum = machine->ctrl.value;
+    ASSERT_TRUE(sum->is_scalar());
+    EXPECT_DOUBLE_EQ(sum->as_scalar(), 10.0);  // 0+1+2+3+4 = 10
+}
+
+TEST_F(OperatorsTest, CompositionMultiplyReduce) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    Value* func = machine->heap->allocate_primitive(&prim_times);
+    fn_reduce(machine, func, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res_mat = result->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 2);
+    EXPECT_EQ(res_mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 6.0);    // 1*2*3
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 120.0);  // 4*5*6
+}
+
+TEST_F(OperatorsTest, CompositionDropScan) {
+    Value* n = machine->heap->allocate_scalar(10.0);
+    fn_iota(machine, n);
+
+    Value* iota_result = machine->ctrl.value;
+
+    Value* three = machine->heap->allocate_scalar(3.0);
+    fn_drop(machine, three, iota_result);
+
+    Value* dropped = machine->ctrl.value;
+
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    fn_scan(machine, func, dropped);
+
+    Value* scanned = machine->ctrl.value;
+    ASSERT_TRUE(scanned->is_vector());
+    const Eigen::MatrixXd* res_mat = scanned->as_matrix();
+    EXPECT_EQ(res_mat->rows(), 7);
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 42.0);  // 3+(4+(5+(6+(7+(8+9)))))
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 39.0);  // 4+(5+(6+(7+(8+9))))
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 35.0);  // 5+(6+(7+(8+9)))
+    EXPECT_DOUBLE_EQ((*res_mat)(6, 0), 9.0);   // 9
+}
+
+TEST_F(OperatorsTest, CompositionNestedReduce) {
+    Eigen::MatrixXd m(3, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0,
+         7.0, 8.0, 9.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    fn_reduce(machine, func, mat);
+
+    Value* row_sums = machine->ctrl.value;
+
+    fn_reduce(machine, func, row_sums);
+
+    Value* total = machine->ctrl.value;
+    ASSERT_TRUE(total->is_scalar());
+    EXPECT_DOUBLE_EQ(total->as_scalar(), 45.0);  // 1+2+...+9 = 45
+}
+
+// ========================================================================
+// Additional Outer Product Tests (ISO-13751 compliance)
+// ========================================================================
+
+TEST_F(OperatorsTest, OuterProductTwoScalars) {
+    // 5 ∘.+ 3 → 8 (scalar result)
+    Value* lhs = machine->heap->allocate_scalar(5.0);
+    Value* rhs = machine->heap->allocate_scalar(3.0);
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+
+    op_outer_product(machine, lhs, fn, nullptr, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 8.0);
+}
+
+TEST_F(OperatorsTest, OuterProductMatrixVector) {
+    // 2×2 matrix ∘.+ vector[2] → 2×2×2 result
+    Eigen::MatrixXd lhs_mat(2, 2);
+    lhs_mat << 1, 2,
+               3, 4;
+    Value* lhs = machine->heap->allocate_matrix(lhs_mat);
+
+    Eigen::VectorXd rhs_vec(2);
+    rhs_vec << 10, 20;
+    Value* rhs = machine->heap->allocate_vector(rhs_vec);
+
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+
+    op_outer_product(machine, lhs, fn, nullptr, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_matrix());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 4);
+    EXPECT_EQ(result->cols(), 2);
+    // First row of matrix + first element of vector
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 11.0);  // 1+10
+    EXPECT_DOUBLE_EQ((*result)(0, 1), 21.0);  // 1+20
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 12.0);  // 2+10
+    EXPECT_DOUBLE_EQ((*result)(1, 1), 22.0);  // 2+20
+}
+
+TEST_F(OperatorsTest, OuterProductDifferentOperators) {
+    // Test with equality operator: 1 2 3 ∘.= 2 3
+    Eigen::VectorXd lhs_vec(3);
+    lhs_vec << 1, 2, 3;
+    Value* lhs = machine->heap->allocate_vector(lhs_vec);
+
+    Eigen::VectorXd rhs_vec(2);
+    rhs_vec << 2, 3;
+    Value* rhs = machine->heap->allocate_vector(rhs_vec);
+
+    Value* fn = machine->heap->allocate_primitive(&prim_equal);
+
+    op_outer_product(machine, lhs, fn, nullptr, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 2);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 0.0);  // 1=2 → 0
+    EXPECT_DOUBLE_EQ((*result)(0, 1), 0.0);  // 1=3 → 0
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 1.0);  // 2=2 → 1
+    EXPECT_DOUBLE_EQ((*result)(1, 1), 0.0);  // 2=3 → 0
+    EXPECT_DOUBLE_EQ((*result)(2, 0), 0.0);  // 3=2 → 0
+    EXPECT_DOUBLE_EQ((*result)(2, 1), 1.0);  // 3=3 → 1
+}
+
+// ========================================================================
+// Additional Inner Product Tests (ISO-13751 compliance)
+// ========================================================================
+
+TEST_F(OperatorsTest, InnerProductLargerMatrices) {
+    // 3×4 matrix +.× 4×2 matrix → 3×2 matrix
+    Eigen::MatrixXd lhs_mat(3, 4);
+    lhs_mat << 1, 2, 3, 4,
+               5, 6, 7, 8,
+               9, 10, 11, 12;
+    Value* lhs = machine->heap->allocate_matrix(lhs_mat);
+
+    Eigen::MatrixXd rhs_mat(4, 2);
+    rhs_mat << 1, 0,
+               0, 1,
+               1, 0,
+               0, 1;
+    Value* rhs = machine->heap->allocate_matrix(rhs_mat);
+
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_times);
+
+    op_inner_product(machine, lhs, f, g, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_matrix());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 2);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 4.0);   // 1*1 + 2*0 + 3*1 + 4*0 = 4
+    EXPECT_DOUBLE_EQ((*result)(0, 1), 6.0);   // 1*0 + 2*1 + 3*0 + 4*1 = 6
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 12.0);  // 5*1 + 6*0 + 7*1 + 8*0 = 12
+    EXPECT_DOUBLE_EQ((*result)(1, 1), 14.0);  // 5*0 + 6*1 + 7*0 + 8*1 = 14
+}
+
+TEST_F(OperatorsTest, InnerProductDifferentOperators) {
+    // Test max-min product: ⌈.⌊ (not implemented yet, so skip for now)
+    // Instead test with subtraction-division
+    Eigen::VectorXd lhs_vec(3);
+    lhs_vec << 10, 20, 30;
+    Value* lhs = machine->heap->allocate_vector(lhs_vec);
+
+    Eigen::VectorXd rhs_vec(3);
+    rhs_vec << 2, 4, 5;
+    Value* rhs = machine->heap->allocate_vector(rhs_vec);
+
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_divide);
+
+    op_inner_product(machine, lhs, f, g, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 16.0);  // 10/2 + 20/4 + 30/5 = 5+5+6 = 16
+}
+
+TEST_F(OperatorsTest, InnerProductRectangularMatrices) {
+    // 2×3 +.× 3×4 → 2×4
+    Eigen::MatrixXd lhs_mat(2, 3);
+    lhs_mat << 1, 2, 3,
+               4, 5, 6;
+    Value* lhs = machine->heap->allocate_matrix(lhs_mat);
+
+    Eigen::MatrixXd rhs_mat(3, 4);
+    rhs_mat << 1, 0, 0, 1,
+               0, 1, 0, 1,
+               0, 0, 1, 1;
+    Value* rhs = machine->heap->allocate_matrix(rhs_mat);
+
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_times);
+
+    op_inner_product(machine, lhs, f, g, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_matrix());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 4);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 1.0);  // 1*1 + 2*0 + 3*0
+    EXPECT_DOUBLE_EQ((*result)(0, 1), 2.0);  // 1*0 + 2*1 + 3*0
+    EXPECT_DOUBLE_EQ((*result)(0, 2), 3.0);  // 1*0 + 2*0 + 3*1
+    EXPECT_DOUBLE_EQ((*result)(0, 3), 6.0);  // 1*1 + 2*1 + 3*1
+}
+
+// ========================================================================
+// Additional Scan Tests (ISO-13751 compliance)
+// ========================================================================
+
+TEST_F(OperatorsTest, ScanEmptyVector) {
+    // Per spec: scan of empty returns empty
+    Eigen::VectorXd v(0);
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_scan(machine, plus_fn, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 0);
+}
+
+TEST_F(OperatorsTest, ScanSingleElementScalar) {
+    // Scan of single element returns that element
+    Value* scalar = machine->heap->allocate_scalar(42.0);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_scan(machine, plus_fn, scalar);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(OperatorsTest, ScanWithEqual) {
+    // Scan with = operator
+    // For vector [65, 66]: scan right-to-left gives [65=(66), 66]
+    // But = is only defined dyadically, so this doesn't work with scalars
+    // Let's use a different test case with 3 elements
+    Eigen::VectorXd v(3);
+    v << 1.0, 1.0, 1.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* equal_fn = machine->heap->allocate_primitive(&prim_equal);
+
+    fn_scan(machine, equal_fn, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    // Right-to-left: [1=(1=1), 1=1, 1] → [1=1, 1, 1] → [1, 1, 1]
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);
+}
+
+// ========================================================================
+// Additional Reduce Tests (ISO-13751 compliance)
+// ========================================================================
+
+TEST_F(OperatorsTest, ReduceScalar) {
+    // Reduction of scalar returns the scalar
+    Value* scalar = machine->heap->allocate_scalar(99.0);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, plus_fn, scalar);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
+}
+
+TEST_F(OperatorsTest, ReduceWithEqual) {
+    // Test with different operator: right-to-left: 5=(5=5) → 5=1 → 0
+    Eigen::VectorXd v(3);
+    v << 5.0, 5.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* equal_fn = machine->heap->allocate_primitive(&prim_equal);
+
+    fn_reduce(machine, equal_fn, vec);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5=(5=5) → 5=1 → 0
+}
+
+TEST_F(OperatorsTest, ReduceLargerMatrix) {
+    // Test 4×5 matrix reduction
+    Eigen::MatrixXd m(4, 5);
+    m << 1, 2, 3, 4, 5,
+         6, 7, 8, 9, 10,
+         11, 12, 13, 14, 15,
+         16, 17, 18, 19, 20;
+    Value* mat = machine->heap->allocate_matrix(m);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_reduce(machine, plus_fn, mat);
+
+    Value* result = machine->ctrl.value;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 15.0);   // 1+2+3+4+5
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 40.0);   // 6+7+8+9+10
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 65.0);   // 11+12+13+14+15
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 90.0);   // 16+17+18+19+20
+}
+
+// ========================================================================
+// Additional Duplicate/Commute Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, DuplicateWithDivide) {
+    // ÷⍨4 → 4÷4 = 1
+    Value* omega = machine->heap->allocate_scalar(4.0);
+    Value* fn = machine->heap->allocate_primitive(&prim_divide);
+
+    op_commute(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, CommuteWithDivide) {
+    // 3÷⍨12 → 12÷3 = 4
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Value* rhs = machine->heap->allocate_scalar(12.0);
+    Value* fn = machine->heap->allocate_primitive(&prim_divide);
+
+    op_commute_dyadic(machine, lhs, fn, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 4.0);
+}
+
+TEST_F(OperatorsTest, DuplicateMatrix) {
+    // Test duplicate with matrix subtraction
+    Eigen::MatrixXd mat(2, 2);
+    mat << 5, 6,
+           7, 8;
+    Value* omega = machine->heap->allocate_matrix(mat);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    op_commute(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_matrix());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    // Matrix - itself = zero matrix
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*result)(0, 1), 0.0);
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*result)(1, 1), 0.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

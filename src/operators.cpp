@@ -441,6 +441,292 @@ void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* rhs) {
 }
 
 // ========================================================================
+// Reduction and Scan Operators
+// ========================================================================
+
+// Identity Elements for Reduction (ISO-13751 Table 5)
+// When reducing an empty vector, return the identity element for the function
+double get_identity_element(PrimitiveFn* fn) {
+    // Match by function pointer
+    if (fn == &prim_plus) return 0.0;      // +/⍬ → 0
+    if (fn == &prim_minus) return 0.0;     // -/⍬ → 0
+    if (fn == &prim_times) return 1.0;     // ×/⍬ → 1
+    if (fn == &prim_divide) return 1.0;    // ÷/⍬ → 1
+    if (fn == &prim_star) return 1.0;      // */⍬ → 1
+
+    // For functions without identity, return NaN
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+// Reduce (/) - apply dyadic function between elements, right to left
+void fn_reduce(Machine* m, Value* func, Value* omega) {
+    if (!func->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a function"));
+        return;
+    }
+
+    PrimitiveFn* fn = func->data.primitive_fn;
+    if (!fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a dyadic function"));
+        return;
+    }
+
+    if (omega->is_scalar()) {
+        // Reducing a scalar is identity
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    if (omega->is_vector()) {
+        // Reduce vector to scalar
+        int len = mat->rows();
+        if (len == 0) {
+            // Empty vector: return identity element (ISO-13751 Table 5)
+            double identity = get_identity_element(fn);
+            if (std::isnan(identity)) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                return;
+            }
+            m->ctrl.set_value(m->heap->allocate_scalar(identity));
+            return;
+        }
+        if (len == 1) {
+            m->ctrl.set_value(m->heap->allocate_scalar((*mat)(0, 0)));
+            return;
+        }
+
+        // Right-to-left reduction (APL standard: first f (f/rest))
+        Value* acc = m->heap->allocate_scalar((*mat)(len - 1, 0));
+        for (int i = len - 2; i >= 0; --i) {
+            Value* elem = m->heap->allocate_scalar((*mat)(i, 0));
+            fn->dyadic(m, elem, acc);
+            // GC will clean up elem and old acc
+            acc = m->ctrl.value;
+        }
+        m->ctrl.set_value(acc);
+        return;
+    }
+
+    // For matrix, reduce along last axis (columns)
+    // Result is a vector with one element per row
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (cols == 0) {
+        // Empty dimension: return vector of identity elements
+        double identity = get_identity_element(fn);
+        if (std::isnan(identity)) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+            return;
+        }
+        Eigen::VectorXd result = Eigen::VectorXd::Constant(rows, identity);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
+    }
+
+    Eigen::VectorXd result(rows);
+
+    for (int r = 0; r < rows; ++r) {
+        // Reduce this row right-to-left
+        Value* acc = m->heap->allocate_scalar((*mat)(r, cols - 1));
+        for (int c = cols - 2; c >= 0; --c) {
+            Value* elem = m->heap->allocate_scalar((*mat)(r, c));
+            fn->dyadic(m, elem, acc);
+            // GC will clean up elem and old acc
+            acc = m->ctrl.value;
+        }
+        result(r) = acc->as_scalar();
+        // GC will clean up acc
+    }
+
+    m->ctrl.set_value(m->heap->allocate_vector(result));
+}
+
+// Reduce-first (⌿) - reduce along first axis (rows)
+void fn_reduce_first(Machine* m, Value* func, Value* omega) {
+    if (!func->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce-first requires a function"));
+        return;
+    }
+
+    PrimitiveFn* fn = func->data.primitive_fn;
+    if (!fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce-first requires a dyadic function"));
+        return;
+    }
+
+    if (omega->is_scalar()) {
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
+    }
+
+    if (omega->is_vector()) {
+        // For vector, same as regular reduce
+        fn_reduce(m, func, omega);
+        return;
+    }
+
+    // For matrix, reduce along first axis (rows)
+    // Result is a row vector
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (rows == 0) {
+        // Empty dimension: return row vector of identity elements
+        double identity = get_identity_element(fn);
+        if (std::isnan(identity)) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+            return;
+        }
+        Eigen::VectorXd result = Eigen::VectorXd::Constant(cols, identity);
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
+    }
+
+    Eigen::VectorXd result(cols);
+
+    for (int c = 0; c < cols; ++c) {
+        // Reduce this column bottom-to-top (right-to-left in first axis)
+        Value* acc = m->heap->allocate_scalar((*mat)(rows - 1, c));
+        for (int r = rows - 2; r >= 0; --r) {
+            Value* elem = m->heap->allocate_scalar((*mat)(r, c));
+            fn->dyadic(m, elem, acc);
+            // GC will clean up elem and old acc
+            acc = m->ctrl.value;
+        }
+        result(c) = acc->as_scalar();
+        // GC will clean up acc
+    }
+
+    m->ctrl.set_value(m->heap->allocate_vector(result));
+}
+
+// Scan (\) - apply dyadic function cumulatively, right to left
+void fn_scan(Machine* m, Value* func, Value* omega) {
+    if (!func->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
+        return;
+    }
+
+    PrimitiveFn* fn = func->data.primitive_fn;
+    if (!fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a dyadic function"));
+        return;
+    }
+
+    if (omega->is_scalar()) {
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    if (omega->is_vector()) {
+        int len = mat->rows();
+        if (len == 0) {
+            m->ctrl.set_value(m->heap->allocate_vector(Eigen::VectorXd(0)));
+            return;
+        }
+
+        Eigen::VectorXd result(len);
+
+        // Right-to-left scan (APL standard)
+        result(len - 1) = (*mat)(len - 1, 0);
+        Value* acc = m->heap->allocate_scalar((*mat)(len - 1, 0));
+
+        for (int i = len - 2; i >= 0; --i) {
+            Value* elem = m->heap->allocate_scalar((*mat)(i, 0));
+            fn->dyadic(m, elem, acc);
+            Value* new_acc = m->ctrl.value;
+            result(i) = new_acc->as_scalar();
+            // GC will clean up elem and old acc
+            acc = new_acc;
+        }
+        // GC will clean up acc
+
+        m->ctrl.set_value(m->heap->allocate_vector(result));
+        return;
+    }
+
+    // For matrix, scan along last axis (columns)
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    Eigen::MatrixXd result(rows, cols);
+
+    for (int r = 0; r < rows; ++r) {
+        // Scan this row right-to-left
+        result(r, cols - 1) = (*mat)(r, cols - 1);
+        Value* acc = m->heap->allocate_scalar((*mat)(r, cols - 1));
+
+        for (int c = cols - 2; c >= 0; --c) {
+            Value* elem = m->heap->allocate_scalar((*mat)(r, c));
+            fn->dyadic(m, elem, acc);
+            Value* new_acc = m->ctrl.value;
+            result(r, c) = new_acc->as_scalar();
+            // GC will clean up elem and old acc
+            acc = new_acc;
+        }
+        // GC will clean up acc
+    }
+
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
+}
+
+// Scan-first (⍀) - scan along first axis (rows)
+void fn_scan_first(Machine* m, Value* func, Value* omega) {
+    if (!func->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan-first requires a function"));
+        return;
+    }
+
+    PrimitiveFn* fn = func->data.primitive_fn;
+    if (!fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan-first requires a dyadic function"));
+        return;
+    }
+
+    if (omega->is_scalar()) {
+        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        return;
+    }
+
+    if (omega->is_vector()) {
+        // For vector, same as regular scan
+        fn_scan(m, func, omega);
+        return;
+    }
+
+    // For matrix, scan along first axis (rows)
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    Eigen::MatrixXd result(rows, cols);
+
+    for (int c = 0; c < cols; ++c) {
+        // Scan this column bottom-to-top (right-to-left in first axis)
+        result(rows - 1, c) = (*mat)(rows - 1, c);
+        Value* acc = m->heap->allocate_scalar((*mat)(rows - 1, c));
+
+        for (int r = rows - 2; r >= 0; --r) {
+            Value* elem = m->heap->allocate_scalar((*mat)(r, c));
+            fn->dyadic(m, elem, acc);
+            Value* new_acc = m->ctrl.value;
+            result(r, c) = new_acc->as_scalar();
+            // GC will clean up elem and old acc
+            acc = new_acc;
+        }
+        // GC will clean up acc
+    }
+
+    m->ctrl.set_value(m->heap->allocate_matrix(result));
+}
+
+// ========================================================================
 // PrimitiveOp struct definitions
 // ========================================================================
 
