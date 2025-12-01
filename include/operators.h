@@ -17,7 +17,10 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs);  
 
 // Monadic operators
 void op_each(Machine* m, Value* f, Value* omega);       // ¨ each (apply to each element)
-void op_commute(Machine* m, Value* f, Value* omega);    // ⍨ commute/duplicate
+void op_commute(Machine* m, Value* f, Value* omega);    // ⍨ duplicate (monadic)
+
+// Helper for commute (dyadic form - not exposed as PrimitiveOp yet)
+void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* rhs);  // ⍨ commute (dyadic)
 
 // PrimitiveOp structs that combine monadic and dyadic forms
 extern PrimitiveOp op_dot;         // . operator (inner product dyadic)

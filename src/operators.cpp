@@ -376,12 +376,68 @@ void op_each(Machine* m, Value* f, Value* omega) {
 }
 
 // ========================================================================
-// Commute/Duplicate Operator: f⍨B (monadic) or A f⍨B (dyadic)
+// Duplicate Operator: f⍨B (monadic)
 // ========================================================================
-// Placeholder - to be implemented
+// Duplicate: applies f to omega twice (as both arguments)
+// f⍨B → B f B
 
 void op_commute(Machine* m, Value* f, Value* omega) {
-    m->push_kont(m->heap->allocate<ThrowErrorK>("NOT IMPLEMENTED: commute/duplicate operator"));
+    // This is the monadic form: duplicate
+    // Validate that f is a function
+    if (!f || !f->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: duplicate operator requires a function operand"));
+        return;
+    }
+
+    // For now, only support primitive functions
+    if (!f->is_primitive()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: duplicate operator currently only supports primitive functions"));
+        return;
+    }
+
+    PrimitiveFn* fn = f->data.primitive_fn;
+
+    // f must have dyadic form for duplicate
+    if (!fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: duplicate operator requires function with dyadic form"));
+        return;
+    }
+
+    // Apply: omega f omega
+    fn->dyadic(m, omega, omega);
+}
+
+// ========================================================================
+// Commute Operator: A f⍨B (dyadic)
+// ========================================================================
+// Commute: swaps left and right arguments
+// A f⍨B → B f A
+// Note: This would be called differently since it's dyadic, but we'd need
+// parser support for dyadic operator invocation. For now, this is a placeholder.
+
+void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* rhs) {
+    // Validate that f is a function
+    if (!f || !f->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: commute operator requires a function operand"));
+        return;
+    }
+
+    // For now, only support primitive functions
+    if (!f->is_primitive()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: commute operator currently only supports primitive functions"));
+        return;
+    }
+
+    PrimitiveFn* fn = f->data.primitive_fn;
+
+    // f must have dyadic form
+    if (!fn->dyadic) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: commute operator requires function with dyadic form"));
+        return;
+    }
+
+    // Apply: rhs f lhs (swapped)
+    fn->dyadic(m, rhs, lhs);
 }
 
 // ========================================================================

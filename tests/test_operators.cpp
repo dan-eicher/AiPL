@@ -345,6 +345,76 @@ TEST_F(OperatorsTest, EachMatrix) {
     EXPECT_DOUBLE_EQ((*result)(1, 1), 0.2);    // 1/5
 }
 
+// ========================================================================
+// Duplicate/Commute Operator Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, DuplicateScalar) {
+    // +⍨3 → 3+3 = 6
+    Value* omega = machine->heap->allocate_scalar(3.0);
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+
+    op_commute(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 6.0);
+}
+
+TEST_F(OperatorsTest, DuplicateVector) {
+    // ×⍨vector → vector × vector (element-wise)
+    Eigen::VectorXd vec(3);
+    vec << 2, 3, 4;
+    Value* omega = machine->heap->allocate_vector(vec);
+    Value* fn = machine->heap->allocate_primitive(&prim_times);
+
+    op_commute(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_vector());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 4.0);   // 2*2
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 9.0);   // 3*3
+    EXPECT_DOUBLE_EQ((*result)(2, 0), 16.0);  // 4*4
+}
+
+TEST_F(OperatorsTest, CommuteScalars) {
+    // 3-⍨4 → 4-3 = 1 (commute swaps arguments)
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Value* rhs = machine->heap->allocate_scalar(4.0);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    op_commute_dyadic(machine, lhs, fn, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 1.0);  // 4-3, not 3-4
+}
+
+TEST_F(OperatorsTest, CommuteVectors) {
+    // vector1 - ⍨ vector2 → vector2 - vector1
+    Eigen::VectorXd vec1(3);
+    vec1 << 10, 20, 30;
+    Value* lhs = machine->heap->allocate_vector(vec1);
+
+    Eigen::VectorXd vec2(3);
+    vec2 << 1, 2, 3;
+    Value* rhs = machine->heap->allocate_vector(vec2);
+
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    op_commute_dyadic(machine, lhs, fn, rhs);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_vector());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_DOUBLE_EQ((*result)(0, 0), -9.0);   // 1-10
+    EXPECT_DOUBLE_EQ((*result)(1, 0), -18.0);  // 2-20
+    EXPECT_DOUBLE_EQ((*result)(2, 0), -27.0);  // 3-30
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
