@@ -423,6 +423,387 @@ TEST_F(ContinuationTest, GprimeFinalizationAtTopLevel) {
     }
 }
 
+// ============================================================================
+// DispatchFunctionK Tests - Function dispatch continuation
+// ============================================================================
+
+TEST_F(ContinuationTest, DispatchFunctionKMonadicPrimitive) {
+    // Test monadic dispatch with pure monadic function (iota)
+    Value* fn = machine->heap->allocate_primitive(&prim_iota);
+    Value* arg = machine->heap->allocate_scalar(5.0);
+
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->rows(), 5);
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKDyadicPrimitive) {
+    // Test dyadic dispatch with both arguments
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* left = machine->heap->allocate_scalar(3.0);
+    Value* right = machine->heap->allocate_scalar(4.0);
+
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, left, right);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKGPrimeFinalization) {
+    // Test G_PRIME finalization at top level: overloaded function with one arg
+    // creates G_PRIME curry which is then finalized by execute() to monadic result
+    // This is correct G2 semantics: at top level, g' resolves to g1(x)
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+    Value* arg = machine->heap->allocate_scalar(5.0);
+
+    // Without force_monadic, creates G_PRIME curry, but execute() finalizes it
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg, false);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    // G_PRIME is finalized at top level to monadic result: -5
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKGPrimeDyadicApplication) {
+    // Test G_PRIME curry applied with second argument -> dyadic
+    // Create curry of minus with 5, then apply 3 -> 3 - 5 = -2
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+    Value* five = machine->heap->allocate_scalar(5.0);
+
+    // Create the G_PRIME curry directly (simulating what DispatchFunctionK does)
+    Value* curried = machine->heap->allocate_curried_fn(fn, five, Value::CurryType::G_PRIME);
+
+    // Now dispatch the curried function with a new argument
+    Value* three = machine->heap->allocate_scalar(3.0);
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(curried, nullptr, three);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    // G_PRIME with new arg uses dyadic: 3 - 5 = -2
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -2.0);
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKForceMonadic) {
+    // Test force_monadic=true: bypasses G_PRIME, applies monadic immediately
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+    Value* arg = machine->heap->allocate_scalar(5.0);
+
+    // With force_monadic=true, should apply monadic form directly
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg, true);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);  // Negated value
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKForceMonadicVector) {
+    // Test force_monadic with vector argument
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* arg = machine->heap->allocate_vector(vec);
+
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg, true);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKDyadicCurry) {
+    // Test DYADIC_CURRY: pure dyadic function with one arg creates curry
+    // Equal (=) is truly dyadic-only (no monadic form)
+    Value* fn = machine->heap->allocate_primitive(&prim_equal);
+    Value* arg = machine->heap->allocate_scalar(2.0);
+
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CURRIED_FN);
+    EXPECT_EQ(result->data.curried_fn->curry_type, Value::CurryType::DYADIC_CURRY);
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKCurriedFnUnwrap) {
+    // Test applying a DYADIC_CURRY: captured arg is right, new arg is left
+    // Create "÷2" (divide by 2), then apply to 10
+    Value* fn = machine->heap->allocate_primitive(&prim_divide);
+    Value* two = machine->heap->allocate_scalar(2.0);
+
+    // First create the curry
+    Value* curried = machine->heap->allocate_curried_fn(fn, two, Value::CurryType::DYADIC_CURRY);
+
+    // Now apply curry to 10
+    Value* ten = machine->heap->allocate_scalar(10.0);
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(curried, nullptr, ten);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    // 10 ÷ 2 = 5
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(ContinuationTest, DispatchFunctionKNullFnUsesCtrl) {
+    // Test that nullptr fn_val reads from ctrl.value
+    Value* fn = machine->heap->allocate_primitive(&prim_iota);
+    Value* arg = machine->heap->allocate_scalar(3.0);
+
+    // Set ctrl.value to the function
+    machine->ctrl.set_value(fn);
+
+    // Create dispatch with nullptr fn - should read from ctrl
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(nullptr, nullptr, arg);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->rows(), 3);
+}
+
+// ============================================================================
+// CellIterK Tests - General-purpose cell iterator for operators
+// ============================================================================
+
+TEST_F(ContinuationTest, CellIterKCollectModeVector) {
+    // Test CellIterK in COLLECT mode: apply - to each element of vector
+    // -⍤0 (1 2 3 4) should give (-1 -2 -3 -4)
+    Eigen::VectorXd vec(4);
+    vec << 1, 2, 3, 4;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    // Create CellIterK: apply fn to 0-cells (scalars) of rhs
+    // 4 cells, COLLECT mode, original shape 4x1, is_vector=true
+    CellIterK* iter = heap->allocate<CellIterK>(
+        fn, nullptr, rhs, 0, 0, 4,
+        CellIterMode::COLLECT, 4, 1, true);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), -4.0);
+}
+
+TEST_F(ContinuationTest, CellIterKCollectModeMatrix) {
+    // Test CellIterK with matrix: apply - to each 0-cell
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3,
+           4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    // 6 cells (2*3), COLLECT mode
+    CellIterK* iter = heap->allocate<CellIterK>(
+        fn, nullptr, rhs, 0, 0, 6,
+        CellIterMode::COLLECT, 2, 3, false);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), -6.0);
+}
+
+TEST_F(ContinuationTest, CellIterKFoldRightMode) {
+    // Test FOLD_RIGHT: +/ 1 2 3 4 = 10 (right-to-left: 1+(2+(3+4)))
+    Eigen::VectorXd vec(4);
+    vec << 1, 2, 3, 4;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+
+    CellIterK* iter = heap->allocate<CellIterK>(
+        fn, nullptr, rhs, 0, 0, 4,
+        CellIterMode::FOLD_RIGHT, 4, 1, true);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(ContinuationTest, CellIterKFoldRightSubtract) {
+    // Test FOLD_RIGHT with non-commutative op: -/ 10 3 2 1
+    // Right-to-left: 10-(3-(2-1)) = 10-(3-1) = 10-2 = 8
+    Eigen::VectorXd vec(4);
+    vec << 10, 3, 2, 1;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    CellIterK* iter = heap->allocate<CellIterK>(
+        fn, nullptr, rhs, 0, 0, 4,
+        CellIterMode::FOLD_RIGHT, 4, 1, true);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
+TEST_F(ContinuationTest, CellIterKScanRightMode) {
+    // Test SCAN_RIGHT: right-to-left cumulative scan
+    // For +\ 1 2 3 4 from right: 4, 4+3=7, 7+2=9, 9+1=10
+    // Reversed for output order: 10, 9, 7, 4
+    Eigen::VectorXd vec(4);
+    vec << 1, 2, 3, 4;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+
+    CellIterK* iter = heap->allocate<CellIterK>(
+        fn, nullptr, rhs, 0, 0, 4,
+        CellIterMode::SCAN_RIGHT, 4, 1, true);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    // Right scan gives running totals from right, then reversed
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);  // 1+2+3+4
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 9.0);   // 2+3+4
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 7.0);   // 3+4
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);   // 4
+}
+
+TEST_F(ContinuationTest, CellIterKDyadicCollect) {
+    // Test dyadic COLLECT: 1 2 3 + 10 20 30 element-wise
+    Eigen::VectorXd vec1(3);
+    vec1 << 1, 2, 3;
+    Value* lhs = machine->heap->allocate_vector(vec1);
+
+    Eigen::VectorXd vec2(3);
+    vec2 << 10, 20, 30;
+    Value* rhs = machine->heap->allocate_vector(vec2);
+
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+
+    CellIterK* iter = heap->allocate<CellIterK>(
+        fn, lhs, rhs, 0, 0, 3,
+        CellIterMode::COLLECT, 3, 1, true);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 22.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 33.0);
+}
+
+TEST_F(ContinuationTest, CellIterKSingleCell) {
+    // Test with single cell - should just apply function once
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    CellIterK* iter = heap->allocate<CellIterK>(
+        fn, nullptr, rhs, 0, 0, 1,
+        CellIterMode::COLLECT, 1, 1, false);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    // Single scalar result
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(ContinuationTest, CellIterKWithDerivedOperator) {
+    // Test CellIterK with a DERIVED_OPERATOR (reduce)
+    // Apply +/ to each row of a 3x2 matrix
+    // Should return vector [3, 7, 11] (row sums)
+    Eigen::MatrixXd mat(3, 2);
+    mat << 1, 2,
+           3, 4,
+           5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+
+    // Create DERIVED_OPERATOR(/, +)
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* reduce_fn = machine->heap->allocate_derived_operator(&op_reduce, plus_fn);
+
+    // CellIterK with rank 1 (rows) on 3x2 matrix = 3 cells
+    CellIterK* iter = heap->allocate<CellIterK>(
+        reduce_fn, nullptr, rhs, 1, 1, 3,
+        CellIterMode::COLLECT, 3, 2, false);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 7.0);   // 3+4
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 11.0);  // 5+6
+}
+
+TEST_F(ContinuationTest, CellIterKReduceRowsSimple) {
+    // Apply +/ to a single vector (should reduce to scalar)
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* rhs = machine->heap->allocate_vector(vec);
+
+    // Create DERIVED_OPERATOR(/, +)
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* reduce_fn = machine->heap->allocate_derived_operator(&op_reduce, plus_fn);
+
+    // Single cell (the whole vector)
+    CellIterK* iter = heap->allocate<CellIterK>(
+        reduce_fn, nullptr, rhs, 1, 1, 1,
+        CellIterMode::COLLECT, 3, 1, true);
+
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);  // 1+2+3
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

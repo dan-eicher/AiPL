@@ -3,6 +3,7 @@
 #include "continuation.h"
 #include "machine.h"
 #include "completion.h"
+#include <algorithm>
 
 namespace apl {
 
@@ -907,8 +908,11 @@ void EvalApplyFunctionDyadicK::mark(APLHeap* heap) {
 // This is where the actual currying transformation happens:
 // g' = λx. λy. if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
 void DispatchFunctionK::invoke(Machine* machine) {
-    // Function has been evaluated - it's in ctrl.value
-    fn_val = machine->ctrl.value;
+    // If fn_val wasn't provided in constructor, get it from ctrl.value
+    // (for cases where function was just evaluated)
+    if (fn_val == nullptr) {
+        fn_val = machine->ctrl.value;
+    }
 
     // Handle CLOSURE values (dfns)
     if (fn_val->tag == ValueType::CLOSURE) {
@@ -945,11 +949,10 @@ void DispatchFunctionK::invoke(Machine* machine) {
             right_val = first_arg;  // Captured argument is RIGHT (omega)
             // Fall through to check fn_val type below
         } else if (curried_data->curry_type == Value::CurryType::OPERATOR_CURRY) {
-            // Operator curry: inner_fn is DERIVED_OPERATOR, first_arg is second function operand
-            // This is for inner product: (+.× applied to array)
-            // inner_fn = DERIVED_OPERATOR(op=., first_operand=+)
-            // first_arg = × (second function operand)
-            // right_val = array argument
+            // Operator curry: inner_fn is DERIVED_OPERATOR, first_arg is second operand
+            // For inner product: first_arg is second function operand (×)
+            // For rank: first_arg is rank specification (a value)
+            // inner_fn = DERIVED_OPERATOR(op, first_operand)
             if (inner_fn->tag != ValueType::DERIVED_OPERATOR) {
                 machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: OPERATOR_CURRY expected DERIVED_OPERATOR"));
                 return;
@@ -957,14 +960,14 @@ void DispatchFunctionK::invoke(Machine* machine) {
             Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
             PrimitiveOp* op = derived_data->op;
             Value* first_operand = derived_data->first_operand;
-            Value* second_operand = first_arg;  // The second function operand
+            Value* second_operand = first_arg;  // Second operand (function for ., value for ⍤)
 
             if (left_val && right_val) {
-                // Have both array arguments - call dyadic operator with both function operands
+                // Have both array arguments - call dyadic operator
                 op->dyadic(machine, left_val, first_operand, second_operand, right_val);
             } else if (right_val) {
-                // Only have one array argument - curry to wait for second
-                // Create a new CURRIED_FN that stores the complete operator state
+                // Only have one array argument - curry to wait for second (like g' for functions)
+                // Monadic vs dyadic decision happens at top level via g' finalization
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
                 machine->ctrl.value = curried;
             } else {
@@ -1046,8 +1049,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // Have left array but arrays weren't extracted - use original values
                 op->dyadic(machine, left_val, first_operand, second_func_operand, right_val);
             } else if (op->dyadic && !left_val) {
-                // Only have right argument (first array) - curry to wait for second array
-                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                // Only have right argument - this is the second operator operand
+                // Use OPERATOR_CURRY to capture it properly (not DYADIC_CURRY which is for array args)
+                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
                 machine->ctrl.value = curried;
             } else if (op->monadic && !left_val) {
                 // Pure monadic operator - apply immediately
@@ -1123,8 +1127,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
         // Inner product "." takes two function operands, uses OPERATOR_CURRY to store second function
         // Outer product "∘." takes one function operand, uses DYADIC_CURRY to store array argument
         if (op->dyadic && !op->monadic && !left_val && right_val) {
-            if (strcmp(op->name, ".") == 0) {
+            if (strcmp(op->name, ".") == 0 || strcmp(op->name, "⍤") == 0) {
                 // Inner product: first_arg stores the second function operand (for "+." applied to "×")
+                // Rank operator: first_arg stores the rank specification (for "-⍤" applied to "2")
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
                 machine->ctrl.value = curried;
             } else {
@@ -1150,10 +1155,14 @@ void DispatchFunctionK::invoke(Machine* machine) {
     if (left_val == nullptr) {
         // Monadic case: only right argument
 
-        if (prim_fn->monadic && prim_fn->dyadic) {
+        if (prim_fn->monadic && prim_fn->dyadic && !force_monadic) {
             // Overloaded function: use g' transformation (complex currying)
+            // Unless force_monadic is set, in which case apply monadic form directly
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
             machine->ctrl.value = curried;
+        } else if (prim_fn->monadic && force_monadic) {
+            // Force immediate monadic evaluation (used by operators like each, rank)
+            prim_fn->monadic(machine, right_val);
         } else if (prim_fn->dyadic) {
             // Pure dyadic function: simple currying (right arg captured, waiting for left)
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
@@ -1714,6 +1723,268 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
 
 void ApplyDerivedOperatorK::mark(APLHeap* heap) {
     // op_name is an interned string, not GC-managed
+    (void)heap;
+}
+
+// ============================================================================
+// CellIterK - General-purpose cell iterator
+// ============================================================================
+
+// Helper: get the rank of a value (0=scalar, 1=vector, 2=matrix)
+static int get_value_rank(Value* v) {
+    if (v->is_scalar()) return 0;
+    if (v->is_vector()) return 1;
+    return 2;
+}
+
+// Helper function for cell counting
+static int count_cells_for_rank(Value* arr, int k) {
+    if (!arr) return 0;
+    int arr_rank = get_value_rank(arr);
+    if (k >= arr_rank) return 1;
+
+    if (arr->is_scalar()) return 1;
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+
+    if (arr->is_vector()) {
+        return (k == 0) ? mat->rows() : 1;
+    }
+
+    // Matrix
+    if (k == 0) {
+        return mat->rows() * mat->cols();
+    } else if (k == 1) {
+        return mat->rows();
+    }
+    return 1;
+}
+
+// Helper: extract a k-cell from an array
+static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
+    if (!arr) return nullptr;
+
+    int arr_rank = get_value_rank(arr);
+    if (k >= arr_rank) {
+        // Full rank: return whole array
+        return arr;
+    }
+
+    if (arr->is_scalar()) {
+        return arr;
+    }
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+
+    if (arr->is_vector()) {
+        if (k == 0) {
+            // 0-cell of vector: individual scalar
+            if (cell_index >= mat->rows()) return nullptr;
+            return m->heap->allocate_scalar((*mat)(cell_index, 0));
+        }
+        return arr;
+    }
+
+    // Matrix
+    if (k == 0) {
+        // 0-cell: scalar at linear index (row-major)
+        int rows = mat->rows();
+        int cols = mat->cols();
+        int r = cell_index / cols;
+        int c = cell_index % cols;
+        if (r >= rows) return nullptr;
+        return m->heap->allocate_scalar((*mat)(r, c));
+    } else if (k == 1) {
+        // 1-cell: row vector
+        if (cell_index >= mat->rows()) return nullptr;
+        Eigen::VectorXd row = mat->row(cell_index).transpose();
+        return m->heap->allocate_vector(row);
+    }
+
+    return arr;
+}
+
+void CellIterK::invoke(Machine* machine) {
+    if (mode == CellIterMode::COLLECT) {
+        // Forward iteration: process cell at current_cell
+        if (current_cell >= total_cells) {
+            // Done - assemble results
+            if (results.empty()) {
+                // No results - return empty (shouldn't happen)
+                machine->ctrl.set_value(machine->heap->allocate_scalar(0));
+                return;
+            }
+
+            // Check if all results are scalars
+            bool all_scalars = true;
+            for (Value* v : results) {
+                if (!v->is_scalar()) {
+                    all_scalars = false;
+                    break;
+                }
+            }
+
+            if (all_scalars) {
+                // Reassemble into array based on number of results
+                // When function changes cell shape (like reduce), results.size() determines output shape
+                if (results.size() == 1) {
+                    // Single scalar result - return as scalar
+                    machine->ctrl.set_value(results[0]);
+                } else if (results.size() == (size_t)(orig_rows * orig_cols) && !orig_is_vector && orig_cols > 1) {
+                    // Same number of results as input elements AND input was matrix - preserve matrix shape
+                    // This handles rank-0 operations that preserve element count
+                    Eigen::MatrixXd mat(orig_rows, orig_cols);
+                    for (size_t i = 0; i < results.size(); i++) {
+                        mat(i / orig_cols, i % orig_cols) = results[i]->as_scalar();
+                    }
+                    machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+                } else {
+                    // Otherwise (including reduction), return vector of results
+                    Eigen::VectorXd vec(results.size());
+                    for (size_t i = 0; i < results.size(); i++) {
+                        vec(i) = results[i]->as_scalar();
+                    }
+                    machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+                }
+            } else {
+                // Results are vectors - try to assemble into matrix
+                bool all_same_len = true;
+                int vec_len = -1;
+                for (Value* v : results) {
+                    if (v->is_vector()) {
+                        int len = v->rows();
+                        if (vec_len < 0) vec_len = len;
+                        else if (len != vec_len) all_same_len = false;
+                    } else {
+                        all_same_len = false;
+                    }
+                }
+
+                if (all_same_len && vec_len > 0) {
+                    Eigen::MatrixXd mat(results.size(), vec_len);
+                    for (size_t i = 0; i < results.size(); i++) {
+                        const Eigen::MatrixXd* v = results[i]->as_matrix();
+                        mat.row(i) = v->col(0).transpose();
+                    }
+                    machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+                } else {
+                    // Mixed results - return last (TODO: nested arrays)
+                    machine->ctrl.set_value(results.back());
+                }
+            }
+            return;
+        }
+
+        // Extract cells
+        Value* left_cell = extract_cell(machine, lhs, left_rank,
+            (lhs && count_cells_for_rank(lhs, left_rank) == 1) ? 0 : current_cell);
+        Value* right_cell = extract_cell(machine, rhs, right_rank, current_cell);
+
+        if (!right_cell) {
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: cell extraction failed"));
+            return;
+        }
+
+        // Push collector continuation, then dispatch function
+        // Use force_monadic=true when applying monadically to get immediate result
+        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, left_cell, right_cell, left_cell == nullptr));
+
+    } else if (mode == CellIterMode::FOLD_RIGHT) {
+        // Backward iteration for right-fold
+        if (current_cell < 0) {
+            // Done - accumulator has final result
+            machine->ctrl.set_value(accumulator);
+            return;
+        }
+
+        if (!accumulator) {
+            // First iteration - set accumulator to last cell
+            accumulator = extract_cell(machine, rhs, right_rank, current_cell);
+            current_cell--;
+            // Continue to next iteration
+            machine->push_kont(this);
+            return;
+        }
+
+        // Apply: element f accumulator
+        Value* element = extract_cell(machine, rhs, right_rank, current_cell);
+
+        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, element, accumulator));
+
+    } else if (mode == CellIterMode::SCAN_RIGHT) {
+        // Backward iteration for scan
+        if (current_cell < 0) {
+            // Done - reverse results and assemble
+            std::reverse(results.begin(), results.end());
+
+            if (orig_is_vector || orig_cols == 1) {
+                Eigen::VectorXd vec(results.size());
+                for (size_t i = 0; i < results.size(); i++) {
+                    vec(i) = results[i]->as_scalar();
+                }
+                machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+            } else {
+                // For matrix scan, each row is scanned independently
+                // This simplified version assumes vector input
+                Eigen::VectorXd vec(results.size());
+                for (size_t i = 0; i < results.size(); i++) {
+                    vec(i) = results[i]->as_scalar();
+                }
+                machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+            }
+            return;
+        }
+
+        if (!accumulator) {
+            // First iteration - last element is its own scan result
+            accumulator = extract_cell(machine, rhs, right_rank, current_cell);
+            results.push_back(accumulator);
+            current_cell--;
+            machine->push_kont(this);
+            return;
+        }
+
+        // Apply: element f accumulator
+        Value* element = extract_cell(machine, rhs, right_rank, current_cell);
+
+        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, element, accumulator));
+    }
+}
+
+void CellIterK::mark(APLHeap* heap) {
+    if (fn) heap->mark_value(fn);
+    if (lhs) heap->mark_value(lhs);
+    if (rhs) heap->mark_value(rhs);
+    if (accumulator) heap->mark_value(accumulator);
+    for (Value* v : results) {
+        if (v) heap->mark_value(v);
+    }
+}
+
+void CellCollectK::invoke(Machine* machine) {
+    Value* result = machine->ctrl.value;
+
+    if (iter->mode == CellIterMode::COLLECT) {
+        iter->results.push_back(result);
+        iter->current_cell++;
+    } else if (iter->mode == CellIterMode::FOLD_RIGHT) {
+        iter->accumulator = result;
+        iter->current_cell--;
+    } else if (iter->mode == CellIterMode::SCAN_RIGHT) {
+        iter->accumulator = result;
+        iter->results.push_back(result);
+        iter->current_cell--;
+    }
+
+    // Continue iteration
+    machine->push_kont(iter);
+}
+
+void CellCollectK::mark(APLHeap* heap) {
+    // iter is on the continuation stack, will be marked separately
     (void)heap;
 }
 

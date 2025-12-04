@@ -4,6 +4,7 @@
 #include "machine.h"
 #include "heap.h"
 #include "primitives.h"
+#include "continuation.h"
 #include <Eigen/Dense>
 
 namespace apl {
@@ -480,6 +481,12 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
         return;
     }
 
+    // Reduce requires a primitive function with dyadic form
+    if (func->tag != ValueType::PRIMITIVE) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires primitive function"));
+        return;
+    }
+
     PrimitiveFn* fn = func->data.primitive_fn;
     if (!fn->dyadic) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a dyadic function"));
@@ -803,6 +810,217 @@ PrimitiveOp op_scan_first = {
     "⍀",
     fn_scan_first,        // Monadic: f⍀B
     nullptr               // No dyadic form
+};
+
+// ========================================================================
+// Rank Operator: f⍤k (ISO 13751 §9)
+// ========================================================================
+// Applies function f to k-cells of the argument(s)
+// k-cells for 2D arrays:
+//   0-cells = scalars
+//   1-cells = rows (vectors)
+//   2-cells = whole matrix
+//
+// Rank spec can be:
+//   scalar k: applies to both monadic and dyadic
+//   2-vector [l r]: left rank l, right rank r (dyadic only)
+//   3-vector [m l r]: monadic rank m, left rank l, right rank r
+
+// Helper: get the rank of a value (0=scalar, 1=vector, 2=matrix)
+static int get_array_rank(Value* v) {
+    if (v->is_scalar()) return 0;
+    if (v->is_vector()) return 1;
+    return 2;  // Matrix
+}
+
+// Helper: extract rank values from rank specification
+static bool parse_rank_spec(Value* rank_spec, int array_rank,
+                            int* monadic_rank, int* left_rank, int* right_rank) {
+    if (rank_spec->is_scalar()) {
+        int k = static_cast<int>(rank_spec->as_scalar());
+        // Negative rank means "array rank minus k"
+        if (k < 0) k = std::max(0, array_rank + k);
+        k = std::min(k, array_rank);  // Clamp to actual rank
+        *monadic_rank = *left_rank = *right_rank = k;
+        return true;
+    }
+
+    if (rank_spec->is_vector()) {
+        const Eigen::MatrixXd* mat = rank_spec->as_matrix();
+        int len = mat->rows();
+
+        if (len == 2) {
+            // [left_rank right_rank]
+            *left_rank = static_cast<int>((*mat)(0, 0));
+            *right_rank = static_cast<int>((*mat)(1, 0));
+            *monadic_rank = *right_rank;  // Use right rank for monadic
+        } else if (len == 3) {
+            // [monadic_rank left_rank right_rank]
+            *monadic_rank = static_cast<int>((*mat)(0, 0));
+            *left_rank = static_cast<int>((*mat)(1, 0));
+            *right_rank = static_cast<int>((*mat)(2, 0));
+        } else {
+            return false;  // Invalid rank spec
+        }
+        return true;
+    }
+
+    return false;  // Invalid rank spec type
+}
+
+// Helper: extract a k-cell from an array
+// For 2D: 0-cell = scalar at (row, col), 1-cell = row vector, 2-cell = whole matrix
+static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
+    if (k >= get_array_rank(arr)) {
+        // Full rank: return whole array
+        return arr;
+    }
+
+    if (arr->is_scalar()) {
+        return arr;
+    }
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+
+    if (arr->is_vector()) {
+        if (k == 0) {
+            // 0-cell of vector: individual scalar
+            return m->heap->allocate_scalar((*mat)(cell_index, 0));
+        }
+        // k >= 1: whole vector
+        return arr;
+    }
+
+    // Matrix
+    if (k == 0) {
+        // 0-cell: scalar at linear index
+        int rows = mat->rows();
+        int cols = mat->cols();
+        int r = cell_index / cols;
+        int c = cell_index % cols;
+        if (r >= rows) return nullptr;  // Out of bounds
+        return m->heap->allocate_scalar((*mat)(r, c));
+    } else if (k == 1) {
+        // 1-cell: row vector
+        if (cell_index >= mat->rows()) return nullptr;
+        Eigen::VectorXd row = mat->row(cell_index).transpose();
+        return m->heap->allocate_vector(row);
+    }
+
+    // k >= 2: whole matrix
+    return arr;
+}
+
+// Helper: count number of k-cells in an array
+static int count_cells(Value* arr, int k) {
+    if (k >= get_array_rank(arr)) return 1;
+
+    if (arr->is_scalar()) return 1;
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+
+    if (arr->is_vector()) {
+        return (k == 0) ? mat->rows() : 1;
+    }
+
+    // Matrix
+    if (k == 0) {
+        return mat->rows() * mat->cols();
+    } else if (k == 1) {
+        return mat->rows();
+    }
+    return 1;
+}
+
+// Monadic rank operator - shouldn't be called directly
+void op_rank_monadic(Machine* m, Value* f, Value* omega) {
+    (void)f; (void)omega;
+    m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: rank operator requires rank specification"));
+}
+
+// Dyadic rank: A f⍤k B (or monadic f⍤k B where lhs is nullptr)
+void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs) {
+    // Validate function operand
+    if (!f || !f->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: rank operator requires function operand"));
+        return;
+    }
+
+    // Validate rank specification
+    if (!rank_spec) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: rank operator requires rank specification"));
+        return;
+    }
+
+    // Parse rank specification
+    int rhs_rank = get_array_rank(rhs);
+    int lhs_rank = lhs ? get_array_rank(lhs) : 0;
+    int monadic_r, left_r, right_r;
+
+    if (!parse_rank_spec(rank_spec, std::max(lhs_rank, rhs_rank), &monadic_r, &left_r, &right_r)) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid rank specification"));
+        return;
+    }
+
+    bool is_dyadic = (lhs != nullptr);
+
+    if (!is_dyadic) {
+        // Monadic: f⍤k B
+        int k = std::min(monadic_r, rhs_rank);
+        if (k < 0) k = std::max(0, rhs_rank + k);
+
+        int num_cells = count_cells(rhs, k);
+
+        if (num_cells == 1) {
+            // Single cell: just apply f to whole array
+            // Use force_monadic=true to ensure immediate application (not G_PRIME curry)
+            m->push_kont(m->heap->allocate<DispatchFunctionK>(f, nullptr, rhs, true));
+            return;
+        }
+
+        // Multiple cells: use CellIterK continuation to iterate
+        int rows = rhs->is_scalar() ? 1 : rhs->rows();
+        int cols = rhs->is_scalar() ? 1 : rhs->cols();
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, nullptr, rhs, k, k, num_cells,
+            CellIterMode::COLLECT, rows, cols, rhs->is_vector()));
+    } else {
+        // Dyadic: A f⍤k B
+        int lk = std::min(left_r, lhs_rank);
+        int rk = std::min(right_r, rhs_rank);
+        if (lk < 0) lk = std::max(0, lhs_rank + lk);
+        if (rk < 0) rk = std::max(0, rhs_rank + rk);
+
+        int left_cells = count_cells(lhs, lk);
+        int right_cells = count_cells(rhs, rk);
+
+        // Cell counts must match (or one must be 1 for scalar extension)
+        if (left_cells != right_cells && left_cells != 1 && right_cells != 1) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: rank operator cell count mismatch"));
+            return;
+        }
+
+        int num_cells = std::max(left_cells, right_cells);
+
+        if (num_cells == 1) {
+            // Single cell each: just apply f dyadically
+            m->push_kont(m->heap->allocate<DispatchFunctionK>(f, lhs, rhs));
+            return;
+        }
+
+        // Multiple cells: use CellIterK continuation
+        int rows = rhs->is_scalar() ? 1 : rhs->rows();
+        int cols = rhs->is_scalar() ? 1 : rhs->cols();
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, lhs, rhs, lk, rk, num_cells,
+            CellIterMode::COLLECT, rows, cols, rhs->is_vector()));
+    }
+}
+
+PrimitiveOp op_rank_op = {
+    "⍤",
+    nullptr,              // No monadic form - rank requires rank specification
+    op_rank               // Dyadic: A f⍤k B
 };
 
 } // namespace apl

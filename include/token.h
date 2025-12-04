@@ -39,6 +39,7 @@ enum TokenType {
     TOK_EACH,           // ¨
     TOK_COMPOSE,        // ∘
     TOK_COMMUTE,        // ⍨
+    TOK_RANK,           // ⍤
     TOK_DOT,            // . (inner product)
     TOK_OUTER_PRODUCT,  // ∘.
 

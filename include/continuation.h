@@ -582,9 +582,10 @@ public:
     Value* fn_val;              // The function value
     Value* left_val;            // Left argument (nullptr for monadic)
     Value* right_val;           // Right argument
+    bool force_monadic;         // When true, apply monadic form immediately (skip G_PRIME currying)
 
-    DispatchFunctionK(Value* fn, Value* left, Value* right)
-        : fn_val(fn), left_val(left), right_val(right) {}
+    DispatchFunctionK(Value* fn, Value* left, Value* right, bool force_mon = false)
+        : fn_val(fn), left_val(left), right_val(right), force_monadic(force_mon) {}
 
     ~DispatchFunctionK() override {}
 
@@ -888,6 +889,73 @@ public:
     ApplyDerivedOperatorK(const char* operator_name) : op_name(operator_name) {}
 
     ~ApplyDerivedOperatorK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// CellIterK - General-purpose cell iterator for operators
+// ============================================================================
+// Handles iteration patterns for: each, reduce, scan, rank
+// Dispatches function via DispatchFunctionK (works with any function type)
+
+enum class CellIterMode {
+    COLLECT,      // Gather all results (each, rank)
+    FOLD_RIGHT,   // Accumulate right-to-left, single result (reduce)
+    SCAN_RIGHT    // Accumulate right-to-left, keep all intermediates (scan)
+};
+
+class CellIterK : public Continuation {
+public:
+    Value* fn;              // Function to apply
+    Value* lhs;             // Left array (nullptr for monadic)
+    Value* rhs;             // Right array
+    int left_rank;          // Cell rank for left arg (0=scalars, 1=rows, etc.)
+    int right_rank;         // Cell rank for right arg
+    int total_cells;        // Total cells to process
+    int current_cell;       // Current cell index (counts from end for fold/scan)
+    CellIterMode mode;      // How to combine results
+    std::vector<Value*> results;  // Collected results
+    Value* accumulator;     // For FOLD_RIGHT and SCAN_RIGHT modes
+
+    // Original array shape info for reassembly
+    int orig_rows;
+    int orig_cols;
+    bool orig_is_vector;
+
+    CellIterK(Value* f, Value* l, Value* r, int lk, int rk, int total,
+              CellIterMode m, int rows, int cols, bool is_vec)
+        : fn(f), lhs(l), rhs(r), left_rank(lk), right_rank(rk),
+          total_cells(total), current_cell(0), mode(m), accumulator(nullptr),
+          orig_rows(rows), orig_cols(cols), orig_is_vector(is_vec) {
+        if (mode == CellIterMode::COLLECT || mode == CellIterMode::SCAN_RIGHT) {
+            results.reserve(total);
+        }
+        // For fold/scan modes, start from the last cell
+        if (mode == CellIterMode::FOLD_RIGHT || mode == CellIterMode::SCAN_RIGHT) {
+            current_cell = total - 1;
+        }
+    }
+
+    ~CellIterK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// CellCollectK - Collects result and continues iteration
+class CellCollectK : public Continuation {
+public:
+    CellIterK* iter;  // Parent iterator (owned by continuation stack)
+
+    explicit CellCollectK(CellIterK* i) : iter(i) {}
+
+    ~CellCollectK() override {}
 
     void mark(APLHeap* heap) override;
 

@@ -55,6 +55,7 @@ void init_global_environment(Machine* machine) {
     env->define("⌿", heap->allocate_operator(&op_reduce_first));
     env->define("\\", heap->allocate_operator(&op_scan));
     env->define("⍀", heap->allocate_operator(&op_scan_first));
+    env->define("⍤", heap->allocate_operator(&op_rank_op));
 }
 
 } // namespace apl

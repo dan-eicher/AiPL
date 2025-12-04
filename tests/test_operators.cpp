@@ -1222,6 +1222,46 @@ TEST_F(OperatorsTest, ScanISOExample) {
     EXPECT_DOUBLE_EQ((*result)(2, 0), 3.0);  // +/1 1 1
 }
 
+// ========================================================================
+// Rank Operator Error Tests (synchronous validation)
+// Full rank operator tests are in test_grammar.cpp
+// ========================================================================
+
+TEST_F(OperatorsTest, RankRequiresFunction) {
+    // Test error when first operand is not a function
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* omega = machine->heap->allocate_vector(vec);
+    Value* not_fn = machine->heap->allocate_scalar(5.0);
+    Value* rank_spec = machine->heap->allocate_scalar(0.0);
+
+    machine->kont_stack.clear();
+    op_rank(machine, nullptr, not_fn, rank_spec, omega);
+
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+TEST_F(OperatorsTest, RankCellCountMismatch) {
+    // Test LENGTH ERROR when cell counts don't match
+    Eigen::VectorXd vec3(3);
+    vec3 << 1, 2, 3;
+    Value* lhs = machine->heap->allocate_vector(vec3);
+
+    Eigen::VectorXd vec4(4);
+    vec4 << 10, 20, 30, 40;
+    Value* rhs = machine->heap->allocate_vector(vec4);
+
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* rank_spec = machine->heap->allocate_scalar(0.0);
+
+    machine->kont_stack.clear();
+    op_rank(machine, lhs, fn, rank_spec, rhs);
+
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

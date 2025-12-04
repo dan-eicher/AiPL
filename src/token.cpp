@@ -29,6 +29,7 @@ const char* token_type_name(TokenType type) {
         case TOK_EACH: return "¨";
         case TOK_COMPOSE: return "∘";
         case TOK_COMMUTE: return "⍨";
+        case TOK_RANK: return "⍤";
         case TOK_DOT: return ".";
         case TOK_OUTER_PRODUCT: return "∘.";
         case TOK_EQUAL: return "=";

@@ -419,7 +419,8 @@ TEST_F(ValueTest, DerivedOperatorCreation) {
 
     EXPECT_TRUE(derived->is_operator());
     EXPECT_TRUE(derived->is_derived_operator());
-    EXPECT_FALSE(derived->is_function());
+    // DERIVED_OPERATOR is also a function (can be applied to arguments, like +/)
+    EXPECT_TRUE(derived->is_function());
     EXPECT_FALSE(derived->is_array());
     EXPECT_EQ(derived->tag, ValueType::DERIVED_OPERATOR);
 

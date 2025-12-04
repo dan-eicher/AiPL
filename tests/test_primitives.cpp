@@ -419,6 +419,9 @@ TEST_F(PrimitivesTest, ShapeVector) {
 }
 
 TEST_F(PrimitivesTest, ReshapeVector) {
+    // 2 3⍴1 2 3 4 5 6 should produce row-major matrix:
+    // 1 2 3
+    // 4 5 6
     Eigen::VectorXd v(6);
     v << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0;
     Value* vec = machine->heap->allocate_vector(v);
@@ -429,20 +432,93 @@ TEST_F(PrimitivesTest, ReshapeVector) {
 
     fn_reshape(machine, shape, vec);
 
-
     Value* result = machine->ctrl.value;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_EQ(mat->rows(), 2);
     EXPECT_EQ(mat->cols(), 3);
+    // Row-major order: fills row 0 first, then row 1
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 6.0);
+}
 
+TEST_F(PrimitivesTest, ReshapeRowMajorOrder) {
+    // Explicit test for row-major ordering: 3 2⍴⍳6 (0-based)
+    // Should produce:
+    // 0 1
+    // 2 3
+    // 4 5
+    Eigen::VectorXd v(6);
+    v << 0.0, 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    Eigen::VectorXd new_shape(2);
+    new_shape << 3.0, 2.0;
+    Value* shape = machine->heap->allocate_vector(new_shape);
+
+    fn_reshape(machine, shape, vec);
+
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 2);
+    // Verify row-major fill order
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0) << "Row 0, Col 0";
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0) << "Row 0, Col 1";
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0) << "Row 1, Col 0";
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 3.0) << "Row 1, Col 1";
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 4.0) << "Row 2, Col 0";
+    EXPECT_DOUBLE_EQ((*mat)(2, 1), 5.0) << "Row 2, Col 1";
+}
+
+TEST_F(PrimitivesTest, ReshapeMatrixToMatrix) {
+    // Reshape matrix to different shape - both read and write should be row-major
+    // Input 2×3:
+    // 1 2 3
+    // 4 5 6
+    // Row-major read: 1 2 3 4 5 6
+    // Row-major write to 3×2:
+    // 1 2
+    // 3 4
+    // 5 6
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    Eigen::VectorXd new_shape(2);
+    new_shape << 3.0, 2.0;
+    Value* shape = machine->heap->allocate_vector(new_shape);
+
+    fn_reshape(machine, shape, mat);
+
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* res = result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_EQ(res->cols(), 2);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 1), 6.0);
 }
 
 TEST_F(PrimitivesTest, Ravel) {
+    // Ravel flattens in row-major order (APL standard)
+    // Matrix:
+    // 1 2 3
+    // 4 5 6
+    // Should become: 1 2 3 4 5 6
     Eigen::MatrixXd m(2, 3);
     m << 1.0, 2.0, 3.0,
          4.0, 5.0, 6.0;
@@ -450,17 +526,18 @@ TEST_F(PrimitivesTest, Ravel) {
 
     fn_ravel(machine, mat);
 
-
     Value* result = machine->ctrl.value;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 6);
-    // Column-major order
+    // Row-major order
     EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
-    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
-
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(5, 0), 6.0);
 }
 
 TEST_F(PrimitivesTest, Catenate) {
@@ -1090,7 +1167,9 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
     v << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    // Reshape to 2×3 (column-major fill: [[1,3,5],[2,4,6]])
+    // Reshape to 2×3 (row-major fill):
+    // 1 2 3
+    // 4 5 6
     Eigen::VectorXd shape(2);
     shape << 2.0, 3.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
@@ -1098,7 +1177,10 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
 
     Value* mat = machine->ctrl.value;
 
-    // Transpose to 3×2: [[1,2],[3,4],[5,6]]
+    // Transpose to 3×2:
+    // 1 4
+    // 2 5
+    // 3 6
     fn_transpose(machine, mat);
 
     Value* transposed = machine->ctrl.value;
@@ -1108,10 +1190,11 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
     EXPECT_EQ(res_mat->rows(), 3);
     EXPECT_EQ(res_mat->cols(), 2);
     EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*res_mat)(0, 1), 2.0);
-    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 3.0);
-    EXPECT_DOUBLE_EQ((*res_mat)(1, 1), 4.0);
-
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 1), 6.0);
 }
 
 TEST_F(PrimitivesTest, CompositionRavelCatenate) {
@@ -1189,5 +1272,145 @@ TEST_F(PrimitivesTest, CompositionShapeReshape) {
     EXPECT_EQ(res_mat->rows(), 3);
     EXPECT_EQ(res_mat->cols(), 4);
 
+}
+
+// ============================================================================
+// Vector/Matrix Status Preservation Tests
+// Primitives should preserve vector status: vector in -> vector out
+// ============================================================================
+
+TEST_F(PrimitivesTest, NegatePreservesVector) {
+    Eigen::VectorXd v(3);
+    v << 1, 2, 3;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_negate(machine, vec);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Negate should preserve vector status";
+    EXPECT_EQ(result->rows(), 3);
+}
+
+TEST_F(PrimitivesTest, NegatePreservesMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1, 2, 3, 4, 5, 6;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_negate(machine, mat);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_matrix()) << "Negate should preserve matrix status";
+    ASSERT_FALSE(result->is_vector()) << "Negate should not convert matrix to vector";
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+}
+
+TEST_F(PrimitivesTest, SignumPreservesVector) {
+    Eigen::VectorXd v(3);
+    v << -1, 0, 2;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_signum(machine, vec);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Signum should preserve vector status";
+}
+
+TEST_F(PrimitivesTest, ReciprocalPreservesVector) {
+    Eigen::VectorXd v(3);
+    v << 1, 2, 4;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reciprocal(machine, vec);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Reciprocal should preserve vector status";
+}
+
+TEST_F(PrimitivesTest, ExponentialPreservesVector) {
+    Eigen::VectorXd v(3);
+    v << 0, 1, 2;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_exponential(machine, vec);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Exponential should preserve vector status";
+}
+
+TEST_F(PrimitivesTest, AddScalarVectorPreservesVector) {
+    Value* scalar = machine->heap->allocate_scalar(10.0);
+    Eigen::VectorXd v(3);
+    v << 1, 2, 3;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_add(machine, scalar, vec);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Scalar + Vector should produce vector";
+}
+
+TEST_F(PrimitivesTest, AddVectorScalarPreservesVector) {
+    Eigen::VectorXd v(3);
+    v << 1, 2, 3;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* scalar = machine->heap->allocate_scalar(10.0);
+
+    fn_add(machine, vec, scalar);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Vector + Scalar should produce vector";
+}
+
+TEST_F(PrimitivesTest, AddVectorVectorPreservesVector) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 1, 2, 3;
+    v2 << 10, 20, 30;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_add(machine, vec1, vec2);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Vector + Vector should produce vector";
+}
+
+TEST_F(PrimitivesTest, SubtractPreservesVector) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 10, 20, 30;
+    v2 << 1, 2, 3;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_subtract(machine, vec1, vec2);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Vector - Vector should produce vector";
+}
+
+TEST_F(PrimitivesTest, MultiplyPreservesVector) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 1, 2, 3;
+    v2 << 10, 20, 30;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_multiply(machine, vec1, vec2);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Vector * Vector should produce vector";
+}
+
+TEST_F(PrimitivesTest, DividePreservesVector) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 10, 20, 30;
+    v2 << 2, 4, 5;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_divide(machine, vec1, vec2);
+    Value* result = machine->ctrl.value;
+
+    ASSERT_TRUE(result->is_vector()) << "Vector ÷ Vector should produce vector";
 }
 

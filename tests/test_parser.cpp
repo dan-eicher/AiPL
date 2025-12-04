@@ -762,6 +762,9 @@ TEST_F(ParserTest, ShapeMonadic) {
 
 TEST_F(ParserTest, ReshapeDyadic) {
     // Parse "2 3 ⍴ ⍳ 6" - reshape iota(6) into 2x3 matrix
+    // APL uses row-major order (ISO 13751 §8.2.1):
+    //   0 1 2
+    //   3 4 5
     Continuation* k = parser->parse("2 3 ⍴ ⍳ 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -773,11 +776,13 @@ TEST_F(ParserTest, ReshapeDyadic) {
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_EQ(mat->rows(), 2);
     EXPECT_EQ(mat->cols(), 3);
+    // Row 0: 0, 1, 2
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 1), 3.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 2), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 2.0);
+    // Row 1: 3, 4, 5
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 4.0);
     EXPECT_DOUBLE_EQ((*mat)(1, 2), 5.0);
 }
 

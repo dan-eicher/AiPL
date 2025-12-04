@@ -38,5 +38,10 @@ extern PrimitiveOp op_reduce;        // / operator (reduce)
 extern PrimitiveOp op_reduce_first;  // ⌿ operator (reduce first axis)
 extern PrimitiveOp op_scan;          // \ operator (scan)
 extern PrimitiveOp op_scan_first;    // ⍀ operator (scan first axis)
+extern PrimitiveOp op_rank_op;       // ⍤ operator (rank)
+
+// Rank operator functions
+void op_rank_monadic(Machine* m, Value* f, Value* omega);
+void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs);
 
 } // namespace apl

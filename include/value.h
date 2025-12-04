@@ -118,7 +118,7 @@ public:
     bool is_array() const { return tag == ValueType::VECTOR || tag == ValueType::MATRIX; }
     bool is_primitive() const { return tag == ValueType::PRIMITIVE; }
     bool is_closure() const { return tag == ValueType::CLOSURE; }
-    bool is_function() const { return tag == ValueType::PRIMITIVE || tag == ValueType::CLOSURE || tag == ValueType::CURRIED_FN; }
+    bool is_function() const { return tag == ValueType::PRIMITIVE || tag == ValueType::CLOSURE || tag == ValueType::CURRIED_FN || tag == ValueType::DERIVED_OPERATOR; }
     bool is_operator() const { return tag == ValueType::OPERATOR || tag == ValueType::DERIVED_OPERATOR; }
     bool is_derived_operator() const { return tag == ValueType::DERIVED_OPERATOR; }
     bool is_curried_fn() const { return tag == ValueType::CURRIED_FN; }

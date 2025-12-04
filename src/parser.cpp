@@ -89,12 +89,12 @@ Continuation* Parser::parse(const std::string& input) {
 // Strands are handled at lexer level for numeric literals only (ISO 13751)
 Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
     // G2 Rule 3: derived-operator fb → fb-term
-    // If left is a derived operator from a DYADIC operator (like "."),
-    // it should grab just fb (the function), not a full fbn-term.
+    // If left is a derived operator from a DYADIC operator (like "." or "⍤"),
+    // it should grab just fb (the function/value), not a full fbn-term.
     // This is distinct from Rule 1 (fb-term fbn-term) for general juxtaposition.
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(left);
-    if (derived && strcmp(derived->op_name, ".") == 0) {
-        // Dyadic operator's derived form: parse right with high BP to get just the function
+    if (derived && (strcmp(derived->op_name, ".") == 0 || strcmp(derived->op_name, "⍤") == 0)) {
+        // Dyadic operator's derived form: parse right with high BP to get just the operand
         Continuation* right = parse_expression(BP_POSTFIX_OP);
         if (!right) {
             return nullptr;
@@ -441,6 +441,15 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         return derived;
     }
 
+    // Handle rank operator (⍤)
+    // f⍤k applies function f to k-cells of the argument(s)
+    // Dyadic operator: first operand is function, second is rank specification
+    if (token.type == TOK_RANK) {
+        const char* interned_name = machine_->string_pool.intern("⍤");
+        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+        return derived;
+    }
+
     // If we reach here, it's an unexpected token in infix position
     // In G2 grammar, all valid infix tokens should be handled above
     error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
@@ -751,6 +760,7 @@ int Parser::get_binding_power(const Token& token) {
 
         // Infix dyadic operators (different binding powers)
         case TOK_DOT:
+        case TOK_RANK:
             return BP_INNER_PRODUCT;  // High BP: grab function operands before juxtaposition
         case TOK_OUTER_PRODUCT:
             return BP_OUTER_PRODUCT;  // Low BP: don't steal array arguments

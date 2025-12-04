@@ -413,6 +413,111 @@ TEST_F(GrammarTest, LexicalStrandVsJuxtaposition) {
     EXPECT_DOUBLE_EQ((*m2)(2,0), -3.0);
 }
 
+// ============================================================================
+// Rank Operator Tests (ISO 13751 §9)
+// ============================================================================
+
+TEST_F(GrammarTest, RankMonadicFullRankSimple) {
+    // -⍤2 on a simple 2x3 matrix (full rank = apply to whole matrix)
+    Value* result = eval("-⍤2 (2 3⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+}
+
+TEST_F(GrammarTest, RankMonadicFullRank) {
+    // -⍤2 on matrix → applies - to whole matrix (rank 2 = full)
+    Value* result = eval("-⍤2 (2 3⍴⍳6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);   // -0
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -1.0);  // -1
+    EXPECT_DOUBLE_EQ((*m)(1, 2), -5.0);  // -5
+}
+
+TEST_F(GrammarTest, RankMonadicRank0Vector) {
+    // -⍤0 vector → applies - to each scalar (0-cells)
+    Value* result = eval("-⍤0 (1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), -4.0);
+}
+
+TEST_F(GrammarTest, RankMonadicRank1Matrix) {
+    // -⍤1 on matrix → applies - to each row (1-cells)
+    Value* result = eval("-⍤1 (3 2⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_EQ(m->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 1), -6.0);
+}
+
+TEST_F(GrammarTest, RankDyadicFullRank) {
+    // A +⍤2 B → applies + to whole arrays
+    Value* result = eval("1 2 3 +⍤2 (10 20 30)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 22.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 33.0);
+}
+
+TEST_F(GrammarTest, RankDyadicRank0) {
+    // A +⍤0 B → element-wise (same as regular +)
+    Value* result = eval("1 2 3 +⍤0 (10 20 30)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 22.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 33.0);
+}
+
+TEST_F(GrammarTest, RankScalarArg) {
+    // -⍤0 on scalar → just negate it
+    Value* result = eval("-⍤0 (42)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -42.0);
+}
+
+TEST_F(GrammarTest, RankWithReductionSimple) {
+    // Verify +/ works on a simple vector
+    Value* result = eval("+/ (1 2)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(GrammarTest, RankWithReduction) {
+    // +/⍤1 on matrix → sum each row
+    // Matrix is 3×2, sum each row gives vector of 3 sums
+    Value* result = eval("+/⍤1 (3 2⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 7.0);   // 3+4
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 11.0);  // 5+6
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

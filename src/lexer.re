@@ -67,6 +67,7 @@ Lexer::Lexer(const char* input)
     each = "¨";          // U+00A8
     compose = "∘";       // U+2218
     commute = "⍨";       // U+2368
+    rank = "⍤";          // U+2364
     assign = "←";        // U+2190
     goto_sym = "→";      // U+2192
     not_equal = "≠";     // U+2260
@@ -231,6 +232,7 @@ Token Lexer::next_token() {
         each { column_++; return Token(TOK_EACH, token_line, token_column); }
         compose { column_++; return Token(TOK_COMPOSE, token_line, token_column); }
         commute { column_++; return Token(TOK_COMMUTE, token_line, token_column); }
+        rank { column_++; return Token(TOK_RANK, token_line, token_column); }
         assign { column_++; return Token(TOK_ASSIGN, token_line, token_column); }
         goto_sym { column_++; return Token(TOK_GOTO, token_line, token_column); }
         not_equal { column_++; return Token(TOK_NOT_EQUAL, token_line, token_column); }

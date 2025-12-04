@@ -392,7 +392,12 @@ void fn_negate(Machine* m, Value* omega) {
     }
 
     Eigen::MatrixXd result = -omega->as_matrix()->array();
-    m->ctrl.set_value(m->heap->allocate_matrix(result));
+    // Preserve vector/matrix distinction
+    if (omega->is_vector()) {
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+    }
 }
 
 // Signum/Sign (×)
@@ -415,7 +420,12 @@ void fn_signum(Machine* m, Value* omega) {
         }
     }
 
-    m->ctrl.set_value(m->heap->allocate_matrix(result));
+    // Preserve vector/matrix distinction
+    if (omega->is_vector()) {
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+    }
 }
 
 // Reciprocal (÷)
@@ -437,7 +447,12 @@ void fn_reciprocal(Machine* m, Value* omega) {
     }
 
     Eigen::MatrixXd result = 1.0 / mat->array();
-    m->ctrl.set_value(m->heap->allocate_matrix(result));
+    // Preserve vector/matrix distinction
+    if (omega->is_vector()) {
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+    }
 }
 
 // Exponential (*)
@@ -448,7 +463,12 @@ void fn_exponential(Machine* m, Value* omega) {
     }
 
     Eigen::MatrixXd result = omega->as_matrix()->array().exp();
-    m->ctrl.set_value(m->heap->allocate_matrix(result));
+    // Preserve vector/matrix distinction
+    if (omega->is_vector()) {
+        m->ctrl.set_value(m->heap->allocate_vector(result.col(0)));
+    } else {
+        m->ctrl.set_value(m->heap->allocate_matrix(result));
+    }
 }
 
 // ============================================================================
@@ -545,15 +565,20 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
 
     int target_size = target_rows * target_cols;
 
-    // Get source data
+    // Get source data (row-major order per APL)
     Eigen::VectorXd source;
     if (rhs->is_scalar()) {
         source.resize(1);
         source(0) = rhs->as_scalar();
     } else {
         const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
-        // Flatten to vector (column-major order)
-        source = Eigen::Map<const Eigen::VectorXd>(rhs_mat->data(), rhs_mat->size());
+        // Flatten to vector in row-major order
+        int size = rhs_mat->size();
+        int cols = rhs_mat->cols();
+        source.resize(size);
+        for (int i = 0; i < size; ++i) {
+            source(i) = (*rhs_mat)(i / cols, i % cols);
+        }
     }
 
     // Validate: target size must match source size (no cycling/truncating for now)
@@ -562,10 +587,10 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Build result by cycling through source data
+    // Build result by cycling through source data (row-major order per APL)
     Eigen::MatrixXd result(target_rows, target_cols);
     for (int i = 0; i < target_size; ++i) {
-        result(i % target_rows, i / target_rows) = source(i % source.size());
+        result(i / target_cols, i % target_cols) = source(i % source.size());
     }
 
     if (target_cols == 1) {
@@ -585,8 +610,14 @@ void fn_ravel(Machine* m, Value* omega) {
     }
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
-    // Flatten in column-major order
-    Eigen::VectorXd result = Eigen::Map<const Eigen::VectorXd>(mat->data(), mat->size());
+    // Flatten in row-major order (APL standard)
+    int size = mat->size();
+    Eigen::VectorXd result(size);
+    int rows = mat->rows();
+    int cols = mat->cols();
+    for (int i = 0; i < size; ++i) {
+        result(i) = (*mat)(i / cols, i % cols);
+    }
     m->ctrl.set_value(m->heap->allocate_vector(result));
 }
 
