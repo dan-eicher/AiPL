@@ -16,6 +16,7 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
+        init_global_environment(machine);
     }
 
     void TearDown() override {
@@ -385,7 +386,7 @@ TEST_F(OperatorsTest, CommuteScalars) {
     Value* rhs = machine->heap->allocate_scalar(4.0);
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
 
-    op_commute_dyadic(machine, lhs, fn, rhs);
+    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
 
     ASSERT_NE(machine->ctrl.value, nullptr);
     EXPECT_TRUE(machine->ctrl.value->is_scalar());
@@ -404,7 +405,7 @@ TEST_F(OperatorsTest, CommuteVectors) {
 
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
 
-    op_commute_dyadic(machine, lhs, fn, rhs);
+    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
 
     ASSERT_NE(machine->ctrl.value, nullptr);
     EXPECT_TRUE(machine->ctrl.value->is_vector());
@@ -644,11 +645,11 @@ TEST_F(OperatorsTest, ScanVector) {
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res = result->as_matrix();
     EXPECT_EQ(res->rows(), 4);
-    // Right-to-left cumulative: [10, 9, 7, 4]
-    EXPECT_DOUBLE_EQ((*res)(0, 0), 10.0);  // 1+(2+(3+4)) = 10
-    EXPECT_DOUBLE_EQ((*res)(1, 0), 9.0);   // 2+(3+4) = 9
-    EXPECT_DOUBLE_EQ((*res)(2, 0), 7.0);   // 3+4 = 7
-    EXPECT_DOUBLE_EQ((*res)(3, 0), 4.0);   // 4
+    // Left-to-right cumulative (ISO-13751): Item I is f/B[⍳I]
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);   // +/1 = 1
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 3.0);   // +/1 2 = 3
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 6.0);   // +/1 2 3 = 6
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 10.0);  // +/1 2 3 4 = 10
 }
 
 TEST_F(OperatorsTest, ScanMatrix) {
@@ -665,14 +666,15 @@ TEST_F(OperatorsTest, ScanMatrix) {
     const Eigen::MatrixXd* res = result->as_matrix();
     EXPECT_EQ(res->rows(), 2);
     EXPECT_EQ(res->cols(), 3);
-    // Row 0: [6, 5, 3] = [1+2+3, 2+3, 3]
-    // Row 1: [15, 11, 6] = [4+5+6, 5+6, 6]
-    EXPECT_DOUBLE_EQ((*res)(0, 0), 6.0);
-    EXPECT_DOUBLE_EQ((*res)(0, 1), 5.0);
-    EXPECT_DOUBLE_EQ((*res)(0, 2), 3.0);
-    EXPECT_DOUBLE_EQ((*res)(1, 0), 15.0);
-    EXPECT_DOUBLE_EQ((*res)(1, 1), 11.0);
-    EXPECT_DOUBLE_EQ((*res)(1, 2), 6.0);
+    // Left-to-right scan along last axis (ISO-13751)
+    // Row 0: [1, 3, 6] = [1, 1+2, 1+2+3]
+    // Row 1: [4, 9, 15] = [4, 4+5, 4+5+6]
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 2), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 9.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 2), 15.0);
 }
 
 TEST_F(OperatorsTest, ScanMultiply) {
@@ -687,10 +689,11 @@ TEST_F(OperatorsTest, ScanMultiply) {
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
     EXPECT_EQ(res_mat->rows(), 4);
-    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 24.0);  // 1*(2*(3*4)) = 24
-    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 24.0);  // 2*(3*4) = 24
-    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 12.0);  // 3*4 = 12
-    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 4.0);   // 4
+    // Left-to-right scan (ISO-13751): Item I is ×/1 2 ... I
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 1.0);   // ×/1 = 1
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 2.0);   // ×/1 2 = 2
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 6.0);   // ×/1 2 3 = 6
+    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 24.0);  // ×/1 2 3 4 = 24
 }
 
 TEST_F(OperatorsTest, ScanSubtract) {
@@ -704,11 +707,12 @@ TEST_F(OperatorsTest, ScanSubtract) {
     Value* result = machine->ctrl.value;
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 10.0);  // 10-0 = 10
-    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);   // 1-1 = 0
-    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 1.0);   // 1-0 = 1
-    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 0.0);   // 1-1 = 0
-    EXPECT_DOUBLE_EQ((*res_mat)(4, 0), 1.0);   // 1
+    // ISO-13751: Item I is -/B[⍳I] where reduce is RIGHT-TO-LEFT
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 10.0);  // -/10 = 10
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 9.0);   // -/10 1 = 10-1 = 9
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 10.0);  // -/10 1 1 = 10-(1-1) = 10
+    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 9.0);   // -/10 1 1 1 = 10-(1-(1-1)) = 10-1 = 9
+    EXPECT_DOUBLE_EQ((*res_mat)(4, 0), 10.0);  // -/10 1 1 1 1 = 10-(1-(1-(1-1))) = 10-0 = 10
 }
 
 TEST_F(OperatorsTest, ScanDivide) {
@@ -722,10 +726,10 @@ TEST_F(OperatorsTest, ScanDivide) {
     Value* result = machine->ctrl.value;
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 125.0);  // 100/(2/(5/2)) = 125
-    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.8);    // 2/(5/2) = 0.8
-    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 2.5);    // 5/2 = 2.5
-    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 2.0);    // 2
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 100.0);  // ÷/100
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 50.0);   // ÷/100 2 = 100÷2
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 250.0);  // ÷/100 2 5 = 100÷(2÷5)
+    EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 125.0);  // ÷/100 2 5 2 = 100÷(2÷(5÷2))
 }
 
 TEST_F(OperatorsTest, ScanSingleElement) {
@@ -835,10 +839,10 @@ TEST_F(OperatorsTest, CompositionDropScan) {
     ASSERT_TRUE(scanned->is_vector());
     const Eigen::MatrixXd* res_mat = scanned->as_matrix();
     EXPECT_EQ(res_mat->rows(), 7);
-    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 42.0);  // 3+(4+(5+(6+(7+(8+9)))))
-    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 39.0);  // 4+(5+(6+(7+(8+9))))
-    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 35.0);  // 5+(6+(7+(8+9)))
-    EXPECT_DOUBLE_EQ((*res_mat)(6, 0), 9.0);   // 9
+    EXPECT_DOUBLE_EQ((*res_mat)(0, 0), 3.0);   // +/3
+    EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 7.0);   // +/3 4
+    EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 12.0);  // +/3 4 5
+    EXPECT_DOUBLE_EQ((*res_mat)(6, 0), 42.0);  // +/3 4 5 6 7 8 9
 }
 
 TEST_F(OperatorsTest, CompositionNestedReduce) {
@@ -1144,7 +1148,7 @@ TEST_F(OperatorsTest, CommuteWithDivide) {
     Value* rhs = machine->heap->allocate_scalar(12.0);
     Value* fn = machine->heap->allocate_primitive(&prim_divide);
 
-    op_commute_dyadic(machine, lhs, fn, rhs);
+    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
 
     ASSERT_NE(machine->ctrl.value, nullptr);
     EXPECT_TRUE(machine->ctrl.value->is_scalar());
@@ -1170,6 +1174,52 @@ TEST_F(OperatorsTest, DuplicateMatrix) {
     EXPECT_DOUBLE_EQ((*result)(0, 1), 0.0);
     EXPECT_DOUBLE_EQ((*result)(1, 0), 0.0);
     EXPECT_DOUBLE_EQ((*result)(1, 1), 0.0);
+}
+
+// Test postfix monadic operator: +¨ creates DERIVED_OPERATOR
+TEST_F(OperatorsTest, PostfixMonadicOperator) {
+    // Create continuation that looks up "+" and applies "¨" operator to it
+    // This should create a DERIVED_OPERATOR that captures ¨ and +
+    LookupK* lookup = machine->heap->allocate<LookupK>(machine->string_pool.intern("+"));
+    const char* op_name = machine->string_pool.intern("¨");
+    DerivedOperatorK* derived_k = machine->heap->allocate<DerivedOperatorK>(lookup, op_name);
+
+    machine->push_kont(derived_k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    // Should create a DERIVED_OPERATOR value
+    EXPECT_TRUE(result->is_derived_operator());
+    EXPECT_EQ(result->data.derived_op->op, &op_diaeresis);
+    // The first_operand should be the plus function
+    EXPECT_TRUE(result->data.derived_op->first_operand->is_primitive());
+}
+
+// ========================================================================
+// ISO-13751 Compliance Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, ScanISOExample) {
+    // ISO-13751 example: +\1 1 1 → 1 2 3 (LEFT-TO-RIGHT cumulative)
+    // Item I is f/B[⍳I]:
+    // - Item 1: +/1 = 1
+    // - Item 2: +/1 1 = 2
+    // - Item 3: +/1 1 1 = 3
+    Eigen::VectorXd vec(3);
+    vec << 1, 1, 1;
+    Value* omega = machine->heap->allocate_vector(vec);
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+
+    fn_scan(machine, fn, omega);
+
+    ASSERT_NE(machine->ctrl.value, nullptr);
+    EXPECT_TRUE(machine->ctrl.value->is_vector());
+
+    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 1.0);  // +/1
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 2.0);  // +/1 1
+    EXPECT_DOUBLE_EQ((*result)(2, 0), 3.0);  // +/1 1 1
 }
 
 int main(int argc, char** argv) {

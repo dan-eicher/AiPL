@@ -63,8 +63,6 @@ TEST_F(MachineTest, PushPopKont) {
     EXPECT_EQ(popped, k1);
     EXPECT_EQ(machine->kont_stack.size(), 0);
 
-    // GC will clean up -     delete k1;
-    // GC will clean up -     delete k2;
 }
 
 // Test pop from empty stack
@@ -150,7 +148,6 @@ TEST_F(MachineTest, NestedEnvironment) {
     result = machine->env->lookup("b");
     EXPECT_EQ(result, nullptr);
 
-    // GC will clean up -     delete child;
 }
 
 // Test nested environment shadowing
@@ -172,7 +169,6 @@ TEST_F(MachineTest, NestedEnvironmentShadowing) {
     EXPECT_EQ(result, v1);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
 
-    // GC will clean up -     delete child;
 }
 
 // Phase 2 complete: Completion handling now done through continuations
@@ -306,7 +302,6 @@ TEST_F(MachineTest, NestedEnvironmentMark) {
     EXPECT_TRUE(v1->marked);
     EXPECT_TRUE(v2->marked);
 
-    // GC will clean up -     delete child;
 }
 
 // Main function

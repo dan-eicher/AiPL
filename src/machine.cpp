@@ -30,6 +30,18 @@ Machine::~Machine() {
     delete heap;
 }
 
+// High-level eval: parse and execute an expression
+Value* Machine::eval(const std::string& input) {
+    Continuation* k = parser->parse(input);
+    if (!k) {
+        // Parse error - could throw or return nullptr
+        // For now, return nullptr (caller can check parser->get_error())
+        return nullptr;
+    }
+    push_kont(k);
+    return execute();
+}
+
 // Execute the machine until halt
 // This is the main trampoline loop that drives the CEK machine
 // Phase 3.3: Pure trampoline - just pop and invoke until stack empty
@@ -46,7 +58,28 @@ Value* Machine::execute() {
         maybe_gc();
     }
 
-    // Stack empty - return current value
+    // Stack empty - finalize g' curried functions at top level
+    // Per paper: "At the top level of an expression, y can also be null"
+    // g' semantics: if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
+    // When we reach top level with a g' curried function, y is null, so apply g1(x)
+    if (ctrl.value && ctrl.value->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = ctrl.value->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            // This is a g' transformation curried function - finalize it
+            // Apply monadically: g1(x) where x is first_arg
+            Value* fn = curried_data->fn;
+            Value* arg = curried_data->first_arg;
+
+            if (fn->is_primitive()) {
+                PrimitiveFn* prim_fn = fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(this, arg);
+                    // Result is now in ctrl.value
+                }
+            }
+        }
+    }
+
     return ctrl.value;
 }
 

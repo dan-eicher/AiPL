@@ -43,6 +43,9 @@ public:
 
     // Execution methods
 
+    // High-level eval: parse and execute an expression
+    Value* eval(const std::string& input);
+
     // Execute the machine until halt
     Value* execute();
 

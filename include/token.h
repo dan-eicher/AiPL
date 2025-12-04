@@ -2,12 +2,15 @@
 
 #pragma once
 
+#include <cstddef>  // for size_t
+
 namespace apl {
 
 // Token types for APL lexer
 enum TokenType {
     TOK_EOF,
     TOK_NUMBER,
+    TOK_NUMBER_VECTOR,  // Numeric vector literal "1 2 3" (ISO 13751)
     TOK_NAME,
     TOK_STRING,         // String literal 'hello'
 
@@ -36,6 +39,7 @@ enum TokenType {
     TOK_EACH,           // ¨
     TOK_COMPOSE,        // ∘
     TOK_COMMUTE,        // ⍨
+    TOK_DOT,            // . (inner product)
     TOK_OUTER_PRODUCT,  // ∘.
 
     // Comparison
@@ -94,23 +98,113 @@ struct Token {
     union {
         double number;      // For TOK_NUMBER
         const char* name;   // For TOK_NAME (points into LexerArena)
+        double* vector_data; // For TOK_NUMBER_VECTOR (heap allocated)
     };
+
+    // Vector size (only used for TOK_NUMBER_VECTOR)
+    size_t vector_size;
 
     // Source location for error reporting
     int line;
     int column;
 
     // Constructors
-    Token() : type(TOK_EOF), number(0.0), line(0), column(0) {}
+    Token() : type(TOK_EOF), number(0.0), vector_size(0), line(0), column(0) {}
 
     Token(TokenType t, int l = 0, int c = 0)
-        : type(t), number(0.0), line(l), column(c) {}
+        : type(t), number(0.0), vector_size(0), line(l), column(c) {}
 
     Token(double num, int l = 0, int c = 0)
-        : type(TOK_NUMBER), number(num), line(l), column(c) {}
+        : type(TOK_NUMBER), number(num), vector_size(0), line(l), column(c) {}
 
     Token(TokenType t, const char* n, int l = 0, int c = 0)
-        : type(t), name(n), line(l), column(c) {}
+        : type(t), name(n), vector_size(0), line(l), column(c) {}
+
+    // Constructor for vector tokens
+    Token(TokenType t, double* vec, size_t size, int l, int c)
+        : type(t), vector_data(vec), vector_size(size), line(l), column(c) {}
+
+    // Destructor to clean up vector data
+    ~Token() {
+        if (type == TOK_NUMBER_VECTOR && vector_data) {
+            delete[] vector_data;
+        }
+    }
+
+    // Copy constructor
+    Token(const Token& other)
+        : type(other.type), vector_size(other.vector_size),
+          line(other.line), column(other.column) {
+        if (type == TOK_NUMBER_VECTOR && other.vector_data) {
+            vector_data = new double[vector_size];
+            for (size_t i = 0; i < vector_size; i++) {
+                vector_data[i] = other.vector_data[i];
+            }
+        } else {
+            number = other.number;  // Copies union (name or number)
+        }
+    }
+
+    // Move constructor
+    Token(Token&& other) noexcept
+        : type(other.type), vector_size(other.vector_size),
+          line(other.line), column(other.column) {
+        if (type == TOK_NUMBER_VECTOR) {
+            vector_data = other.vector_data;
+            other.vector_data = nullptr;
+            other.vector_size = 0;
+        } else {
+            number = other.number;
+        }
+    }
+
+    // Assignment operators
+    Token& operator=(const Token& other) {
+        if (this != &other) {
+            // Clean up existing vector data
+            if (type == TOK_NUMBER_VECTOR && vector_data) {
+                delete[] vector_data;
+            }
+
+            type = other.type;
+            vector_size = other.vector_size;
+            line = other.line;
+            column = other.column;
+
+            if (type == TOK_NUMBER_VECTOR && other.vector_data) {
+                vector_data = new double[vector_size];
+                for (size_t i = 0; i < vector_size; i++) {
+                    vector_data[i] = other.vector_data[i];
+                }
+            } else {
+                number = other.number;
+            }
+        }
+        return *this;
+    }
+
+    Token& operator=(Token&& other) noexcept {
+        if (this != &other) {
+            // Clean up existing vector data
+            if (type == TOK_NUMBER_VECTOR && vector_data) {
+                delete[] vector_data;
+            }
+
+            type = other.type;
+            vector_size = other.vector_size;
+            line = other.line;
+            column = other.column;
+
+            if (type == TOK_NUMBER_VECTOR) {
+                vector_data = other.vector_data;
+                other.vector_data = nullptr;
+                other.vector_size = 0;
+            } else {
+                number = other.number;
+            }
+        }
+        return *this;
+    }
 };
 
 // Helper function to convert token type to string (for debugging/error messages)

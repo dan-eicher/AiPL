@@ -55,3 +55,8 @@ add_test(NAME StatementTest COMMAND test_statements)
 add_executable(test_operators test_operators.cpp)
 target_link_libraries(test_operators apl_vm GTest::gtest)
 add_test(NAME OperatorsTest COMMAND test_operators)
+
+# Grammar tests (G2 comprehensive)
+add_executable(test_grammar test_grammar.cpp)
+target_link_libraries(test_grammar apl_vm GTest::gtest)
+add_test(NAME GrammarTest COMMAND test_grammar)

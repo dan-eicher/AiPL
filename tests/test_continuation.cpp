@@ -5,6 +5,9 @@
 #include "heap.h"
 #include "machine.h"
 #include "value.h"
+#include "primitives.h"
+#include "operators.h"
+#include "environment.h"
 
 using namespace apl;
 
@@ -16,7 +19,7 @@ protected:
     void SetUp() override {
         machine = new Machine();
         heap = machine->heap;  // Use machine's heap
-        // Phase 1: No more init_evaluating() - machine is ready to go
+        init_global_environment(machine);  // Initialize built-in primitives and operators
     }
 
     void TearDown() override {
@@ -37,8 +40,6 @@ TEST_F(ContinuationTest, HaltK) {
     EXPECT_EQ(result, v);
     // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
-    // GC will clean up halt
-    // GC will clean up v
 }
 
 // Test HaltK mark (should do nothing)
@@ -48,7 +49,6 @@ TEST_F(ContinuationTest, HaltKMark) {
     // Should not crash
     halt->mark(nullptr);
 
-    // GC will clean up halt
 }
 
 // Test HaltK is not a boundary
@@ -59,7 +59,6 @@ TEST_F(ContinuationTest, HaltKNotBoundary) {
     EXPECT_FALSE(halt->is_loop_boundary());
     EXPECT_FALSE(halt->matches_label("any"));
 
-    // GC will clean up halt
 }
 
 // Test ArgK basic
@@ -74,8 +73,6 @@ TEST_F(ContinuationTest, ArgKBasic) {
     EXPECT_EQ(result, arg);
     EXPECT_EQ(machine->ctrl.value, arg);
 
-    // GC will clean up -     delete argk;  // Will also delete halt
-    // GC will clean up -     delete arg;
 }
 
 // Test ArgK without next
@@ -88,8 +85,6 @@ TEST_F(ContinuationTest, ArgKWithoutNext) {
 
     EXPECT_EQ(result, arg);
 
-    // GC will clean up argk
-    // GC will clean up -     delete arg;
 }
 
 // Test ArgK chaining
@@ -109,9 +104,6 @@ TEST_F(ContinuationTest, ArgKChaining) {
     EXPECT_EQ(result, arg2);
     EXPECT_EQ(machine->ctrl.value, arg2);
 
-    // GC will clean up -     delete argk1;  // Will cascade delete
-    // GC will clean up -     delete arg1;
-    // GC will clean up -     delete arg2;
 }
 
 // Test ArgK mark
@@ -122,8 +114,6 @@ TEST_F(ContinuationTest, ArgKMark) {
     // Should not crash with nullptr heap
     argk->mark(nullptr);
 
-    // GC will clean up argk
-    // GC will clean up -     delete arg;
 }
 
 // Test ArgK is not a boundary
@@ -135,8 +125,6 @@ TEST_F(ContinuationTest, ArgKNotBoundary) {
     EXPECT_FALSE(argk->is_loop_boundary());
     EXPECT_FALSE(argk->matches_label("label"));
 
-    // GC will clean up argk
-    // GC will clean up -     delete arg;
 }
 
 // Test FrameK basic
@@ -154,8 +142,6 @@ TEST_F(ContinuationTest, FrameKBasic) {
     EXPECT_EQ(result, v);
     // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
-    // GC will clean up frame and halt
-    // GC will clean up v
 }
 
 // Test FrameK is function boundary
@@ -166,7 +152,6 @@ TEST_F(ContinuationTest, FrameKIsFunctionBoundary) {
     EXPECT_FALSE(frame->is_loop_boundary());
     EXPECT_FALSE(frame->matches_label("label"));
 
-    // GC will clean up frame
 }
 
 // Test FrameK without return continuation
@@ -182,8 +167,6 @@ TEST_F(ContinuationTest, FrameKWithoutReturn) {
 
     EXPECT_EQ(result, v);
 
-    // GC will clean up frame
-    // GC will clean up v
 }
 
 // Test FrameK mark
@@ -194,7 +177,6 @@ TEST_F(ContinuationTest, FrameKMark) {
     // Should not crash
     frame->mark(nullptr);
 
-    // GC will clean up frame
 }
 
 // Test FrameK function name
@@ -205,7 +187,6 @@ TEST_F(ContinuationTest, FrameKFunctionName) {
     EXPECT_EQ(frame->function_name, name);
     EXPECT_STREQ(frame->function_name, "my_function");
 
-    // GC will clean up frame
 }
 
 // Test Machine push and execute
@@ -224,7 +205,6 @@ TEST_F(ContinuationTest, MachinePushPop) {
     EXPECT_EQ(machine->kont_stack.size(), 0);
     // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
-    // GC will clean up v
 }
 
 // Test Machine execute with empty stack
@@ -239,7 +219,6 @@ TEST_F(ContinuationTest, MachinePopEmpty) {
     EXPECT_EQ(result, v);
     // Phase 1: No more ctrl.mode - halted is implicit when stack empty
 
-    // GC will clean up v
 }
 
 // Test Machine with multiple continuations
@@ -259,8 +238,6 @@ TEST_F(ContinuationTest, MachineMultipleContinuations) {
 
     EXPECT_EQ(result, arg2);  // Last arg in chain
 
-    // GC will clean up -     delete arg1;
-    // GC will clean up -     delete arg2;
 }
 
 // Test continuation chaining with FrameK
@@ -278,8 +255,6 @@ TEST_F(ContinuationTest, FrameKChaining) {
 
     EXPECT_EQ(result, v);
 
-    // GC will clean up argk
-    // GC will clean up v
 }
 
 // ============================================================================
@@ -359,6 +334,93 @@ TEST_F(ContinuationTest, LiteralKParseTimeSafety) {
     // Should have allocated a new Value for the literal
     EXPECT_GT(values_after, values_before);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 123.0);
+}
+
+// ============================================================================
+// G2 Grammar Continuation Tests
+// ============================================================================
+
+// Test DerivedOperatorK with environment lookup
+TEST_F(ContinuationTest, DerivedOperatorKCreation) {
+    // Create operand continuation
+    LiteralK* operand_lit = heap->allocate<LiteralK>(3.0);
+
+    // Create DerivedOperatorK for ¨ operator
+    const char* op_name = machine->string_pool.intern("¨");
+    DerivedOperatorK* derived_k = heap->allocate<DerivedOperatorK>(operand_lit, op_name);
+
+    EXPECT_NE(derived_k, nullptr);
+    EXPECT_EQ(derived_k->op_name, op_name);
+    EXPECT_EQ(derived_k->operand_cont, operand_lit);
+}
+
+// Test ApplyDerivedOperatorK creates derived operator value
+TEST_F(ContinuationTest, ApplyDerivedOperatorKExecution) {
+    // Set up: operand value in ctrl.value (a function)
+    Value* operand = heap->allocate_primitive(&prim_plus);
+    machine->ctrl.value = operand;
+
+    // Create ApplyDerivedOperatorK for . operator (inner product - dyadic)
+    const char* op_name = machine->string_pool.intern(".");
+    ApplyDerivedOperatorK* apply_k = heap->allocate<ApplyDerivedOperatorK>(op_name);
+
+    // Push and execute
+    machine->push_kont(apply_k);
+    machine->execute();
+
+    // Result should be a DERIVED_OPERATOR value
+    Value* result = machine->ctrl.value;
+    EXPECT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_derived_operator());
+    EXPECT_EQ(result->data.derived_op->first_operand, operand);
+    EXPECT_EQ(result->data.derived_op->op, &op_dot);
+}
+
+// Test DerivedOperatorK marking for GC
+TEST_F(ContinuationTest, DerivedOperatorKMarking) {
+    LiteralK* operand_cont = heap->allocate<LiteralK>(5.0);
+    const char* op_name = machine->string_pool.intern("⍨");
+
+    DerivedOperatorK* derived = heap->allocate<DerivedOperatorK>(operand_cont, op_name);
+
+    // Clear marks
+    machine->heap->clear_marks();
+
+    // Mark the derived operator continuation
+    derived->mark(machine->heap);
+
+    // Operand continuation should be marked
+    EXPECT_TRUE(operand_cont->marked);
+}
+
+// Test g' transformation finalization at top level
+TEST_F(ContinuationTest, GprimeFinalizationAtTopLevel) {
+    // Test that overloaded monadic functions create CURRIED_FN that gets finalized at top level
+    // MonadicK("×", 5) should:
+    // 1. ApplyMonadicK creates CURRIED_FN(×, 5, false) since × is overloaded
+    // 2. Machine::execute() should finalize it to scalar 1.0 (signum of 5)
+
+    // Create MonadicK for "×5" (signum of 5)
+    LiteralK* lit = heap->allocate<LiteralK>(5.0);
+    const char* times_name = machine->string_pool.intern("×");
+    MonadicK* monadic = heap->allocate<MonadicK>(times_name, lit);
+
+    machine->push_kont(monadic);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+
+    // Debug: check what type we got
+    if (result->tag == ValueType::CURRIED_FN) {
+        std::cout << "ERROR: Result is still CURRIED_FN, not finalized!" << std::endl;
+        std::cout << "curry_type: " << static_cast<int>(result->data.curried_fn->curry_type) << std::endl;
+    }
+
+    // Should be finalized to a scalar (signum of 5 = 1.0)
+    EXPECT_TRUE(result->is_scalar()) << "Result should be scalar after g' finalization";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+    }
 }
 
 // Main function

@@ -3,6 +3,7 @@
 #include "environment.h"
 #include "heap.h"
 #include "primitives.h"
+#include "operators.h"
 #include "machine.h"
 
 namespace apl {
@@ -45,9 +46,15 @@ void init_global_environment(Machine* machine) {
     env->define("↑", heap->allocate_primitive(&prim_uptack));
     env->define("↓", heap->allocate_primitive(&prim_downtack));
 
-    // Note: Reduction/scan operators will be added in Phase 5 when we
-    // implement proper operator support. For now they're just functions
-    // that take a function argument.
+    // Operators (higher-order functions)
+    env->define(".", heap->allocate_operator(&op_dot));
+    env->define("∘.", heap->allocate_operator(&op_outer_dot));
+    env->define("¨", heap->allocate_operator(&op_diaeresis));
+    env->define("⍨", heap->allocate_operator(&op_tilde));
+    env->define("/", heap->allocate_operator(&op_reduce));
+    env->define("⌿", heap->allocate_operator(&op_reduce_first));
+    env->define("\\", heap->allocate_operator(&op_scan));
+    env->define("⍀", heap->allocate_operator(&op_scan_first));
 }
 
 } // namespace apl

@@ -299,49 +299,95 @@ void PerformAssignK::mark(APLHeap* heap) {
 
 // StrandK implementation
 void StrandK::invoke(Machine* machine) {
-    // Strand: evaluate elements right-to-left and collect into vector
-    // Strategy: use auxiliary continuations to maintain accumulator
-
-    if (elements.empty()) {
-        // Empty strand - create empty vector
-        Eigen::VectorXd empty_vec(0);
-        Value* val = machine->heap->allocate_vector(empty_vec);
-        machine->ctrl.set_value(val);
-        return;  // Early exit for empty case
-    }
-
-    if (elements.size() == 1) {
-        // Single element - just evaluate it directly (no need for vector wrapper)
-        machine->push_kont(elements[0]);
-        return;  // Early exit for single element
-    }
-
-    // Multiple elements: evaluate right-to-left using auxiliary continuation
-    // Start by evaluating the rightmost element
-    // The remaining elements will be evaluated by EvalStrandElementK
-
-    std::vector<Continuation*> remaining(elements.begin(), elements.end() - 1);
-    std::vector<Value*> evaluated;  // Empty accumulator
-
-    EvalStrandElementK* eval_next = machine->heap->allocate<EvalStrandElementK>(remaining, evaluated);
-
-    // Push in reverse order (stack is LIFO)
-    machine->push_kont(eval_next);         // Will execute after rightmost element
-    machine->push_kont(elements.back());   // Evaluate rightmost element now
-
-    // Phase 3.1: No return needed, trampoline continues
+    // Lexical strand: just return the pre-computed vector Value
+    machine->ctrl.set_value(vector_value);
 }
 
 void StrandK::mark(APLHeap* heap) {
-    // Mark all element continuations
-    for (Continuation* elem : elements) {
-        if (elem) {
-            heap->mark_continuation(elem);
-        }
+    // Mark the vector Value
+    if (vector_value) {
+        heap->mark_value(vector_value);
     }
 }
 
-// MonadicK implementation
+// JuxtaposeK implementation
+// G2 Grammar: fbn-term ::= fb-term fbn-term
+// Semantics: if type(x₁) = bas then x₂(x₁) else x₁(x₂)
+void JuxtaposeK::invoke(Machine* machine) {
+    // Evaluate right-to-left (APL evaluation order)
+    // After right is evaluated, we'll evaluate left and then apply
+
+    EvalJuxtaposeLeftK* eval_left = machine->heap->allocate<EvalJuxtaposeLeftK>(left, nullptr);
+
+    // Push in reverse order (stack is LIFO)
+    machine->push_kont(eval_left);  // Will execute after right
+    machine->push_kont(right);       // Evaluate right now
+}
+
+void JuxtaposeK::mark(APLHeap* heap) {
+    if (left) {
+        heap->mark_continuation(left);
+    }
+    if (right) {
+        heap->mark_continuation(right);
+    }
+}
+
+// EvalJuxtaposeLeftK implementation
+// After right is evaluated, save it and evaluate left
+void EvalJuxtaposeLeftK::invoke(Machine* machine) {
+    // Right has been evaluated - save it
+    right_val = machine->ctrl.value;
+
+    // Push continuation to perform juxtaposition after left is evaluated
+    PerformJuxtaposeK* perform = machine->heap->allocate<PerformJuxtaposeK>(right_val);
+
+    // Push in reverse order
+    machine->push_kont(perform);  // Will execute after left
+    machine->push_kont(left);      // Evaluate left now
+}
+
+void EvalJuxtaposeLeftK::mark(APLHeap* heap) {
+    if (left) {
+        heap->mark_continuation(left);
+    }
+    if (right_val) {
+        heap->mark_value(right_val);
+    }
+}
+
+// PerformJuxtaposeK implementation
+// Both left and right are evaluated - apply G2 juxtaposition rule
+// Rule: if type(x₁) = bas then x₂(x₁) else x₁(x₂)
+void PerformJuxtaposeK::invoke(Machine* machine) {
+    Value* left_val = machine->ctrl.value;
+
+    // G2 Rule: if type(left) = bas then right(left) else left(right)
+    if (left_val->is_basic_value()) {
+        // Left is a basic value (scalar, vector, or matrix)
+        // Apply right to left: right(left)
+        // right must be a function
+
+        // DispatchFunctionK expects the function in ctrl.value, so set it there
+        machine->ctrl.set_value(right_val);
+        // Use DispatchFunctionK to apply right_val as function to left_val as argument
+        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, left_val));
+    } else {
+        // Left is a function (or curried function, or derived operator)
+        // Apply left to right: left(right)
+
+        // DispatchFunctionK expects the function in ctrl.value, so set it there
+        machine->ctrl.set_value(left_val);
+        // Use DispatchFunctionK to apply left_val as function to right_val as argument
+        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, right_val));
+    }
+}
+
+void PerformJuxtaposeK::mark(APLHeap* heap) {
+    if (right_val) {
+        heap->mark_value(right_val);
+    }
+}
 void MonadicK::invoke(Machine* machine) {
     // Monadic function application: evaluate operand, then apply function
     // Strategy: push operand continuation, then push auxiliary to apply function
@@ -417,6 +463,25 @@ void ApplyMonadicK::invoke(Machine* machine) {
     // Operand has been evaluated - its value is in ctrl.value
     Value* operand_val = machine->ctrl.value;
 
+    // G2 g' finalization: If operand is a g' curried function, unwrap it first
+    // Per paper: g' x = λy. if null(y) then g1(x) else ...
+    // When used as an argument (y is not null), we apply g1(x) first
+    if (operand_val && operand_val->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = operand_val->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            // This is a g' curried function being used as an argument - finalize it
+            Value* fn = curried_data->fn;
+            Value* arg = curried_data->first_arg;
+            if (fn->is_primitive()) {
+                PrimitiveFn* prim_fn = fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(machine, arg);
+                    operand_val = machine->ctrl.value;  // Use the finalized value
+                }
+            }
+        }
+    }
+
     // Look up the operator at evaluation time
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
@@ -435,8 +500,17 @@ void ApplyMonadicK::invoke(Machine* machine) {
         return;
     }
 
-    // Apply the monadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
-    prim_fn->monadic(machine, operand_val);
+    // G2 g' transformation: If function is overloaded (has both monadic and dyadic forms),
+    // create a curried function to defer the monadic/dyadic decision to runtime
+    if (prim_fn->monadic && prim_fn->dyadic) {
+        // Overloaded function - create CURRIED_FN with G_PRIME (g' transformation)
+        // This allows the function to be applied monadically now, or dyadically if another arg appears
+        Value* curried = machine->heap->allocate_curried_fn(op_val, operand_val, Value::CurryType::G_PRIME);
+        machine->ctrl.value = curried;
+    } else {
+        // Monadic-only function - apply immediately
+        prim_fn->monadic(machine, operand_val);
+    }
 
     // Phase 3.1: No return needed, trampoline continues
 }
@@ -513,6 +587,24 @@ void EvalStrandElementK::invoke(Machine* machine) {
     // An element has just been evaluated - its value is in ctrl.value
     // Add it to the FRONT of evaluated_values (we're going right-to-left)
     Value* current_val = machine->ctrl.value;
+
+    // G2 g' finalization: Unwrap g' curried functions before adding to strand
+    if (current_val && current_val->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = current_val->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            // Unwrap g' curried function
+            Value* fn = curried_data->fn;
+            Value* arg = curried_data->first_arg;
+            if (fn->is_primitive()) {
+                PrimitiveFn* prim_fn = fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(machine, arg);
+                    current_val = machine->ctrl.value;  // Use the finalized value
+                }
+            }
+        }
+    }
+
     evaluated_values.insert(evaluated_values.begin(), current_val);
 
     if (remaining_elements.empty()) {
@@ -826,7 +918,227 @@ void DispatchFunctionK::invoke(Machine* machine) {
         return;  // Early exit for closure case
     }
 
-    // Check that fn_val is actually a primitive function
+    // G2 Grammar: Handle CURRIED_FN values
+    if (fn_val->tag == ValueType::CURRIED_FN) {
+        // A curried function was applied
+        // The curried function already has one argument captured
+        // Now we're applying it to the remaining argument(s)
+
+        Value::CurriedFnData* curried_data = fn_val->data.curried_fn;
+        Value* inner_fn = curried_data->fn;
+        Value* first_arg = curried_data->first_arg;
+
+        if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
+            // Simple dyadic curry: fn was curried with first_arg (RIGHT/omega)
+            // Now apply right_val as the LEFT/alpha argument
+            // In G2 semantics: captured arg is omega, new arg is alpha
+            if (right_val == nullptr) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: curried function expects argument"));
+                return;
+            }
+
+            // Update state: swap arguments like G_PRIME does
+            // right_val (newly applied) becomes LEFT (alpha)
+            // first_arg (captured) becomes RIGHT (omega)
+            fn_val = inner_fn;
+            left_val = right_val;   // New argument is LEFT (alpha)
+            right_val = first_arg;  // Captured argument is RIGHT (omega)
+            // Fall through to check fn_val type below
+        } else if (curried_data->curry_type == Value::CurryType::OPERATOR_CURRY) {
+            // Operator curry: inner_fn is DERIVED_OPERATOR, first_arg is second function operand
+            // This is for inner product: (+.× applied to array)
+            // inner_fn = DERIVED_OPERATOR(op=., first_operand=+)
+            // first_arg = × (second function operand)
+            // right_val = array argument
+            if (inner_fn->tag != ValueType::DERIVED_OPERATOR) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: OPERATOR_CURRY expected DERIVED_OPERATOR"));
+                return;
+            }
+            Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
+            PrimitiveOp* op = derived_data->op;
+            Value* first_operand = derived_data->first_operand;
+            Value* second_operand = first_arg;  // The second function operand
+
+            if (left_val && right_val) {
+                // Have both array arguments - call dyadic operator with both function operands
+                op->dyadic(machine, left_val, first_operand, second_operand, right_val);
+            } else if (right_val) {
+                // Only have one array argument - curry to wait for second
+                // Create a new CURRIED_FN that stores the complete operator state
+                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                machine->ctrl.value = curried;
+            } else {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator curry expects array argument"));
+            }
+            return;
+        } else {
+            // G_PRIME transformation: more complex logic for composition
+            // For now, just apply like dyadic
+            // TODO: Implement full g' semantics (check if right_val is bas or function)
+            if (right_val == nullptr) {
+                // No second argument - apply monadically to first_arg
+                fn_val = inner_fn;
+                left_val = nullptr;
+                right_val = first_arg;
+                // Fall through
+            } else {
+                // Has second argument - apply dyadically
+                // In G2 juxtaposition, first_arg is the RIGHT operand (captured)
+                // and right_val is the LEFT operand (newly applied)
+                // So: left=right_val, right=first_arg
+                fn_val = inner_fn;
+                left_val = right_val;  // New argument is LEFT
+                right_val = first_arg; // Captured argument is RIGHT
+                // Fall through
+            }
+        }
+        if (fn_val->tag == ValueType::CURRIED_FN) {
+            // Update ctrl.value before recursing, since invoke() reads from it
+            machine->ctrl.value = fn_val;
+            this->invoke(machine);
+            return;
+        }
+        if (fn_val->tag == ValueType::CLOSURE) {
+            FunctionCallK* call_k = machine->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
+            machine->push_kont(call_k);
+            return;
+        }
+        if (fn_val->tag == ValueType::DERIVED_OPERATOR) {
+            Value::DerivedOperatorData* derived_data = fn_val->data.derived_op;
+            PrimitiveOp* op = derived_data->op;
+            Value* first_operand = derived_data->first_operand;
+
+            // For DERIVED_OPERATOR from dyadic operator (like inner product f.g):
+            // first_arg contains the second function operand (g)
+            // But if first_arg is a CURRIED_FN(g, array), we need to unwrap it:
+            // - Extract g as the second function operand
+            // - Extract array as the right array argument
+            // - Use right_val as the left array argument
+            Value* second_func_operand = nullptr;
+            Value* actual_left_array = nullptr;
+            Value* actual_right_array = nullptr;
+
+            if (op->dyadic && first_arg) {
+                if (first_arg->tag == ValueType::CURRIED_FN) {
+                    // Unwrap CURRIED_FN to extract second function operand and right array
+                    Value::CurriedFnData* inner_curried = first_arg->data.curried_fn;
+                    if (inner_curried->fn->is_function()) {
+                        // first_arg = CURRIED_FN(g, right_array)
+                        // Extract: g is second operand, first_arg of curried is right array
+                        second_func_operand = inner_curried->fn;
+                        actual_right_array = inner_curried->first_arg;
+                        actual_left_array = right_val;  // The value we were applied to
+                    }
+                } else if (first_arg->is_function()) {
+                    // first_arg is already a plain function
+                    second_func_operand = first_arg;
+                    // In this case left_val should be left array, right_val is right array
+                    actual_left_array = left_val;
+                    actual_right_array = right_val;
+                }
+            }
+
+            // G2 Universal Currying: curry all dyadic objects when applied with one argument
+            if (op->dyadic && actual_left_array && actual_right_array) {
+                // Have both array arguments - apply dyadic form with both function operands
+                op->dyadic(machine, actual_left_array, first_operand, second_func_operand, actual_right_array);
+            } else if (op->dyadic && left_val) {
+                // Have left array but arrays weren't extracted - use original values
+                op->dyadic(machine, left_val, first_operand, second_func_operand, right_val);
+            } else if (op->dyadic && !left_val) {
+                // Only have right argument (first array) - curry to wait for second array
+                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                machine->ctrl.value = curried;
+            } else if (op->monadic && !left_val) {
+                // Pure monadic operator - apply immediately
+                op->monadic(machine, first_operand, right_val);
+            } else {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires operands"));
+            }
+            return;
+        }
+    }
+
+    // G2 g' finalization: Unwrap any g' curried functions in arguments
+    // Per paper: when a g' curried function is used as an argument (not at top level),
+    // it should be unwrapped by applying g1(x)
+    if (left_val && left_val->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = left_val->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            // Unwrap g' curried function
+            Value* fn = curried_data->fn;
+            Value* arg = curried_data->first_arg;
+            if (fn->is_primitive()) {
+                PrimitiveFn* prim_fn = fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(machine, arg);
+                    left_val = machine->ctrl.value;  // Use the finalized value
+                }
+            }
+        }
+    }
+    if (right_val && right_val->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = right_val->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            // Unwrap g' curried function
+            Value* fn = curried_data->fn;
+            Value* arg = curried_data->first_arg;
+            if (fn->is_primitive()) {
+                PrimitiveFn* prim_fn = fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(machine, arg);
+                    right_val = machine->ctrl.value;  // Use the finalized value
+                }
+            }
+        }
+    }
+
+    if (fn_val->tag == ValueType::DERIVED_OPERATOR) {
+        Value::DerivedOperatorData* derived_data = fn_val->data.derived_op;
+        PrimitiveOp* op = derived_data->op;
+        Value* first_operand = derived_data->first_operand;
+
+        // For operators with BOTH monadic and dyadic forms (like commute ⍨),
+        // curry with G_PRIME when given one argument. This allows `2 +⍨ 3` to work correctly
+        // by deferring until we know if there's a left argument.
+        if (op->monadic && op->dyadic && !left_val && right_val) {
+            Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
+            machine->ctrl.value = curried;
+            return;
+        }
+
+        // Monadic-only operators apply immediately when given one argument
+        if (op->monadic && !op->dyadic && !left_val && right_val) {
+            op->monadic(machine, first_operand, right_val);
+            return;
+        }
+
+        // Dyadic operators with both arguments
+        if (op->dyadic && left_val && right_val) {
+            op->dyadic(machine, left_val, first_operand, nullptr, right_val);
+            return;
+        }
+
+        // G2: Dyadic-only operators with one argument should curry
+        // Inner product "." takes two function operands, uses OPERATOR_CURRY to store second function
+        // Outer product "∘." takes one function operand, uses DYADIC_CURRY to store array argument
+        if (op->dyadic && !op->monadic && !left_val && right_val) {
+            if (strcmp(op->name, ".") == 0) {
+                // Inner product: first_arg stores the second function operand (for "+." applied to "×")
+                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
+                machine->ctrl.value = curried;
+            } else {
+                // Outer product and similar: first_arg stores the array argument
+                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                machine->ctrl.value = curried;
+            }
+            return;
+        }
+
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires operands"));
+        return;
+    }
+
     if (!fn_val->is_primitive()) {
         machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: expected function value"));
         return;
@@ -837,13 +1149,23 @@ void DispatchFunctionK::invoke(Machine* machine) {
     // Determine monadic vs dyadic based on what arguments we have
     if (left_val == nullptr) {
         // Monadic case: only right argument
-        if (!prim_fn->monadic) {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no monadic form"));
+
+        if (prim_fn->monadic && prim_fn->dyadic) {
+            // Overloaded function: use g' transformation (complex currying)
+            Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
+            machine->ctrl.value = curried;
+        } else if (prim_fn->dyadic) {
+            // Pure dyadic function: simple currying (right arg captured, waiting for left)
+            Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+            machine->ctrl.value = curried;
+        } else if (prim_fn->monadic) {
+            // Pure monadic function - apply directly
+            prim_fn->monadic(machine, right_val);
+        } else {
+            // No forms available
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no forms"));
             return;
         }
-
-        // Apply monadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
-        prim_fn->monadic(machine, right_val);
     } else {
         // Dyadic case: both arguments
         if (!prim_fn->dyadic) {
@@ -1332,6 +1654,66 @@ void RestoreEnvK::invoke(Machine* machine) {
 
 void RestoreEnvK::mark(APLHeap* heap) {
     // saved_env will be marked by machine's environment chain
+    (void)heap;
+}
+
+// ============================================================================
+// G2 Grammar Continuations (Operator Support)
+// ============================================================================
+
+// DerivedOperatorK implementation - partially apply dyadic operator
+void DerivedOperatorK::invoke(Machine* machine) {
+    // Push continuation to apply operator after operand is evaluated
+    machine->push_kont(machine->heap->allocate<ApplyDerivedOperatorK>(op_name));
+    machine->push_kont(operand_cont);
+}
+
+void DerivedOperatorK::mark(APLHeap* heap) {
+    if (operand_cont) {
+        heap->mark_continuation(operand_cont);
+    }
+}
+
+// ApplyDerivedOperatorK implementation - create DERIVED_OPERATOR value
+void ApplyDerivedOperatorK::invoke(Machine* machine) {
+    Value* first_operand = machine->ctrl.value;
+
+    // Look up the operator by name from environment
+    Value* op_val = machine->env->lookup(op_name);
+    if (!op_val) {
+        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
+        const char* interned_msg = machine->string_pool.intern(msg.c_str());
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        return;
+    }
+
+    // The operator should be stored as an OPERATOR ValueType
+    if (op_val->tag != ValueType::OPERATOR) {
+        std::string msg = std::string("VALUE ERROR: Not an operator: ") + op_name;
+        const char* interned_msg = machine->string_pool.intern(msg.c_str());
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        return;
+    }
+
+    PrimitiveOp* op = op_val->data.op;
+
+    // Both monadic and dyadic operators create a DERIVED_OPERATOR value
+    // For dyadic operators (like .): stores operator and first operand, waits for second
+    // For monadic operators (like ¨): stores operator and operand (the function), waits for omega
+    if (op->dyadic || op->monadic) {
+        // Create a DERIVED_OPERATOR value that captures:
+        //   - The operator (dyadic or monadic)
+        //   - The first operand
+        // When this derived operator is applied, it will call op->monadic() or op->dyadic()
+        Value* derived = machine->heap->allocate_derived_operator(op, first_operand);
+        machine->ctrl.value = derived;
+    } else {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Operator has neither monadic nor dyadic form"));
+    }
+}
+
+void ApplyDerivedOperatorK::mark(APLHeap* heap) {
+    // op_name is an interned string, not GC-managed
     (void)heap;
 }
 

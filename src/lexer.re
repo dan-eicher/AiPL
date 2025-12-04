@@ -39,6 +39,12 @@ Lexer::Lexer(const char* input)
     // Numbers (integer or float)
     number = digits ("." digits)? ([eE] [+\-]? digits)?;
 
+    // Numeric vector literals (ISO 13751)
+    // Space-separated numbers: "1 2 3" → vector [1, 2, 3]
+    // NOTE: Must be matched before single number pattern
+    ws_inline = [ \t]+;  // Inline whitespace (not newline)
+    number_vector = number (ws_inline number)+;
+
     // Names (identifiers)
     alpha = [a-zA-Z_];
     alnum = [a-zA-Z0-9_];
@@ -99,7 +105,36 @@ Token Lexer::next_token() {
             // Comments - skip and continue
             comment { continue; }
 
-        // Numbers
+        // Numeric vector literal (ISO 13751) - must come before single number
+        number_vector {
+            // First pass: count numbers
+            size_t count = 0;
+            const char* p = token_start;
+            while (p < cursor_) {
+                while (p < cursor_ && (*p == ' ' || *p == '\t')) p++;
+                if (p >= cursor_) break;
+                count++;
+                while (p < cursor_ && *p != ' ' && *p != '\t') p++;
+            }
+
+            // Allocate array
+            double* vec_data = new double[count];
+
+            // Second pass: parse numbers into array
+            p = token_start;
+            size_t idx = 0;
+            while (p < cursor_ && idx < count) {
+                while (p < cursor_ && (*p == ' ' || *p == '\t')) p++;
+                if (p >= cursor_) break;
+                vec_data[idx++] = std::atof(p);
+                while (p < cursor_ && *p != ' ' && *p != '\t') p++;
+            }
+
+            column_ += (cursor_ - token_start);
+            return Token(TOK_NUMBER_VECTOR, vec_data, count, token_line, token_column);
+        }
+
+        // Single number
         number {
             double num = std::atof(token_start);
             column_ += (cursor_ - token_start);
@@ -209,6 +244,7 @@ Token Lexer::next_token() {
 
         // Outer product (special two-character sequence)
         compose "." { column_ += 2; return Token(TOK_OUTER_PRODUCT, token_line, token_column); }
+        "." { column_++; return Token(TOK_DOT, token_line, token_column); }
 
             // Unknown character - error
             * {

@@ -383,15 +383,24 @@ void op_each(Machine* m, Value* f, Value* omega) {
 
 void op_commute(Machine* m, Value* f, Value* omega) {
     // This is the monadic form: duplicate
+    // Semantics: f⍨B → B f B
     // Validate that f is a function
     if (!f || !f->is_function()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: duplicate operator requires a function operand"));
         return;
     }
 
-    // For now, only support primitive functions
+    // Handle curried functions (from G2 grammar)
+    if (f->tag == ValueType::CURRIED_FN) {
+        // Curried function: B f B
+        // Create DyadicK to apply the function with both arguments as omega
+        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, omega, omega));
+        return;
+    }
+
+    // Handle primitive functions
     if (!f->is_primitive()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: duplicate operator currently only supports primitive functions"));
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: duplicate operator requires primitive or curried function"));
         return;
     }
 
@@ -412,19 +421,25 @@ void op_commute(Machine* m, Value* f, Value* omega) {
 // ========================================================================
 // Commute: swaps left and right arguments
 // A f⍨B → B f A
-// Note: This would be called differently since it's dyadic, but we'd need
-// parser support for dyadic operator invocation. For now, this is a placeholder.
 
-void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* rhs) {
+void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
+    (void)g;  // Commute only uses one function operand
     // Validate that f is a function
     if (!f || !f->is_function()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: commute operator requires a function operand"));
         return;
     }
 
-    // For now, only support primitive functions
+    // Handle curried functions (from G2 grammar)
+    if (f->tag == ValueType::CURRIED_FN) {
+        // Apply curried function with swapped arguments: rhs f lhs
+        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, rhs, lhs));
+        return;
+    }
+
+    // Handle primitive functions
     if (!f->is_primitive()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: commute operator currently only supports primitive functions"));
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: commute operator requires primitive or curried function"));
         return;
     }
 
@@ -604,7 +619,11 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega) {
     m->ctrl.set_value(m->heap->allocate_vector(result));
 }
 
-// Scan (\) - apply dyadic function cumulatively, right to left
+// Scan (\) - apply dyadic function cumulatively
+// ISO-13751: Item I of Z is f/B[⍳I] (reduction of first I elements)
+// NOTE: For associative functions like + and ×, left-to-right accumulation
+// gives the same result as calling reduce on each prefix. But for non-associative
+// functions (-, ÷), we must actually perform the full reduction to match the spec.
 void fn_scan(Machine* m, Value* func, Value* omega) {
     if (!func->is_function()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
@@ -633,19 +652,23 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
 
         Eigen::VectorXd result(len);
 
-        // Right-to-left scan (APL standard)
-        result(len - 1) = (*mat)(len - 1, 0);
-        Value* acc = m->heap->allocate_scalar((*mat)(len - 1, 0));
-
-        for (int i = len - 2; i >= 0; --i) {
-            Value* elem = m->heap->allocate_scalar((*mat)(i, 0));
-            fn->dyadic(m, elem, acc);
-            Value* new_acc = m->ctrl.value;
-            result(i) = new_acc->as_scalar();
-            // GC will clean up elem and old acc
-            acc = new_acc;
+        // ISO-13751: Each element I is f/B[⍳I] (full reduction of prefix)
+        for (int i = 0; i < len; ++i) {
+            // Perform reduction on B[0..i] (right-to-left as per reduce spec)
+            if (i == 0) {
+                result(i) = (*mat)(0, 0);
+            } else {
+                // Right-to-left reduction: first f (f/(rest))
+                Value* acc = m->heap->allocate_scalar((*mat)(i, 0));
+                for (int j = i - 1; j >= 0; --j) {
+                    Value* elem = m->heap->allocate_scalar((*mat)(j, 0));
+                    fn->dyadic(m, elem, acc);
+                    acc = m->ctrl.value;
+                    // GC will clean up old values
+                }
+                result(i) = acc->as_scalar();
+            }
         }
-        // GC will clean up acc
 
         m->ctrl.set_value(m->heap->allocate_vector(result));
         return;
@@ -658,19 +681,21 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
     Eigen::MatrixXd result(rows, cols);
 
     for (int r = 0; r < rows; ++r) {
-        // Scan this row right-to-left
-        result(r, cols - 1) = (*mat)(r, cols - 1);
-        Value* acc = m->heap->allocate_scalar((*mat)(r, cols - 1));
-
-        for (int c = cols - 2; c >= 0; --c) {
-            Value* elem = m->heap->allocate_scalar((*mat)(r, c));
-            fn->dyadic(m, elem, acc);
-            Value* new_acc = m->ctrl.value;
-            result(r, c) = new_acc->as_scalar();
-            // GC will clean up elem and old acc
-            acc = new_acc;
+        // Scan this row: each column is reduction of columns [0..c]
+        for (int c = 0; c < cols; ++c) {
+            if (c == 0) {
+                result(r, c) = (*mat)(r, 0);
+            } else {
+                // Right-to-left reduction of row r, columns [0..c]
+                Value* acc = m->heap->allocate_scalar((*mat)(r, c));
+                for (int j = c - 1; j >= 0; --j) {
+                    Value* elem = m->heap->allocate_scalar((*mat)(r, j));
+                    fn->dyadic(m, elem, acc);
+                    acc = m->ctrl.value;
+                }
+                result(r, c) = acc->as_scalar();
+            }
         }
-        // GC will clean up acc
     }
 
     m->ctrl.set_value(m->heap->allocate_matrix(result));
@@ -751,7 +776,33 @@ PrimitiveOp op_diaeresis = {
 PrimitiveOp op_tilde = {
     "⍨",
     op_commute,           // Monadic: f⍨B (duplicate)
-    nullptr               // Dyadic: A f⍨B (commute) - uses different evaluation
+    op_commute_dyadic     // Dyadic: A f⍨B (commute)
+};
+
+// Reduction operators (monadic - take function operand, return derived function)
+// Note: These are operators, not primitives, so they need special handling
+PrimitiveOp op_reduce = {
+    "/",
+    fn_reduce,            // Monadic: f/B
+    nullptr               // No dyadic form (N-wise reduction not yet implemented)
+};
+
+PrimitiveOp op_reduce_first = {
+    "⌿",
+    fn_reduce_first,      // Monadic: f⌿B
+    nullptr               // No dyadic form
+};
+
+PrimitiveOp op_scan = {
+    "\\",
+    fn_scan,              // Monadic: f\B
+    nullptr               // No dyadic form
+};
+
+PrimitiveOp op_scan_first = {
+    "⍀",
+    fn_scan_first,        // Monadic: f⍀B
+    nullptr               // No dyadic form
 };
 
 } // namespace apl

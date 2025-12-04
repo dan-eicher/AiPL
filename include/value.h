@@ -52,7 +52,9 @@ enum class ValueType {
     MATRIX,     // 2D array
     PRIMITIVE,  // Primitive function (C function pointer)
     CLOSURE,    // User-defined function (continuation graph)
-    OPERATOR    // Higher-order operator (takes functions, returns derived functions)
+    OPERATOR,   // Higher-order operator (takes functions, returns derived functions)
+    DERIVED_OPERATOR,  // Result of applying dyadic operator to first operand (G2 grammar)
+    CURRIED_FN  // Result of applying function to first argument (G2 grammar currying)
 };
 
 // Value class - tagged union for all APL values
@@ -68,6 +70,25 @@ private:
 public:
     ValueType tag;
 
+    // Data structures for new G2 grammar types
+    struct DerivedOperatorData {
+        PrimitiveOp* op;           // The operator
+        Value* first_operand;      // The first operand
+    };
+
+    // Curry types for CURRIED_FN values
+    enum class CurryType {
+        G_PRIME,         // g' transformation for overloaded functions (can compose)
+        DYADIC_CURRY,    // Simple dyadic function curry (fn + right arg, waiting for left)
+        OPERATOR_CURRY   // Dyadic operator curry (stores second operand without applying)
+    };
+
+    struct CurriedFnData {
+        Value* fn;                 // The function being curried (can be PRIMITIVE, CLOSURE, or DERIVED_OPERATOR)
+        Value* first_arg;          // The first argument (or second operand for OPERATOR_CURRY)
+        CurryType curry_type;      // Type of curry determines unwrapping behavior
+    };
+
     // Union for value storage
     union Data {
         double scalar;              // For SCALAR
@@ -75,6 +96,8 @@ public:
         PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
         Continuation* closure;      // For CLOSURE (user-defined function body)
         PrimitiveOp* op;            // For OPERATOR
+        DerivedOperatorData* derived_op;  // For DERIVED_OPERATOR
+        CurriedFnData* curried_fn;  // For CURRIED_FN
 
         // Union constructors
         Data() : scalar(0.0) {}
@@ -95,8 +118,12 @@ public:
     bool is_array() const { return tag == ValueType::VECTOR || tag == ValueType::MATRIX; }
     bool is_primitive() const { return tag == ValueType::PRIMITIVE; }
     bool is_closure() const { return tag == ValueType::CLOSURE; }
-    bool is_function() const { return tag == ValueType::PRIMITIVE || tag == ValueType::CLOSURE; }
-    bool is_operator() const { return tag == ValueType::OPERATOR; }
+    bool is_function() const { return tag == ValueType::PRIMITIVE || tag == ValueType::CLOSURE || tag == ValueType::CURRIED_FN; }
+    bool is_operator() const { return tag == ValueType::OPERATOR || tag == ValueType::DERIVED_OPERATOR; }
+    bool is_derived_operator() const { return tag == ValueType::DERIVED_OPERATOR; }
+    bool is_curried_fn() const { return tag == ValueType::CURRIED_FN; }
+    // G2 grammar: "bas" type = basic values (scalars, vectors, matrices)
+    bool is_basic_value() const { return is_scalar() || is_array(); }
 
     // Shape queries (for arrays)
     int rank() const;           // 0 for scalar, 1 for vector, 2 for matrix

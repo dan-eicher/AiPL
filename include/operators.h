@@ -20,7 +20,7 @@ void op_each(Machine* m, Value* f, Value* omega);       // ¨ each (apply to eac
 void op_commute(Machine* m, Value* f, Value* omega);    // ⍨ duplicate (monadic)
 
 // Helper for commute (dyadic form - not exposed as PrimitiveOp yet)
-void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* rhs);  // ⍨ commute (dyadic)
+void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs);  // ⍨ commute (dyadic)
 
 // Reduction and Scan operators
 // These are operators (not primitives) because they take functions as operands
@@ -30,9 +30,13 @@ void fn_scan(Machine* m, Value* func, Value* omega);           // \ scan along l
 void fn_scan_first(Machine* m, Value* func, Value* omega);     // ⍀ scan along first axis
 
 // PrimitiveOp structs that combine monadic and dyadic forms
-extern PrimitiveOp op_dot;         // . operator (inner product dyadic)
-extern PrimitiveOp op_outer_dot;   // ∘. operator (outer product)
-extern PrimitiveOp op_diaeresis;   // ¨ operator (each)
-extern PrimitiveOp op_tilde;       // ⍨ operator (commute/duplicate)
+extern PrimitiveOp op_dot;           // . operator (inner product dyadic)
+extern PrimitiveOp op_outer_dot;     // ∘. operator (outer product)
+extern PrimitiveOp op_diaeresis;     // ¨ operator (each)
+extern PrimitiveOp op_tilde;         // ⍨ operator (commute/duplicate)
+extern PrimitiveOp op_reduce;        // / operator (reduce)
+extern PrimitiveOp op_reduce_first;  // ⌿ operator (reduce first axis)
+extern PrimitiveOp op_scan;          // \ operator (scan)
+extern PrimitiveOp op_scan_first;    // ⍀ operator (scan first axis)
 
 } // namespace apl

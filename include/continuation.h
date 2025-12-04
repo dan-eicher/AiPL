@@ -251,20 +251,72 @@ protected:
     void invoke(Machine* machine) override;
 };
 
-// StrandK - Parse-time continuation for array strands
-// Stores a vector of continuations representing the strand elements
-// At runtime, evaluates each element and combines them into a vector Value*
-// Examples: "1 2 3" or "var1 var2 3" or "(1+2) 5 x"
+// StrandK - Lexical strand continuation for numeric vector literals (ISO 13751)
+// Stores a pre-computed vector Value* from the lexer
+// At runtime, just returns this Value
+// Example: "1 2 3" → StrandK(vector_value)
 class StrandK : public Continuation {
 public:
-    std::vector<Continuation*> elements;  // Continuation for each element
+    Value* vector_value;  // Pre-allocated vector Value
 
-    StrandK(const std::vector<Continuation*>& elems)
-        : elements(elems) {}
+    StrandK(Value* val)
+        : vector_value(val) {}
 
-    ~StrandK() override {
-        // Don't delete elements - they're GC-managed
+    ~StrandK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// JuxtaposeK - G2 Grammar juxtaposition: fbn-term ::= fb-term fbn-term
+// Implements: if type(x₁) = bas then x₂(x₁) else x₁(x₂)
+// This is different from StrandK - it performs function application based on types
+class JuxtaposeK : public Continuation {
+public:
+    Continuation* left;   // Left fb-term
+    Continuation* right;  // Right fbn-term
+
+    JuxtaposeK(Continuation* l, Continuation* r)
+        : left(l), right(r) {}
+
+    ~JuxtaposeK() override {
+        // Don't delete - GC-managed
     }
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for JuxtaposeK - evaluates left after right is done
+class EvalJuxtaposeLeftK : public Continuation {
+public:
+    Continuation* left;  // Left continuation to evaluate
+    Value* right_val;    // Right value (will be set when right completes)
+
+    EvalJuxtaposeLeftK(Continuation* l, Value* r)
+        : left(l), right_val(r) {}
+
+    ~EvalJuxtaposeLeftK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// PerformJuxtaposeK - applies G2 juxtaposition rule after both sides are evaluated
+class PerformJuxtaposeK : public Continuation {
+public:
+    Value* right_val;  // Right value (evaluated first)
+
+    PerformJuxtaposeK(Value* right)
+        : right_val(right) {}
+
+    ~PerformJuxtaposeK() override {}
 
     void mark(APLHeap* heap) override;
 
@@ -796,6 +848,46 @@ public:
     RestoreEnvK(Environment* env) : saved_env(env) {}
 
     ~RestoreEnvK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// G2 Grammar Continuations (Operator Support)
+// ============================================================================
+
+// DerivedOperatorK - Represents a partially applied dyadic operator (G2 grammar)
+// Grammar: derived-operator ::= fb-term dyadic-operator
+// Semantics: x₂(x₁) where x₁ is fb-term, x₂ is operator
+// Result is a new operator (monadic)
+class DerivedOperatorK : public Continuation {
+public:
+    Continuation* operand_cont;   // The fb-term to evaluate
+    const char* op_name;          // The dyadic operator name
+
+    DerivedOperatorK(Continuation* operand, const char* operator_name)
+        : operand_cont(operand), op_name(operator_name) {}
+
+    ~DerivedOperatorK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ApplyDerivedOperatorK - Apply dyadic operator to its first operand
+// Creates a DERIVED_OPERATOR value
+class ApplyDerivedOperatorK : public Continuation {
+public:
+    const char* op_name;
+
+    ApplyDerivedOperatorK(const char* operator_name) : op_name(operator_name) {}
+
+    ~ApplyDerivedOperatorK() override {}
 
     void mark(APLHeap* heap) override;
 

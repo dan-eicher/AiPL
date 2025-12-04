@@ -85,7 +85,12 @@ public:
     Value* allocate_vector(const Eigen::VectorXd& v);
     Value* allocate_matrix(const Eigen::MatrixXd& m);
     Value* allocate_primitive(PrimitiveFn* fn);
+    Value* allocate_operator(PrimitiveOp* op);
     Value* allocate_closure(Continuation* body);
+
+    // G2 grammar allocation helpers
+    Value* allocate_derived_operator(PrimitiveOp* op, Value* first_operand);
+    Value* allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type);
     // Template-based allocation interface (unified allocation)
     template<typename T, typename... Args>
     T* allocate(Args&&... args) {

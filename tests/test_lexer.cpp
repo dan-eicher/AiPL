@@ -34,24 +34,30 @@ protected:
     }
 };
 
-// Test basic number recognition
+// Test basic number recognition (use newlines to separate)
 TEST_F(LexerTest, Numbers) {
-    auto tokens = tokenize("42 3.14 1.5e10 2.5e-3");
+    auto tokens = tokenize("42\n3.14\n1.5e10\n2.5e-3");
 
-    ASSERT_EQ(tokens.size(), 5);  // 4 numbers + EOF
+    ASSERT_EQ(tokens.size(), 8);  // 4 numbers + 3 newlines + EOF
     EXPECT_EQ(tokens[0].type, TOK_NUMBER);
     EXPECT_DOUBLE_EQ(tokens[0].number, 42.0);
 
-    EXPECT_EQ(tokens[1].type, TOK_NUMBER);
-    EXPECT_DOUBLE_EQ(tokens[1].number, 3.14);
+    EXPECT_EQ(tokens[1].type, TOK_NEWLINE);
 
     EXPECT_EQ(tokens[2].type, TOK_NUMBER);
-    EXPECT_DOUBLE_EQ(tokens[2].number, 1.5e10);
+    EXPECT_DOUBLE_EQ(tokens[2].number, 3.14);
 
-    EXPECT_EQ(tokens[3].type, TOK_NUMBER);
-    EXPECT_DOUBLE_EQ(tokens[3].number, 2.5e-3);
+    EXPECT_EQ(tokens[3].type, TOK_NEWLINE);
 
-    EXPECT_EQ(tokens[4].type, TOK_EOF);
+    EXPECT_EQ(tokens[4].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[4].number, 1.5e10);
+
+    EXPECT_EQ(tokens[5].type, TOK_NEWLINE);
+
+    EXPECT_EQ(tokens[6].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[6].number, 2.5e-3);
+
+    EXPECT_EQ(tokens[7].type, TOK_EOF);
 }
 
 // Test name recognition
@@ -109,14 +115,16 @@ TEST_F(LexerTest, Assignment) {
 
 // Test parentheses and brackets
 TEST_F(LexerTest, Delimiters) {
-    auto tokens = tokenize("(a + b) [1 2 3] {x}");
+    auto tokens = tokenize("(a + b) [x] {y}");
 
     EXPECT_EQ(tokens[0].type, TOK_LPAREN);
     EXPECT_EQ(tokens[4].type, TOK_RPAREN);
     EXPECT_EQ(tokens[5].type, TOK_LBRACKET);
-    EXPECT_EQ(tokens[9].type, TOK_RBRACKET);
-    EXPECT_EQ(tokens[10].type, TOK_LBRACE);
-    EXPECT_EQ(tokens[12].type, TOK_RBRACE);
+    EXPECT_EQ(tokens[6].type, TOK_NAME);
+    EXPECT_EQ(tokens[7].type, TOK_RBRACKET);
+    EXPECT_EQ(tokens[8].type, TOK_LBRACE);
+    EXPECT_EQ(tokens[9].type, TOK_NAME);
+    EXPECT_EQ(tokens[10].type, TOK_RBRACE);
 }
 
 // Test control flow keywords
@@ -147,16 +155,20 @@ TEST_F(LexerTest, SimpleExpression) {
     EXPECT_EQ(tokens[5].type, TOK_EOF);
 }
 
-// Test reduction expression
+// Test reduction expression (now with vector literal)
 TEST_F(LexerTest, ReductionExpression) {
     auto tokens = tokenize("+/1 2 3 4");
 
+    ASSERT_EQ(tokens.size(), 4);  // + / VECTOR EOF
     EXPECT_EQ(tokens[0].type, TOK_PLUS);
     EXPECT_EQ(tokens[1].type, TOK_REDUCE);
-    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
-    EXPECT_EQ(tokens[3].type, TOK_NUMBER);
-    EXPECT_EQ(tokens[4].type, TOK_NUMBER);
-    EXPECT_EQ(tokens[5].type, TOK_NUMBER);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[2].vector_size, 4);
+    EXPECT_DOUBLE_EQ(tokens[2].vector_data[0], 1.0);
+    EXPECT_DOUBLE_EQ(tokens[2].vector_data[1], 2.0);
+    EXPECT_DOUBLE_EQ(tokens[2].vector_data[2], 3.0);
+    EXPECT_DOUBLE_EQ(tokens[2].vector_data[3], 4.0);
+    EXPECT_EQ(tokens[3].type, TOK_EOF);
 }
 
 // Test comparison operators
@@ -211,6 +223,24 @@ TEST_F(LexerTest, AllControlFlowKeywords) {
     EXPECT_EQ(tokens[5].type, TOK_ENDWHILE);
     EXPECT_EQ(tokens[6].type, TOK_FOR);
     EXPECT_EQ(tokens[7].type, TOK_ENDFOR);
+}
+
+// Test inner product operator (dot)
+TEST_F(LexerTest, InnerProduct) {
+    auto tokens = tokenize("+.×");
+
+    EXPECT_EQ(tokens[0].type, TOK_PLUS);
+    EXPECT_EQ(tokens[1].type, TOK_DOT);
+    EXPECT_EQ(tokens[2].type, TOK_TIMES);
+}
+
+// Test that +. without following operator produces correct tokens
+TEST_F(LexerTest, DotAlone) {
+    auto tokens = tokenize("+.");
+
+    // Should be TOK_PLUS, TOK_DOT
+    EXPECT_EQ(tokens[0].type, TOK_PLUS);
+    EXPECT_EQ(tokens[1].type, TOK_DOT);
 }
 
 // Test diamond statement separator
@@ -356,12 +386,15 @@ TEST_F(LexerTest, BracketsAndBraces) {
     EXPECT_EQ(tokens[6].type, TOK_RPAREN);
 }
 
-// Test ravel
+// Test ravel (now with vector literal)
 TEST_F(LexerTest, Ravel) {
     auto tokens = tokenize(",1 2 3");
 
+    ASSERT_EQ(tokens.size(), 3);  // , VECTOR EOF
     EXPECT_EQ(tokens[0].type, TOK_RAVEL);
-    EXPECT_EQ(tokens[1].type, TOK_NUMBER);
+    EXPECT_EQ(tokens[1].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[1].vector_size, 3);
+    EXPECT_EQ(tokens[2].type, TOK_EOF);
 }
 
 // Test negative numbers
@@ -417,14 +450,20 @@ TEST_F(LexerTest, OnlyWhitespace) {
     EXPECT_EQ(tokens[0].type, TOK_EOF);
 }
 
-// Test scientific notation edge cases
+// Test scientific notation edge cases (use newlines to separate)
 TEST_F(LexerTest, ScientificNotation) {
-    auto tokens = tokenize("1e5 2E-3 3.5e+10");
+    auto tokens = tokenize("1e5\n2E-3\n3.5e+10");
 
-    ASSERT_EQ(tokens.size(), 4);
+    ASSERT_EQ(tokens.size(), 6);  // 3 numbers + 2 newlines + EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);
     EXPECT_DOUBLE_EQ(tokens[0].number, 1e5);
-    EXPECT_DOUBLE_EQ(tokens[1].number, 2E-3);
-    EXPECT_DOUBLE_EQ(tokens[2].number, 3.5e+10);
+    EXPECT_EQ(tokens[1].type, TOK_NEWLINE);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[2].number, 2E-3);
+    EXPECT_EQ(tokens[3].type, TOK_NEWLINE);
+    EXPECT_EQ(tokens[4].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[4].number, 3.5e+10);
+    EXPECT_EQ(tokens[5].type, TOK_EOF);
 }
 
 // Test dfn tokens (braces and alpha/omega)
@@ -438,6 +477,77 @@ TEST_F(LexerTest, DfnTokens) {
     EXPECT_EQ(tokens[3].type, TOK_OMEGA);
     EXPECT_EQ(tokens[4].type, TOK_RBRACE);
     EXPECT_EQ(tokens[5].type, TOK_EOF);
+}
+
+// Test numeric vector literal (ISO 13751)
+TEST_F(LexerTest, NumericVectorLiteral) {
+    auto tokens = tokenize("1 2 3");
+
+    ASSERT_EQ(tokens.size(), 2);  // VECTOR + EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[0].vector_size, 3);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[0], 1.0);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[1], 2.0);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[2], 3.0);
+    EXPECT_EQ(tokens[1].type, TOK_EOF);
+}
+
+// Test numeric vector with decimals
+TEST_F(LexerTest, NumericVectorDecimals) {
+    auto tokens = tokenize("1.5 2.25 3.75");
+
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[0].vector_size, 3);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[0], 1.5);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[1], 2.25);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[2], 3.75);
+}
+
+// Test numeric vector with scientific notation
+TEST_F(LexerTest, NumericVectorScientific) {
+    auto tokens = tokenize("1e5 2.5e-3 3.14e+2");
+
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[0].vector_size, 3);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[0], 1e5);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[1], 2.5e-3);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[2], 3.14e+2);
+}
+
+// Test single number is NOT a vector
+TEST_F(LexerTest, SingleNumberNotVector) {
+    auto tokens = tokenize("42");
+
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);  // NOT TOK_NUMBER_VECTOR
+    EXPECT_DOUBLE_EQ(tokens[0].number, 42.0);
+}
+
+// Test vector literal followed by operator
+TEST_F(LexerTest, VectorLiteralWithOperator) {
+    auto tokens = tokenize("1 2 3+4 5 6");
+
+    ASSERT_EQ(tokens.size(), 4);  // VECTOR + VECTOR EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[0].vector_size, 3);
+    EXPECT_EQ(tokens[1].type, TOK_PLUS);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[2].vector_size, 3);
+}
+
+// Test operator followed by vector (no space)
+TEST_F(LexerTest, OperatorAdjacentToVector) {
+    auto tokens = tokenize("+/1 2 3");
+
+    // Should tokenize as: + / VECTOR EOF
+    ASSERT_EQ(tokens.size(), 4);
+    EXPECT_EQ(tokens[0].type, TOK_PLUS);
+    EXPECT_EQ(tokens[1].type, TOK_REDUCE);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[2].vector_size, 3);
+    EXPECT_EQ(tokens[3].type, TOK_EOF);
 }
 
 // Main function

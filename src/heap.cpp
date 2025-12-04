@@ -142,11 +142,40 @@ Value* APLHeap::allocate_primitive(PrimitiveFn* fn) {
     return allocate(val);
 }
 
+// Allocate an operator value
+Value* APLHeap::allocate_operator(PrimitiveOp* op) {
+    Value* val = new Value();
+    val->tag = ValueType::OPERATOR;
+    val->data.op = op;
+    return allocate(val);
+}
+
 // Allocate a closure (user-defined function)
 Value* APLHeap::allocate_closure(Continuation* body) {
     Value* val = new Value();
     val->tag = ValueType::CLOSURE;
     val->data.closure = body;
+    return allocate(val);
+}
+
+// G2 grammar: Allocate a derived operator (result of applying dyadic operator to first operand)
+Value* APLHeap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand) {
+    Value* val = new Value();
+    val->tag = ValueType::DERIVED_OPERATOR;
+    val->data.derived_op = new Value::DerivedOperatorData();
+    val->data.derived_op->op = op;
+    val->data.derived_op->first_operand = first_operand;
+    return allocate(val);
+}
+
+// G2 grammar: Allocate a curried function (result of applying function to first argument)
+Value* APLHeap::allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type) {
+    Value* val = new Value();
+    val->tag = ValueType::CURRIED_FN;
+    val->data.curried_fn = new Value::CurriedFnData();
+    val->data.curried_fn->fn = fn;
+    val->data.curried_fn->first_arg = first_arg;
+    val->data.curried_fn->curry_type = curry_type;
     return allocate(val);
 }
 

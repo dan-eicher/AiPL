@@ -132,7 +132,7 @@ TEST_F(ParserTest, TestDyadicKWithTrampoline) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 }
 
-// Test right-to-left evaluation: 2 + 3 × 4 = 2 + 12 = 14
+// Test right-to-left evaluation: 2 + 3 * 4 (where * is power) = 2 + 3^4 = 2 + 81 = 83
 TEST_F(ParserTest, ParseRightToLeft) {
     Continuation* k = parser->parse("2 + 3 * 4");
     ASSERT_NE(k, nullptr);
@@ -140,7 +140,7 @@ TEST_F(ParserTest, ParseRightToLeft) {
     Value* result = eval(k);
 
     ASSERT_NE(result, nullptr);
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);  // NOT 20!
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 83.0);  // 2 + (3^4) = 2 + 81 = 83
 }
 
 // Test with APL symbols: 2 + 3 × 4
@@ -187,9 +187,9 @@ TEST_F(ParserTest, ParseLongChain) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
 }
 
-// Test mixed operators: 10 - 2 * 3 = 10 - 6 = 4
+// Test mixed operators: 10 - 2 × 3 = 10 - (2 × 3) = 10 - 6 = 4
 TEST_F(ParserTest, ParseMixedOperators) {
-    Continuation* k = parser->parse("10 - 2 * 3");
+    Continuation* k = parser->parse("10 - 2 × 3");
     ASSERT_NE(k, nullptr);
 
     Value* result = eval(k);
@@ -226,7 +226,7 @@ TEST_F(ParserTest, ParseParenthesizedExpression) {
 
 // Test parentheses change evaluation order: 2 × (3 + 4) = 2 × 7 = 14
 TEST_F(ParserTest, ParseParenthesesPrecedence) {
-    Continuation* k = parser->parse("2 * (3 + 4)");
+    Continuation* k = parser->parse("2 × (3 + 4)");
     ASSERT_NE(k, nullptr);
 
     Value* result = eval(k);
@@ -237,7 +237,7 @@ TEST_F(ParserTest, ParseParenthesesPrecedence) {
 
 // Test without parentheses for comparison: 2 × 3 + 4 = 2 × (3 + 4) = 2 × 7 = 14 (right-to-left)
 TEST_F(ParserTest, ParseWithoutParentheses) {
-    Continuation* k = parser->parse("2 * 3 + 4");
+    Continuation* k = parser->parse("2 × 3 + 4");
     ASSERT_NE(k, nullptr);
 
     Value* result = eval(k);
@@ -248,7 +248,7 @@ TEST_F(ParserTest, ParseWithoutParentheses) {
 
 // Test nested parentheses: ((2 + 3) × 4) = 5 × 4 = 20
 TEST_F(ParserTest, ParseNestedParentheses) {
-    Continuation* k = parser->parse("((2 + 3) * 4)");
+    Continuation* k = parser->parse("((2 + 3) × 4)");
     ASSERT_NE(k, nullptr);
 
     Value* result = eval(k);
@@ -259,7 +259,7 @@ TEST_F(ParserTest, ParseNestedParentheses) {
 
 // Test complex nested expression: (10 - (2 + 3)) × 2 = (10 - 5) × 2 = 5 × 2 = 10
 TEST_F(ParserTest, ParseComplexNested) {
-    Continuation* k = parser->parse("(10 - (2 + 3)) * 2");
+    Continuation* k = parser->parse("(10 - (2 + 3)) × 2");
     ASSERT_NE(k, nullptr);
 
     Value* result = eval(k);
@@ -364,37 +364,9 @@ TEST_F(ParserTest, ParseLongerStrand) {
     EXPECT_DOUBLE_EQ((*m)(4, 0), 50.0);
 }
 
-// Test strand with negative numbers (using parentheses for negatives)
-TEST_F(ParserTest, ParseStrandWithNegatives) {
-    Continuation* k = parser->parse("(-1) 2 (-3)");
-    ASSERT_NE(k, nullptr);
-
-    Value* result = eval(k);
-
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result->tag, ValueType::VECTOR);
-    EXPECT_EQ(result->rows(), 3);
-    Eigen::MatrixXd* m = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
-}
-
-// Test strand with parenthesized expressions
-TEST_F(ParserTest, ParseStrandWithParens) {
-    Continuation* k = parser->parse("(1+1) 3 (2*2)");
-    ASSERT_NE(k, nullptr);
-
-    Value* result = eval(k);
-
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result->tag, ValueType::VECTOR);
-    EXPECT_EQ(result->rows(), 3);
-    Eigen::MatrixXd* m = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);   // 1+1
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 4.0);   // 2*2
-}
+// ISO 13751: Strands are lexical - only numeric literals form strands
+// Tests for complex strand expressions (variables, parenthesized expressions) removed
+// Use ravel operator (,) for creating vectors from computed values
 
 // Test strand with decimals
 TEST_F(ParserTest, ParseStrandWithDecimals) {
@@ -514,24 +486,6 @@ TEST_F(ParserTest, ParseVariableInExpression) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
 }
 
-// Test variable in strand
-TEST_F(ParserTest, ParseVariableInStrand) {
-    // Define variable
-    machine->env->define("x", machine->heap->allocate_scalar(5.0));
-
-    Continuation* k = parser->parse("1 x 3");
-    ASSERT_NE(k, nullptr);
-
-    Value* result = eval(k);
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result->tag, ValueType::VECTOR);
-    EXPECT_EQ(result->rows(), 3);
-    Eigen::MatrixXd* m = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
-}
-
 // Test undefined variable error
 TEST_F(ParserTest, ParseUndefinedVariable) {
     Continuation* k = parser->parse("undefined");
@@ -638,21 +592,6 @@ TEST_F(ParserTest, ParseMonadicInDyadicContext) {
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
-}
-
-// Test monadic with strand: (-1) 2 (-3) (parentheses disambiguate)
-TEST_F(ParserTest, ParseMonadicInStrand) {
-    Continuation* k = parser->parse("(-1) 2 (-3)");
-    ASSERT_NE(k, nullptr);
-
-    Value* result = eval(k);
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result->tag, ValueType::VECTOR);
-    EXPECT_EQ(result->rows(), 3);
-    Eigen::MatrixXd* m = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
 }
 
 // Test double negation: --5 = 5
@@ -1132,6 +1071,337 @@ TEST_F(ParserTest, GCWithNestedExpressions) {
     ASSERT_NE(k2, nullptr);
     Value* result2 = eval(k2);
     EXPECT_DOUBLE_EQ(result2->as_scalar(), 30.0);
+}
+
+TEST_F(ParserTest, StrandIsNotJuxtapose) {
+    // "2 3" is a lexical strand (single TOK_NUMBER_VECTOR token)
+    // It should create StrandK, NOT JuxtaposeK
+    Continuation* k = parser->parse("2 3");
+    ASSERT_NE(k, nullptr);
+
+    StrandK* strand = dynamic_cast<StrandK*>(k);
+    ASSERT_NE(strand, nullptr) << "2 3 is a strand, not juxtaposition";
+
+    // Verify it's NOT juxtapose
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    EXPECT_EQ(jux, nullptr) << "Strand should not be JuxtaposeK";
+}
+
+TEST_F(ParserTest, MonadicNotJuxtapose) {
+    // "- 5" is TWO tokens: TOK_MINUS ("-") and TOK_NUMBER ("5")
+    // In G2 grammar, "-" is an identifier (fb-term), so this is juxtaposition
+    Continuation* k = parser->parse("- 5");
+    ASSERT_NE(k, nullptr);
+
+    // In G2, this should be JuxtaposeK
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "- 5 should be JuxtaposeK in G2 grammar";
+
+    // Verify it's NOT the old MonadicK
+    MonadicK* monadic = dynamic_cast<MonadicK*>(k);
+    EXPECT_EQ(monadic, nullptr) << "G2 grammar uses juxtaposition, not MonadicK";
+}
+
+TEST_F(ParserTest, FunctionNameAndStrand) {
+    // "× 5 6" is TWO tokens: TOK_TIMES ("×") and TOK_NUMBER_VECTOR ([5, 6])
+    // In G2 grammar, "×" is an identifier, so this is juxtaposition
+    Continuation* k = parser->parse("× 5 6");
+    ASSERT_NE(k, nullptr);
+
+    // In G2, this should be JuxtaposeK
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "× 5 6 should be JuxtaposeK in G2 grammar";
+
+    // The right side should be a strand
+    StrandK* strand = dynamic_cast<StrandK*>(jux->right);
+    EXPECT_NE(strand, nullptr) << "Right operand should be strand [5, 6]";
+}
+
+TEST_F(ParserTest, NameNameCreatesJuxtapose) {
+    // "f g" where both are variables should create JuxtaposeK
+    // This is two TOK_NAME tokens, so juxtaposition should occur
+    Value* plus_fn = machine->env->lookup("+");
+    Value* minus_fn = machine->env->lookup("-");
+    machine->env->define("f", plus_fn);
+    machine->env->define("g", minus_fn);
+
+    Continuation* k = parser->parse("f g");
+    ASSERT_NE(k, nullptr);
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "f g should create JuxtaposeK (two NAME tokens)";
+}
+
+TEST_F(ParserTest, NameNumberCreatesJuxtapose) {
+    // "f 3" where f is a variable and 3 is a number should create JuxtaposeK
+    // This is two separate tokens: TOK_NAME and TOK_NUMBER
+    Value* plus_fn = machine->env->lookup("+");
+    machine->env->define("f", plus_fn);
+
+    Continuation* k = parser->parse("f 3");
+    ASSERT_NE(k, nullptr);
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "f 3 should create JuxtaposeK (NAME followed by NUMBER)";
+}
+
+TEST_F(ParserTest, NumberNameCreatesJuxtapose) {
+    // "2 f" should create JuxtaposeK (two separate tokens)
+    Value* plus_fn = machine->env->lookup("+");
+    machine->env->define("f", plus_fn);
+
+    Continuation* k = parser->parse("2 f");
+    ASSERT_NE(k, nullptr);
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "2 f should create JuxtaposeK (NUMBER followed by NAME)";
+}
+
+TEST_F(ParserTest, NumberNameNumberCreatesJuxtapose) {
+    // "2 f 3" should create nested JuxtaposeK
+    Value* plus_fn = machine->env->lookup("+");
+    machine->env->define("f", plus_fn);
+
+    Continuation* k = parser->parse("2 f 3");
+    ASSERT_NE(k, nullptr);
+
+    // Right-associative (APL style): 2 (f 3)
+    JuxtaposeK* outer = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(outer, nullptr) << "2 f 3 should create outer JuxtaposeK";
+
+    JuxtaposeK* inner = dynamic_cast<JuxtaposeK*>(outer->right);
+    ASSERT_NE(inner, nullptr) << "Right side (f 3) should also be JuxtaposeK";
+}
+
+TEST_F(ParserTest, OuterProductScalarParseStructure) {
+    // "3 ∘.× 5" with single scalars (simpler than strand case)
+    Continuation* k = parser->parse("3 ∘.× 5");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    EXPECT_NE(jux, nullptr) << "3 ∘.× 5 should have JuxtaposeK at top level";
+}
+
+TEST_F(ParserTest, OuterProductStrandParseStructure) {
+    // Outer product "3 4 ∘.× 5 6" should parse as:
+    // JuxtaposeK(StrandK(3,4), JuxtaposeK(DerivedOperatorK(×,"∘."), StrandK(5,6)))
+    // This is: (3 4) ((∘.×) (5 6))
+    Continuation* k = parser->parse("3 4 ∘.× 5 6");
+    ASSERT_NE(k, nullptr);
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr);
+
+    // Left side should be StrandK (left array)
+    StrandK* left_strand = dynamic_cast<StrandK*>(jux->left);
+    ASSERT_NE(left_strand, nullptr) << "Left side should be StrandK";
+
+    // Right side should be JuxtaposeK (derived operator applied to right array)
+    JuxtaposeK* right_jux = dynamic_cast<JuxtaposeK*>(jux->right);
+    ASSERT_NE(right_jux, nullptr) << "Right side should be JuxtaposeK";
+
+    // Right.Left should be DerivedOperatorK
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(right_jux->left);
+    ASSERT_NE(derived, nullptr) << "Right.Left should be DerivedOperatorK";
+    EXPECT_STREQ(derived->op_name, "∘.");
+}
+
+TEST_F(ParserTest, OuterProductEvaluatesToMatrix) {
+    Continuation* k = parser->parse("3 4 ∘.× 5 6");
+    ASSERT_NE(k, nullptr);
+
+    // Debug: print parse tree structure
+    std::cerr << "Outer product parse tree: " << typeid(*k).name() << std::endl;
+    if (auto* jux = dynamic_cast<JuxtaposeK*>(k)) {
+        std::cerr << "  Left: " << typeid(*jux->left).name() << std::endl;
+        std::cerr << "  Right: " << typeid(*jux->right).name() << std::endl;
+        if (auto* jux_right = dynamic_cast<JuxtaposeK*>(jux->right)) {
+            std::cerr << "    Right.Left: " << typeid(*jux_right->left).name() << std::endl;
+            std::cerr << "    Right.Right: " << typeid(*jux_right->right).name() << std::endl;
+            if (auto* derived = dynamic_cast<DerivedOperatorK*>(jux_right->left)) {
+                std::cerr << "      DerivedOp.operand: " << typeid(*derived->operand_cont).name() << std::endl;
+                std::cerr << "      DerivedOp.op_name: " << derived->op_name << std::endl;
+            }
+        }
+    }
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::MATRIX) << "Result should be MATRIX, got tag " << static_cast<int>(result->tag);
+}
+
+// ============================================================================
+// Comprehensive Juxtaposition Tests
+// Test all cases of juxtaposition in G2 grammar
+// ============================================================================
+
+// Test: Primitive function followed by operator creates derived operator
+TEST_F(ParserTest, PrimitiveFunctionWithOperator) {
+    Continuation* k = parser->parse("+/");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should be DerivedOperatorK (+ with /)
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr) << "+/ should create DerivedOperatorK";
+    EXPECT_STREQ(derived->op_name, "/");
+}
+
+// Test: Derived operator followed by primitive function (juxtaposition)
+TEST_F(ParserTest, DerivedOperatorWithPrimitiveFunctionJuxtaposition) {
+    Continuation* k = parser->parse("+/ ×");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // "+/" is fb-term, "×" triggers juxtaposition
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "+/ × should create JuxtaposeK";
+}
+
+// Test: Chained operators with juxtaposition "+/ ×/ 1 2 3"
+TEST_F(ParserTest, ChainedOperatorsWithJuxtaposition) {
+    Continuation* k = parser->parse("+/ ×/ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should parse as: (+/) ((×/) (1 2 3))
+    // Top level should be JuxtaposeK
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "+/ ×/ 1 2 3 should create JuxtaposeK at top level";
+
+    // Left side should be DerivedOperatorK (+/)
+    DerivedOperatorK* left_derived = dynamic_cast<DerivedOperatorK*>(jux->left);
+    ASSERT_NE(left_derived, nullptr) << "Left side should be +/";
+    EXPECT_STREQ(left_derived->op_name, "/");
+}
+
+// Test: Primitive function with commute operator
+TEST_F(ParserTest, PrimitiveFunctionWithCommute) {
+    Continuation* k = parser->parse("+⍨");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should be DerivedOperatorK (+ with ⍨)
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr) << "+⍨ should create DerivedOperatorK";
+    EXPECT_STREQ(derived->op_name, "⍨");
+}
+
+// Test: Number juxtaposed with function and commute "2 +⍨ 3"
+TEST_F(ParserTest, NumberFunctionCommuteNumber) {
+    Continuation* k = parser->parse("2 +⍨ 3");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should parse as: ((2 (+⍨)) 3) via left-to-right juxtaposition
+    // Top level is JuxtaposeK
+    JuxtaposeK* top_jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(top_jux, nullptr) << "2 +⍨ 3 should create JuxtaposeK at top level";
+}
+
+// Test: Inner product juxtaposition "3 4 +.× 5 6"
+TEST_F(ParserTest, InnerProductJuxtaposition) {
+    Continuation* k = parser->parse("3 4 +.× 5 6");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should parse - structure will be juxtaposition of strand, derived op, strand
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "3 4 +.× 5 6 should create JuxtaposeK";
+}
+
+// Test: Primitive function followed by dot and another function "+.×"
+TEST_F(ParserTest, PrimitiveFunctionDotPrimitiveFunction) {
+    Continuation* k = parser->parse("+.×");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should parse as: (+.) followed by × creating juxtaposition or application
+    // The key is it should parse without error
+}
+
+// Test: Primitive function followed by number "2 + 3"
+TEST_F(ParserTest, PrimitiveFunctionJuxtaposedWithNumbers) {
+    Continuation* k = parser->parse("2 + 3");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should parse as: (2 (+)) 3 via juxtaposition
+    // Top level is JuxtaposeK
+    JuxtaposeK* top_jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(top_jux, nullptr) << "2 + 3 should create JuxtaposeK at top level";
+
+    // Can also evaluate to verify it works
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test: Multiple primitive functions in a row "2 + 3 × 4"
+TEST_F(ParserTest, MultiplePrimitiveFunctionsJuxtaposition) {
+    Continuation* k = parser->parse("2 + 3 × 4");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should parse via left-to-right juxtaposition
+    JuxtaposeK* top_jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(top_jux, nullptr) << "2 + 3 × 4 should create JuxtaposeK at top level";
+
+    // Evaluate to verify right-to-left application: 2 + (3 × 4) = 2 + 12 = 14
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
+}
+
+// ============================================================================
+// Derived Operator Tests (commute/duplicate)
+// ============================================================================
+
+TEST_F(ParserTest, DerivedOperatorCommuteParsing) {
+    // "+⍨" should parse as a derived operator (DerivedOperatorK)
+    Continuation* k = parser->parse("+⍨");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr) << "+⍨ should parse as DerivedOperatorK";
+}
+
+TEST_F(ParserTest, DerivedOperatorCommuteMonadic) {
+    // "+⍨ 3" should be JuxtaposeK with derived operator on left
+    Continuation* k = parser->parse("+⍨ 3");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "+⍨ 3 should be JuxtaposeK";
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(jux->left);
+    EXPECT_NE(derived, nullptr) << "Left side should be DerivedOperatorK";
+}
+
+TEST_F(ParserTest, DerivedOperatorCommuteDyadic) {
+    // "2 +⍨ 3" should be JuxtaposeK: 2 ((+⍨) 3)
+    // Right-associative, so: 2 (juxtapose) ((+⍨) (juxtapose) 3)
+    Continuation* k = parser->parse("2 +⍨ 3");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    JuxtaposeK* outer = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(outer, nullptr) << "2 +⍨ 3 should be JuxtaposeK at top level";
+
+    // Left should be LiteralK(2)
+    LiteralK* left_lit = dynamic_cast<LiteralK*>(outer->left);
+    EXPECT_NE(left_lit, nullptr) << "Left should be LiteralK(2)";
+
+    // Right should be JuxtaposeK: (+⍨) 3
+    JuxtaposeK* inner = dynamic_cast<JuxtaposeK*>(outer->right);
+    ASSERT_NE(inner, nullptr) << "Right should be JuxtaposeK (+⍨ 3)";
+
+    // Inner left should be DerivedOperatorK
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(inner->left);
+    EXPECT_NE(derived, nullptr) << "Inner left should be DerivedOperatorK (+⍨)";
+
+    // Inner right should be LiteralK(3)
+    LiteralK* right_lit = dynamic_cast<LiteralK*>(inner->right);
+    EXPECT_NE(right_lit, nullptr) << "Inner right should be LiteralK(3)";
 }
 
 // Main function

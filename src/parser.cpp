@@ -13,8 +13,10 @@ namespace apl {
 // This gives us right-to-left evaluation
 const int BP_NONE = 0;
 const int BP_ASSIGN = 5;         // Assignment has lowest precedence
-const int BP_OPERATOR = 10;      // All dyadic operators have same precedence
-const int BP_JUXTAPOSE = 100;    // Juxtaposition (strands) binds tightest
+const int BP_OUTER_PRODUCT = 10; // Outer product has low BP (doesn't grab array args)
+const int BP_JUXTAPOSE = 20;     // Function application (juxtaposition)
+const int BP_INNER_PRODUCT = 30; // Inner product has high BP (grabs function operands first)
+const int BP_POSTFIX_OP = 50;    // Postfix operators (⍨, ¨, /, \) bind tightest
 
 // Parse entry point - unified for both single expressions and multi-statement programs
 Continuation* Parser::parse(const std::string& input) {
@@ -74,35 +76,43 @@ Continuation* Parser::parse(const std::string& input) {
     }
 }
 
-// Juxtaposition handler - forms strands from adjacent values
+// Juxtaposition handler - implements G2 grammar juxtaposition
 // Called when we see a token that can start a value in juxtaposition position
+// G2 Grammar: fbn-term ::= fb-term fbn-term
+// Semantics: if type(x₁) = bas then x₂(x₁) else x₁(x₂)
+//
+// IMPORTANT: Juxtaposition is LEFT-associative for G2 grammar!
+// This ensures "2 f 3" parses as "(2 f) 3", giving correct argument order.
+//
+// Juxtaposition handler - implements G2 grammar juxtaposition
+// ALL juxtaposition is function application (G2 rule)
+// Strands are handled at lexer level for numeric literals only (ISO 13751)
 Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
-    // Parse the right operand (don't consume token - it's already current)
+    // G2 Rule 3: derived-operator fb → fb-term
+    // If left is a derived operator from a DYADIC operator (like "."),
+    // it should grab just fb (the function), not a full fbn-term.
+    // This is distinct from Rule 1 (fb-term fbn-term) for general juxtaposition.
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(left);
+    if (derived && strcmp(derived->op_name, ".") == 0) {
+        // Dyadic operator's derived form: parse right with high BP to get just the function
+        Continuation* right = parse_expression(BP_POSTFIX_OP);
+        if (!right) {
+            return nullptr;
+        }
+        return machine_->heap->allocate<JuxtaposeK>(left, right);
+    }
+
+    // Parse the right operand
+    // APL is right-associative: use bp (not bp+1) to continue parsing to the right
+    // This builds right-associative structures for proper APL evaluation order
     Continuation* right = parse_expression(bp);
     if (!right) {
         return nullptr;
     }
 
-    // Build strand from left and right
-    // Per Grammar G2, all values/functions share same syntactic category
-    // Juxtaposition ALWAYS means strand at parse time
-    std::vector<Continuation*> elements;
-
-    // If left is already a strand, extend it
-    if (auto* strand = dynamic_cast<StrandK*>(left)) {
-        elements = strand->elements;
-    } else {
-        elements.push_back(left);
-    }
-
-    // If right is a strand, append all its elements
-    if (auto* strand = dynamic_cast<StrandK*>(right)) {
-        elements.insert(elements.end(), strand->elements.begin(), strand->elements.end());
-    } else {
-        elements.push_back(right);
-    }
-
-    return machine_->heap->allocate<StrandK>(elements);
+    // G2 juxtaposition: fbn-term ::= fb-term fbn-term
+    // Semantics: if type(x₁)=bas then x₂(x₁) else x₁(x₂)
+    return machine_->heap->allocate<JuxtaposeK>(left, right);
 }
 
 // Core Pratt parsing algorithm
@@ -133,21 +143,36 @@ Continuation* Parser::parse_expression(int min_bp) {
 
         int bp = get_binding_power(next);
 
-        // Check for juxtaposition (implicit strand formation)
-        // Juxtaposition occurs when we see a token that can start a value (fb-term)
-        // This corresponds to the grammar rule: fbn-term ::= fb-term fbn-term
+        // Check for juxtaposition (G2 grammar: fbn-term ::= fb-term fbn-term)
+        // Juxtaposition occurs when we see a token that can start fb-term
+        // G2: fb ::= identifier | ( expression )
+        // Primitive functions are identifiers, so they trigger juxtaposition
         bool is_juxtaposition = false;
-        if (bp == BP_NONE) {
-            // Not an operator - check if it can start a value (nud-able token)
+
+        // Special case: ∘. (outer product) always triggers juxtaposition
+        // It has a binding power but should be treated as a prefix operator
+        if (next.type == TOK_OUTER_PRODUCT) {
+            is_juxtaposition = true;
+            bp = BP_JUXTAPOSE;
+        } else if (bp == BP_NONE) {
+            // Tokens that can start fb: numbers, identifiers (including primitives), parentheses
             switch (next.type) {
                 case TOK_NUMBER:
+                case TOK_NUMBER_VECTOR:
                 case TOK_LPAREN:
-                // TODO (Phase 3.4.1): TOK_MINUS is NOT included here because it's ambiguous
-                // (could be monadic negate or dyadic subtraction). This is a phase ordering
-                // issue - we need to implement monadic operators first. For now, negative
-                // literals in strands must use parentheses: (-1) 2 (-3)
-                // Alternatively, we could add APL's ¯ (high minus) for negative literals.
-                case TOK_NAME:   // For variables (Phase 3.2.3)
+                case TOK_NAME:
+                case TOK_ALPHA:  // ⍺ in dfns
+                case TOK_OMEGA:  // ⍵ in dfns
+                // Primitive function tokens are identifiers in G2 grammar
+                case TOK_PLUS:
+                case TOK_MINUS:
+                case TOK_TIMES:
+                case TOK_POWER:
+                case TOK_DIVIDE:
+                case TOK_RESHAPE:
+                case TOK_RAVEL:
+                case TOK_IOTA:
+                case TOK_EQUAL:
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -192,6 +217,17 @@ Continuation* Parser::nud(const Token& token) {
             return lit;
         }
 
+        case TOK_NUMBER_VECTOR: {
+            // Numeric vector literal (ISO 13751): "1 2 3" → vector [1, 2, 3]
+            // Map token data to Eigen vector and create Value
+            Eigen::VectorXd vec = Eigen::Map<const Eigen::VectorXd>(
+                token.vector_data, token.vector_size);
+            Value* vec_val = machine_->heap->allocate_vector(vec);
+            // Create StrandK that holds this vector Value
+            StrandK* strand = machine_->heap->allocate<StrandK>(vec_val);
+            return strand;
+        }
+
         case TOK_LPAREN: {
             // Parenthesized expression: parse inner expression with minimum binding power
             Continuation* inner = parse_expression(BP_NONE);
@@ -218,10 +254,11 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_RAVEL:
         case TOK_IOTA:
         case TOK_EQUAL: {
-            // Monadic operator in prefix position
-            // Parse the operand and create MonadicK continuation
+            // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
+            // They are NOT special monadic operators in the grammar
+            // Monadic behavior emerges from juxtaposition + runtime semantics
+            // So ALWAYS create LookupK for primitive function tokens
 
-            // Determine operator name and intern it
             const char* op_name = nullptr;
             switch (token.type) {
                 case TOK_PLUS:    op_name = "+"; break;
@@ -236,18 +273,9 @@ Continuation* Parser::nud(const Token& token) {
                 default: break;
             }
 
-            // Intern the operator name
             const char* interned_name = machine_->string_pool.intern(op_name);
-
-            // Parse the operand with high binding power (monadic binds tighter than dyadic)
-            Continuation* operand = parse_expression(BP_OPERATOR + 50);
-            if (!operand) {
-                return nullptr;
-            }
-
-            // Create MonadicK continuation (lookup deferred to evaluation time)
-            MonadicK* monadic = machine_->heap->allocate<MonadicK>(interned_name, operand);
-            return monadic;
+            LookupK* lookup = machine_->heap->allocate<LookupK>(interned_name);
+            return lookup;
         }
 
         case TOK_NAME: {
@@ -281,6 +309,20 @@ Continuation* Parser::nud(const Token& token) {
             // Create ClosureLiteralK with the body
             ClosureLiteralK* closure_lit = machine_->heap->allocate<ClosureLiteralK>(body);
             return closure_lit;
+        }
+
+        case TOK_OUTER_PRODUCT: {
+            // Outer product: ∘.f where f is a function
+            // Parse the function operand with high binding power to get just the function
+            Continuation* fn_operand = parse_expression(BP_POSTFIX_OP);
+            if (!fn_operand) {
+                error_message_ = "Outer product operator requires a function operand";
+                return nullptr;
+            }
+
+            const char* interned_name = machine_->string_pool.intern("∘.");
+            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
+            return derived;
         }
 
         default:
@@ -340,53 +382,69 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         return apply;
     }
 
-    // Determine operator name for regular operators
-    const char* op_name = nullptr;
+    // Handle postfix monadic operators (¨, ⍨, /, \, ⌿, ⍀)
+    // G2 Grammar: fb-term ::= fb-term monadic-operator
+    // Evaluates as: x₂(x₁) - operator applied to operand
+    if (token.type == TOK_EACH || token.type == TOK_COMMUTE ||
+        token.type == TOK_REDUCE || token.type == TOK_SCAN ||
+        token.type == TOK_REDUCE_FIRST || token.type == TOK_SCAN_FIRST) {
+        const char* op_name = nullptr;
+        if (token.type == TOK_EACH) {
+            op_name = "¨";
+        } else if (token.type == TOK_COMMUTE) {
+            op_name = "⍨";
+        } else if (token.type == TOK_REDUCE) {
+            op_name = "/";
+        } else if (token.type == TOK_SCAN) {
+            op_name = "\\";
+        } else if (token.type == TOK_REDUCE_FIRST) {
+            op_name = "⌿";
+        } else if (token.type == TOK_SCAN_FIRST) {
+            op_name = "⍀";
+        }
 
-    switch (token.type) {
-        case TOK_PLUS:
-            op_name = "+";
-            break;
-        case TOK_MINUS:
-            op_name = "-";
-            break;
-        case TOK_TIMES:
-        case TOK_POWER:  // * is an alias for ×
-            op_name = "×";
-            break;
-        case TOK_DIVIDE:
-            op_name = "÷";
-            break;
-        case TOK_RESHAPE:
-            op_name = "⍴";
-            break;
-        case TOK_RAVEL:
-            op_name = ",";
-            break;
-        case TOK_EQUAL:
-            op_name = "=";
-            break;
-        default:
-            error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
+        const char* interned_name = machine_->string_pool.intern(op_name);
+
+        // Create DerivedOperatorK: evaluate operand (left), then apply operator
+        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+        return derived;
+    }
+
+    // Handle outer product (∘.)
+    // Syntax: A ∘.f B where A and B are arrays, f is a function
+    // In "3 ∘.× 5", left=3 (array), we need to parse × (function)
+    if (token.type == TOK_OUTER_PRODUCT) {
+        // Parse the function operand with high binding power to get just the function
+        Continuation* fn_operand = parse_expression(BP_POSTFIX_OP);
+        if (!fn_operand) {
+            error_message_ = "Outer product operator requires a function operand";
             return nullptr;
+        }
+
+        const char* interned_name = machine_->string_pool.intern("∘.");
+
+        // Create derived operator from ∘. and the function
+        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
+
+        // Now create juxtaposition: left (∘.f)
+        // This applies ∘.f monadically to left, which will curry waiting for right argument
+        JuxtaposeK* jux = machine_->heap->allocate<JuxtaposeK>(left, derived);
+        return jux;
     }
 
-    // Intern the operator name
-    const char* interned_name = machine_->string_pool.intern(op_name);
-
-    // For right-associative operators, we parse the right side with the SAME binding power
-    // This is the key to right-to-left evaluation in Pratt parsing
-    int bp = get_binding_power(token);
-    Continuation* right = parse_expression(bp);
-
-    if (!right) {
-        return nullptr;
+    // Handle inner product (.)
+    // G2 Grammar Rule 4: fb-term dyadic-operator → derived-operator
+    // The second operand will be delivered via juxtaposition (Rule 3: derived-operator fb → fb-term)
+    if (token.type == TOK_DOT) {
+        const char* interned_name = machine_->string_pool.intern(".");
+        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+        return derived;
     }
 
-    // Create dyadic operation continuation (lookup deferred to evaluation time)
-    DyadicK* dyadic = machine_->heap->allocate<DyadicK>(interned_name, left, right);
-
-    return dyadic;
+    // If we reach here, it's an unexpected token in infix position
+    // In G2 grammar, all valid infix tokens should be handled above
+    error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
+    return nullptr;
 }
 
 // Parse dfn body: parses statements from current position until }
@@ -659,23 +717,43 @@ Continuation* Parser::parse_statement() {
 
 // Get binding power for a token
 int Parser::get_binding_power(const Token& token) {
-    // In APL, all operators have the same precedence
-    // Right-to-left evaluation is achieved through right-associativity
-    // Assignment has lowest precedence
+    // G2 Grammar: Primitive functions are identifiers, not operators
+    // Operators (/, \, ¨, ⍨, ., ∘.) are distinct tokens with binding power
+    // Primitive functions have no binding power - they trigger juxtaposition
     switch (token.type) {
         case TOK_ASSIGN:
             return BP_ASSIGN;
 
+        // Primitive functions are identifiers in G2 - they have no binding power
+        // Juxtaposition + currying produces infix behavior at runtime
         case TOK_PLUS:
         case TOK_MINUS:
         case TOK_TIMES:
-        case TOK_POWER:  // * is an alias for ×
+        case TOK_POWER:
         case TOK_DIVIDE:
         case TOK_RESHAPE:
         case TOK_RAVEL:
         case TOK_IOTA:
+        case TOK_EQUAL:
+            return BP_NONE;  // Treat as identifiers
+
         case TOK_LBRACE:  // Dfns can be used as dyadic functions
-            return BP_OPERATOR;
+            return BP_JUXTAPOSE;
+
+        // Postfix monadic operators bind tighter than infix
+        case TOK_EACH:
+        case TOK_COMMUTE:
+        case TOK_REDUCE:
+        case TOK_SCAN:
+        case TOK_REDUCE_FIRST:
+        case TOK_SCAN_FIRST:
+            return BP_POSTFIX_OP;
+
+        // Infix dyadic operators (different binding powers)
+        case TOK_DOT:
+            return BP_INNER_PRODUCT;  // High BP: grab function operands before juxtaposition
+        case TOK_OUTER_PRODUCT:
+            return BP_OUTER_PRODUCT;  // Low BP: don't steal array arguments
 
         // Closing delimiters should never be treated as infix
         // Give them negative binding power to stop parsing

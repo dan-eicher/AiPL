@@ -3,6 +3,8 @@
 #include <gtest/gtest.h>
 #include "value.h"
 #include "machine.h"
+#include "primitives.h"
+#include "operators.h"
 #include <Eigen/Dense>
 
 using namespace apl;
@@ -35,7 +37,6 @@ TEST_F(ValueTest, ScalarCreation) {
     EXPECT_EQ(v->rank(), 0);
     EXPECT_EQ(v->size(), 1);
 
-    // GC will clean up v
 }
 
 // Test scalar with negative value
@@ -45,7 +46,6 @@ TEST_F(ValueTest, NegativeScalar) {
     EXPECT_TRUE(v->is_scalar());
     EXPECT_DOUBLE_EQ(v->as_scalar(), -3.14);
 
-    // GC will clean up v
 }
 
 // Test scalar lazy promotion to matrix
@@ -63,7 +63,6 @@ TEST_F(ValueTest, ScalarLazyPromotion) {
     Eigen::MatrixXd* m2 = v->as_matrix();
     EXPECT_EQ(m1, m2);  // Same pointer
 
-    // GC will clean up v
 }
 
 // Test vector creation
@@ -83,7 +82,6 @@ TEST_F(ValueTest, VectorCreation) {
     EXPECT_EQ(v->cols(), 1);
     EXPECT_EQ(v->size(), 4);
 
-    // GC will clean up v
 }
 
 // Test vector stored as n×1 matrix
@@ -102,7 +100,6 @@ TEST_F(ValueTest, VectorAsMatrix) {
     EXPECT_DOUBLE_EQ((*m)(1, 0), 20.0);
     EXPECT_DOUBLE_EQ((*m)(2, 0), 30.0);
 
-    // GC will clean up v
 }
 
 // Test matrix creation
@@ -123,7 +120,6 @@ TEST_F(ValueTest, MatrixCreation) {
     EXPECT_EQ(v->cols(), 3);
     EXPECT_EQ(v->size(), 6);
 
-    // GC will clean up v
 }
 
 // Test matrix access
@@ -143,7 +139,6 @@ TEST_F(ValueTest, MatrixAccess) {
     EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);
     EXPECT_DOUBLE_EQ((*m)(1, 1), 4.0);
 
-    // GC will clean up v
 }
 
 // Test empty vector
@@ -157,7 +152,6 @@ TEST_F(ValueTest, EmptyVector) {
     EXPECT_EQ(v->rows(), 0);
     EXPECT_EQ(v->cols(), 1);
 
-    // GC will clean up v
 }
 
 // Test 1×1 matrix vs scalar
@@ -176,7 +170,6 @@ TEST_F(ValueTest, SingleElementMatrix) {
     Eigen::MatrixXd* m = v->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 7.0);
 
-    // GC will clean up v
 }
 
 // Test large vector
@@ -197,7 +190,6 @@ TEST_F(ValueTest, LargeVector) {
         EXPECT_DOUBLE_EQ((*m)(i, 0), static_cast<double>(i));
     }
 
-    // GC will clean up v
 }
 
 // Test large matrix
@@ -224,7 +216,6 @@ TEST_F(ValueTest, LargeMatrix) {
         }
     }
 
-    // GC will clean up v
 }
 
 // Test error handling - as_scalar on vector
@@ -236,7 +227,6 @@ TEST_F(ValueTest, ErrorScalarOnVector) {
 
     EXPECT_THROW(v->as_scalar(), std::runtime_error);
 
-    // GC will clean up v
 }
 
 // Test zero value
@@ -246,7 +236,6 @@ TEST_F(ValueTest, ZeroScalar) {
     EXPECT_TRUE(v->is_scalar());
     EXPECT_DOUBLE_EQ(v->as_scalar(), 0.0);
 
-    // GC will clean up v
 }
 
 // Test const as_matrix
@@ -262,7 +251,6 @@ TEST_F(ValueTest, ConstAsMatrix) {
     EXPECT_DOUBLE_EQ((*m)(0, 0), 5.0);
     EXPECT_DOUBLE_EQ((*m)(1, 0), 10.0);
 
-    // GC will clean up v
 }
 
 // Test GC metadata initialization
@@ -272,7 +260,6 @@ TEST_F(ValueTest, GCMetadataInit) {
     EXPECT_FALSE(v->marked);
     EXPECT_FALSE(v->in_old_generation);
 
-    // GC will clean up v
 }
 
 // Test GC metadata on different types
@@ -293,9 +280,6 @@ TEST_F(ValueTest, GCMetadataAllTypes) {
     EXPECT_FALSE(v->in_old_generation);
     EXPECT_FALSE(m->in_old_generation);
 
-    // GC will clean up -     delete s;
-    // GC will clean up v
-    // GC will clean up -     delete m;
 }
 
 // Test mark bit setting
@@ -310,7 +294,6 @@ TEST_F(ValueTest, MarkBit) {
     v->marked = false;
     EXPECT_FALSE(v->marked);
 
-    // GC will clean up v
 }
 
 // Test old generation flag
@@ -322,7 +305,6 @@ TEST_F(ValueTest, OldGenerationFlag) {
     v->in_old_generation = true;
     EXPECT_TRUE(v->in_old_generation);
 
-    // GC will clean up v
 }
 
 // Test rank for all types
@@ -339,9 +321,6 @@ TEST_F(ValueTest, RankAllTypes) {
     EXPECT_EQ(v->rank(), 1);
     EXPECT_EQ(m->rank(), 2);
 
-    // GC will clean up -     delete s;
-    // GC will clean up v
-    // GC will clean up -     delete m;
 }
 
 // Test size for all types
@@ -358,9 +337,6 @@ TEST_F(ValueTest, SizeAllTypes) {
     EXPECT_EQ(v->size(), 5);
     EXPECT_EQ(m->size(), 12);
 
-    // GC will clean up -     delete s;
-    // GC will clean up v
-    // GC will clean up -     delete m;
 }
 
 // Test rows and cols
@@ -382,9 +358,6 @@ TEST_F(ValueTest, RowsAndCols) {
     EXPECT_EQ(m->rows(), 4);
     EXPECT_EQ(m->cols(), 5);
 
-    // GC will clean up -     delete s;
-    // GC will clean up v
-    // GC will clean up -     delete m;
 }
 
 // Test vector with fractional values
@@ -399,7 +372,6 @@ TEST_F(ValueTest, VectorFractional) {
     EXPECT_DOUBLE_EQ((*m)(1, 0), 2.7);
     EXPECT_DOUBLE_EQ((*m)(2, 0), 3.14);
 
-    // GC will clean up v
 }
 
 // Test matrix with negative values
@@ -415,7 +387,6 @@ TEST_F(ValueTest, MatrixNegative) {
     EXPECT_DOUBLE_EQ((*m)(1, 0), -3.0);
     EXPECT_DOUBLE_EQ((*m)(1, 1), -4.0);
 
-    // GC will clean up v
 }
 
 // Test very large scalar
@@ -424,7 +395,6 @@ TEST_F(ValueTest, VeryLargeScalar) {
 
     EXPECT_DOUBLE_EQ(v->as_scalar(), 1.7976931348623157e+308);
 
-    // GC will clean up v
 }
 
 // Test very small scalar
@@ -433,7 +403,139 @@ TEST_F(ValueTest, VerySmallScalar) {
 
     EXPECT_DOUBLE_EQ(v->as_scalar(), 2.2250738585072014e-308);
 
-    // GC will clean up v
+}
+
+// ============================================================================
+// G2 Grammar Value Types Tests
+// ============================================================================
+
+// Test DERIVED_OPERATOR value creation
+TEST_F(ValueTest, DerivedOperatorCreation) {
+    // Create a simple function value (operand)
+    Value* operand = machine->heap->allocate_scalar(5.0);
+
+    // Create a derived operator (e.g., +∘. where + is the operator and operand is first arg)
+    Value* derived = machine->heap->allocate_derived_operator(&op_dot, operand);
+
+    EXPECT_TRUE(derived->is_operator());
+    EXPECT_TRUE(derived->is_derived_operator());
+    EXPECT_FALSE(derived->is_function());
+    EXPECT_FALSE(derived->is_array());
+    EXPECT_EQ(derived->tag, ValueType::DERIVED_OPERATOR);
+
+    // Check the data is correctly stored
+    EXPECT_EQ(derived->data.derived_op->op, &op_dot);
+    EXPECT_EQ(derived->data.derived_op->first_operand, operand);
+
+}
+
+// Test CURRIED_FN value creation with dyadic curry
+TEST_F(ValueTest, CurriedFnDyadicCreation) {
+    // Create a function and argument
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* first_arg = machine->heap->allocate_scalar(3.0);
+
+    // Create curried function: (+3)
+    Value* curried = machine->heap->allocate_curried_fn(fn, first_arg, Value::CurryType::DYADIC_CURRY);
+
+    EXPECT_TRUE(curried->is_function());
+    EXPECT_TRUE(curried->is_curried_fn());
+    EXPECT_FALSE(curried->is_operator());
+    EXPECT_FALSE(curried->is_array());
+    EXPECT_EQ(curried->tag, ValueType::CURRIED_FN);
+
+    // Check the data
+    EXPECT_EQ(curried->data.curried_fn->fn, fn);
+    EXPECT_EQ(curried->data.curried_fn->first_arg, first_arg);
+    EXPECT_EQ(curried->data.curried_fn->curry_type, Value::CurryType::DYADIC_CURRY);
+
+}
+
+// Test CURRIED_FN value creation with g' transformation
+TEST_F(ValueTest, CurriedFnGPrimeCreation) {
+    // Create a function and argument
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+    Value* first_arg = machine->heap->allocate_scalar(10.0);
+
+    // Create curried function with g' transformation: (-10)
+    Value* curried = machine->heap->allocate_curried_fn(fn, first_arg, Value::CurryType::G_PRIME);
+
+    EXPECT_TRUE(curried->is_function());
+    EXPECT_TRUE(curried->is_curried_fn());
+    EXPECT_EQ(curried->tag, ValueType::CURRIED_FN);
+
+    // Check the data
+    EXPECT_EQ(curried->data.curried_fn->fn, fn);
+    EXPECT_EQ(curried->data.curried_fn->first_arg, first_arg);
+    EXPECT_EQ(curried->data.curried_fn->curry_type, Value::CurryType::G_PRIME);
+
+}
+
+// Test OPERATOR value creation
+TEST_F(ValueTest, OperatorCreation) {
+    // Create an operator value
+    Value* op = machine->heap->allocate_operator(&op_diaeresis);
+
+    EXPECT_TRUE(op->is_operator());
+    EXPECT_FALSE(op->is_derived_operator());
+    EXPECT_FALSE(op->is_function());
+    EXPECT_FALSE(op->is_array());
+    EXPECT_EQ(op->tag, ValueType::OPERATOR);
+
+    // Check the data
+    EXPECT_EQ(op->data.op, &op_diaeresis);
+
+}
+
+// Test is_basic_value for G2 grammar
+TEST_F(ValueTest, IsBasicValue) {
+    Value* scalar = machine->heap->allocate_scalar(1.0);
+    Eigen::VectorXd vec(2);
+    vec << 1, 2;
+    Value* vector = machine->heap->allocate_vector(vec);
+    Eigen::MatrixXd mat(2, 2);
+    mat << 1, 2, 3, 4;
+    Value* matrix = machine->heap->allocate_matrix(mat);
+    Value* func = machine->heap->allocate_primitive(&prim_plus);
+    Value* op = machine->heap->allocate_operator(&op_dot);
+
+    // Basic values are scalars and arrays
+    EXPECT_TRUE(scalar->is_basic_value());
+    EXPECT_TRUE(vector->is_basic_value());
+    EXPECT_TRUE(matrix->is_basic_value());
+
+    // Functions and operators are not basic values
+    EXPECT_FALSE(func->is_basic_value());
+    EXPECT_FALSE(op->is_basic_value());
+
+}
+
+// Test CURRIED_FN with array argument
+TEST_F(ValueTest, CurriedFnWithArrayArg) {
+    Value* fn = machine->heap->allocate_primitive(&prim_rho);
+    Eigen::VectorXd vec(3);
+    vec << 2, 3, 4;
+    Value* arr_arg = machine->heap->allocate_vector(vec);
+
+    Value* curried = machine->heap->allocate_curried_fn(fn, arr_arg, Value::CurryType::DYADIC_CURRY);
+
+    EXPECT_TRUE(curried->is_function());
+    EXPECT_EQ(curried->data.curried_fn->fn, fn);
+    EXPECT_EQ(curried->data.curried_fn->first_arg, arr_arg);
+    EXPECT_TRUE(curried->data.curried_fn->first_arg->is_array());
+
+}
+
+// Test DERIVED_OPERATOR with function operand
+TEST_F(ValueTest, DerivedOperatorWithFunction) {
+    Value* func = machine->heap->allocate_primitive(&prim_times);
+    Value* derived = machine->heap->allocate_derived_operator(&op_diaeresis, func);
+
+    EXPECT_TRUE(derived->is_derived_operator());
+    EXPECT_EQ(derived->data.derived_op->op, &op_diaeresis);
+    EXPECT_EQ(derived->data.derived_op->first_operand, func);
+    EXPECT_TRUE(derived->data.derived_op->first_operand->is_function());
+
 }
 
 // Main function

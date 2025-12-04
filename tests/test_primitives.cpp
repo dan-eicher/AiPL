@@ -39,9 +39,6 @@ TEST_F(PrimitivesTest, AddScalarScalar) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, AddScalarVector) {
@@ -63,9 +60,6 @@ TEST_F(PrimitivesTest, AddScalarVector) {
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 7.0);
     EXPECT_DOUBLE_EQ((*mat)(2, 0), 8.0);
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, AddVectorScalar) {
@@ -85,9 +79,6 @@ TEST_F(PrimitivesTest, AddVectorScalar) {
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 12.0);
     EXPECT_DOUBLE_EQ((*mat)(2, 0), 13.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, AddVectorVector) {
@@ -110,9 +101,6 @@ TEST_F(PrimitivesTest, AddVectorVector) {
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 7.0);
     EXPECT_DOUBLE_EQ((*mat)(2, 0), 9.0);
 
-    // GC will clean up -     delete vec1;
-    // GC will clean up -     delete vec2;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, SubtractScalars) {
@@ -125,9 +113,6 @@ TEST_F(PrimitivesTest, SubtractScalars) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, MultiplyScalars) {
@@ -140,9 +125,6 @@ TEST_F(PrimitivesTest, MultiplyScalars) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, MultiplyScalarVector) {
@@ -161,9 +143,6 @@ TEST_F(PrimitivesTest, MultiplyScalarVector) {
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 4.0);
     EXPECT_DOUBLE_EQ((*mat)(2, 0), 6.0);
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, DivideScalars) {
@@ -176,9 +155,6 @@ TEST_F(PrimitivesTest, DivideScalars) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, DivideByZeroError) {
@@ -192,8 +168,6 @@ TEST_F(PrimitivesTest, DivideByZeroError) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
 }
 
 TEST_F(PrimitivesTest, PowerScalars) {
@@ -206,9 +180,6 @@ TEST_F(PrimitivesTest, PowerScalars) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, EqualScalars) {
@@ -221,9 +192,6 @@ TEST_F(PrimitivesTest, EqualScalars) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // True
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, NotEqualScalars) {
@@ -236,9 +204,6 @@ TEST_F(PrimitivesTest, NotEqualScalars) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // False
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, EqualVectors) {
@@ -260,9 +225,6 @@ TEST_F(PrimitivesTest, EqualVectors) {
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);  // 2=5 is false
     EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 1.0);  // 3=3 is true
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 // ============================================================================
@@ -278,8 +240,6 @@ TEST_F(PrimitivesTest, IdentityScalar) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, NegateScalar) {
@@ -291,8 +251,6 @@ TEST_F(PrimitivesTest, NegateScalar) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, NegateVector) {
@@ -310,8 +268,6 @@ TEST_F(PrimitivesTest, NegateVector) {
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
     EXPECT_DOUBLE_EQ((*mat)(2, 0), -3.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, SignPositive) {
@@ -323,8 +279,6 @@ TEST_F(PrimitivesTest, SignPositive) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, SignNegative) {
@@ -336,8 +290,6 @@ TEST_F(PrimitivesTest, SignNegative) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -1.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, SignZero) {
@@ -349,8 +301,6 @@ TEST_F(PrimitivesTest, SignZero) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, ReciprocalScalar) {
@@ -362,8 +312,6 @@ TEST_F(PrimitivesTest, ReciprocalScalar) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.25);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, ReciprocalZeroError) {
@@ -373,7 +321,6 @@ TEST_F(PrimitivesTest, ReciprocalZeroError) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete a;
 }
 
 TEST_F(PrimitivesTest, ExponentialScalar) {
@@ -385,8 +332,6 @@ TEST_F(PrimitivesTest, ExponentialScalar) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), M_E, 1e-10);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, ExponentialZero) {
@@ -398,8 +343,6 @@ TEST_F(PrimitivesTest, ExponentialZero) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete result;
 }
 
 // ============================================================================
@@ -428,9 +371,6 @@ TEST_F(PrimitivesTest, AddMatrices) {
     EXPECT_DOUBLE_EQ((*res)(1, 0), 10.0);
     EXPECT_DOUBLE_EQ((*res)(1, 1), 12.0);
 
-    // GC will clean up -     delete mat1;
-    // GC will clean up -     delete mat2;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, MismatchedShapeError) {
@@ -446,8 +386,6 @@ TEST_F(PrimitivesTest, MismatchedShapeError) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec1;
-    // GC will clean up -     delete vec2;
 }
 
 // ============================================================================
@@ -463,8 +401,6 @@ TEST_F(PrimitivesTest, ShapeScalar) {
     ASSERT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 0);  // Empty shape for scalar
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, ShapeVector) {
@@ -480,8 +416,6 @@ TEST_F(PrimitivesTest, ShapeVector) {
     EXPECT_EQ(shape->rows(), 1);
     EXPECT_DOUBLE_EQ((*shape)(0, 0), 5.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, ReshapeVector) {
@@ -506,9 +440,6 @@ TEST_F(PrimitivesTest, ReshapeVector) {
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
     EXPECT_DOUBLE_EQ((*mat)(0, 1), 3.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete shape;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, Ravel) {
@@ -530,8 +461,6 @@ TEST_F(PrimitivesTest, Ravel) {
     EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
     EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
 
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, Catenate) {
@@ -554,9 +483,6 @@ TEST_F(PrimitivesTest, Catenate) {
     EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
     EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
 
-    // GC will clean up -     delete vec1;
-    // GC will clean up -     delete vec2;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, Transpose) {
@@ -577,8 +503,6 @@ TEST_F(PrimitivesTest, Transpose) {
     EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
     EXPECT_DOUBLE_EQ((*res)(0, 1), 4.0);
 
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, Iota) {
@@ -594,8 +518,6 @@ TEST_F(PrimitivesTest, Iota) {
     EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
     EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);
 
-    // GC will clean up -     delete n;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, Take) {
@@ -614,9 +536,6 @@ TEST_F(PrimitivesTest, Take) {
     EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
     EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete count;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, Drop) {
@@ -635,9 +554,6 @@ TEST_F(PrimitivesTest, Drop) {
     EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
     EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete count;
-    // GC will clean up -     delete result;
 }
 
 // ============================================================================
@@ -668,11 +584,10 @@ TEST_F(PrimitivesTest, EnvironmentInit) {
     ASSERT_TRUE(iota->is_function());
 }
 
-TEST_F(PrimitivesTest, EnvironmentLookup) {
-    
+TEST_F(PrimitivesTest, PrimitiveLookupAndApply) {
     init_global_environment(machine);
 
-    // Lookup and use a primitive from environment
+    // Lookup primitive from environment and apply it
     Value* plus = machine->env->lookup("+");
     ASSERT_NE(plus, nullptr);
 
@@ -686,9 +601,6 @@ TEST_F(PrimitivesTest, EnvironmentLookup) {
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, EnvironmentDefineAndUpdate) {
@@ -711,8 +623,6 @@ TEST_F(PrimitivesTest, EnvironmentDefineAndUpdate) {
     Value* lookup2 = env.lookup("x");
     EXPECT_DOUBLE_EQ(lookup2->as_scalar(), 100.0);
 
-    // GC will clean up -     delete x;
-    // GC will clean up -     delete y;
 }
 
 TEST_F(PrimitivesTest, EnvironmentScoping) {
@@ -737,8 +647,6 @@ TEST_F(PrimitivesTest, EnvironmentScoping) {
     EXPECT_NE(parent.lookup("x"), nullptr);
     EXPECT_EQ(parent.lookup("y"), nullptr);
 
-    // GC will clean up -     delete x;
-    // GC will clean up -     delete y;
 }
 
 // ============================================================================
@@ -774,8 +682,6 @@ TEST_F(PrimitivesTest, ErrorShapeMismatchVectorVector) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec1;
-    // GC will clean up -     delete vec2;
 }
 
 TEST_F(PrimitivesTest, ErrorShapeMismatchMatrixMatrix) {
@@ -802,8 +708,6 @@ TEST_F(PrimitivesTest, ErrorShapeMismatchMatrixMatrix) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete mat1;
-    // GC will clean up -     delete mat2;
 }
 
 TEST_F(PrimitivesTest, ErrorDivideVectorByZeroVector) {
@@ -820,8 +724,6 @@ TEST_F(PrimitivesTest, ErrorDivideVectorByZeroVector) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec1;
-    // GC will clean up -     delete vec2;
 }
 
 TEST_F(PrimitivesTest, ErrorReciprocalVector) {
@@ -835,7 +737,6 @@ TEST_F(PrimitivesTest, ErrorReciprocalVector) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec;
 }
 
 TEST_F(PrimitivesTest, ErrorReshapeIncompatibleSize) {
@@ -852,8 +753,6 @@ TEST_F(PrimitivesTest, ErrorReshapeIncompatibleSize) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete shape_val;
 }
 
 TEST_F(PrimitivesTest, ErrorReshapeNonIntegerShape) {
@@ -870,8 +769,6 @@ TEST_F(PrimitivesTest, ErrorReshapeNonIntegerShape) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete shape_val;
 }
 
 TEST_F(PrimitivesTest, ErrorReshapeNegativeShape) {
@@ -888,8 +785,6 @@ TEST_F(PrimitivesTest, ErrorReshapeNegativeShape) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete shape_val;
 }
 
 TEST_F(PrimitivesTest, ErrorIotaNonScalar) {
@@ -902,7 +797,6 @@ TEST_F(PrimitivesTest, ErrorIotaNonScalar) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec;
 }
 
 TEST_F(PrimitivesTest, ErrorIotaNegative) {
@@ -913,7 +807,6 @@ TEST_F(PrimitivesTest, ErrorIotaNegative) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete neg;
 }
 
 TEST_F(PrimitivesTest, ErrorIotaNonInteger) {
@@ -924,7 +817,6 @@ TEST_F(PrimitivesTest, ErrorIotaNonInteger) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete frac;
 }
 
 TEST_F(PrimitivesTest, ErrorTakeNonScalar) {
@@ -941,8 +833,6 @@ TEST_F(PrimitivesTest, ErrorTakeNonScalar) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete n_val;
-    // GC will clean up -     delete vec;
 }
 
 TEST_F(PrimitivesTest, ErrorDropNonScalar) {
@@ -959,8 +849,6 @@ TEST_F(PrimitivesTest, ErrorDropNonScalar) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete n_val;
-    // GC will clean up -     delete vec;
 }
 
 TEST_F(PrimitivesTest, ErrorCatenateIncompatibleShapes) {
@@ -977,8 +865,6 @@ TEST_F(PrimitivesTest, ErrorCatenateIncompatibleShapes) {
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
-    // GC will clean up -     delete vec1;
-    // GC will clean up -     delete mat2;
 }
 
 // ============================================================================
@@ -1008,9 +894,6 @@ TEST_F(PrimitivesTest, BroadcastScalarMatrix) {
     EXPECT_DOUBLE_EQ((*res_mat)(1, 1), 10.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 2), 11.0);
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastMatrixScalar) {
@@ -1032,9 +915,6 @@ TEST_F(PrimitivesTest, BroadcastMatrixScalar) {
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 90.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 1), 120.0);
 
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastScalarLargeMatrix) {
@@ -1058,9 +938,6 @@ TEST_F(PrimitivesTest, BroadcastScalarLargeMatrix) {
     EXPECT_DOUBLE_EQ((*res_mat)(5, 5), 3.0);
     EXPECT_DOUBLE_EQ((*res_mat)(9, 9), 3.0);
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastWithNegativeScalar) {
@@ -1081,9 +958,6 @@ TEST_F(PrimitivesTest, BroadcastWithNegativeScalar) {
     EXPECT_DOUBLE_EQ((*res_mat)(2, 0), -2.0);
     EXPECT_DOUBLE_EQ((*res_mat)(3, 0), -1.0);
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastZeroScalar) {
@@ -1103,9 +977,6 @@ TEST_F(PrimitivesTest, BroadcastZeroScalar) {
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 0.0);
     EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 0.0);
 
-    // GC will clean up -     delete zero;
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastScalarDivideVector) {
@@ -1126,9 +997,6 @@ TEST_F(PrimitivesTest, BroadcastScalarDivideVector) {
     EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 20.0);
     EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 10.0);
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastVectorDivideScalar) {
@@ -1149,9 +1017,6 @@ TEST_F(PrimitivesTest, BroadcastVectorDivideScalar) {
     EXPECT_DOUBLE_EQ((*res_mat)(2, 0), 15.0);
     EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 20.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastScalarPower) {
@@ -1173,9 +1038,6 @@ TEST_F(PrimitivesTest, BroadcastScalarPower) {
     EXPECT_DOUBLE_EQ((*res_mat)(3, 0), 8.0);
     EXPECT_DOUBLE_EQ((*res_mat)(4, 0), 16.0);
 
-    // GC will clean up -     delete base;
-    // GC will clean up -     delete exp_vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, BroadcastEmptyVector) {
@@ -1193,9 +1055,6 @@ TEST_F(PrimitivesTest, BroadcastEmptyVector) {
     EXPECT_EQ(res_mat->rows(), 0);
     EXPECT_EQ(res_mat->cols(), 1);
 
-    // GC will clean up -     delete scalar;
-    // GC will clean up -     delete empty_vec;
-    // GC will clean up -     delete result;
 }
 
 // ============================================================================
@@ -1224,10 +1083,6 @@ TEST_F(PrimitivesTest, CompositionIotaReshape) {
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
     EXPECT_DOUBLE_EQ((*mat)(2, 3), 11.0);
 
-    // GC will clean up -     delete n;
-    // GC will clean up -     delete iota_result;
-    // GC will clean up -     delete shape_val;
-    // GC will clean up -     delete reshaped;
 }
 
 TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
@@ -1257,10 +1112,6 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
     EXPECT_DOUBLE_EQ((*res_mat)(1, 0), 3.0);
     EXPECT_DOUBLE_EQ((*res_mat)(1, 1), 4.0);
 
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete shape_val;
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete transposed;
 }
 
 TEST_F(PrimitivesTest, CompositionRavelCatenate) {
@@ -1293,10 +1144,6 @@ TEST_F(PrimitivesTest, CompositionRavelCatenate) {
     EXPECT_DOUBLE_EQ((*res_mat)(6, 0), 7.0);
     EXPECT_DOUBLE_EQ((*res_mat)(8, 0), 9.0);
 
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete raveled;
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete result;
 }
 
 TEST_F(PrimitivesTest, CompositionArithmeticChain) {
@@ -1315,11 +1162,6 @@ TEST_F(PrimitivesTest, CompositionArithmeticChain) {
     ASSERT_TRUE(product->is_scalar());
     EXPECT_DOUBLE_EQ(product->as_scalar(), 16.0);
 
-    // GC will clean up -     delete a;
-    // GC will clean up -     delete b;
-    // GC will clean up -     delete sum;
-    // GC will clean up -     delete c;
-    // GC will clean up -     delete product;
 }
 
 TEST_F(PrimitivesTest, CompositionShapeReshape) {
@@ -1347,36 +1189,5 @@ TEST_F(PrimitivesTest, CompositionShapeReshape) {
     EXPECT_EQ(res_mat->rows(), 3);
     EXPECT_EQ(res_mat->cols(), 4);
 
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete shape;
-    // GC will clean up -     delete vec;
-    // GC will clean up -     delete reshaped;
 }
 
-TEST_F(PrimitivesTest, CompositionNestedReduce) {
-    // Create matrix
-    Eigen::MatrixXd m(3, 3);
-    m << 1.0, 2.0, 3.0,
-         4.0, 5.0, 6.0,
-         7.0, 8.0, 9.0;
-    Value* mat = machine->heap->allocate_matrix(m);
-
-    // Reduce along last axis (sum rows)
-    Value* func = machine->heap->allocate_primitive(&prim_plus);
-    fn_reduce(machine, func, mat);
-
-    Value* row_sums = machine->ctrl.value;
-
-    // Now reduce that result (sum of row sums)
-    fn_reduce(machine, func, row_sums);
-
-    Value* total = machine->ctrl.value;
-
-    ASSERT_TRUE(total->is_scalar());
-    EXPECT_DOUBLE_EQ(total->as_scalar(), 45.0);  // 1+2+...+9 = 45
-
-    // GC will clean up -     delete mat;
-    // GC will clean up -     delete func;
-    // GC will clean up -     delete row_sums;
-    // GC will clean up -     delete total;
-}

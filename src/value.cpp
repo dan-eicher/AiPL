@@ -23,6 +23,16 @@ void Value::cleanup() {
     // Note: Functions and operators are not owned by Value
     // They will be managed separately (likely by a function table)
 
+    // Clean up G2 grammar structures (heap-allocated)
+    if (tag == ValueType::DERIVED_OPERATOR) {
+        delete data.derived_op;
+        data.derived_op = nullptr;
+    }
+    if (tag == ValueType::CURRIED_FN) {
+        delete data.curried_fn;
+        data.curried_fn = nullptr;
+    }
+
     // Clean up promoted matrix cache if it exists
     if (promoted_matrix_) {
         delete promoted_matrix_;
@@ -105,6 +115,23 @@ void Value::mark(APLHeap* heap) {
     if (tag == ValueType::CLOSURE && data.closure) {
         heap->mark_continuation(data.closure);
     }
+
+    // Mark referenced Values in G2 grammar structures
+    if (tag == ValueType::DERIVED_OPERATOR && data.derived_op) {
+        if (data.derived_op->first_operand) {
+            heap->mark_value(data.derived_op->first_operand);
+        }
+    }
+
+    if (tag == ValueType::CURRIED_FN && data.curried_fn) {
+        if (data.curried_fn->fn) {
+            heap->mark_value(data.curried_fn->fn);
+        }
+        if (data.curried_fn->first_arg) {
+            heap->mark_value(data.curried_fn->first_arg);
+        }
+    }
+
     // PRIMITIVEs and OPERATORs are C pointers, not GC objects
     // Matrices will be handled when we add nested Value support
 }
