@@ -804,6 +804,187 @@ TEST_F(ContinuationTest, CellIterKReduceRowsSimple) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);  // 1+2+3
 }
 
+// ============================================================================
+// RowReduceK Tests
+// ============================================================================
+
+TEST_F(ContinuationTest, RowReduceKBasic) {
+    // Reduce each row of 2x3 matrix with +
+    // [[1,2,3],[4,5,6]] -> [6, 15]
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3,
+           4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    RowReduceK* iter = heap->allocate<RowReduceK>(plus_fn, rhs, 2, 3, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 15.0);  // 4+5+6
+}
+
+TEST_F(ContinuationTest, RowReduceKFirstAxis) {
+    // Reduce each column of 2x3 matrix with + (first axis)
+    // [[1,2,3],[4,5,6]] -> [5, 7, 9]
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3,
+           4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    // reduce_first_axis=true means iterate over columns
+    RowReduceK* iter = heap->allocate<RowReduceK>(plus_fn, rhs, 3, 2, true);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 5.0);   // 1+4
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 7.0);   // 2+5
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 9.0);   // 3+6
+}
+
+TEST_F(ContinuationTest, RowReduceKMultiply) {
+    // Reduce each row with × (multiply)
+    // [[2,3],[4,5]] -> [6, 20]
+    Eigen::MatrixXd mat(2, 2);
+    mat << 2, 3,
+           4, 5;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* times_fn = machine->heap->allocate_primitive(&prim_times);
+
+    RowReduceK* iter = heap->allocate<RowReduceK>(times_fn, rhs, 2, 2, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 6.0);   // 2*3
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 20.0);  // 4*5
+}
+
+// ============================================================================
+// PrefixScanK Tests
+// ============================================================================
+
+TEST_F(ContinuationTest, PrefixScanKBasic) {
+    // +\ [1, 2, 3, 4] -> [1, 3, 6, 10]
+    Eigen::VectorXd vec(4);
+    vec << 1, 2, 3, 4;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    PrefixScanK* iter = heap->allocate<PrefixScanK>(plus_fn, rhs, 4);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 10.0);  // 1+2+3+4
+}
+
+TEST_F(ContinuationTest, PrefixScanKNonAssociative) {
+    // -\ [1, 2, 3, 4] with right-to-left reduction
+    // Position 0: 1
+    // Position 1: 1-(2) = -1
+    // Position 2: 1-(2-3) = 1-(-1) = 2
+    // Position 3: 1-(2-(3-4)) = 1-(2-(-1)) = 1-3 = -2
+    Eigen::VectorXd vec(4);
+    vec << 1, 2, 3, 4;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* minus_fn = machine->heap->allocate_primitive(&prim_minus);
+
+    PrefixScanK* iter = heap->allocate<PrefixScanK>(minus_fn, rhs, 4);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -1.0);  // 1-2
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);   // 1-(2-3) = 1-(-1)
+    EXPECT_DOUBLE_EQ((*m)(3, 0), -2.0);  // 1-(2-(3-4))
+}
+
+// ============================================================================
+// RowScanK Tests
+// ============================================================================
+
+TEST_F(ContinuationTest, RowScanKBasic) {
+    // +\ on each row of 2x3 matrix
+    // [[1,2,3],[4,5,6]] -> [[1,3,6],[4,9,15]]
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3,
+           4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    RowScanK* iter = heap->allocate<RowScanK>(plus_fn, rhs, 2, 3, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    // Row 0: 1, 1+2=3, 1+2+3=6
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 6.0);
+    // Row 1: 4, 4+5=9, 4+5+6=15
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 9.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 15.0);
+}
+
+TEST_F(ContinuationTest, RowScanKFirstAxis) {
+    // +⍀ on each column of 2x3 matrix (first axis)
+    // [[1,2,3],[4,5,6]] -> [[1,2,3],[5,7,9]]
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3,
+           4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    // scan_first_axis=true means iterate over columns
+    RowScanK* iter = heap->allocate<RowScanK>(plus_fn, rhs, 3, 2, true);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    // Col 0: 1, 1+4=5
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);
+    // Col 1: 2, 2+5=7
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 7.0);
+    // Col 2: 3, 3+6=9
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 9.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

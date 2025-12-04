@@ -1102,6 +1102,12 @@ void DispatchFunctionK::invoke(Machine* machine) {
         PrimitiveOp* op = derived_data->op;
         Value* first_operand = derived_data->first_operand;
 
+        // Force monadic: apply monadic form directly (used by each, rank operators)
+        if (force_monadic && op->monadic && !left_val && right_val) {
+            op->monadic(machine, first_operand, right_val);
+            return;
+        }
+
         // For operators with BOTH monadic and dyadic forms (like commute ⍨),
         // curry with G_PRIME when given one argument. This allows `2 +⍨ 3` to work correctly
         // by deferring until we know if there's a left argument.
@@ -1985,6 +1991,216 @@ void CellCollectK::invoke(Machine* machine) {
 
 void CellCollectK::mark(APLHeap* heap) {
     // iter is on the continuation stack, will be marked separately
+    (void)heap;
+}
+
+// ============================================================================
+// RowReduceK - Implementation
+// ============================================================================
+
+void RowReduceK::invoke(Machine* machine) {
+    if (current_row >= total_rows) {
+        // Done - assemble results into vector
+        Eigen::VectorXd vec(results.size());
+        for (size_t i = 0; i < results.size(); i++) {
+            vec(i) = results[i]->as_scalar();
+        }
+        machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+        return;
+    }
+
+    // Extract current row/column as a vector and reduce it
+    const Eigen::MatrixXd* mat = matrix->as_matrix();
+
+    if (!reduce_first_axis) {
+        // Regular reduce (/): reduce each row
+        Eigen::VectorXd row = mat->row(current_row).transpose();
+        Value* row_vec = machine->heap->allocate_vector(row);
+
+        // Push collector, then CellIterK FOLD_RIGHT for this row
+        machine->push_kont(machine->heap->allocate<RowReduceCollectK>(this));
+        int row_len = row.rows();
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, row_vec, 0, 0, row_len,
+            CellIterMode::FOLD_RIGHT, row_len, 1, true));
+    } else {
+        // Reduce-first (⌿): reduce each column
+        Eigen::VectorXd col = mat->col(current_row);
+        Value* col_vec = machine->heap->allocate_vector(col);
+
+        // Push collector, then CellIterK FOLD_RIGHT for this column
+        machine->push_kont(machine->heap->allocate<RowReduceCollectK>(this));
+        int col_len = col.rows();
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, col_vec, 0, 0, col_len,
+            CellIterMode::FOLD_RIGHT, col_len, 1, true));
+    }
+}
+
+void RowReduceK::mark(APLHeap* heap) {
+    if (fn) heap->mark_value(fn);
+    if (matrix) heap->mark_value(matrix);
+    for (Value* v : results) {
+        if (v) heap->mark_value(v);
+    }
+}
+
+void RowReduceCollectK::invoke(Machine* machine) {
+    Value* result = machine->ctrl.value;
+    iter->results.push_back(result);
+    iter->current_row++;
+    machine->push_kont(iter);
+}
+
+void RowReduceCollectK::mark(APLHeap* heap) {
+    (void)heap;
+}
+
+// ============================================================================
+// PrefixScanK - Implementation
+// ============================================================================
+
+void PrefixScanK::invoke(Machine* machine) {
+    if (current_prefix > total_len) {
+        // Done - assemble results into vector
+        Eigen::VectorXd result_vec(results.size());
+        for (size_t i = 0; i < results.size(); i++) {
+            result_vec(i) = results[i]->as_scalar();
+        }
+        machine->ctrl.set_value(machine->heap->allocate_vector(result_vec));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = vec->as_matrix();
+
+    if (current_prefix == 1) {
+        // First element is just itself
+        Value* first = machine->heap->allocate_scalar((*mat)(0, 0));
+        results.push_back(first);
+        current_prefix++;
+        machine->push_kont(this);
+        return;
+    }
+
+    // Create a prefix vector of length current_prefix
+    Eigen::VectorXd prefix(current_prefix);
+    for (int i = 0; i < current_prefix; i++) {
+        prefix(i) = (*mat)(i, 0);
+    }
+    Value* prefix_vec = machine->heap->allocate_vector(prefix);
+
+    // Push collector, then CellIterK FOLD_RIGHT to reduce this prefix
+    machine->push_kont(machine->heap->allocate<PrefixScanCollectK>(this));
+    machine->push_kont(machine->heap->allocate<CellIterK>(
+        fn, nullptr, prefix_vec, 0, 0, current_prefix,
+        CellIterMode::FOLD_RIGHT, current_prefix, 1, true));
+}
+
+void PrefixScanK::mark(APLHeap* heap) {
+    if (fn) heap->mark_value(fn);
+    if (vec) heap->mark_value(vec);
+    for (Value* v : results) {
+        if (v) heap->mark_value(v);
+    }
+}
+
+void PrefixScanCollectK::invoke(Machine* machine) {
+    Value* result = machine->ctrl.value;
+    iter->results.push_back(result);
+    iter->current_prefix++;
+    machine->push_kont(iter);
+}
+
+void PrefixScanCollectK::mark(APLHeap* heap) {
+    (void)heap;
+}
+
+// ============================================================================
+// RowScanK - Implementation
+// ============================================================================
+
+void RowScanK::invoke(Machine* machine) {
+    if (current_row >= total_rows) {
+        // Done - assemble results into matrix
+        if (results.empty()) {
+            machine->ctrl.set_value(machine->heap->allocate_scalar(0));
+            return;
+        }
+
+        if (!scan_first_axis) {
+            // Regular scan: results are row vectors, assemble into matrix
+            int result_cols = results[0]->rows();  // Each result is a vector
+            Eigen::MatrixXd mat(total_rows, result_cols);
+            for (int r = 0; r < total_rows; r++) {
+                const Eigen::MatrixXd* row_vec = results[r]->as_matrix();
+                mat.row(r) = row_vec->col(0).transpose();
+            }
+            machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+        } else {
+            // Scan-first: results are column vectors, assemble into matrix
+            int result_rows = results[0]->rows();  // Each result is a vector
+            Eigen::MatrixXd mat(result_rows, total_rows);
+            for (int c = 0; c < total_rows; c++) {
+                const Eigen::MatrixXd* col_vec = results[c]->as_matrix();
+                mat.col(c) = col_vec->col(0);
+            }
+            machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+        }
+        return;
+    }
+
+    // Extract current row/column as a vector and scan it
+    const Eigen::MatrixXd* mat = matrix->as_matrix();
+
+    if (!scan_first_axis) {
+        // Regular scan (\): scan each row
+        Eigen::VectorXd row = mat->row(current_row).transpose();
+        Value* row_vec = machine->heap->allocate_vector(row);
+
+        // Push collector, then PrefixScanK for this row
+        machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+        int row_len = row.rows();
+        if (row_len <= 1) {
+            // Single element or empty: just return as-is
+            machine->ctrl.set_value(row_vec);
+            machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+            return;
+        }
+        machine->push_kont(machine->heap->allocate<PrefixScanK>(fn, row_vec, row_len));
+    } else {
+        // Scan-first (⍀): scan each column
+        Eigen::VectorXd col = mat->col(current_row);
+        Value* col_vec = machine->heap->allocate_vector(col);
+
+        // Push collector, then PrefixScanK for this column
+        machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+        int col_len = col.rows();
+        if (col_len <= 1) {
+            // Single element or empty: just return as-is
+            machine->ctrl.set_value(col_vec);
+            machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+            return;
+        }
+        machine->push_kont(machine->heap->allocate<PrefixScanK>(fn, col_vec, col_len));
+    }
+}
+
+void RowScanK::mark(APLHeap* heap) {
+    if (fn) heap->mark_value(fn);
+    if (matrix) heap->mark_value(matrix);
+    for (Value* v : results) {
+        if (v) heap->mark_value(v);
+    }
+}
+
+void RowScanCollectK::invoke(Machine* machine) {
+    Value* result = machine->ctrl.value;
+    iter->results.push_back(result);
+    iter->current_row++;
+    machine->push_kont(iter);
+}
+
+void RowScanCollectK::mark(APLHeap* heap) {
     (void)heap;
 }
 

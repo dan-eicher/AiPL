@@ -518,6 +518,261 @@ TEST_F(GrammarTest, RankWithReduction) {
     EXPECT_DOUBLE_EQ((*m)(2, 0), 11.0);  // 5+6
 }
 
+// ============================================================================
+// Reduce Operator Tests (via grammar)
+// ============================================================================
+
+TEST_F(GrammarTest, ReduceVector) {
+    // +/ 1 2 3 4 → 10
+    Value* result = eval("+/ (1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(GrammarTest, ReduceVectorMultiply) {
+    // ×/ 1 2 3 4 → 24
+    Value* result = eval("×/ (1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 24.0);
+}
+
+TEST_F(GrammarTest, ReduceMatrix) {
+    // +/ on 2×3 matrix → vector [6, 15]
+    Value* result = eval("+/ (2 3⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 15.0);  // 4+5+6
+}
+
+TEST_F(GrammarTest, ReduceFirstMatrix) {
+    // +⌿ on 2×3 matrix → vector [5, 7, 9]
+    Value* result = eval("+⌿ (2 3⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 5.0);   // 1+4
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 7.0);   // 2+5
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 9.0);   // 3+6
+}
+
+// ============================================================================
+// Scan Operator Tests (via grammar)
+// ============================================================================
+
+TEST_F(GrammarTest, ScanVector) {
+    // +\ 1 2 3 4 → 1 3 6 10
+    Value* result = eval("+\\ (1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 10.0);
+}
+
+TEST_F(GrammarTest, ScanVectorNonAssociative) {
+    // -\ 1 2 3 4 → 1 -1 2 -2 (prefix reductions)
+    Value* result = eval("-\\ (1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -1.0);  // 1-2
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);   // 1-(2-3)
+    EXPECT_DOUBLE_EQ((*m)(3, 0), -2.0);  // 1-(2-(3-4))
+}
+
+TEST_F(GrammarTest, ScanMatrix) {
+    // +\ on 2×3 matrix → prefix sums along rows
+    Value* result = eval("+\\ (2 3⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    // Row 0: 1, 1+2=3, 1+2+3=6
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 6.0);
+    // Row 1: 4, 4+5=9, 4+5+6=15
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 9.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 15.0);
+}
+
+TEST_F(GrammarTest, ScanFirstMatrix) {
+    // +⍀ on 2×3 matrix → prefix sums along columns
+    Value* result = eval("+⍀ (2 3⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    // Col 0: 1, 1+4=5
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);
+    // Col 1: 2, 2+5=7
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 7.0);
+    // Col 2: 3, 3+6=9
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 9.0);
+}
+
+// ============================================================================
+// Each Operator Tests (via grammar)
+// ============================================================================
+
+TEST_F(GrammarTest, EachScalar) {
+    // -¨5 → -5
+    Value* result = eval("-¨ 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(GrammarTest, EachVector) {
+    // -¨1 2 3 → -1 -2 -3
+    Value* result = eval("-¨ (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), -3.0);
+}
+
+TEST_F(GrammarTest, EachMatrix) {
+    // -¨ on 2×2 matrix → negate each element
+    Value* result = eval("-¨ (2 2⍴1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), -4.0);
+}
+
+// ============================================================================
+// Derived Operator Tests - these exercise the continuation-based iteration
+// which enables non-primitive functions with reduce/scan/each
+// ============================================================================
+
+TEST_F(GrammarTest, ReduceWithDerivedOperator) {
+    // Use commute with reduce: +⍨/ (1 2 3)
+    // This is (+⍨)/ which means reduce using the commuted plus
+    // Since + is commutative, result is same as +/: 6
+    Value* result = eval("+⍨/ (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+TEST_F(GrammarTest, ReduceWithDerivedOperatorNonCommutative) {
+    // -⍨/ (10 3 1) → reduce with commuted minus
+    // -⍨ means {⍵-⍺}, so A -⍨ B = B - A
+    // Right-to-left: 10 -⍨ (3 -⍨ 1)
+    //   3 -⍨ 1 = 1 - 3 = -2
+    //   10 -⍨ (-2) = -2 - 10 = -12
+    Value* result = eval("-⍨/ (10 3 1)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -12.0);
+}
+
+TEST_F(GrammarTest, ScanWithDerivedOperator) {
+    // +⍨\ (1 2 3) → scan with commuted plus
+    // Since + is commutative: 1, 3, 6
+    Value* result = eval("+⍨\\ (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);
+}
+
+TEST_F(GrammarTest, EachWithDerivedOperator) {
+    // ×⍨¨ (2 3 4) → square each element (x times itself)
+    // Results: 4, 9, 16
+    Value* result = eval("×⍨¨ (2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 4.0);   // 2×2
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 9.0);   // 3×3
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 16.0);  // 4×4
+}
+
+TEST_F(GrammarTest, EachWithReduceDerived) {
+    // (+/)¨ applied to vectors would reduce each
+    // But we don't have nested arrays yet, so test with matrix rows
+    // For now, test that derived operators chain: +/¨ is valid syntax
+    // Apply to a simple case
+    Value* result = eval("+/¨ (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    // Each element is a scalar, +/ of scalar is the scalar
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+TEST_F(GrammarTest, NestedDerivedOperators) {
+    // -⍨⍨ negates the commute (back to normal minus order)
+    // -⍨⍨/ (10 3) → same as -/ (10 3) = 10-3 = 7
+    Value* result = eval("-⍨⍨/ (10 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(GrammarTest, MatrixReduceWithDerivedOperator) {
+    // ×⍨/ on 2×3 matrix → product of each row (since × is commutative)
+    // Row 0: 1×2×3 = 6, Row 1: 4×5×6 = 120
+    Value* result = eval("×⍨/ (2 3⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 120.0);
+}
+
+TEST_F(GrammarTest, MatrixScanWithDerivedOperator) {
+    // +⍨\ on 2×3 matrix → cumulative sums along rows
+    Value* result = eval("+⍨\\ (2 3⍴1 2 3 4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    // Row 0: 1, 3, 6
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 6.0);
+    // Row 1: 4, 9, 15
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 9.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 15.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

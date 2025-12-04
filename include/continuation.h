@@ -963,4 +963,134 @@ protected:
     void invoke(Machine* machine) override;
 };
 
+// ============================================================================
+// RowReduceK - Reduces each row of a matrix independently
+// ============================================================================
+// For f/ on matrix: reduces each row, returns vector of results
+
+class RowReduceK : public Continuation {
+public:
+    Value* fn;              // Function to reduce with
+    Value* matrix;          // Matrix to reduce
+    int current_row;        // Current row being processed
+    int total_rows;         // Total rows to process
+    int cols;               // Number of columns per row
+    std::vector<Value*> results;  // Collected row reduction results
+    bool reduce_first_axis; // True for ⌿ (reduce columns), false for / (reduce rows)
+
+    RowReduceK(Value* f, Value* m, int rows, int c, bool first_axis = false)
+        : fn(f), matrix(m), current_row(0), total_rows(rows), cols(c),
+          reduce_first_axis(first_axis) {
+        results.reserve(rows);
+    }
+
+    ~RowReduceK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// RowReduceCollectK - Collects row reduction result and continues
+class RowReduceCollectK : public Continuation {
+public:
+    RowReduceK* iter;
+
+    explicit RowReduceCollectK(RowReduceK* i) : iter(i) {}
+
+    ~RowReduceCollectK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// PrefixScanK - Computes prefix reductions for scan operator
+// ============================================================================
+// ISO-13751: Each element I of result is f/B[⍳I] (reduction of first I+1 elements)
+// This requires O(n²) work since each prefix must be reduced independently
+
+class PrefixScanK : public Continuation {
+public:
+    Value* fn;              // Function to reduce with
+    Value* vec;             // Vector to scan
+    int current_prefix;     // Current prefix length being computed (1 to n)
+    int total_len;          // Total vector length
+    std::vector<Value*> results;  // Collected prefix reduction results
+
+    PrefixScanK(Value* f, Value* v, int len)
+        : fn(f), vec(v), current_prefix(1), total_len(len) {
+        results.reserve(len);
+    }
+
+    ~PrefixScanK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// PrefixScanCollectK - Collects prefix reduction result and continues
+class PrefixScanCollectK : public Continuation {
+public:
+    PrefixScanK* iter;
+
+    explicit PrefixScanCollectK(PrefixScanK* i) : iter(i) {}
+
+    ~PrefixScanCollectK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// RowScanK - Scans each row of a matrix independently
+// ============================================================================
+// For f\ on matrix: scans each row, returns matrix of results
+
+class RowScanK : public Continuation {
+public:
+    Value* fn;              // Function to scan with
+    Value* matrix;          // Matrix to scan
+    int current_row;        // Current row being processed
+    int total_rows;         // Total rows to process
+    int cols;               // Number of columns per row
+    std::vector<Value*> results;  // Collected row scan results (vectors)
+    bool scan_first_axis;   // True for ⍀ (scan columns), false for \ (scan rows)
+
+    RowScanK(Value* f, Value* m, int rows, int c, bool first_axis = false)
+        : fn(f), matrix(m), current_row(0), total_rows(rows), cols(c),
+          scan_first_axis(first_axis) {
+        results.reserve(rows);
+    }
+
+    ~RowScanK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// RowScanCollectK - Collects row scan result and continues
+class RowScanCollectK : public Continuation {
+public:
+    RowScanK* iter;
+
+    explicit RowScanCollectK(RowScanK* i) : iter(i) {}
+
+    ~RowScanCollectK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
 } // namespace apl
