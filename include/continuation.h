@@ -10,16 +10,16 @@ namespace apl {
 
 // Forward declarations
 class Machine;
-class APLHeap;
+class Heap;
 class Environment;
-struct APLCompletion;  // Forward declaration for completion records
+struct Completion;  // Forward declaration for completion records
 
 // Abstract Continuation base class
 // Represents "what to do next" in the CEK machine
 class Continuation : public GCObject {
 private:
-    // Only APLHeap can allocate Continuation objects
-    friend class APLHeap;
+    // Only Heap can allocate Continuation objects
+    friend class Heap;
 
     // Private new operator enforces heap-only allocation
     void* operator new(size_t size) { return ::operator new(size); }
@@ -33,7 +33,7 @@ protected:
 
 public:
     // Mark all Values and Continuations referenced by this continuation for GC
-    virtual void mark(APLHeap* heap) = 0;
+    virtual void mark(Heap* heap) = 0;
 
     // Query methods for control flow handling
 
@@ -65,7 +65,7 @@ protected:
 // HaltK - Terminal continuation that stops execution
 class HaltK : public Continuation {
 public:
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -79,11 +79,11 @@ protected:
 // This is pushed automatically when an abrupt completion occurs
 class PropagateCompletionK : public Continuation {
 public:
-    APLCompletion* completion;  // The completion to propagate
+    Completion* completion;  // The completion to propagate
 
-    PropagateCompletionK(APLCompletion* comp) : completion(comp) {}
+    PropagateCompletionK(Completion* comp) : completion(comp) {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -97,7 +97,7 @@ public:
 
     CatchReturnK(const char* name = nullptr) : function_name(name) {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
     bool is_function_boundary() const override { return true; }
 
 protected:
@@ -112,7 +112,7 @@ public:
 
     CatchBreakK(const char* lbl = nullptr) : label(lbl) {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
     bool is_loop_boundary() const override { return true; }
 
 protected:
@@ -127,7 +127,7 @@ public:
 
     CatchContinueK(Continuation* loop) : loop_cont(loop) {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
     bool is_loop_boundary() const override { return true; }
 
 protected:
@@ -140,7 +140,7 @@ class CatchErrorK : public Continuation {
 public:
     CatchErrorK() {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -154,7 +154,7 @@ public:
 
     ThrowErrorK(const char* msg) : error_message(msg) {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -172,7 +172,7 @@ public:
 
     ~LiteralK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -190,7 +190,7 @@ public:
 
     ~ClosureLiteralK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -208,7 +208,7 @@ public:
 
     ~LookupK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -229,7 +229,7 @@ public:
         // Don't delete expr - it's GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -245,7 +245,7 @@ public:
 
     ~PerformAssignK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -264,7 +264,7 @@ public:
 
     ~StrandK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -285,7 +285,7 @@ public:
         // Don't delete - GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -302,7 +302,7 @@ public:
 
     ~EvalJuxtaposeLeftK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -318,7 +318,7 @@ public:
 
     ~PerformJuxtaposeK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -338,7 +338,7 @@ public:
         // Don't delete operand - it's GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -359,7 +359,7 @@ public:
         // Don't delete operands - they're GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -377,7 +377,7 @@ public:
 
     ~EvalDyadicLeftK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -393,7 +393,7 @@ public:
 
     ~ApplyMonadicK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -410,7 +410,7 @@ public:
 
     ~ApplyDyadicK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -431,7 +431,7 @@ public:
         // Don't delete next - it's GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -450,7 +450,7 @@ public:
 
     ~EvalStrandElementK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -467,7 +467,7 @@ public:
 
     ~BuildStrandK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -487,7 +487,7 @@ public:
         // Don't delete return_k - it's GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
     // FrameK marks function boundaries
     bool is_function_boundary() const override { return true; }
@@ -517,7 +517,7 @@ public:
         // Don't delete - all are GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -535,7 +535,7 @@ public:
 
     ~EvalApplyFunctionLeftK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -552,7 +552,7 @@ public:
 
     ~EvalApplyFunctionMonadicK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -570,7 +570,7 @@ public:
 
     ~EvalApplyFunctionDyadicK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -589,7 +589,7 @@ public:
 
     ~DispatchFunctionK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -609,7 +609,7 @@ public:
         // Don't delete statements - they're GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -627,7 +627,7 @@ public:
 
     ~ExecNextStatementK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -653,7 +653,7 @@ public:
         // Don't delete - all are GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -670,7 +670,7 @@ public:
 
     ~SelectBranchK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -691,7 +691,7 @@ public:
         // Don't delete - all are GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
     // WhileK marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -711,7 +711,7 @@ public:
 
     ~CheckWhileCondK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
     // CheckWhileCondK also marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -736,7 +736,7 @@ public:
         // Don't delete - all are GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
     // ForK marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -758,7 +758,7 @@ public:
 
     ~ForIterateK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
     // ForIterateK also marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -776,7 +776,7 @@ public:
 
     ~LeaveK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -796,7 +796,7 @@ public:
         // Don't delete value_expr - it's GC-managed
     }
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -809,7 +809,7 @@ public:
 
     ~CreateReturnK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -832,7 +832,7 @@ public:
 
     ~FunctionCallK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
     // FunctionCallK marks function boundaries for :Return
     bool is_function_boundary() const override { return true; }
@@ -850,7 +850,7 @@ public:
 
     ~RestoreEnvK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -874,7 +874,7 @@ public:
 
     ~DerivedOperatorK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -890,7 +890,7 @@ public:
 
     ~ApplyDerivedOperatorK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -959,7 +959,7 @@ public:
 
     ~CellIterK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -974,7 +974,7 @@ public:
 
     ~CellCollectK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1003,7 +1003,7 @@ public:
 
     ~RowReduceK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1018,7 +1018,7 @@ public:
 
     ~RowReduceCollectK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1045,7 +1045,7 @@ public:
 
     ~PrefixScanK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1060,7 +1060,7 @@ public:
 
     ~PrefixScanCollectK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1089,7 +1089,7 @@ public:
 
     ~RowScanK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1104,7 +1104,7 @@ public:
 
     ~RowScanCollectK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1124,7 +1124,7 @@ public:
 
     ~ReduceResultK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1159,7 +1159,7 @@ public:
 
     ~InnerProductIterK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -1174,7 +1174,7 @@ public:
 
     ~InnerProductCollectK() override {}
 
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 protected:
     void invoke(Machine* machine) override;

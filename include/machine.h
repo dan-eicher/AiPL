@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include "control.h"
 #include "continuation.h"
 #include "heap.h"
 #include "environment.h"
@@ -19,13 +18,13 @@ class Parser;
 // Machine - The CEK machine execution engine
 class Machine {
 public:
-    // CEK Registers
-    Control ctrl;                           // Control register (C)
-    Environment* env;                       // Environment register (E)
-    std::vector<Continuation*> kont_stack;  // Continuation stack (K)
+    // Machine state
+    Value* result;                          // Result of last continuation
+    Environment* env;                       // Environment (variable bindings)
+    std::vector<Continuation*> kont_stack;  // Continuation stack
 
     // Memory management
-    APLHeap* heap;                          // Garbage-collected heap
+    Heap* heap;                          // Garbage-collected heap
     StringPool string_pool;                 // Interned strings
 
     // Parser (owned by machine)

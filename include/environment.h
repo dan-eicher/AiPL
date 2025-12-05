@@ -13,8 +13,8 @@ namespace apl {
 // Now GC-managed for proper memory safety
 class Environment : public GCObject {
 private:
-    // Only APLHeap can allocate/deallocate Environment objects
-    friend class APLHeap;
+    // Only Heap can allocate/deallocate Environment objects
+    friend class Heap;
 
     // Private new/delete operators enforce heap-only allocation
     void* operator new(size_t size) { return ::operator new(size); }
@@ -72,7 +72,7 @@ public:
     }
 
     // Mark all values for GC (override from GCObject)
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 };
 
 } // namespace apl

@@ -5,7 +5,7 @@
 
 namespace apl {
 
-void Environment::mark(APLHeap* heap) {
+void Environment::mark(Heap* heap) {
     if (!heap) return;
 
     // Mark all values in this environment

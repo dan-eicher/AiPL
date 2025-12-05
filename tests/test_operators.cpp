@@ -59,9 +59,9 @@ TEST_F(OperatorsTest, DuplicateScalar) {
 
     op_commute(machine, fn, omega);
 
-    ASSERT_NE(machine->ctrl.value, nullptr);
-    EXPECT_TRUE(machine->ctrl.value->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 6.0);
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 6.0);
 }
 
 TEST_F(OperatorsTest, DuplicateVector) {
@@ -73,10 +73,10 @@ TEST_F(OperatorsTest, DuplicateVector) {
 
     op_commute(machine, fn, omega);
 
-    ASSERT_NE(machine->ctrl.value, nullptr);
-    EXPECT_TRUE(machine->ctrl.value->is_vector());
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_vector());
 
-    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    const Eigen::MatrixXd* result = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*result)(0, 0), 4.0);   // 2*2
     EXPECT_DOUBLE_EQ((*result)(1, 0), 9.0);   // 3*3
     EXPECT_DOUBLE_EQ((*result)(2, 0), 16.0);  // 4*4
@@ -90,9 +90,9 @@ TEST_F(OperatorsTest, CommuteScalars) {
 
     op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
 
-    ASSERT_NE(machine->ctrl.value, nullptr);
-    EXPECT_TRUE(machine->ctrl.value->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 1.0);  // 4-3, not 3-4
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // 4-3, not 3-4
 }
 
 TEST_F(OperatorsTest, CommuteVectors) {
@@ -109,10 +109,10 @@ TEST_F(OperatorsTest, CommuteVectors) {
 
     op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
 
-    ASSERT_NE(machine->ctrl.value, nullptr);
-    EXPECT_TRUE(machine->ctrl.value->is_vector());
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_vector());
 
-    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    const Eigen::MatrixXd* result = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*result)(0, 0), -9.0);   // 1-10
     EXPECT_DOUBLE_EQ((*result)(1, 0), -18.0);  // 2-20
     EXPECT_DOUBLE_EQ((*result)(2, 0), -27.0);  // 3-30
@@ -149,9 +149,9 @@ TEST_F(OperatorsTest, DuplicateWithDivide) {
 
     op_commute(machine, fn, omega);
 
-    ASSERT_NE(machine->ctrl.value, nullptr);
-    EXPECT_TRUE(machine->ctrl.value->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 1.0);
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
 TEST_F(OperatorsTest, CommuteWithDivide) {
@@ -162,9 +162,9 @@ TEST_F(OperatorsTest, CommuteWithDivide) {
 
     op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
 
-    ASSERT_NE(machine->ctrl.value, nullptr);
-    EXPECT_TRUE(machine->ctrl.value->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->ctrl.value->as_scalar(), 4.0);
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 4.0);
 }
 
 TEST_F(OperatorsTest, DuplicateMatrix) {
@@ -177,10 +177,10 @@ TEST_F(OperatorsTest, DuplicateMatrix) {
 
     op_commute(machine, fn, omega);
 
-    ASSERT_NE(machine->ctrl.value, nullptr);
-    EXPECT_TRUE(machine->ctrl.value->is_matrix());
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_matrix());
 
-    const Eigen::MatrixXd* result = machine->ctrl.value->as_matrix();
+    const Eigen::MatrixXd* result = machine->result->as_matrix();
     // Matrix - itself = zero matrix
     EXPECT_DOUBLE_EQ((*result)(0, 0), 0.0);
     EXPECT_DOUBLE_EQ((*result)(0, 1), 0.0);

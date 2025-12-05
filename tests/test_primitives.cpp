@@ -33,7 +33,7 @@ TEST_F(PrimitivesTest, AddScalarScalar) {
     Value* b = machine->heap->allocate_scalar(4.0);
     fn_add(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
@@ -49,7 +49,7 @@ TEST_F(PrimitivesTest, AddScalarVector) {
     fn_add(machine, scalar, vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -70,7 +70,7 @@ TEST_F(PrimitivesTest, AddVectorScalar) {
     fn_add(machine, vec, scalar);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -92,7 +92,7 @@ TEST_F(PrimitivesTest, AddVectorVector) {
     fn_add(machine, vec1, vec2);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -107,7 +107,7 @@ TEST_F(PrimitivesTest, SubtractScalars) {
     Value* b = machine->heap->allocate_scalar(3.0);
     fn_subtract(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
@@ -119,7 +119,7 @@ TEST_F(PrimitivesTest, MultiplyScalars) {
     Value* b = machine->heap->allocate_scalar(4.0);
     fn_multiply(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
@@ -135,7 +135,7 @@ TEST_F(PrimitivesTest, MultiplyScalarVector) {
     fn_multiply(machine, scalar, vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
@@ -149,7 +149,7 @@ TEST_F(PrimitivesTest, DivideScalars) {
     Value* b = machine->heap->allocate_scalar(3.0);
     fn_divide(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
@@ -174,7 +174,7 @@ TEST_F(PrimitivesTest, PowerScalars) {
     Value* b = machine->heap->allocate_scalar(3.0);
     fn_power(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
@@ -186,7 +186,7 @@ TEST_F(PrimitivesTest, EqualScalars) {
     Value* b = machine->heap->allocate_scalar(5.0);
     fn_equal(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // True
@@ -198,7 +198,7 @@ TEST_F(PrimitivesTest, NotEqualScalars) {
     Value* b = machine->heap->allocate_scalar(3.0);
     fn_equal(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // False
@@ -215,7 +215,7 @@ TEST_F(PrimitivesTest, EqualVectors) {
     Value* b = machine->heap->allocate_vector(vec_b);
     fn_equal(machine, a, b);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -234,7 +234,7 @@ TEST_F(PrimitivesTest, IdentityScalar) {
     Value* a = machine->heap->allocate_scalar(5.0);
     fn_conjugate(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -245,7 +245,7 @@ TEST_F(PrimitivesTest, NegateScalar) {
     Value* a = machine->heap->allocate_scalar(5.0);
     fn_negate(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
@@ -260,7 +260,7 @@ TEST_F(PrimitivesTest, NegateVector) {
     fn_negate(machine, vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_DOUBLE_EQ((*mat)(0, 0), -1.0);
@@ -273,7 +273,7 @@ TEST_F(PrimitivesTest, SignPositive) {
     Value* a = machine->heap->allocate_scalar(5.0);
     fn_signum(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -284,7 +284,7 @@ TEST_F(PrimitivesTest, SignNegative) {
     Value* a = machine->heap->allocate_scalar(-5.0);
     fn_signum(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -1.0);
@@ -295,7 +295,7 @@ TEST_F(PrimitivesTest, SignZero) {
     Value* a = machine->heap->allocate_scalar(0.0);
     fn_signum(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -306,7 +306,7 @@ TEST_F(PrimitivesTest, ReciprocalScalar) {
     Value* a = machine->heap->allocate_scalar(4.0);
     fn_reciprocal(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.25);
@@ -326,7 +326,7 @@ TEST_F(PrimitivesTest, ExponentialScalar) {
     Value* a = machine->heap->allocate_scalar(1.0);
     fn_exponential(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), M_E, 1e-10);
@@ -337,7 +337,7 @@ TEST_F(PrimitivesTest, ExponentialZero) {
     Value* a = machine->heap->allocate_scalar(0.0);
     fn_exponential(machine, a);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -362,7 +362,7 @@ TEST_F(PrimitivesTest, AddMatrices) {
     fn_add(machine, mat1, mat2);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     const Eigen::MatrixXd* res = result->as_matrix();
     EXPECT_DOUBLE_EQ((*res)(0, 0), 6.0);
@@ -395,7 +395,7 @@ TEST_F(PrimitivesTest, ShapeScalar) {
     Value* scalar = machine->heap->allocate_scalar(5.0);
     fn_shape(machine, scalar);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 0);  // Empty shape for scalar
@@ -408,7 +408,7 @@ TEST_F(PrimitivesTest, ShapeVector) {
     Value* vec = machine->heap->allocate_vector(v);
     fn_shape(machine, vec);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* shape = result->as_matrix();
@@ -431,7 +431,7 @@ TEST_F(PrimitivesTest, ReshapeVector) {
 
     fn_reshape(machine, shape, vec);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -462,7 +462,7 @@ TEST_F(PrimitivesTest, ReshapeRowMajorOrder) {
 
     fn_reshape(machine, shape, vec);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -498,7 +498,7 @@ TEST_F(PrimitivesTest, ReshapeMatrixToMatrix) {
 
     fn_reshape(machine, shape, mat);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* res = result->as_matrix();
@@ -525,7 +525,7 @@ TEST_F(PrimitivesTest, Ravel) {
 
     fn_ravel(machine, mat);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -551,7 +551,7 @@ TEST_F(PrimitivesTest, Catenate) {
     fn_catenate(machine, vec1, vec2);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -570,7 +570,7 @@ TEST_F(PrimitivesTest, Transpose) {
     fn_transpose(machine, mat);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* res = result->as_matrix();
@@ -585,7 +585,7 @@ TEST_F(PrimitivesTest, Iota) {
     Value* n = machine->heap->allocate_scalar(5.0);
     fn_iota(machine, n);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -604,7 +604,7 @@ TEST_F(PrimitivesTest, Take) {
     Value* count = machine->heap->allocate_scalar(3.0);
     fn_take(machine, count, vec);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res = result->as_matrix();
@@ -622,7 +622,7 @@ TEST_F(PrimitivesTest, Drop) {
     Value* count = machine->heap->allocate_scalar(2.0);
     fn_drop(machine, count, vec);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res = result->as_matrix();
@@ -667,7 +667,7 @@ TEST_F(PrimitivesTest, PrimitiveLookupAndApply) {
     Value* b = machine->heap->allocate_scalar(4.0);
     PrimitiveFn* fn = plus->data.primitive_fn;
     fn->dyadic(machine, a, b);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
@@ -952,7 +952,7 @@ TEST_F(PrimitivesTest, BroadcastScalarMatrix) {
     fn_add(machine, scalar, mat);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -977,7 +977,7 @@ TEST_F(PrimitivesTest, BroadcastMatrixScalar) {
     fn_multiply(machine, mat, scalar);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -997,7 +997,7 @@ TEST_F(PrimitivesTest, BroadcastScalarLargeMatrix) {
     fn_add(machine, scalar, mat);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1020,7 +1020,7 @@ TEST_F(PrimitivesTest, BroadcastWithNegativeScalar) {
     fn_add(machine, scalar, vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1040,7 +1040,7 @@ TEST_F(PrimitivesTest, BroadcastZeroScalar) {
     fn_multiply(machine, zero, vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1059,7 +1059,7 @@ TEST_F(PrimitivesTest, BroadcastScalarDivideVector) {
     fn_divide(machine, scalar, vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1079,7 +1079,7 @@ TEST_F(PrimitivesTest, BroadcastVectorDivideScalar) {
     fn_divide(machine, vec, scalar);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1099,7 +1099,7 @@ TEST_F(PrimitivesTest, BroadcastScalarPower) {
     fn_power(machine, base, exp_vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1119,7 +1119,7 @@ TEST_F(PrimitivesTest, BroadcastEmptyVector) {
     fn_add(machine, scalar, empty_vec);
 
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1137,7 +1137,7 @@ TEST_F(PrimitivesTest, CompositionIotaReshape) {
     Value* n = machine->heap->allocate_scalar(12.0);
     fn_iota(machine, n);
 
-    Value* iota_result = machine->ctrl.value;
+    Value* iota_result = machine->result;
 
     // Reshape into 3×4 matrix
     Eigen::VectorXd shape(2);
@@ -1145,7 +1145,7 @@ TEST_F(PrimitivesTest, CompositionIotaReshape) {
     Value* shape_val = machine->heap->allocate_vector(shape);
     fn_reshape(machine, shape_val, iota_result);
 
-    Value* reshaped = machine->ctrl.value;
+    Value* reshaped = machine->result;
 
     ASSERT_TRUE(reshaped->is_matrix());
     const Eigen::MatrixXd* mat = reshaped->as_matrix();
@@ -1169,7 +1169,7 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
     Value* shape_val = machine->heap->allocate_vector(shape);
     fn_reshape(machine, shape_val, vec);
 
-    Value* mat = machine->ctrl.value;
+    Value* mat = machine->result;
 
     // Transpose to 3×2:
     // 1 4
@@ -1177,7 +1177,7 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
     // 3 6
     fn_transpose(machine, mat);
 
-    Value* transposed = machine->ctrl.value;
+    Value* transposed = machine->result;
 
     ASSERT_TRUE(transposed->is_matrix());
     const Eigen::MatrixXd* res_mat = transposed->as_matrix();
@@ -1200,7 +1200,7 @@ TEST_F(PrimitivesTest, CompositionRavelCatenate) {
     // Ravel to vector
     fn_ravel(machine, mat);
 
-    Value* raveled = machine->ctrl.value;
+    Value* raveled = machine->result;
 
     // Create another vector to catenate
     Eigen::VectorXd v(3);
@@ -1210,7 +1210,7 @@ TEST_F(PrimitivesTest, CompositionRavelCatenate) {
     // Catenate
     fn_catenate(machine, raveled, vec);
 
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* res_mat = result->as_matrix();
@@ -1229,12 +1229,12 @@ TEST_F(PrimitivesTest, CompositionArithmeticChain) {
     Value* b = machine->heap->allocate_scalar(3.0);
     fn_add(machine, a, b);
 
-    Value* sum = machine->ctrl.value;
+    Value* sum = machine->result;
 
     Value* c = machine->heap->allocate_scalar(2.0);
     fn_multiply(machine, sum, c);
 
-    Value* product = machine->ctrl.value;
+    Value* product = machine->result;
 
     ASSERT_TRUE(product->is_scalar());
     EXPECT_DOUBLE_EQ(product->as_scalar(), 16.0);
@@ -1249,7 +1249,7 @@ TEST_F(PrimitivesTest, CompositionShapeReshape) {
     // Get shape
     fn_shape(machine, mat);
 
-    Value* shape = machine->ctrl.value;
+    Value* shape = machine->result;
 
     // Use that shape to reshape a vector
     Eigen::VectorXd v(12);
@@ -1259,7 +1259,7 @@ TEST_F(PrimitivesTest, CompositionShapeReshape) {
     fn_reshape(machine, shape, vec);
 
 
-    Value* reshaped = machine->ctrl.value;
+    Value* reshaped = machine->result;
 
     ASSERT_TRUE(reshaped->is_matrix());
     const Eigen::MatrixXd* res_mat = reshaped->as_matrix();
@@ -1279,7 +1279,7 @@ TEST_F(PrimitivesTest, NegatePreservesVector) {
     Value* vec = machine->heap->allocate_vector(v);
 
     fn_negate(machine, vec);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Negate should preserve vector status";
     EXPECT_EQ(result->rows(), 3);
@@ -1291,7 +1291,7 @@ TEST_F(PrimitivesTest, NegatePreservesMatrix) {
     Value* mat = machine->heap->allocate_matrix(m);
 
     fn_negate(machine, mat);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix()) << "Negate should preserve matrix status";
     ASSERT_FALSE(result->is_vector()) << "Negate should not convert matrix to vector";
@@ -1305,7 +1305,7 @@ TEST_F(PrimitivesTest, SignumPreservesVector) {
     Value* vec = machine->heap->allocate_vector(v);
 
     fn_signum(machine, vec);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Signum should preserve vector status";
 }
@@ -1316,7 +1316,7 @@ TEST_F(PrimitivesTest, ReciprocalPreservesVector) {
     Value* vec = machine->heap->allocate_vector(v);
 
     fn_reciprocal(machine, vec);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Reciprocal should preserve vector status";
 }
@@ -1327,7 +1327,7 @@ TEST_F(PrimitivesTest, ExponentialPreservesVector) {
     Value* vec = machine->heap->allocate_vector(v);
 
     fn_exponential(machine, vec);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Exponential should preserve vector status";
 }
@@ -1339,7 +1339,7 @@ TEST_F(PrimitivesTest, AddScalarVectorPreservesVector) {
     Value* vec = machine->heap->allocate_vector(v);
 
     fn_add(machine, scalar, vec);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Scalar + Vector should produce vector";
 }
@@ -1351,7 +1351,7 @@ TEST_F(PrimitivesTest, AddVectorScalarPreservesVector) {
     Value* scalar = machine->heap->allocate_scalar(10.0);
 
     fn_add(machine, vec, scalar);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector + Scalar should produce vector";
 }
@@ -1364,7 +1364,7 @@ TEST_F(PrimitivesTest, AddVectorVectorPreservesVector) {
     Value* vec2 = machine->heap->allocate_vector(v2);
 
     fn_add(machine, vec1, vec2);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector + Vector should produce vector";
 }
@@ -1377,7 +1377,7 @@ TEST_F(PrimitivesTest, SubtractPreservesVector) {
     Value* vec2 = machine->heap->allocate_vector(v2);
 
     fn_subtract(machine, vec1, vec2);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector - Vector should produce vector";
 }
@@ -1390,7 +1390,7 @@ TEST_F(PrimitivesTest, MultiplyPreservesVector) {
     Value* vec2 = machine->heap->allocate_vector(v2);
 
     fn_multiply(machine, vec1, vec2);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector * Vector should produce vector";
 }
@@ -1403,7 +1403,7 @@ TEST_F(PrimitivesTest, DividePreservesVector) {
     Value* vec2 = machine->heap->allocate_vector(v2);
 
     fn_divide(machine, vec1, vec2);
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector ÷ Vector should produce vector";
 }

@@ -12,7 +12,8 @@ namespace apl {
 
 // Constructor
 Machine::Machine() {
-    heap = new APLHeap();
+    result = nullptr;
+    heap = new Heap();
     heap->set_machine(this);  // Give heap back-pointer for GC
     env = heap->allocate<Environment>();  // Global environment (GC-managed)
     parser = new Parser(this);  // Parser owned by machine
@@ -95,8 +96,8 @@ Value* Machine::execute() {
     // Per paper: "At the top level of an expression, y can also be null"
     // g' semantics: if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
     // When we reach top level with a curried function, y is null, so apply monadically
-    if (ctrl.value && ctrl.value->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = ctrl.value->data.curried_fn;
+    if (result && result->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = result->data.curried_fn;
         if (curried_data->curry_type == Value::CurryType::G_PRIME) {
             // This is a g' transformation curried function - finalize it
             // Apply monadically: g1(x) where x is first_arg
@@ -107,7 +108,7 @@ Value* Machine::execute() {
                 PrimitiveFn* prim_fn = fn->data.primitive_fn;
                 if (prim_fn->monadic) {
                     prim_fn->monadic(this, arg);
-                    // Result is now in ctrl.value
+                    // Result is now in result
                 }
             }
         } else if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
@@ -145,7 +146,7 @@ Value* Machine::execute() {
         }
     }
 
-    return ctrl.value;
+    return result;
 }
 
 // Phase 2 complete: Completion handling now done through continuations

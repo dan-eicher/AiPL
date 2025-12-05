@@ -74,7 +74,7 @@ TEST_F(MachineTest, PopEmptyStack) {
 // Test execute with HaltK
 TEST_F(MachineTest, ExecuteWithHaltK) {
     Value* v = machine->heap->allocate_scalar(42.0);
-    machine->ctrl.value = v;
+    machine->result = v;
     machine->push_kont(machine->heap->allocate<HaltK>());
 
     Value* result = machine->execute();
@@ -89,7 +89,7 @@ TEST_F(MachineTest, ExecuteWithHaltK) {
 // Test execute with empty stack
 TEST_F(MachineTest, ExecuteEmptyStack) {
     Value* v = machine->heap->allocate_scalar(100.0);
-    machine->ctrl.value = v;
+    machine->result = v;
 
     Value* result = machine->execute();
 

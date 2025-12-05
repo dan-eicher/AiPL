@@ -153,7 +153,7 @@ TEST_F(HeapTest, MarkFromRoots) {
     Value* v2 = machine->heap->allocate_scalar(300.0);
 
     // Set v1 as current value
-    machine->ctrl.set_value(v1);
+    machine->result = v1;
 
     machine->heap->mark_from_roots(machine);
 
@@ -220,7 +220,7 @@ TEST_F(HeapTest, MinorGC) {
     Value* v2 = machine->heap->allocate_scalar(2.0);
 
     // Set v1 as root
-    machine->ctrl.set_value(v1);
+    machine->result = v1;
 
     size_t initial_young = machine->heap->young_size();
 
@@ -248,7 +248,7 @@ TEST_F(HeapTest, MajorGC) {
     EXPECT_EQ(machine->heap->total_size(), initial_size + 2);
 
     // Set v1 as root
-    machine->ctrl.set_value(v1);
+    machine->result = v1;
 
     machine->heap->major_gc(machine);
 
@@ -280,7 +280,7 @@ TEST_F(HeapTest, GCStatistics) {
     Machine* machine = new Machine();
 
     Value* v = machine->heap->allocate_scalar(1.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     EXPECT_EQ(machine->heap->minor_gc_count, 0);
     EXPECT_EQ(machine->heap->major_gc_count, 0);
@@ -299,7 +299,7 @@ TEST_F(HeapTest, ScalarCacheSurvivesGC) {
     Machine* machine = new Machine();
 
     Value* v = machine->heap->allocate_scalar(42.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     EXPECT_EQ(machine->heap->scalar_cache[42 + 128], v);
 
@@ -954,7 +954,7 @@ TEST_F(HeapTest, CachedScalarPromotion) {
 
     // Allocate a cacheable scalar
     Value* v = machine->heap->allocate_scalar(42.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     // Verify it's cached
     EXPECT_EQ(machine->heap->scalar_cache[42 + 128], v);
@@ -988,7 +988,7 @@ TEST_F(HeapTest, CachedScalarMajorGC) {
     // Also allocate a non-cacheable scalar (will be collected if unreachable)
     Value* v_big = machine->heap->allocate_scalar(999.0);
 
-    machine->ctrl.set_value(v3);  // Only keep v3 explicitly alive (but cache keeps v1, v2 too)
+    machine->result = v3;  // Only keep v3 explicitly alive (but cache keeps v1, v2 too)
 
     size_t size_before = machine->heap->total_size();
 

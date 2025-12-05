@@ -7,18 +7,18 @@
 
 namespace apl {
 
-// Forward declaration of APLHeap for now
+// Forward declaration of Heap for now
 // Will be implemented in Phase 1.6
-class APLHeap;
+class Heap;
 
 // HaltK implementation
 void HaltK::invoke(Machine* machine) {
     // Phase 3.2: Terminal continuation - clear the stack to signal termination
-    // The value is already in ctrl.value
+    // The value is already in result
     machine->kont_stack.clear();
 }
 
-void HaltK::mark(APLHeap* heap) {
+void HaltK::mark(Heap* heap) {
     // HaltK has no references to mark
     (void)heap;  // Unused
 }
@@ -31,7 +31,7 @@ void HaltK::mark(APLHeap* heap) {
 void PropagateCompletionK::invoke(Machine* machine) {
     // Set the completion value in ctrl
     if (completion && completion->value) {
-        machine->ctrl.set_value(completion->value);
+        machine->result = completion->value;
     }
 
     // Unwind the stack until we hit a boundary continuation
@@ -42,14 +42,14 @@ void PropagateCompletionK::invoke(Machine* machine) {
         // Check if this is a boundary that can catch our completion
         if (completion->is_return() && k->is_function_boundary()) {
             // Found a function boundary - pop it and we're done unwinding
-            // The completion value is already in ctrl.value
+            // The completion value is already in result
             machine->pop_kont();
             return;
         }
 
         if (completion->is_break() && k->is_loop_boundary()) {
             // Found a loop boundary - pop it and we're done unwinding
-            // The :Leave exits the loop, value is in ctrl.value
+            // The :Leave exits the loop, value is in result
             machine->pop_kont();
             return;
         }
@@ -86,7 +86,7 @@ void PropagateCompletionK::invoke(Machine* machine) {
     throw std::runtime_error("Unhandled completion: no matching boundary found");
 }
 
-void PropagateCompletionK::mark(APLHeap* heap) {
+void PropagateCompletionK::mark(Heap* heap) {
     if (completion) {
         heap->mark_completion(completion);
     }
@@ -106,7 +106,7 @@ void CatchReturnK::invoke(Machine* machine) {
         if (prop && prop->completion && prop->completion->is_return()) {
             // Pop the PropagateCompletionK - we're handling the return
             machine->pop_kont();
-            // The return value is already in ctrl.value (set by PropagateCompletionK)
+            // The return value is already in result (set by PropagateCompletionK)
             // Just continue normally - completion is handled
             return;
         }
@@ -116,7 +116,7 @@ void CatchReturnK::invoke(Machine* machine) {
     (void)function_name;  // Unused for now (could be used for debugging)
 }
 
-void CatchReturnK::mark(APLHeap* heap) {
+void CatchReturnK::mark(Heap* heap) {
     // No GC references to mark (function_name is static)
     (void)heap;
 }
@@ -132,7 +132,7 @@ void CatchBreakK::invoke(Machine* machine) {
             // Pop the PropagateCompletionK - we're handling the break
             machine->pop_kont();
             // For :Leave, we typically return the last value or a default
-            // The value is already in ctrl.value
+            // The value is already in result
             // Just continue normally - loop is exited
             return;
         }
@@ -143,7 +143,7 @@ void CatchBreakK::invoke(Machine* machine) {
     (void)label;  // Unused for now (could be used for labeled breaks)
 }
 
-void CatchBreakK::mark(APLHeap* heap) {
+void CatchBreakK::mark(Heap* heap) {
     // No GC references to mark (label is static)
     (void)heap;
 }
@@ -170,7 +170,7 @@ void CatchContinueK::invoke(Machine* machine) {
     (void)loop_cont;  // Used above
 }
 
-void CatchContinueK::mark(APLHeap* heap) {
+void CatchContinueK::mark(Heap* heap) {
     if (loop_cont) {
         heap->mark_continuation(loop_cont);
     }
@@ -184,7 +184,7 @@ void CatchErrorK::invoke(Machine* machine) {
     (void)machine;
 }
 
-void CatchErrorK::mark(APLHeap* heap) {
+void CatchErrorK::mark(Heap* heap) {
     // No GC references to mark
     (void)heap;
 }
@@ -192,7 +192,7 @@ void CatchErrorK::mark(APLHeap* heap) {
 // ThrowErrorK - Creates and propagates THROW completion (Phase 5.2)
 void ThrowErrorK::invoke(Machine* machine) {
     // Create a THROW completion with the error message
-    APLCompletion* throw_comp = machine->heap->allocate<APLCompletion>(
+    Completion* throw_comp = machine->heap->allocate<Completion>(
         CompletionType::THROW,
         nullptr,  // No value for errors
         error_message  // Error message in target field
@@ -203,7 +203,7 @@ void ThrowErrorK::invoke(Machine* machine) {
     machine->push_kont(prop);
 }
 
-void ThrowErrorK::mark(APLHeap* heap) {
+void ThrowErrorK::mark(Heap* heap) {
     // No GC references to mark (error_message is static or pooled)
     (void)heap;
 }
@@ -212,12 +212,12 @@ void ThrowErrorK::mark(APLHeap* heap) {
 void LiteralK::invoke(Machine* machine) {
     // Convert the literal double to a Value* at runtime
     Value* val = machine->heap->allocate_scalar(literal_value);
-    machine->ctrl.set_value(val);
+    machine->result = val;
 
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void LiteralK::mark(APLHeap* heap) {
+void LiteralK::mark(Heap* heap) {
     // LiteralK only has a double, nothing to mark
     (void)heap;  // Unused
 }
@@ -226,12 +226,12 @@ void LiteralK::mark(APLHeap* heap) {
 void ClosureLiteralK::invoke(Machine* machine) {
     // Convert the continuation body to a CLOSURE Value* at runtime
     Value* heap_closure = machine->heap->allocate_closure(body);
-    machine->ctrl.set_value(heap_closure);
+    machine->result = heap_closure;
 
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void ClosureLiteralK::mark(APLHeap* heap) {
+void ClosureLiteralK::mark(Heap* heap) {
     // Mark the body continuation graph
     if (body) {
         heap->mark_continuation(body);
@@ -251,11 +251,11 @@ void LookupK::invoke(Machine* machine) {
         return;
     }
 
-    machine->ctrl.set_value(val);
+    machine->result = val;
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void LookupK::mark(APLHeap* heap) {
+void LookupK::mark(Heap* heap) {
     // var_name is interned const char*, doesn't need GC marking
     (void)heap;  // Unused
 }
@@ -273,7 +273,7 @@ void AssignK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void AssignK::mark(APLHeap* heap) {
+void AssignK::mark(Heap* heap) {
     if (expr) {
         heap->mark_continuation(expr);
     }
@@ -281,19 +281,19 @@ void AssignK::mark(APLHeap* heap) {
 
 // PerformAssignK implementation
 void PerformAssignK::invoke(Machine* machine) {
-    // Expression has been evaluated - result is in ctrl.value
+    // Expression has been evaluated - result is in result
     // Bind it to the variable name
-    Value* val = machine->ctrl.value;
+    Value* val = machine->result;
 
     machine->env->define(var_name, val);
 
     // Assignment expression returns the assigned value
-    machine->ctrl.set_value(val);
+    machine->result = val;
 
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void PerformAssignK::mark(APLHeap* heap) {
+void PerformAssignK::mark(Heap* heap) {
     // var_name is interned const char*, doesn't need GC marking
     (void)heap;  // Unused
 }
@@ -301,10 +301,10 @@ void PerformAssignK::mark(APLHeap* heap) {
 // StrandK implementation
 void StrandK::invoke(Machine* machine) {
     // Lexical strand: just return the pre-computed vector Value
-    machine->ctrl.set_value(vector_value);
+    machine->result = vector_value;
 }
 
-void StrandK::mark(APLHeap* heap) {
+void StrandK::mark(Heap* heap) {
     // Mark the vector Value
     if (vector_value) {
         heap->mark_value(vector_value);
@@ -325,7 +325,7 @@ void JuxtaposeK::invoke(Machine* machine) {
     machine->push_kont(right);       // Evaluate right now
 }
 
-void JuxtaposeK::mark(APLHeap* heap) {
+void JuxtaposeK::mark(Heap* heap) {
     if (left) {
         heap->mark_continuation(left);
     }
@@ -338,7 +338,7 @@ void JuxtaposeK::mark(APLHeap* heap) {
 // After right is evaluated, save it and evaluate left
 void EvalJuxtaposeLeftK::invoke(Machine* machine) {
     // Right has been evaluated - save it
-    right_val = machine->ctrl.value;
+    right_val = machine->result;
 
     // Push continuation to perform juxtaposition after left is evaluated
     PerformJuxtaposeK* perform = machine->heap->allocate<PerformJuxtaposeK>(right_val);
@@ -348,7 +348,7 @@ void EvalJuxtaposeLeftK::invoke(Machine* machine) {
     machine->push_kont(left);      // Evaluate left now
 }
 
-void EvalJuxtaposeLeftK::mark(APLHeap* heap) {
+void EvalJuxtaposeLeftK::mark(Heap* heap) {
     if (left) {
         heap->mark_continuation(left);
     }
@@ -361,7 +361,7 @@ void EvalJuxtaposeLeftK::mark(APLHeap* heap) {
 // Both left and right are evaluated - apply G2 juxtaposition rule
 // Rule: if type(x₁) = bas then x₂(x₁) else x₁(x₂)
 void PerformJuxtaposeK::invoke(Machine* machine) {
-    Value* left_val = machine->ctrl.value;
+    Value* left_val = machine->result;
 
     // G2 Rule: if type(left) = bas then right(left) else left(right)
     if (left_val->is_basic_value()) {
@@ -369,22 +369,22 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
         // Apply right to left: right(left)
         // right must be a function
 
-        // DispatchFunctionK expects the function in ctrl.value, so set it there
-        machine->ctrl.set_value(right_val);
+        // DispatchFunctionK expects the function in result, so set it there
+        machine->result = right_val;
         // Use DispatchFunctionK to apply right_val as function to left_val as argument
         machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, left_val));
     } else {
         // Left is a function (or curried function, or derived operator)
         // Apply left to right: left(right)
 
-        // DispatchFunctionK expects the function in ctrl.value, so set it there
-        machine->ctrl.set_value(left_val);
+        // DispatchFunctionK expects the function in result, so set it there
+        machine->result = left_val;
         // Use DispatchFunctionK to apply left_val as function to right_val as argument
         machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, right_val));
     }
 }
 
-void PerformJuxtaposeK::mark(APLHeap* heap) {
+void PerformJuxtaposeK::mark(Heap* heap) {
     if (right_val) {
         heap->mark_value(right_val);
     }
@@ -403,7 +403,7 @@ void MonadicK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void MonadicK::mark(APLHeap* heap) {
+void MonadicK::mark(Heap* heap) {
     if (operand) {
         heap->mark_continuation(operand);
     }
@@ -424,7 +424,7 @@ void DyadicK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void DyadicK::mark(APLHeap* heap) {
+void DyadicK::mark(Heap* heap) {
     if (left) {
         heap->mark_continuation(left);
     }
@@ -435,9 +435,9 @@ void DyadicK::mark(APLHeap* heap) {
 
 // EvalDyadicLeftK implementation
 void EvalDyadicLeftK::invoke(Machine* machine) {
-    // Right operand has been evaluated - its value is in ctrl.value
+    // Right operand has been evaluated - its value is in result
     // Save the right value and set up left evaluation
-    right_val = machine->ctrl.value;
+    right_val = machine->result;
 
     // Allocate auxiliary continuation to apply function after left evaluates
     ApplyDyadicK* apply = machine->heap->allocate<ApplyDyadicK>(op_name, right_val);
@@ -449,7 +449,7 @@ void EvalDyadicLeftK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void EvalDyadicLeftK::mark(APLHeap* heap) {
+void EvalDyadicLeftK::mark(Heap* heap) {
     if (left) {
         heap->mark_continuation(left);
     }
@@ -461,8 +461,8 @@ void EvalDyadicLeftK::mark(APLHeap* heap) {
 
 // ApplyMonadicK implementation
 void ApplyMonadicK::invoke(Machine* machine) {
-    // Operand has been evaluated - its value is in ctrl.value
-    Value* operand_val = machine->ctrl.value;
+    // Operand has been evaluated - its value is in result
+    Value* operand_val = machine->result;
 
     // G2 g' finalization: If operand is a g' curried function, unwrap it first
     // Per paper: g' x = λy. if null(y) then g1(x) else ...
@@ -477,7 +477,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
                 PrimitiveFn* prim_fn = fn->data.primitive_fn;
                 if (prim_fn->monadic) {
                     prim_fn->monadic(machine, arg);
-                    operand_val = machine->ctrl.value;  // Use the finalized value
+                    operand_val = machine->result;  // Use the finalized value
                 }
             }
         }
@@ -507,7 +507,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
         // Overloaded function - create CURRIED_FN with G_PRIME (g' transformation)
         // This allows the function to be applied monadically now, or dyadically if another arg appears
         Value* curried = machine->heap->allocate_curried_fn(op_val, operand_val, Value::CurryType::G_PRIME);
-        machine->ctrl.value = curried;
+        machine->result = curried;
     } else {
         // Monadic-only function - apply immediately
         prim_fn->monadic(machine, operand_val);
@@ -516,7 +516,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void ApplyMonadicK::mark(APLHeap* heap) {
+void ApplyMonadicK::mark(Heap* heap) {
     // ApplyMonadicK has no Values to mark, only the function pointer
     (void)heap;  // Unused
 }
@@ -524,7 +524,7 @@ void ApplyMonadicK::mark(APLHeap* heap) {
 // ArgK implementation
 void ArgK::invoke(Machine* machine) {
     // Set the argument value and continue with next continuation
-    machine->ctrl.set_value(arg_value);
+    machine->result = arg_value;
 
     if (next) {
         machine->push_kont(next);
@@ -533,7 +533,7 @@ void ArgK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void ArgK::mark(APLHeap* heap) {
+void ArgK::mark(Heap* heap) {
     // Mark the argument Value
     if (arg_value) {
         heap->mark_value(arg_value);
@@ -549,8 +549,8 @@ void ArgK::mark(APLHeap* heap) {
 void ApplyDyadicK::invoke(Machine* machine) {
     // Both operands have been evaluated
     // Right value is saved in right_val
-    // Left value is in ctrl.value
-    Value* left_val = machine->ctrl.value;
+    // Left value is in result
+    Value* left_val = machine->result;
 
     // Look up the operator at evaluation time
     Value* op_val = machine->env->lookup(op_name);
@@ -570,13 +570,13 @@ void ApplyDyadicK::invoke(Machine* machine) {
         return;
     }
 
-    // Apply the dyadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+    // Apply the dyadic function (sets machine->result directly or pushes ThrowErrorK)
     prim_fn->dyadic(machine, left_val, right_val);
 
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void ApplyDyadicK::mark(APLHeap* heap) {
+void ApplyDyadicK::mark(Heap* heap) {
     // Mark the saved right value
     if (right_val) {
         heap->mark_value(right_val);
@@ -585,9 +585,9 @@ void ApplyDyadicK::mark(APLHeap* heap) {
 
 // EvalStrandElementK implementation
 void EvalStrandElementK::invoke(Machine* machine) {
-    // An element has just been evaluated - its value is in ctrl.value
+    // An element has just been evaluated - its value is in result
     // Add it to the FRONT of evaluated_values (we're going right-to-left)
-    Value* current_val = machine->ctrl.value;
+    Value* current_val = machine->result;
 
     // G2 g' finalization: Unwrap g' curried functions before adding to strand
     if (current_val && current_val->tag == ValueType::CURRIED_FN) {
@@ -600,7 +600,7 @@ void EvalStrandElementK::invoke(Machine* machine) {
                 PrimitiveFn* prim_fn = fn->data.primitive_fn;
                 if (prim_fn->monadic) {
                     prim_fn->monadic(machine, arg);
-                    current_val = machine->ctrl.value;  // Use the finalized value
+                    current_val = machine->result;  // Use the finalized value
                 }
             }
         }
@@ -629,7 +629,7 @@ void EvalStrandElementK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void EvalStrandElementK::mark(APLHeap* heap) {
+void EvalStrandElementK::mark(Heap* heap) {
     // Mark remaining continuations
     for (Continuation* elem : remaining_elements) {
         if (elem) {
@@ -653,7 +653,7 @@ void BuildStrandK::invoke(Machine* machine) {
     if (values.empty()) {
         Eigen::VectorXd empty_vec(0);
         Value* val = machine->heap->allocate_vector(empty_vec);
-        machine->ctrl.set_value(val);
+        machine->result = val;
         return;  // Early exit for empty case
     }
 
@@ -690,7 +690,7 @@ void BuildStrandK::invoke(Machine* machine) {
                 return;
             }
 
-            // Apply monadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+            // Apply monadic function (sets machine->result directly or pushes ThrowErrorK)
             prim->monadic(machine, arg);
             return;  // Early exit after monadic application
         }
@@ -705,7 +705,7 @@ void BuildStrandK::invoke(Machine* machine) {
                 return;
             }
 
-            // Apply dyadic function: x f y (sets machine->ctrl.value directly or pushes ThrowErrorK)
+            // Apply dyadic function: x f y (sets machine->result directly or pushes ThrowErrorK)
             prim->dyadic(machine, left_arg, right_arg);
             return;  // Early exit after dyadic application
         }
@@ -720,7 +720,7 @@ void BuildStrandK::invoke(Machine* machine) {
                 return;
             }
 
-            // Apply dyadic function: x f y (sets machine->ctrl.value directly or pushes ThrowErrorK)
+            // Apply dyadic function: x f y (sets machine->result directly or pushes ThrowErrorK)
             prim->dyadic(machine, left_arg, right_arg);
             return;  // Early exit after dyadic application
         }
@@ -749,12 +749,12 @@ void BuildStrandK::invoke(Machine* machine) {
     }
 
     Value* result = machine->heap->allocate_vector(vec);
-    machine->ctrl.set_value(result);
+    machine->result = result;
 
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void BuildStrandK::mark(APLHeap* heap) {
+void BuildStrandK::mark(Heap* heap) {
     // Mark all values
     for (Value* val : values) {
         if (val) {
@@ -780,7 +780,7 @@ void FrameK::invoke(Machine* machine) {
     // Phase 3.1: No return needed, trampoline continues
 }
 
-void FrameK::mark(APLHeap* heap) {
+void FrameK::mark(Heap* heap) {
     // Mark return continuation
     if (return_k) {
         heap->mark_continuation(return_k);
@@ -816,7 +816,7 @@ void ApplyFunctionK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void ApplyFunctionK::mark(APLHeap* heap) {
+void ApplyFunctionK::mark(Heap* heap) {
     if (fn_cont) {
         heap->mark_continuation(fn_cont);
     }
@@ -831,7 +831,7 @@ void ApplyFunctionK::mark(APLHeap* heap) {
 // EvalApplyFunctionLeftK implementation
 void EvalApplyFunctionLeftK::invoke(Machine* machine) {
     // Right argument has been evaluated - save it
-    right_val = machine->ctrl.value;
+    right_val = machine->result;
 
     // Now evaluate left argument, then function, then dispatch
     // Create continuation that will evaluate function after left arg
@@ -843,7 +843,7 @@ void EvalApplyFunctionLeftK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void EvalApplyFunctionLeftK::mark(APLHeap* heap) {
+void EvalApplyFunctionLeftK::mark(Heap* heap) {
     if (fn_cont) {
         heap->mark_continuation(fn_cont);
     }
@@ -858,7 +858,7 @@ void EvalApplyFunctionLeftK::mark(APLHeap* heap) {
 // EvalApplyFunctionMonadicK implementation
 void EvalApplyFunctionMonadicK::invoke(Machine* machine) {
     // Argument has been evaluated - save it
-    arg_val = machine->ctrl.value;
+    arg_val = machine->result;
 
     // Now evaluate the function continuation, then dispatch (monadic case)
     DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, arg_val);
@@ -869,7 +869,7 @@ void EvalApplyFunctionMonadicK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void EvalApplyFunctionMonadicK::mark(APLHeap* heap) {
+void EvalApplyFunctionMonadicK::mark(Heap* heap) {
     if (fn_cont) {
         heap->mark_continuation(fn_cont);
     }
@@ -881,7 +881,7 @@ void EvalApplyFunctionMonadicK::mark(APLHeap* heap) {
 // EvalApplyFunctionDyadicK implementation
 void EvalApplyFunctionDyadicK::invoke(Machine* machine) {
     // Left argument has been evaluated - save it
-    left_val = machine->ctrl.value;
+    left_val = machine->result;
 
     // Now evaluate the function continuation, then dispatch (dyadic case)
     DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(nullptr, left_val, right_val);
@@ -892,7 +892,7 @@ void EvalApplyFunctionDyadicK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void EvalApplyFunctionDyadicK::mark(APLHeap* heap) {
+void EvalApplyFunctionDyadicK::mark(Heap* heap) {
     if (fn_cont) {
         heap->mark_continuation(fn_cont);
     }
@@ -908,10 +908,10 @@ void EvalApplyFunctionDyadicK::mark(APLHeap* heap) {
 // This is where the actual currying transformation happens:
 // g' = λx. λy. if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
 void DispatchFunctionK::invoke(Machine* machine) {
-    // If fn_val wasn't provided in constructor, get it from ctrl.value
+    // If fn_val wasn't provided in constructor, get it from result
     // (for cases where function was just evaluated)
     if (fn_val == nullptr) {
-        fn_val = machine->ctrl.value;
+        fn_val = machine->result;
     }
 
     // Handle CLOSURE values (dfns)
@@ -969,7 +969,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // Only have one array argument - curry to wait for second (like g' for functions)
                 // Monadic vs dyadic decision happens at top level via g' finalization
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
-                machine->ctrl.value = curried;
+                machine->result = curried;
             } else {
                 machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator curry expects array argument"));
             }
@@ -996,8 +996,8 @@ void DispatchFunctionK::invoke(Machine* machine) {
             }
         }
         if (fn_val->tag == ValueType::CURRIED_FN) {
-            // Update ctrl.value before recursing, since invoke() reads from it
-            machine->ctrl.value = fn_val;
+            // Update result before recursing, since invoke() reads from it
+            machine->result = fn_val;
             this->invoke(machine);
             return;
         }
@@ -1052,7 +1052,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // Only have right argument - this is the second operator operand
                 // Use OPERATOR_CURRY to capture it properly (not DYADIC_CURRY which is for array args)
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
-                machine->ctrl.value = curried;
+                machine->result = curried;
             } else if (op->monadic && !left_val) {
                 // Pure monadic operator - apply immediately
                 op->monadic(machine, first_operand, right_val);
@@ -1076,7 +1076,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 PrimitiveFn* prim_fn = fn->data.primitive_fn;
                 if (prim_fn->monadic) {
                     prim_fn->monadic(machine, arg);
-                    left_val = machine->ctrl.value;  // Use the finalized value
+                    left_val = machine->result;  // Use the finalized value
                 }
             }
         }
@@ -1091,7 +1091,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 PrimitiveFn* prim_fn = fn->data.primitive_fn;
                 if (prim_fn->monadic) {
                     prim_fn->monadic(machine, arg);
-                    right_val = machine->ctrl.value;  // Use the finalized value
+                    right_val = machine->result;  // Use the finalized value
                 }
             }
         }
@@ -1113,7 +1113,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
         // by deferring until we know if there's a left argument.
         if (op->monadic && op->dyadic && !left_val && right_val) {
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
-            machine->ctrl.value = curried;
+            machine->result = curried;
             return;
         }
 
@@ -1137,11 +1137,11 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // Inner product: first_arg stores the second function operand (for "+." applied to "×")
                 // Rank operator: first_arg stores the rank specification (for "-⍤" applied to "2")
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
-                machine->ctrl.value = curried;
+                machine->result = curried;
             } else {
                 // Outer product and similar: first_arg stores the array argument
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
-                machine->ctrl.value = curried;
+                machine->result = curried;
             }
             return;
         }
@@ -1165,14 +1165,14 @@ void DispatchFunctionK::invoke(Machine* machine) {
             // Overloaded function: use g' transformation (complex currying)
             // Unless force_monadic is set, in which case apply monadic form directly
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
-            machine->ctrl.value = curried;
+            machine->result = curried;
         } else if (prim_fn->monadic && force_monadic) {
             // Force immediate monadic evaluation (used by operators like each, rank)
             prim_fn->monadic(machine, right_val);
         } else if (prim_fn->dyadic) {
             // Pure dyadic function: simple currying (right arg captured, waiting for left)
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
-            machine->ctrl.value = curried;
+            machine->result = curried;
         } else if (prim_fn->monadic) {
             // Pure monadic function - apply directly
             prim_fn->monadic(machine, right_val);
@@ -1188,14 +1188,14 @@ void DispatchFunctionK::invoke(Machine* machine) {
             return;
         }
 
-        // Apply dyadic function (sets machine->ctrl.value directly or pushes ThrowErrorK)
+        // Apply dyadic function (sets machine->result directly or pushes ThrowErrorK)
         prim_fn->dyadic(machine, left_val, right_val);
     }
 
     // Phase 3.1: No return needed
 }
 
-void DispatchFunctionK::mark(APLHeap* heap) {
+void DispatchFunctionK::mark(Heap* heap) {
     if (fn_val) {
         heap->mark_value(fn_val);
     }
@@ -1212,7 +1212,7 @@ void SeqK::invoke(Machine* machine) {
     if (statements.empty()) {
         // Empty sequence returns null/unit value (scalar 0)
         Value* val = machine->heap->allocate_scalar(0.0);
-        machine->ctrl.set_value(val);
+        machine->result = val;
         return;  // Early exit for empty case
     }
 
@@ -1231,7 +1231,7 @@ void SeqK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void SeqK::mark(APLHeap* heap) {
+void SeqK::mark(Heap* heap) {
     for (Continuation* stmt : statements) {
         if (stmt) {
             heap->mark_continuation(stmt);
@@ -1241,7 +1241,7 @@ void SeqK::mark(APLHeap* heap) {
 
 // ExecNextStatementK implementation - execute remaining statements
 void ExecNextStatementK::invoke(Machine* machine) {
-    // The previous statement has been executed and its result is in machine->ctrl.value
+    // The previous statement has been executed and its result is in machine->result
     // We discard that result (unless it's the last statement)
 
     if (next_index >= statements.size()) {
@@ -1263,7 +1263,7 @@ void ExecNextStatementK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void ExecNextStatementK::mark(APLHeap* heap) {
+void ExecNextStatementK::mark(Heap* heap) {
     for (Continuation* stmt : statements) {
         if (stmt) {
             heap->mark_continuation(stmt);
@@ -1287,7 +1287,7 @@ void IfK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void IfK::mark(APLHeap* heap) {
+void IfK::mark(Heap* heap) {
     if (condition) {
         heap->mark_continuation(condition);
     }
@@ -1301,8 +1301,8 @@ void IfK::mark(APLHeap* heap) {
 
 // SelectBranchK implementation - select branch based on condition result
 void SelectBranchK::invoke(Machine* machine) {
-    // Condition result is in machine->ctrl.value
-    Value* cond_val = machine->ctrl.value;
+    // Condition result is in machine->result
+    Value* cond_val = machine->result;
 
     if (!cond_val) {
         // Error: no condition value
@@ -1340,7 +1340,7 @@ void SelectBranchK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void SelectBranchK::mark(APLHeap* heap) {
+void SelectBranchK::mark(Heap* heap) {
     if (then_branch) {
         heap->mark_continuation(then_branch);
     }
@@ -1365,7 +1365,7 @@ void WhileK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void WhileK::mark(APLHeap* heap) {
+void WhileK::mark(Heap* heap) {
     if (condition) {
         heap->mark_continuation(condition);
     }
@@ -1376,8 +1376,8 @@ void WhileK::mark(APLHeap* heap) {
 
 // CheckWhileCondK implementation - check condition and decide whether to loop
 void CheckWhileCondK::invoke(Machine* machine) {
-    // Condition result is in machine->ctrl.value
-    Value* cond_val = machine->ctrl.value;
+    // Condition result is in machine->result
+    Value* cond_val = machine->result;
 
     if (!cond_val) {
         // Error: no condition value
@@ -1418,7 +1418,7 @@ void CheckWhileCondK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void CheckWhileCondK::mark(APLHeap* heap) {
+void CheckWhileCondK::mark(Heap* heap) {
     if (condition) {
         heap->mark_continuation(condition);
     }
@@ -1443,7 +1443,7 @@ void ForK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void ForK::mark(APLHeap* heap) {
+void ForK::mark(Heap* heap) {
     if (array_expr) {
         heap->mark_continuation(array_expr);
     }
@@ -1454,9 +1454,9 @@ void ForK::mark(APLHeap* heap) {
 
 // ForIterateK implementation - iterate over array elements
 void ForIterateK::invoke(Machine* machine) {
-    // First call: array is in machine->ctrl.value
+    // First call: array is in machine->result
     if (array == nullptr) {
-        array = machine->ctrl.value;
+        array = machine->result;
         if (!array) {
             machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: For loop array evaluated to null"));
             return;
@@ -1480,7 +1480,7 @@ void ForIterateK::invoke(Machine* machine) {
         // Loop finished - result is the last iteration's value (or scalar 0 if empty)
         if (total_elements == 0) {
             Value* zero = machine->heap->allocate_scalar(0.0);
-            machine->ctrl.set_value(zero);
+            machine->result = zero;
         }
         return;  // Early exit - loop done
     }
@@ -1512,7 +1512,7 @@ void ForIterateK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void ForIterateK::mark(APLHeap* heap) {
+void ForIterateK::mark(Heap* heap) {
     if (array) {
         heap->mark_value(array);
     }
@@ -1527,9 +1527,9 @@ void LeaveK::invoke(Machine* machine) {
     // This will unwind until we hit a CatchBreakK at a loop boundary
 
     // The current value in ctrl is the result of the :Leave statement (usually the last value)
-    APLCompletion* break_comp = machine->heap->allocate<APLCompletion>(
+    Completion* break_comp = machine->heap->allocate<Completion>(
         CompletionType::BREAK,
-        machine->ctrl.value,  // The value to return from the loop
+        machine->result,  // The value to return from the loop
         nullptr  // No label for now
     );
 
@@ -1538,7 +1538,7 @@ void LeaveK::invoke(Machine* machine) {
     machine->push_kont(prop);
 }
 
-void LeaveK::mark(APLHeap* heap) {
+void LeaveK::mark(Heap* heap) {
     // LeaveK has no references
     (void)heap;
 }
@@ -1558,10 +1558,10 @@ void ReturnK::invoke(Machine* machine) {
     } else {
         // No value expression - return unit/zero
         Value* zero = machine->heap->allocate_scalar(0.0);
-        machine->ctrl.set_value(zero);
+        machine->result = zero;
 
         // Create RETURN completion with zero value
-        APLCompletion* return_comp = machine->heap->allocate<APLCompletion>(
+        Completion* return_comp = machine->heap->allocate<Completion>(
             CompletionType::RETURN,
             zero,
             nullptr
@@ -1573,7 +1573,7 @@ void ReturnK::invoke(Machine* machine) {
     }
 }
 
-void ReturnK::mark(APLHeap* heap) {
+void ReturnK::mark(Heap* heap) {
     if (value_expr) {
         heap->mark_continuation(value_expr);
     }
@@ -1582,11 +1582,11 @@ void ReturnK::mark(APLHeap* heap) {
 // CreateReturnK implementation - create RETURN completion from evaluated value
 void CreateReturnK::invoke(Machine* machine) {
     // Phase 2.3: Value has been evaluated, create RETURN completion
-    // The value is in ctrl.value
+    // The value is in result
 
-    APLCompletion* return_comp = machine->heap->allocate<APLCompletion>(
+    Completion* return_comp = machine->heap->allocate<Completion>(
         CompletionType::RETURN,
-        machine->ctrl.value,
+        machine->result,
         nullptr
     );
 
@@ -1595,7 +1595,7 @@ void CreateReturnK::invoke(Machine* machine) {
     machine->push_kont(prop);
 }
 
-void CreateReturnK::mark(APLHeap* heap) {
+void CreateReturnK::mark(Heap* heap) {
     // CreateReturnK has no references
     (void)heap;
 }
@@ -1646,7 +1646,7 @@ void FunctionCallK::invoke(Machine* machine) {
     // Phase 3.1: No return needed
 }
 
-void FunctionCallK::mark(APLHeap* heap) {
+void FunctionCallK::mark(Heap* heap) {
     if (fn_value) {
         heap->mark_value(fn_value);
     }
@@ -1663,11 +1663,11 @@ void RestoreEnvK::invoke(Machine* machine) {
     // Restore the saved environment
     machine->env = saved_env;
 
-    // Result value is already in machine->ctrl.value
+    // Result value is already in machine->result
     // Phase 3.1: No return needed
 }
 
-void RestoreEnvK::mark(APLHeap* heap) {
+void RestoreEnvK::mark(Heap* heap) {
     // saved_env will be marked by machine's environment chain
     (void)heap;
 }
@@ -1683,7 +1683,7 @@ void DerivedOperatorK::invoke(Machine* machine) {
     machine->push_kont(operand_cont);
 }
 
-void DerivedOperatorK::mark(APLHeap* heap) {
+void DerivedOperatorK::mark(Heap* heap) {
     if (operand_cont) {
         heap->mark_continuation(operand_cont);
     }
@@ -1691,7 +1691,7 @@ void DerivedOperatorK::mark(APLHeap* heap) {
 
 // ApplyDerivedOperatorK implementation - create DERIVED_OPERATOR value
 void ApplyDerivedOperatorK::invoke(Machine* machine) {
-    Value* first_operand = machine->ctrl.value;
+    Value* first_operand = machine->result;
 
     // Look up the operator by name from environment
     Value* op_val = machine->env->lookup(op_name);
@@ -1721,13 +1721,13 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
         //   - The first operand
         // When this derived operator is applied, it will call op->monadic() or op->dyadic()
         Value* derived = machine->heap->allocate_derived_operator(op, first_operand);
-        machine->ctrl.value = derived;
+        machine->result = derived;
     } else {
         machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Operator has neither monadic nor dyadic form"));
     }
 }
 
-void ApplyDerivedOperatorK::mark(APLHeap* heap) {
+void ApplyDerivedOperatorK::mark(Heap* heap) {
     // op_name is an interned string, not GC-managed
     (void)heap;
 }
@@ -1817,7 +1817,7 @@ void CellIterK::invoke(Machine* machine) {
             // Done - assemble results
             if (results.empty()) {
                 // No results - return empty (shouldn't happen)
-                machine->ctrl.set_value(machine->heap->allocate_scalar(0));
+                machine->result = machine->heap->allocate_scalar(0);
                 return;
             }
 
@@ -1835,7 +1835,7 @@ void CellIterK::invoke(Machine* machine) {
                 // When function changes cell shape (like reduce), results.size() determines output shape
                 if (results.size() == 1) {
                     // Single scalar result - return as scalar
-                    machine->ctrl.set_value(results[0]);
+                    machine->result = results[0];
                 } else if (results.size() == (size_t)(orig_rows * orig_cols) && !orig_is_vector && orig_cols > 1) {
                     // Same number of results as input elements AND input was matrix - preserve matrix shape
                     // This handles rank-0 operations that preserve element count
@@ -1843,14 +1843,14 @@ void CellIterK::invoke(Machine* machine) {
                     for (size_t i = 0; i < results.size(); i++) {
                         mat(i / orig_cols, i % orig_cols) = results[i]->as_scalar();
                     }
-                    machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+                    machine->result = machine->heap->allocate_matrix(mat);
                 } else {
                     // Otherwise (including reduction), return vector of results
                     Eigen::VectorXd vec(results.size());
                     for (size_t i = 0; i < results.size(); i++) {
                         vec(i) = results[i]->as_scalar();
                     }
-                    machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+                    machine->result = machine->heap->allocate_vector(vec);
                 }
             } else {
                 // Results are vectors - try to assemble into matrix
@@ -1872,10 +1872,10 @@ void CellIterK::invoke(Machine* machine) {
                         const Eigen::MatrixXd* v = results[i]->as_matrix();
                         mat.row(i) = v->col(0).transpose();
                     }
-                    machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+                    machine->result = machine->heap->allocate_matrix(mat);
                 } else {
                     // Mixed results - return last (TODO: nested arrays)
-                    machine->ctrl.set_value(results.back());
+                    machine->result = results.back();
                 }
             }
             return;
@@ -1900,7 +1900,7 @@ void CellIterK::invoke(Machine* machine) {
         // Backward iteration for right-fold
         if (current_cell < 0) {
             // Done - accumulator has final result
-            machine->ctrl.set_value(accumulator);
+            machine->result = accumulator;
             return;
         }
 
@@ -1930,7 +1930,7 @@ void CellIterK::invoke(Machine* machine) {
                 for (size_t i = 0; i < results.size(); i++) {
                     vec(i) = results[i]->as_scalar();
                 }
-                machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+                machine->result = machine->heap->allocate_vector(vec);
             } else {
                 // For matrix scan, each row is scanned independently
                 // This simplified version assumes vector input
@@ -1938,7 +1938,7 @@ void CellIterK::invoke(Machine* machine) {
                 for (size_t i = 0; i < results.size(); i++) {
                     vec(i) = results[i]->as_scalar();
                 }
-                machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+                machine->result = machine->heap->allocate_vector(vec);
             }
             return;
         }
@@ -1964,14 +1964,14 @@ void CellIterK::invoke(Machine* machine) {
             // Done - assemble results into matrix
             if (lhs_total == 1 && rhs_total == 1) {
                 // Scalar result
-                machine->ctrl.set_value(results[0]);
+                machine->result = results[0];
             } else if (rhs_total == 1) {
                 // Column vector result
                 Eigen::VectorXd vec(lhs_total);
                 for (int i = 0; i < lhs_total; i++) {
                     vec(i) = results[i]->as_scalar();
                 }
-                machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+                machine->result = machine->heap->allocate_vector(vec);
             } else {
                 // Matrix result
                 Eigen::MatrixXd mat(lhs_total, rhs_total);
@@ -1980,7 +1980,7 @@ void CellIterK::invoke(Machine* machine) {
                         mat(i, j) = results[i * rhs_total + j]->as_scalar();
                     }
                 }
-                machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+                machine->result = machine->heap->allocate_matrix(mat);
             }
             return;
         }
@@ -2025,7 +2025,7 @@ void CellIterK::invoke(Machine* machine) {
     }
 }
 
-void CellIterK::mark(APLHeap* heap) {
+void CellIterK::mark(Heap* heap) {
     if (fn) heap->mark_value(fn);
     if (lhs) heap->mark_value(lhs);
     if (rhs) heap->mark_value(rhs);
@@ -2036,7 +2036,7 @@ void CellIterK::mark(APLHeap* heap) {
 }
 
 void CellCollectK::invoke(Machine* machine) {
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
 
     if (iter->mode == CellIterMode::COLLECT) {
         iter->results.push_back(result);
@@ -2057,7 +2057,7 @@ void CellCollectK::invoke(Machine* machine) {
     machine->push_kont(iter);
 }
 
-void CellCollectK::mark(APLHeap* heap) {
+void CellCollectK::mark(Heap* heap) {
     // iter is on the continuation stack, will be marked separately
     (void)heap;
 }
@@ -2073,7 +2073,7 @@ void RowReduceK::invoke(Machine* machine) {
         for (size_t i = 0; i < results.size(); i++) {
             vec(i) = results[i]->as_scalar();
         }
-        machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+        machine->result = machine->heap->allocate_vector(vec);
         return;
     }
 
@@ -2105,7 +2105,7 @@ void RowReduceK::invoke(Machine* machine) {
     }
 }
 
-void RowReduceK::mark(APLHeap* heap) {
+void RowReduceK::mark(Heap* heap) {
     if (fn) heap->mark_value(fn);
     if (matrix) heap->mark_value(matrix);
     for (Value* v : results) {
@@ -2114,13 +2114,13 @@ void RowReduceK::mark(APLHeap* heap) {
 }
 
 void RowReduceCollectK::invoke(Machine* machine) {
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
     iter->results.push_back(result);
     iter->current_row++;
     machine->push_kont(iter);
 }
 
-void RowReduceCollectK::mark(APLHeap* heap) {
+void RowReduceCollectK::mark(Heap* heap) {
     (void)heap;
 }
 
@@ -2135,7 +2135,7 @@ void PrefixScanK::invoke(Machine* machine) {
         for (size_t i = 0; i < results.size(); i++) {
             result_vec(i) = results[i]->as_scalar();
         }
-        machine->ctrl.set_value(machine->heap->allocate_vector(result_vec));
+        machine->result = machine->heap->allocate_vector(result_vec);
         return;
     }
 
@@ -2164,7 +2164,7 @@ void PrefixScanK::invoke(Machine* machine) {
         CellIterMode::FOLD_RIGHT, current_prefix, 1, true));
 }
 
-void PrefixScanK::mark(APLHeap* heap) {
+void PrefixScanK::mark(Heap* heap) {
     if (fn) heap->mark_value(fn);
     if (vec) heap->mark_value(vec);
     for (Value* v : results) {
@@ -2173,13 +2173,13 @@ void PrefixScanK::mark(APLHeap* heap) {
 }
 
 void PrefixScanCollectK::invoke(Machine* machine) {
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
     iter->results.push_back(result);
     iter->current_prefix++;
     machine->push_kont(iter);
 }
 
-void PrefixScanCollectK::mark(APLHeap* heap) {
+void PrefixScanCollectK::mark(Heap* heap) {
     (void)heap;
 }
 
@@ -2191,7 +2191,7 @@ void RowScanK::invoke(Machine* machine) {
     if (current_row >= total_rows) {
         // Done - assemble results into matrix
         if (results.empty()) {
-            machine->ctrl.set_value(machine->heap->allocate_scalar(0));
+            machine->result = machine->heap->allocate_scalar(0);
             return;
         }
 
@@ -2203,7 +2203,7 @@ void RowScanK::invoke(Machine* machine) {
                 const Eigen::MatrixXd* row_vec = results[r]->as_matrix();
                 mat.row(r) = row_vec->col(0).transpose();
             }
-            machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+            machine->result = machine->heap->allocate_matrix(mat);
         } else {
             // Scan-first: results are column vectors, assemble into matrix
             int result_rows = results[0]->rows();  // Each result is a vector
@@ -2212,7 +2212,7 @@ void RowScanK::invoke(Machine* machine) {
                 const Eigen::MatrixXd* col_vec = results[c]->as_matrix();
                 mat.col(c) = col_vec->col(0);
             }
-            machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+            machine->result = machine->heap->allocate_matrix(mat);
         }
         return;
     }
@@ -2230,7 +2230,7 @@ void RowScanK::invoke(Machine* machine) {
         int row_len = row.rows();
         if (row_len <= 1) {
             // Single element or empty: just return as-is
-            machine->ctrl.set_value(row_vec);
+            machine->result = row_vec;
             machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
             return;
         }
@@ -2245,7 +2245,7 @@ void RowScanK::invoke(Machine* machine) {
         int col_len = col.rows();
         if (col_len <= 1) {
             // Single element or empty: just return as-is
-            machine->ctrl.set_value(col_vec);
+            machine->result = col_vec;
             machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
             return;
         }
@@ -2253,7 +2253,7 @@ void RowScanK::invoke(Machine* machine) {
     }
 }
 
-void RowScanK::mark(APLHeap* heap) {
+void RowScanK::mark(Heap* heap) {
     if (fn) heap->mark_value(fn);
     if (matrix) heap->mark_value(matrix);
     for (Value* v : results) {
@@ -2262,23 +2262,23 @@ void RowScanK::mark(APLHeap* heap) {
 }
 
 void RowScanCollectK::invoke(Machine* machine) {
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
     iter->results.push_back(result);
     iter->current_row++;
     machine->push_kont(iter);
 }
 
-void RowScanCollectK::mark(APLHeap* heap) {
+void RowScanCollectK::mark(Heap* heap) {
     (void)heap;
 }
 
 // ============================================================================
 // ReduceResultK - Implementation
 // ============================================================================
-// Takes the vector in ctrl.value and reduces it with fn
+// Takes the vector in result and reduces it with fn
 
 void ReduceResultK::invoke(Machine* machine) {
-    Value* vec = machine->ctrl.value;
+    Value* vec = machine->result;
 
     // Handle scalar - just return it
     if (vec->is_scalar()) {
@@ -2296,7 +2296,7 @@ void ReduceResultK::invoke(Machine* machine) {
     // Single element - return as-is
     if (len == 1) {
         const Eigen::MatrixXd* mat = vec->as_matrix();
-        machine->ctrl.set_value(machine->heap->allocate_scalar((*mat)(0, 0)));
+        machine->result = machine->heap->allocate_scalar((*mat)(0, 0));
         return;
     }
 
@@ -2306,7 +2306,7 @@ void ReduceResultK::invoke(Machine* machine) {
         CellIterMode::FOLD_RIGHT, len, 1, true));
 }
 
-void ReduceResultK::mark(APLHeap* heap) {
+void ReduceResultK::mark(Heap* heap) {
     if (fn) heap->mark_value(fn);
 }
 
@@ -2322,14 +2322,14 @@ void InnerProductIterK::invoke(Machine* machine) {
         // Done - assemble results
         if (lhs_rows == 1 && rhs_cols == 1) {
             // Scalar result
-            machine->ctrl.set_value(results[0]);
+            machine->result = results[0];
         } else if (rhs_cols == 1) {
             // Vector result
             Eigen::VectorXd vec(lhs_rows);
             for (int i = 0; i < lhs_rows; i++) {
                 vec(i) = results[i]->as_scalar();
             }
-            machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+            machine->result = machine->heap->allocate_vector(vec);
         } else {
             // Matrix result
             Eigen::MatrixXd mat(lhs_rows, rhs_cols);
@@ -2338,7 +2338,7 @@ void InnerProductIterK::invoke(Machine* machine) {
                     mat(i, j) = results[i * rhs_cols + j]->as_scalar();
                 }
             }
-            machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+            machine->result = machine->heap->allocate_matrix(mat);
         }
         return;
     }
@@ -2362,7 +2362,7 @@ void InnerProductIterK::invoke(Machine* machine) {
         CellIterMode::COLLECT, lhs_cols, 1, true));
 }
 
-void InnerProductIterK::mark(APLHeap* heap) {
+void InnerProductIterK::mark(Heap* heap) {
     if (f_fn) heap->mark_value(f_fn);
     if (g_fn) heap->mark_value(g_fn);
     if (lhs) heap->mark_value(lhs);
@@ -2373,7 +2373,7 @@ void InnerProductIterK::mark(APLHeap* heap) {
 }
 
 void InnerProductCollectK::invoke(Machine* machine) {
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
     iter->results.push_back(result);
 
     // Advance to next cell
@@ -2387,7 +2387,7 @@ void InnerProductCollectK::invoke(Machine* machine) {
     machine->push_kont(iter);
 }
 
-void InnerProductCollectK::mark(APLHeap* heap) {
+void InnerProductCollectK::mark(Heap* heap) {
     (void)heap;
 }
 

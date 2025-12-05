@@ -110,7 +110,7 @@ const Eigen::MatrixXd* Value::as_matrix() const {
     return const_cast<Value*>(this)->as_matrix();
 }
 
-void Value::mark(APLHeap* heap) {
+void Value::mark(Heap* heap) {
     // If this is a CLOSURE, mark the continuation graph
     if (tag == ValueType::CLOSURE && data.closure) {
         heap->mark_continuation(data.closure);

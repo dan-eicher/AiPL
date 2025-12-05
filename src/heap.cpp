@@ -1,4 +1,4 @@
-// APLHeap implementation
+// Heap implementation
 
 #include "heap.h"
 #include "machine.h"
@@ -13,7 +13,7 @@
 namespace apl {
 
 // Destructor
-APLHeap::~APLHeap() {
+Heap::~Heap() {
     // Clean up all Values
     for (Value* v : young_objects) {
         if (!v) {
@@ -48,7 +48,7 @@ APLHeap::~APLHeap() {
     }
 
     // Clean up all Completions (no old generation)
-    for (APLCompletion* c : completions) {
+    for (Completion* c : completions) {
         if (!c) {
             std::cerr << "GC ERROR: nullptr found in completions during heap destruction - indicates double-deletion or corruption" << std::endl;
             std::abort();
@@ -67,12 +67,12 @@ APLHeap::~APLHeap() {
 }
 
 // Allocate a new Value in the heap
-Value* APLHeap::allocate(Value* val) {
+Value* Heap::allocate(Value* val) {
     if (!val) return nullptr;
 
     // Check if GC is needed
-    if (should_gc() && !gc_in_progress && machine_) {
-        collect(machine_);
+    if (should_gc() && !gc_in_progress && machine) {
+        collect(machine);
     }
 
     // Add to young generation
@@ -88,7 +88,7 @@ Value* APLHeap::allocate(Value* val) {
 }
 
 // Allocate a scalar with cache checking
-Value* APLHeap::allocate_scalar(double d) {
+Value* Heap::allocate_scalar(double d) {
     // Check if this is a cacheable scalar
     if (d >= -128.0 && d <= 127.0 && d == (int)d) {
         int idx = (int)d + 128;
@@ -117,7 +117,7 @@ Value* APLHeap::allocate_scalar(double d) {
 }
 
 // Allocate a vector
-Value* APLHeap::allocate_vector(const Eigen::VectorXd& v) {
+Value* Heap::allocate_vector(const Eigen::VectorXd& v) {
     Value* val = new Value();
     val->tag = ValueType::VECTOR;
     // Store vector as n×1 matrix
@@ -127,7 +127,7 @@ Value* APLHeap::allocate_vector(const Eigen::VectorXd& v) {
 }
 
 // Allocate a matrix
-Value* APLHeap::allocate_matrix(const Eigen::MatrixXd& m) {
+Value* Heap::allocate_matrix(const Eigen::MatrixXd& m) {
     Value* val = new Value();
     val->tag = ValueType::MATRIX;
     val->data.matrix = new Eigen::MatrixXd(m);
@@ -135,7 +135,7 @@ Value* APLHeap::allocate_matrix(const Eigen::MatrixXd& m) {
 }
 
 // Allocate a primitive function value
-Value* APLHeap::allocate_primitive(PrimitiveFn* fn) {
+Value* Heap::allocate_primitive(PrimitiveFn* fn) {
     Value* val = new Value();
     val->tag = ValueType::PRIMITIVE;
     val->data.primitive_fn = fn;
@@ -143,7 +143,7 @@ Value* APLHeap::allocate_primitive(PrimitiveFn* fn) {
 }
 
 // Allocate an operator value
-Value* APLHeap::allocate_operator(PrimitiveOp* op) {
+Value* Heap::allocate_operator(PrimitiveOp* op) {
     Value* val = new Value();
     val->tag = ValueType::OPERATOR;
     val->data.op = op;
@@ -151,7 +151,7 @@ Value* APLHeap::allocate_operator(PrimitiveOp* op) {
 }
 
 // Allocate a closure (user-defined function)
-Value* APLHeap::allocate_closure(Continuation* body) {
+Value* Heap::allocate_closure(Continuation* body) {
     Value* val = new Value();
     val->tag = ValueType::CLOSURE;
     val->data.closure = body;
@@ -159,7 +159,7 @@ Value* APLHeap::allocate_closure(Continuation* body) {
 }
 
 // G2 grammar: Allocate a derived operator (result of applying dyadic operator to first operand)
-Value* APLHeap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand) {
+Value* Heap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand) {
     Value* val = new Value();
     val->tag = ValueType::DERIVED_OPERATOR;
     val->data.derived_op = new Value::DerivedOperatorData();
@@ -169,7 +169,7 @@ Value* APLHeap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand)
 }
 
 // G2 grammar: Allocate a curried function (result of applying function to first argument)
-Value* APLHeap::allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type) {
+Value* Heap::allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type) {
     Value* val = new Value();
     val->tag = ValueType::CURRIED_FN;
     val->data.curried_fn = new Value::CurriedFnData();
@@ -180,7 +180,7 @@ Value* APLHeap::allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryTyp
 }
 
 // Allocate a continuation in the heap (private - only called by template allocate)
-Continuation* APLHeap::allocate_continuation(Continuation* k) {
+Continuation* Heap::allocate_continuation(Continuation* k) {
     if (!k) return nullptr;
 
     // Check if GC is needed
@@ -198,7 +198,7 @@ Continuation* APLHeap::allocate_continuation(Continuation* k) {
 }
 
 // Allocate a completion in the heap (private - only called by template allocate)
-APLCompletion* APLHeap::allocate_completion(APLCompletion* comp) {
+Completion* Heap::allocate_completion(Completion* comp) {
     if (!comp) return nullptr;
 
     // Check if GC is needed
@@ -210,13 +210,13 @@ APLCompletion* APLHeap::allocate_completion(APLCompletion* comp) {
     comp->marked = false;
     comp->in_old_generation = false;  // Always false for completions
     completions.push_back(comp);
-    bytes_allocated += sizeof(APLCompletion);
+    bytes_allocated += sizeof(Completion);
 
     return comp;
 }
 
 // Allocate an environment in the heap (private - only called by template allocate)
-Environment* APLHeap::allocate_environment(Environment* env) {
+Environment* Heap::allocate_environment(Environment* env) {
     if (!env) return nullptr;
 
     // Check if GC is needed
@@ -234,7 +234,7 @@ Environment* APLHeap::allocate_environment(Environment* env) {
 }
 
 // Trigger appropriate garbage collection
-void APLHeap::collect(Machine* machine) {
+void Heap::collect(Machine* machine) {
     if (gc_in_progress) return;
 
     gc_in_progress = true;
@@ -255,7 +255,7 @@ void APLHeap::collect(Machine* machine) {
 
 // Minor GC - collect young generation only
 // Uses partition for O(n) instead of O(n²) from repeated erase()
-void APLHeap::minor_gc(Machine* machine) {
+void Heap::minor_gc(Machine* machine) {
     minor_gc_count++;
 
     // Clear mark bits
@@ -288,7 +288,7 @@ void APLHeap::minor_gc(Machine* machine) {
 }
 
 // Major GC - collect all generations
-void APLHeap::major_gc(Machine* machine) {
+void Heap::major_gc(Machine* machine) {
     major_gc_count++;
     minor_gc_count = 0;  // Reset minor GC counter
 
@@ -314,7 +314,7 @@ void APLHeap::major_gc(Machine* machine) {
 }
 
 // Mark from root set (Machine registers and stacks)
-void APLHeap::mark_from_roots(Machine* machine) {
+void Heap::mark_from_roots(Machine* machine) {
     if (!machine) return;
 
     // Mark cached scalars (they're roots - we want to keep common values alive)
@@ -325,8 +325,8 @@ void APLHeap::mark_from_roots(Machine* machine) {
     }
 
     // Mark value in control register
-    if (machine->ctrl.value) {
-        mark_value(machine->ctrl.value);
+    if (machine->result) {
+        mark_value(machine->result);
     }
 
     // Phase 1: No more completion field in Control
@@ -356,7 +356,7 @@ void APLHeap::mark_from_roots(Machine* machine) {
 }
 
 // Mark a value and its transitive references
-void APLHeap::mark_value(Value* val) {
+void Heap::mark_value(Value* val) {
     if (!val) return;
     if (val->marked) return;  // Already marked
 
@@ -367,7 +367,7 @@ void APLHeap::mark_value(Value* val) {
 }
 
 // Mark a continuation and its transitive references
-void APLHeap::mark_continuation(Continuation* k) {
+void Heap::mark_continuation(Continuation* k) {
     if (!k) return;
     if (k->marked) return;  // Already marked
 
@@ -378,7 +378,7 @@ void APLHeap::mark_continuation(Continuation* k) {
 }
 
 // Mark a completion and its transitive references
-void APLHeap::mark_completion(APLCompletion* comp) {
+void Heap::mark_completion(Completion* comp) {
     if (!comp) return;
     if (comp->marked) return;  // Already marked
 
@@ -390,7 +390,7 @@ void APLHeap::mark_completion(APLCompletion* comp) {
 
 // Sweep unmarked objects from both generations
 // Uses partition for O(n) instead of O(n²) from repeated erase()
-void APLHeap::sweep() {
+void Heap::sweep() {
     // Sweep young Values
     auto young_dead = std::partition(young_objects.begin(), young_objects.end(),
         [](Value* val) { return val && val->marked; });
@@ -437,9 +437,9 @@ void APLHeap::sweep() {
 
     // Sweep completions
     auto comp_dead = std::partition(completions.begin(), completions.end(),
-        [](APLCompletion* c) { return c && c->marked; });
+        [](Completion* c) { return c && c->marked; });
     for (auto it = comp_dead; it != completions.end(); ++it) {
-        bytes_allocated -= sizeof(APLCompletion);
+        bytes_allocated -= sizeof(Completion);
         delete *it;
     }
     completions.erase(comp_dead, completions.end());
@@ -456,7 +456,7 @@ void APLHeap::sweep() {
 
 // Promote survivors from young to old generation
 // Uses partition for O(n) instead of O(n²) from repeated erase()
-void APLHeap::promote_survivors() {
+void Heap::promote_survivors() {
     // Promote Values: partition into [to_promote | stay_young]
     auto promote_vals = std::partition(young_objects.begin(), young_objects.end(),
         [](Value* val) { return !(val && val->marked && !val->in_old_generation); });
@@ -484,7 +484,7 @@ void APLHeap::promote_survivors() {
 }
 
 // Clear all mark bits
-void APLHeap::clear_marks() {
+void Heap::clear_marks() {
     for (Value* val : young_objects) {
         val->marked = false;
     }
@@ -497,7 +497,7 @@ void APLHeap::clear_marks() {
     for (Continuation* k : old_continuations) {
         k->marked = false;
     }
-    for (APLCompletion* c : completions) {
+    for (Completion* c : completions) {
         c->marked = false;
     }
     for (Environment* e : environments) {

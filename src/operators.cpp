@@ -254,7 +254,7 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
 
     if (omega->is_scalar()) {
         // Reducing a scalar is identity
-        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        m->result = m->heap->allocate_scalar(omega->as_scalar());
         return;
     }
 
@@ -270,11 +270,11 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
                 m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
                 return;
             }
-            m->ctrl.set_value(m->heap->allocate_scalar(identity));
+            m->result = m->heap->allocate_scalar(identity);
             return;
         }
         if (len == 1) {
-            m->ctrl.set_value(m->heap->allocate_scalar((*mat)(0, 0)));
+            m->result = m->heap->allocate_scalar((*mat)(0, 0));
             return;
         }
 
@@ -298,13 +298,13 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
             return;
         }
         Eigen::VectorXd result = Eigen::VectorXd::Constant(rows, identity);
-        m->ctrl.set_value(m->heap->allocate_vector(result));
+        m->result = m->heap->allocate_vector(result);
         return;
     }
 
     if (cols == 1) {
         // Single column: just return the column as a vector
-        m->ctrl.set_value(m->heap->allocate_vector(mat->col(0)));
+        m->result = m->heap->allocate_vector(mat->col(0));
         return;
     }
 
@@ -321,7 +321,7 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega) {
     }
 
     if (omega->is_scalar()) {
-        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        m->result = m->heap->allocate_scalar(omega->as_scalar());
         return;
     }
 
@@ -345,13 +345,13 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega) {
             return;
         }
         Eigen::VectorXd result = Eigen::VectorXd::Constant(cols, identity);
-        m->ctrl.set_value(m->heap->allocate_vector(result));
+        m->result = m->heap->allocate_vector(result);
         return;
     }
 
     if (rows == 1) {
         // Single row: just return the row as a vector
-        m->ctrl.set_value(m->heap->allocate_vector(mat->row(0).transpose()));
+        m->result = m->heap->allocate_vector(mat->row(0).transpose());
         return;
     }
 
@@ -370,7 +370,7 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
     }
 
     if (omega->is_scalar()) {
-        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        m->result = m->heap->allocate_scalar(omega->as_scalar());
         return;
     }
 
@@ -379,11 +379,11 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
     if (omega->is_vector()) {
         int len = mat->rows();
         if (len == 0) {
-            m->ctrl.set_value(m->heap->allocate_vector(Eigen::VectorXd(0)));
+            m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
             return;
         }
         if (len == 1) {
-            m->ctrl.set_value(m->heap->allocate_scalar((*mat)(0, 0)));
+            m->result = m->heap->allocate_scalar((*mat)(0, 0));
             return;
         }
 
@@ -397,13 +397,13 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
     int cols = mat->cols();
 
     if (cols == 0) {
-        m->ctrl.set_value(m->heap->allocate_matrix(Eigen::MatrixXd(rows, 0)));
+        m->result = m->heap->allocate_matrix(Eigen::MatrixXd(rows, 0));
         return;
     }
 
     if (cols == 1) {
         // Single column: just return the matrix as-is
-        m->ctrl.set_value(omega);
+        m->result = omega;
         return;
     }
 
@@ -420,7 +420,7 @@ void fn_scan_first(Machine* m, Value* func, Value* omega) {
     }
 
     if (omega->is_scalar()) {
-        m->ctrl.set_value(m->heap->allocate_scalar(omega->as_scalar()));
+        m->result = m->heap->allocate_scalar(omega->as_scalar());
         return;
     }
 
@@ -436,13 +436,13 @@ void fn_scan_first(Machine* m, Value* func, Value* omega) {
     int cols = mat->cols();
 
     if (rows == 0) {
-        m->ctrl.set_value(m->heap->allocate_matrix(Eigen::MatrixXd(0, cols)));
+        m->result = m->heap->allocate_matrix(Eigen::MatrixXd(0, cols));
         return;
     }
 
     if (rows == 1) {
         // Single row: just return the matrix as-is
-        m->ctrl.set_value(omega);
+        m->result = omega;
         return;
     }
 

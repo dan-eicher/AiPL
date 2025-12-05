@@ -71,7 +71,7 @@ Continuation* Parser::parse(const std::string& input) {
     if (statements.size() == 1) {
         return statements[0];
     } else {
-        auto* seq = machine_->heap->allocate<SeqK>(statements);
+        auto* seq = machine->heap->allocate<SeqK>(statements);
         return seq;
     }
 }
@@ -99,7 +99,7 @@ Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
         if (!right) {
             return nullptr;
         }
-        return machine_->heap->allocate<JuxtaposeK>(left, right);
+        return machine->heap->allocate<JuxtaposeK>(left, right);
     }
 
     // Parse the right operand
@@ -112,7 +112,7 @@ Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
 
     // G2 juxtaposition: fbn-term ::= fb-term fbn-term
     // Semantics: if type(x₁)=bas then x₂(x₁) else x₁(x₂)
-    return machine_->heap->allocate<JuxtaposeK>(left, right);
+    return machine->heap->allocate<JuxtaposeK>(left, right);
 }
 
 // Core Pratt parsing algorithm
@@ -213,7 +213,7 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_NUMBER: {
             // Single number - create LiteralK
             double value = token.number;
-            LiteralK* lit = machine_->heap->allocate<LiteralK>(value);
+            LiteralK* lit = machine->heap->allocate<LiteralK>(value);
             return lit;
         }
 
@@ -222,9 +222,9 @@ Continuation* Parser::nud(const Token& token) {
             // Map token data to Eigen vector and create Value
             Eigen::VectorXd vec = Eigen::Map<const Eigen::VectorXd>(
                 token.vector_data, token.vector_size);
-            Value* vec_val = machine_->heap->allocate_vector(vec);
+            Value* vec_val = machine->heap->allocate_vector(vec);
             // Create StrandK that holds this vector Value
-            StrandK* strand = machine_->heap->allocate<StrandK>(vec_val);
+            StrandK* strand = machine->heap->allocate<StrandK>(vec_val);
             return strand;
         }
 
@@ -273,30 +273,30 @@ Continuation* Parser::nud(const Token& token) {
                 default: break;
             }
 
-            const char* interned_name = machine_->string_pool.intern(op_name);
-            LookupK* lookup = machine_->heap->allocate<LookupK>(interned_name);
+            const char* interned_name = machine->string_pool.intern(op_name);
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
 
         case TOK_NAME: {
             // Variable reference - create LookupK
             // Intern the name in the string pool
-            const char* interned_name = machine_->string_pool.intern(token.name);
-            LookupK* lookup = machine_->heap->allocate<LookupK>(interned_name);
+            const char* interned_name = machine->string_pool.intern(token.name);
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
 
         case TOK_ALPHA: {
             // ⍺ (alpha) - left argument in dfn
-            const char* interned_name = machine_->string_pool.intern("⍺");
-            LookupK* lookup = machine_->heap->allocate<LookupK>(interned_name);
+            const char* interned_name = machine->string_pool.intern("⍺");
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
 
         case TOK_OMEGA: {
             // ⍵ (omega) - right argument in dfn
-            const char* interned_name = machine_->string_pool.intern("⍵");
-            LookupK* lookup = machine_->heap->allocate<LookupK>(interned_name);
+            const char* interned_name = machine->string_pool.intern("⍵");
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
 
@@ -309,7 +309,7 @@ Continuation* Parser::nud(const Token& token) {
             }
 
             // Create ClosureLiteralK with the body
-            ClosureLiteralK* closure_lit = machine_->heap->allocate<ClosureLiteralK>(body);
+            ClosureLiteralK* closure_lit = machine->heap->allocate<ClosureLiteralK>(body);
             return closure_lit;
         }
 
@@ -322,8 +322,8 @@ Continuation* Parser::nud(const Token& token) {
                 return nullptr;
             }
 
-            const char* interned_name = machine_->string_pool.intern("∘.");
-            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
+            const char* interned_name = machine->string_pool.intern("∘.");
+            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
             return derived;
         }
 
@@ -353,7 +353,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             }
 
             // Create AssignK continuation (var_name is already interned from LookupK)
-            AssignK* assign = machine_->heap->allocate<AssignK>(lookup->var_name, right);
+            AssignK* assign = machine->heap->allocate<AssignK>(lookup->var_name, right);
             return assign;
         }
 
@@ -366,7 +366,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             }
 
             // Create ClosureLiteralK for the dfn
-            ClosureLiteralK* closure_lit = machine_->heap->allocate<ClosureLiteralK>(body);
+            ClosureLiteralK* closure_lit = machine->heap->allocate<ClosureLiteralK>(body);
 
             // Parse the right argument
             int bp = get_binding_power(token);  // Use operator binding power for dfns
@@ -377,7 +377,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             }
 
             // Create ApplyFunctionK for dyadic application: left {dfn} right
-            ApplyFunctionK* apply = machine_->heap->allocate<ApplyFunctionK>(closure_lit, left, right);
+            ApplyFunctionK* apply = machine->heap->allocate<ApplyFunctionK>(closure_lit, left, right);
             return apply;
         }
 
@@ -401,10 +401,10 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                 default: break;
             }
 
-            const char* interned_name = machine_->string_pool.intern(op_name);
+            const char* interned_name = machine->string_pool.intern(op_name);
 
             // Create DerivedOperatorK: evaluate operand (left), then apply operator
-            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             return derived;
         }
 
@@ -417,14 +417,14 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                 return nullptr;
             }
 
-            const char* interned_name = machine_->string_pool.intern("∘.");
+            const char* interned_name = machine->string_pool.intern("∘.");
 
             // Create derived operator from ∘. and the function
-            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
+            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
 
             // Now create juxtaposition: left (∘.f)
             // This applies ∘.f monadically to left, which will curry waiting for right argument
-            JuxtaposeK* jux = machine_->heap->allocate<JuxtaposeK>(left, derived);
+            JuxtaposeK* jux = machine->heap->allocate<JuxtaposeK>(left, derived);
             return jux;
         }
 
@@ -432,8 +432,8 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Inner product (.)
             // G2 Grammar Rule 4: fb-term dyadic-operator → derived-operator
             // The second operand will be delivered via juxtaposition (Rule 3: derived-operator fb → fb-term)
-            const char* interned_name = machine_->string_pool.intern(".");
-            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+            const char* interned_name = machine->string_pool.intern(".");
+            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             return derived;
         }
 
@@ -441,8 +441,8 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Rank operator (⍤)
             // f⍤k applies function f to k-cells of the argument(s)
             // Dyadic operator: first operand is function, second is rank specification
-            const char* interned_name = machine_->string_pool.intern("⍤");
-            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+            const char* interned_name = machine->string_pool.intern("⍤");
+            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             return derived;
         }
 
@@ -482,13 +482,13 @@ Continuation* Parser::parse_dfn_body() {
     Continuation* body;
     if (statements.empty()) {
         // Empty dfn body - return 0
-        body = machine_->heap->allocate<LiteralK>(0.0);
+        body = machine->heap->allocate<LiteralK>(0.0);
     } else if (statements.size() == 1) {
         // Single expression - use directly
         body = statements[0];
     } else {
         // Multiple statements - wrap in SeqK
-        body = machine_->heap->allocate<SeqK>(statements);
+        body = machine->heap->allocate<SeqK>(statements);
     }
 
     return body;
@@ -538,7 +538,7 @@ Continuation* Parser::parse_if_statement() {
 
     Continuation* then_branch = nullptr;
     if (!then_stmts.empty()) {
-        then_branch = machine_->heap->allocate<SeqK>(then_stmts);
+        then_branch = machine->heap->allocate<SeqK>(then_stmts);
     }
 
     // Check for :Else
@@ -555,7 +555,7 @@ Continuation* Parser::parse_if_statement() {
         }
 
         if (!else_stmts.empty()) {
-            else_branch = machine_->heap->allocate<SeqK>(else_stmts);
+            else_branch = machine->heap->allocate<SeqK>(else_stmts);
         }
     }
 
@@ -567,7 +567,7 @@ Continuation* Parser::parse_if_statement() {
     advance();  // consume :EndIf
 
     // Create IfK continuation
-    IfK* if_k = machine_->heap->allocate<IfK>(condition, then_branch, else_branch);
+    IfK* if_k = machine->heap->allocate<IfK>(condition, then_branch, else_branch);
     return if_k;
 }
 
@@ -591,7 +591,7 @@ Continuation* Parser::parse_while_statement() {
 
     Continuation* body = nullptr;
     if (!body_stmts.empty()) {
-        body = machine_->heap->allocate<SeqK>(body_stmts);
+        body = machine->heap->allocate<SeqK>(body_stmts);
     }
 
     // Expect :EndWhile
@@ -602,7 +602,7 @@ Continuation* Parser::parse_while_statement() {
     advance();  // consume :EndWhile
 
     // Create WhileK continuation
-    WhileK* while_k = machine_->heap->allocate<WhileK>(condition, body);
+    WhileK* while_k = machine->heap->allocate<WhileK>(condition, body);
     return while_k;
 }
 
@@ -617,7 +617,7 @@ Continuation* Parser::parse_for_statement() {
         return nullptr;
     }
     // Intern the variable name in the string pool
-    const char* var_name = machine_->string_pool.intern(current().name);
+    const char* var_name = machine->string_pool.intern(current().name);
     advance();  // consume variable name
 
     skip_separators();
@@ -648,7 +648,7 @@ Continuation* Parser::parse_for_statement() {
 
     Continuation* body = nullptr;
     if (!body_stmts.empty()) {
-        body = machine_->heap->allocate<SeqK>(body_stmts);
+        body = machine->heap->allocate<SeqK>(body_stmts);
     }
 
     // Expect :EndFor
@@ -659,7 +659,7 @@ Continuation* Parser::parse_for_statement() {
     advance();  // consume :EndFor
 
     // Create ForK continuation
-    ForK* for_k = machine_->heap->allocate<ForK>(var_name, array_expr, body);
+    ForK* for_k = machine->heap->allocate<ForK>(var_name, array_expr, body);
     return for_k;
 }
 
@@ -679,7 +679,7 @@ Continuation* Parser::parse_return_statement() {
     }
 
     // Create ReturnK continuation
-    ReturnK* return_k = machine_->heap->allocate<ReturnK>(value_expr);
+    ReturnK* return_k = machine->heap->allocate<ReturnK>(value_expr);
     return return_k;
 }
 
@@ -687,7 +687,7 @@ Continuation* Parser::parse_return_statement() {
 Continuation* Parser::parse_leave_statement() {
     // :Leave has already been consumed by parse_statement()
     // Create LeaveK continuation
-    LeaveK* leave_k = machine_->heap->allocate<LeaveK>();
+    LeaveK* leave_k = machine->heap->allocate<LeaveK>();
     return leave_k;
 }
 

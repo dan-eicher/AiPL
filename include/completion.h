@@ -8,7 +8,7 @@
 namespace apl {
 
 // Forward declarations
-class APLHeap;
+class Heap;
 
 // Completion types for control flow
 enum class CompletionType {
@@ -23,10 +23,10 @@ enum class CompletionType {
 // Represents the result of evaluating an expression or statement
 // Used for structured control flow (returns, breaks, exceptions)
 // Now GC-managed for proper memory management
-struct APLCompletion : public GCObject {
+struct Completion : public GCObject {
 private:
-    // Only APLHeap can allocate/deallocate APLCompletion objects
-    friend class APLHeap;
+    // Only Heap can allocate/deallocate Completion objects
+    friend class Heap;
 
     // Private new/delete operators enforce heap-only allocation
     void* operator new(size_t size) { return ::operator new(size); }
@@ -38,14 +38,14 @@ public:
     const char* target;     // Target label for break/continue (nullptr if not used)
 
     // Constructors (public so heap's template allocate works, but new/delete are private)
-    APLCompletion()
+    Completion()
         : GCObject(), type(CompletionType::NORMAL), value(nullptr), target(nullptr) {}
 
-    APLCompletion(CompletionType t, Value* v = nullptr, const char* tgt = nullptr)
+    Completion(CompletionType t, Value* v = nullptr, const char* tgt = nullptr)
         : GCObject(), type(t), value(v), target(tgt) {}
 
     // GC support
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
     // Query methods
     bool is_normal() const { return type == CompletionType::NORMAL; }

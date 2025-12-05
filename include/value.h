@@ -9,7 +9,7 @@ namespace apl {
 // Forward declarations
 class Value;
 class Continuation;
-class APLHeap;
+class Heap;
 class Machine;
 
 // GCObject base class - defined here to avoid circular dependencies
@@ -23,7 +23,7 @@ public:
     virtual ~GCObject() = default;
 
     // Mark all objects referenced by this object for GC
-    virtual void mark(APLHeap* heap) = 0;
+    virtual void mark(Heap* heap) = 0;
 };
 
 // Primitive function - can have both monadic and dyadic forms
@@ -60,8 +60,8 @@ enum class ValueType {
 // Value class - tagged union for all APL values
 class Value : public GCObject {
 private:
-    // Only APLHeap can allocate/deallocate Value objects
-    friend class APLHeap;
+    // Only Heap can allocate/deallocate Value objects
+    friend class Heap;
 
     // Private new/delete operators enforce heap-only allocation
     void* operator new(size_t size) { return ::operator new(size); }
@@ -137,7 +137,7 @@ public:
     const Eigen::MatrixXd* as_matrix() const;  // Const version
 
     // GC support - mark all objects this Value references (override from GCObject)
-    void mark(APLHeap* heap) override;
+    void mark(Heap* heap) override;
 
 private:
     // Helper for lazy scalar promotion

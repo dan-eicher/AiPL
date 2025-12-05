@@ -1,4 +1,4 @@
-// APLHeap - Generational garbage-collected heap for APL values
+// Heap - Generational garbage-collected heap for APL values
 
 #pragma once
 
@@ -13,13 +13,13 @@ namespace apl {
 // Forward declarations
 class Machine;
 class Continuation;
-class APLCompletion;
+class Completion;
 class Environment;
 
-// APLHeap - Generational heap with specialized zones
-class APLHeap {
+// Heap - Generational heap with specialized zones
+class Heap {
 private:
-    Machine* machine_;  // Back-pointer to owning machine (for GC)
+    Machine* machine;  // Back-pointer to owning machine (for GC)
 
 public:
     // Generational zones for Values
@@ -31,7 +31,7 @@ public:
     std::vector<Continuation*> old_continuations;    // Long-lived continuations
 
     // Completions (always short-lived, no old generation needed)
-    std::vector<APLCompletion*> completions;
+    std::vector<Completion*> completions;
 
     // Environments (GC roots, no generational separation needed)
     std::vector<Environment*> environments;
@@ -51,8 +51,8 @@ public:
     size_t old_capacity;
 
     // Constructor
-    APLHeap(size_t young_cap = 4096, size_t old_cap = 16384)
-        : machine_(nullptr),
+    Heap(size_t young_cap = 4096, size_t old_cap = 16384)
+        : machine(nullptr),
           bytes_allocated(0),
           gc_threshold(young_cap * sizeof(Value)),
           minor_gc_count(0),
@@ -71,10 +71,10 @@ public:
     }
 
     // Set the owning machine (called by Machine constructor)
-    void set_machine(Machine* m) { machine_ = m; }
+    void set_machine(Machine* m) { machine = m; }
 
     // Destructor (implemented in .cpp to avoid incomplete type issues)
-    ~APLHeap();
+    ~Heap();
 
     // --- Public Allocation API ---
 
@@ -101,8 +101,8 @@ public:
             return static_cast<T*>(allocate(static_cast<Value*>(obj)));
         } else if constexpr (std::is_base_of<Continuation, T>::value) {
             return static_cast<T*>(allocate_continuation(static_cast<Continuation*>(obj)));
-        } else if constexpr (std::is_base_of<APLCompletion, T>::value) {
-            return static_cast<T*>(allocate_completion(static_cast<APLCompletion*>(obj)));
+        } else if constexpr (std::is_base_of<Completion, T>::value) {
+            return static_cast<T*>(allocate_completion(static_cast<Completion*>(obj)));
         } else if constexpr (std::is_base_of<Environment, T>::value) {
             return static_cast<T*>(allocate_environment(static_cast<Environment*>(obj)));
         } else {
@@ -120,7 +120,7 @@ public:
     void mark_from_roots(Machine* machine);
     void mark_value(Value* val);
     void mark_continuation(Continuation* k);
-    void mark_completion(APLCompletion* comp);
+    void mark_completion(Completion* comp);
 
     // Sweep phase - reclaim unmarked values
     void sweep();
@@ -150,7 +150,7 @@ private:
 
     // Internal allocation helpers (called by template allocate() only)
     Continuation* allocate_continuation(Continuation* k);
-    APLCompletion* allocate_completion(APLCompletion* comp);
+    Completion* allocate_completion(Completion* comp);
     Environment* allocate_environment(Environment* env);
 
     // Add to scalar cache

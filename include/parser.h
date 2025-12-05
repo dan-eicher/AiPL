@@ -17,7 +17,7 @@ class Machine;
 // Integrates with Lexer for on-demand tokenization
 class Parser {
 public:
-    Parser(Machine* machine) : machine_(machine), lexer_(nullptr), current_token_() {}
+    Parser(Machine* machine) : machine(machine), lexer_(nullptr), current_token_() {}
 
     // Parse APL input and return the continuation graph
     // - For single expressions: returns the expression continuation
@@ -30,7 +30,7 @@ public:
     const std::string& get_error() const { return error_message_; }
 
 private:
-    Machine* machine_;
+    Machine* machine;
     std::string error_message_;
     std::string input_;  // Keep input alive for lexer
 

@@ -13,7 +13,7 @@ using namespace apl;
 class ContinuationTest : public ::testing::Test {
 protected:
     Machine* machine;
-    APLHeap* heap;  // Convenience pointer to machine->heap
+    Heap* heap;  // Convenience pointer to machine->heap
 
     void SetUp() override {
         machine = new Machine();
@@ -30,7 +30,7 @@ TEST_F(ContinuationTest, HaltK) {
     HaltK* halt = heap->allocate<HaltK>();
 
     Value* v = machine->heap->allocate_scalar(42.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     machine->push_kont(halt);
     Value* result = machine->execute();
@@ -69,7 +69,7 @@ TEST_F(ContinuationTest, ArgKBasic) {
     Value* result = machine->execute();
 
     EXPECT_EQ(result, arg);
-    EXPECT_EQ(machine->ctrl.value, arg);
+    EXPECT_EQ(machine->result, arg);
 
 }
 
@@ -100,7 +100,7 @@ TEST_F(ContinuationTest, ArgKChaining) {
 
     // Should eventually return arg2 (last in chain)
     EXPECT_EQ(result, arg2);
-    EXPECT_EQ(machine->ctrl.value, arg2);
+    EXPECT_EQ(machine->result, arg2);
 
 }
 
@@ -131,7 +131,7 @@ TEST_F(ContinuationTest, FrameKBasic) {
     FrameK* frame = heap->allocate<FrameK>("test_func", halt);
 
     Value* v = machine->heap->allocate_scalar(7.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     // Push frame onto stack and execute via trampoline
     machine->push_kont(frame);
@@ -157,7 +157,7 @@ TEST_F(ContinuationTest, FrameKWithoutReturn) {
     FrameK* frame = heap->allocate<FrameK>("func", nullptr);
 
     Value* v = machine->heap->allocate_scalar(88.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     // Push frame onto stack and execute via trampoline
     machine->push_kont(frame);
@@ -190,7 +190,7 @@ TEST_F(ContinuationTest, FrameKFunctionName) {
 // Test Machine push and execute
 TEST_F(ContinuationTest, MachinePushPop) {
     Value* v = machine->heap->allocate_scalar(42.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     HaltK* halt = heap->allocate<HaltK>();
     machine->push_kont(halt);
@@ -208,7 +208,7 @@ TEST_F(ContinuationTest, MachinePushPop) {
 // Test Machine execute with empty stack
 TEST_F(ContinuationTest, MachinePopEmpty) {
     Value* v = machine->heap->allocate_scalar(123.0);
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     EXPECT_EQ(machine->kont_stack.size(), 0);
 
@@ -246,7 +246,7 @@ TEST_F(ContinuationTest, FrameKChaining) {
     FrameK* frame = heap->allocate<FrameK>("outer", halt);
     ArgK* argk = heap->allocate<ArgK>(v, frame);
 
-    machine->ctrl.set_value(v);
+    machine->result = v;
 
     machine->push_kont(argk);
     Value* result = machine->execute();
@@ -270,7 +270,7 @@ TEST_F(ContinuationTest, LiteralKBasic) {
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
-    EXPECT_EQ(machine->ctrl.value, result);
+    EXPECT_EQ(machine->result, result);
 }
 
 // Test LiteralK without next - now just tests basic execution
@@ -354,9 +354,9 @@ TEST_F(ContinuationTest, DerivedOperatorKCreation) {
 
 // Test ApplyDerivedOperatorK creates derived operator value
 TEST_F(ContinuationTest, ApplyDerivedOperatorKExecution) {
-    // Set up: operand value in ctrl.value (a function)
+    // Set up: operand value in result (a function)
     Value* operand = heap->allocate_primitive(&prim_plus);
-    machine->ctrl.value = operand;
+    machine->result = operand;
 
     // Create ApplyDerivedOperatorK for . operator (inner product - dyadic)
     const char* op_name = machine->string_pool.intern(".");
@@ -367,7 +367,7 @@ TEST_F(ContinuationTest, ApplyDerivedOperatorKExecution) {
     machine->execute();
 
     // Result should be a DERIVED_OPERATOR value
-    Value* result = machine->ctrl.value;
+    Value* result = machine->result;
     EXPECT_NE(result, nullptr);
     EXPECT_TRUE(result->is_derived_operator());
     EXPECT_EQ(result->data.derived_op->first_operand, operand);
@@ -564,12 +564,12 @@ TEST_F(ContinuationTest, DispatchFunctionKCurriedFnUnwrap) {
 }
 
 TEST_F(ContinuationTest, DispatchFunctionKNullFnUsesCtrl) {
-    // Test that nullptr fn_val reads from ctrl.value
+    // Test that nullptr fn_val reads from result
     Value* fn = machine->heap->allocate_primitive(&prim_iota);
     Value* arg = machine->heap->allocate_scalar(3.0);
 
-    // Set ctrl.value to the function
-    machine->ctrl.set_value(fn);
+    // Set result to the function
+    machine->result = fn;
 
     // Create dispatch with nullptr fn - should read from ctrl
     DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(nullptr, nullptr, arg);

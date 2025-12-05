@@ -1,11 +1,11 @@
-// APLCompletion implementation
+// Completion implementation
 
 #include "completion.h"
 #include "heap.h"
 
 namespace apl {
 
-void APLCompletion::mark(APLHeap* heap) {
+void Completion::mark(Heap* heap) {
     // Mark the value if present
     if (value) {
         heap->mark_value(value);
