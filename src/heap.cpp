@@ -254,49 +254,31 @@ void APLHeap::collect(Machine* machine) {
 }
 
 // Minor GC - collect young generation only
+// Uses partition for O(n) instead of O(n²) from repeated erase()
 void APLHeap::minor_gc(Machine* machine) {
     minor_gc_count++;
 
     // Clear mark bits
     clear_marks();
 
-    // Mark from roots
+    // Mark from roots (includes scalar cache)
     mark_from_roots(machine);
 
     // Promote survivors to old generation
     promote_survivors();
 
-    // Sweep young generation
-    auto it = young_objects.begin();
-    while (it != young_objects.end()) {
+    // Sweep young generation Values
+    auto young_dead = std::partition(young_objects.begin(), young_objects.end(),
+        [](Value* val) { return val && val->marked; });
+    for (auto it = young_dead; it != young_objects.end(); ++it) {
         Value* val = *it;
-        if (!val) {
-            throw std::runtime_error("GC ERROR: nullptr found in young_objects during minor GC - indicates corruption");
+        bytes_allocated -= sizeof(Value);
+        if (val->is_array() && val->data.matrix) {
+            bytes_allocated -= val->data.matrix->size() * sizeof(double);
         }
-        if (!val->marked) {
-            // Unmarked - reclaim
-            bytes_allocated -= sizeof(Value);
-            if (val->is_array() && val->data.matrix) {
-                bytes_allocated -= val->data.matrix->size() * sizeof(double);
-            }
-
-            // Remove from cache if present
-            if (val->is_scalar()) {
-                double d = val->data.scalar;
-                if (d >= -128.0 && d <= 127.0 && d == (int)d) {
-                    int idx = (int)d + 128;
-                    if (scalar_cache[idx] == val) {
-                        scalar_cache[idx] = nullptr;
-                    }
-                }
-            }
-
-            delete val;
-            it = young_objects.erase(it);
-        } else {
-            ++it;
-        }
+        delete val;
     }
+    young_objects.erase(young_dead, young_objects.end());
 
     // Update GC threshold if needed
     if (young_objects.size() > young_capacity / 2) {
@@ -334,6 +316,13 @@ void APLHeap::major_gc(Machine* machine) {
 // Mark from root set (Machine registers and stacks)
 void APLHeap::mark_from_roots(Machine* machine) {
     if (!machine) return;
+
+    // Mark cached scalars (they're roots - we want to keep common values alive)
+    for (int i = 0; i < 256; i++) {
+        if (scalar_cache[i]) {
+            mark_value(scalar_cache[i]);
+        }
+    }
 
     // Mark value in control register
     if (machine->ctrl.value) {
@@ -400,158 +389,96 @@ void APLHeap::mark_completion(APLCompletion* comp) {
 }
 
 // Sweep unmarked objects from both generations
+// Uses partition for O(n) instead of O(n²) from repeated erase()
 void APLHeap::sweep() {
-    // Sweep young generation
-    auto it_young = young_objects.begin();
-    while (it_young != young_objects.end()) {
-        Value* val = *it_young;
-        if (!val) {
-            throw std::runtime_error("GC ERROR: nullptr found in young_objects during sweep - indicates corruption");
+    // Sweep young Values
+    auto young_dead = std::partition(young_objects.begin(), young_objects.end(),
+        [](Value* val) { return val && val->marked; });
+    for (auto it = young_dead; it != young_objects.end(); ++it) {
+        Value* val = *it;
+        bytes_allocated -= sizeof(Value);
+        if (val->is_array() && val->data.matrix) {
+            bytes_allocated -= val->data.matrix->size() * sizeof(double);
         }
-        if (!val->marked) {
-            bytes_allocated -= sizeof(Value);
-            if (val->is_array() && val->data.matrix) {
-                bytes_allocated -= val->data.matrix->size() * sizeof(double);
-            }
-
-            // Remove from cache
-            if (val->is_scalar()) {
-                double d = val->data.scalar;
-                if (d >= -128.0 && d <= 127.0 && d == (int)d) {
-                    int idx = (int)d + 128;
-                    if (scalar_cache[idx] == val) {
-                        scalar_cache[idx] = nullptr;
-                    }
-                }
-            }
-
-            delete val;
-            it_young = young_objects.erase(it_young);
-        } else {
-            ++it_young;
-        }
+        delete val;
     }
+    young_objects.erase(young_dead, young_objects.end());
 
-    // Sweep old generation
-    auto it_old = old_objects.begin();
-    while (it_old != old_objects.end()) {
-        Value* val = *it_old;
-        if (!val) {
-            throw std::runtime_error("GC ERROR: nullptr found in old_objects during sweep - indicates corruption");
+    // Sweep old Values
+    auto old_dead = std::partition(old_objects.begin(), old_objects.end(),
+        [](Value* val) { return val && val->marked; });
+    for (auto it = old_dead; it != old_objects.end(); ++it) {
+        Value* val = *it;
+        bytes_allocated -= sizeof(Value);
+        if (val->is_array() && val->data.matrix) {
+            bytes_allocated -= val->data.matrix->size() * sizeof(double);
         }
-        if (!val->marked) {
-            bytes_allocated -= sizeof(Value);
-            if (val->is_array() && val->data.matrix) {
-                bytes_allocated -= val->data.matrix->size() * sizeof(double);
-            }
-
-            delete val;
-            it_old = old_objects.erase(it_old);
-        } else {
-            ++it_old;
-        }
+        delete val;
     }
+    old_objects.erase(old_dead, old_objects.end());
 
     // Sweep young continuations
-    auto it_young_cont = young_continuations.begin();
-    while (it_young_cont != young_continuations.end()) {
-        Continuation* k = *it_young_cont;
-        if (!k) {
-            throw std::runtime_error("GC ERROR: nullptr found in young_continuations during sweep - indicates corruption");
-        }
-        if (!k->marked) {
-            bytes_allocated -= sizeof(Continuation);
-            delete k;
-            it_young_cont = young_continuations.erase(it_young_cont);
-        } else {
-            ++it_young_cont;
-        }
+    auto young_cont_dead = std::partition(young_continuations.begin(), young_continuations.end(),
+        [](Continuation* k) { return k && k->marked; });
+    for (auto it = young_cont_dead; it != young_continuations.end(); ++it) {
+        bytes_allocated -= sizeof(Continuation);
+        delete *it;
     }
+    young_continuations.erase(young_cont_dead, young_continuations.end());
 
     // Sweep old continuations
-    auto it_old_cont = old_continuations.begin();
-    while (it_old_cont != old_continuations.end()) {
-        Continuation* k = *it_old_cont;
-        if (!k) {
-            throw std::runtime_error("GC ERROR: nullptr found in old_continuations during sweep - indicates corruption");
-        }
-        if (!k->marked) {
-            bytes_allocated -= sizeof(Continuation);
-            delete k;
-            it_old_cont = old_continuations.erase(it_old_cont);
-        } else {
-            ++it_old_cont;
-        }
+    auto old_cont_dead = std::partition(old_continuations.begin(), old_continuations.end(),
+        [](Continuation* k) { return k && k->marked; });
+    for (auto it = old_cont_dead; it != old_continuations.end(); ++it) {
+        bytes_allocated -= sizeof(Continuation);
+        delete *it;
     }
+    old_continuations.erase(old_cont_dead, old_continuations.end());
 
-    // Sweep completions (no generational separation)
-    auto it_comp = completions.begin();
-    while (it_comp != completions.end()) {
-        APLCompletion* c = *it_comp;
-        if (!c) {
-            throw std::runtime_error("GC ERROR: nullptr found in completions during sweep - indicates corruption");
-        }
-        if (!c->marked) {
-            bytes_allocated -= sizeof(APLCompletion);
-            delete c;
-            it_comp = completions.erase(it_comp);
-        } else {
-            ++it_comp;
-        }
+    // Sweep completions
+    auto comp_dead = std::partition(completions.begin(), completions.end(),
+        [](APLCompletion* c) { return c && c->marked; });
+    for (auto it = comp_dead; it != completions.end(); ++it) {
+        bytes_allocated -= sizeof(APLCompletion);
+        delete *it;
     }
+    completions.erase(comp_dead, completions.end());
 
-    // Sweep environments (no generational separation)
-    auto it_env = environments.begin();
-    while (it_env != environments.end()) {
-        Environment* e = *it_env;
-        if (!e) {
-            throw std::runtime_error("GC ERROR: nullptr found in environments during sweep - indicates corruption");
-        }
-        if (!e->marked) {
-            bytes_allocated -= sizeof(Environment);
-            delete e;
-            it_env = environments.erase(it_env);
-        } else {
-            ++it_env;
-        }
+    // Sweep environments
+    auto env_dead = std::partition(environments.begin(), environments.end(),
+        [](Environment* e) { return e && e->marked; });
+    for (auto it = env_dead; it != environments.end(); ++it) {
+        bytes_allocated -= sizeof(Environment);
+        delete *it;
     }
+    environments.erase(env_dead, environments.end());
 }
 
 // Promote survivors from young to old generation
+// Uses partition for O(n) instead of O(n²) from repeated erase()
 void APLHeap::promote_survivors() {
-    // Promote Values
-    auto it = young_objects.begin();
-    while (it != young_objects.end()) {
+    // Promote Values: partition into [to_promote | stay_young]
+    auto promote_vals = std::partition(young_objects.begin(), young_objects.end(),
+        [](Value* val) { return !(val && val->marked && !val->in_old_generation); });
+
+    // Move promoted values to old generation
+    for (auto it = promote_vals; it != young_objects.end(); ++it) {
         Value* val = *it;
-        if (!val) {
-            throw std::runtime_error("GC ERROR: nullptr found in young_objects during promotion - indicates corruption");
-        }
-        if (val->marked && !val->in_old_generation) {
-            // Promote to old generation
-            val->in_old_generation = true;
-            old_objects.push_back(val);
-            it = young_objects.erase(it);
-        } else {
-            ++it;
-        }
+        val->in_old_generation = true;
+        old_objects.push_back(val);
     }
+    young_objects.erase(promote_vals, young_objects.end());
 
     // Promote Continuations
-    auto it_cont = young_continuations.begin();
-    while (it_cont != young_continuations.end()) {
-        Continuation* k = *it_cont;
-        if (!k) {
-            throw std::runtime_error("GC ERROR: nullptr found in young_continuations during promotion - indicates corruption");
-        }
-        if (k->marked && !k->in_old_generation) {
-            // Promote to old generation
-            k->in_old_generation = true;
-            old_continuations.push_back(k);
-            it_cont = young_continuations.erase(it_cont);
-        } else {
-            ++it_cont;
-        }
+    auto promote_conts = std::partition(young_continuations.begin(), young_continuations.end(),
+        [](Continuation* k) { return !(k && k->marked && !k->in_old_generation); });
+
+    for (auto it = promote_conts; it != young_continuations.end(); ++it) {
+        Continuation* k = *it;
+        k->in_old_generation = true;
+        old_continuations.push_back(k);
     }
+    young_continuations.erase(promote_conts, young_continuations.end());
 
     // Completions are never promoted (always short-lived)
 }

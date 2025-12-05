@@ -143,8 +143,10 @@ TEST_F(HeapTest, MarkValue) {
 TEST_F(HeapTest, MarkFromRoots) {
     Machine* machine = new Machine();
 
-    Value* v1 = machine->heap->allocate_scalar(5.0);
-    Value* v2 = machine->heap->allocate_scalar(10.0);
+    // Use non-cacheable values (outside -128..127 or fractional)
+    // so they won't be marked via the scalar cache root
+    Value* v1 = machine->heap->allocate_scalar(200.0);
+    Value* v2 = machine->heap->allocate_scalar(300.0);
 
     // Set v1 as current value
     machine->ctrl.set_value(v1);
@@ -152,7 +154,7 @@ TEST_F(HeapTest, MarkFromRoots) {
     machine->heap->mark_from_roots(machine);
 
     EXPECT_TRUE(v1->marked);   // Should be marked (in ctrl)
-    EXPECT_FALSE(v2->marked);  // Should not be marked (not reachable)
+    EXPECT_FALSE(v2->marked);  // Should not be marked (not reachable, not cached)
 
     machine->heap = nullptr;  // Don't let machine delete our test heap
 }
@@ -225,8 +227,9 @@ TEST_F(HeapTest, MinorGC) {
 TEST_F(HeapTest, MajorGC) {
     Machine* machine = new Machine();
 
-    Value* v1 = machine->heap->allocate_scalar(1.0);
-    Value* v2 = machine->heap->allocate_scalar(2.0);
+    // Use non-cacheable values so v2 can actually be collected
+    Value* v1 = machine->heap->allocate_scalar(200.0);
+    Value* v2 = machine->heap->allocate_scalar(300.0);
 
     // Set v1 as root
     machine->ctrl.set_value(v1);
@@ -853,9 +856,10 @@ TEST_F(HeapTest, EnvironmentValueLifecycle) {
     Machine* machine = new Machine();
 
     // Create a child environment with values
+    // Use non-cacheable values (outside -128..127) so val1 won't be marked via cache
     Environment* child_env = machine->heap->allocate<Environment>(machine->env);
-    Value* val1 = machine->heap->allocate_scalar(123.0);
-    Value* val2 = machine->heap->allocate_scalar(456.0);
+    Value* val1 = machine->heap->allocate_scalar(200.0);
+    Value* val2 = machine->heap->allocate_scalar(300.0);
     child_env->define("x", val1);
     machine->env->define("reachable", val2);
 
@@ -960,6 +964,7 @@ TEST_F(HeapTest, CachedScalarPromotion) {
 }
 
 // Test cache interaction with major GC
+// Cached scalars are GC roots - they survive even when not otherwise reachable
 TEST_F(HeapTest, CachedScalarMajorGC) {
     Machine* machine = new Machine();
 
@@ -968,22 +973,27 @@ TEST_F(HeapTest, CachedScalarMajorGC) {
     Value* v2 = machine->heap->allocate_scalar(2.0);
     Value* v3 = machine->heap->allocate_scalar(3.0);
 
-    machine->ctrl.set_value(v3);  // Only keep v3 alive
+    // Also allocate a non-cacheable scalar (will be collected if unreachable)
+    Value* v_big = machine->heap->allocate_scalar(999.0);
+
+    machine->ctrl.set_value(v3);  // Only keep v3 explicitly alive (but cache keeps v1, v2 too)
+
+    size_t size_before = machine->heap->total_size();
 
     // Run major GC
     machine->heap->major_gc(machine);
 
-    // v3 should survive and still be cached
+    // All cached scalars should survive (cache is a GC root)
+    EXPECT_EQ(machine->heap->scalar_cache[1 + 128], v1);
+    EXPECT_EQ(machine->heap->scalar_cache[2 + 128], v2);
     EXPECT_EQ(machine->heap->scalar_cache[3 + 128], v3);
 
-    // v1 and v2 should be collected and cache cleared
-    EXPECT_EQ(machine->heap->scalar_cache[1 + 128], nullptr);
-    EXPECT_EQ(machine->heap->scalar_cache[2 + 128], nullptr);
+    // Non-cacheable scalar should be collected (not in cache, not in ctrl)
+    EXPECT_LT(machine->heap->total_size(), size_before);
 
-    // Re-allocate v1 - should create new entry
-    Value* v1_new = machine->heap->allocate_scalar(1.0);
-    EXPECT_NE(v1_new, v1);  // Different pointer (old one was collected)
-    EXPECT_EQ(machine->heap->scalar_cache[1 + 128], v1_new);
+    // Re-allocate cached values - should return same pointers
+    Value* v1_again = machine->heap->allocate_scalar(1.0);
+    EXPECT_EQ(v1_again, v1);  // Same pointer (cache hit)
 
     delete machine;
 }
