@@ -34,9 +34,9 @@ Machine::~Machine() {
 Value* Machine::eval(const std::string& input) {
     Continuation* k = parser->parse(input);
     if (!k) {
-        // Parse error - could throw or return nullptr
-        // For now, return nullptr (caller can check parser->get_error())
-        return nullptr;
+        // Parse error - route through the same error mechanism as runtime errors
+        const char* msg = string_pool.intern(parser->get_error().c_str());
+        k = heap->allocate<ThrowErrorK>(msg);
     }
     push_kont(k);
     return execute();
