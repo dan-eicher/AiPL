@@ -288,13 +288,15 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_ALPHA: {
             // ⍺ (alpha) - left argument in dfn
-            LookupK* lookup = machine_->heap->allocate<LookupK>("⍺");
+            const char* interned_name = machine_->string_pool.intern("⍺");
+            LookupK* lookup = machine_->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
 
         case TOK_OMEGA: {
             // ⍵ (omega) - right argument in dfn
-            LookupK* lookup = machine_->heap->allocate<LookupK>("⍵");
+            const char* interned_name = machine_->string_pool.intern("⍵");
+            LookupK* lookup = machine_->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
 
@@ -333,127 +335,122 @@ Continuation* Parser::nud(const Token& token) {
 
 // Left denotation: handles infix position (binary operators)
 Continuation* Parser::led(Continuation* left, const Token& token) {
-    // Handle assignment specially
-    if (token.type == TOK_ASSIGN) {
-        // Left side must be a LookupK (variable name)
-        LookupK* lookup = dynamic_cast<LookupK*>(left);
-        if (!lookup) {
-            error_message_ = "Left side of assignment must be a variable name";
+    switch (token.type) {
+        case TOK_ASSIGN: {
+            // Left side must be a LookupK (variable name)
+            LookupK* lookup = dynamic_cast<LookupK*>(left);
+            if (!lookup) {
+                error_message_ = "Left side of assignment must be a variable name";
+                return nullptr;
+            }
+
+            // Parse the right side (the value to assign)
+            int bp = get_binding_power(token);
+            Continuation* right = parse_expression(bp);
+
+            if (!right) {
+                return nullptr;
+            }
+
+            // Create AssignK continuation (var_name is already interned from LookupK)
+            AssignK* assign = machine_->heap->allocate<AssignK>(lookup->var_name, right);
+            return assign;
+        }
+
+        case TOK_LBRACE: {
+            // Handle dfn application (e.g., "3 {⍺+⍵} 5")
+            // NOTE: { has already been consumed by parse_expression before calling led()
+            Continuation* body = parse_dfn_body();
+            if (!body) {
+                return nullptr;
+            }
+
+            // Create ClosureLiteralK for the dfn
+            ClosureLiteralK* closure_lit = machine_->heap->allocate<ClosureLiteralK>(body);
+
+            // Parse the right argument
+            int bp = get_binding_power(token);  // Use operator binding power for dfns
+            Continuation* right = parse_expression(bp);
+
+            if (!right) {
+                return nullptr;
+            }
+
+            // Create ApplyFunctionK for dyadic application: left {dfn} right
+            ApplyFunctionK* apply = machine_->heap->allocate<ApplyFunctionK>(closure_lit, left, right);
+            return apply;
+        }
+
+        // Postfix monadic operators (¨, ⍨, /, \, ⌿, ⍀)
+        // G2 Grammar: fb-term ::= fb-term monadic-operator
+        // Evaluates as: x₂(x₁) - operator applied to operand
+        case TOK_EACH:
+        case TOK_COMMUTE:
+        case TOK_REDUCE:
+        case TOK_SCAN:
+        case TOK_REDUCE_FIRST:
+        case TOK_SCAN_FIRST: {
+            const char* op_name = nullptr;
+            switch (token.type) {
+                case TOK_EACH:         op_name = "¨";  break;
+                case TOK_COMMUTE:      op_name = "⍨";  break;
+                case TOK_REDUCE:       op_name = "/";  break;
+                case TOK_SCAN:         op_name = "\\"; break;
+                case TOK_REDUCE_FIRST: op_name = "⌿";  break;
+                case TOK_SCAN_FIRST:   op_name = "⍀";  break;
+                default: break;
+            }
+
+            const char* interned_name = machine_->string_pool.intern(op_name);
+
+            // Create DerivedOperatorK: evaluate operand (left), then apply operator
+            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+            return derived;
+        }
+
+        case TOK_OUTER_PRODUCT: {
+            // Outer product: A ∘.f B where A and B are arrays, f is a function
+            // In "3 ∘.× 5", left=3 (array), we need to parse × (function)
+            Continuation* fn_operand = parse_expression(BP_POSTFIX_OP);
+            if (!fn_operand) {
+                error_message_ = "Outer product operator requires a function operand";
+                return nullptr;
+            }
+
+            const char* interned_name = machine_->string_pool.intern("∘.");
+
+            // Create derived operator from ∘. and the function
+            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
+
+            // Now create juxtaposition: left (∘.f)
+            // This applies ∘.f monadically to left, which will curry waiting for right argument
+            JuxtaposeK* jux = machine_->heap->allocate<JuxtaposeK>(left, derived);
+            return jux;
+        }
+
+        case TOK_DOT: {
+            // Inner product (.)
+            // G2 Grammar Rule 4: fb-term dyadic-operator → derived-operator
+            // The second operand will be delivered via juxtaposition (Rule 3: derived-operator fb → fb-term)
+            const char* interned_name = machine_->string_pool.intern(".");
+            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+            return derived;
+        }
+
+        case TOK_RANK: {
+            // Rank operator (⍤)
+            // f⍤k applies function f to k-cells of the argument(s)
+            // Dyadic operator: first operand is function, second is rank specification
+            const char* interned_name = machine_->string_pool.intern("⍤");
+            DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
+            return derived;
+        }
+
+        default:
+            // Unexpected token in infix position
+            error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
             return nullptr;
-        }
-
-        // Parse the right side (the value to assign)
-        int bp = get_binding_power(token);
-        Continuation* right = parse_expression(bp);
-
-        if (!right) {
-            return nullptr;
-        }
-
-        // Create AssignK continuation (var_name is already interned from LookupK)
-        AssignK* assign = machine_->heap->allocate<AssignK>(lookup->var_name, right);
-
-        return assign;
     }
-
-    // Handle dfn application (e.g., "3 {⍺+⍵} 5")
-    if (token.type == TOK_LBRACE) {
-        // Parse the dfn body
-        // NOTE: { has already been consumed by parse_expression before calling led()
-        Continuation* body = parse_dfn_body();
-        if (!body) {
-            return nullptr;
-        }
-
-        // Create ClosureLiteralK for the dfn
-        ClosureLiteralK* closure_lit = machine_->heap->allocate<ClosureLiteralK>(body);
-
-        // Parse the right argument
-        int bp = get_binding_power(token);  // Use operator binding power for dfns
-        Continuation* right = parse_expression(bp);
-
-        if (!right) {
-            return nullptr;
-        }
-
-        // Create ApplyFunctionK for dyadic application: left {dfn} right
-        ApplyFunctionK* apply = machine_->heap->allocate<ApplyFunctionK>(closure_lit, left, right);
-
-        return apply;
-    }
-
-    // Handle postfix monadic operators (¨, ⍨, /, \, ⌿, ⍀)
-    // G2 Grammar: fb-term ::= fb-term monadic-operator
-    // Evaluates as: x₂(x₁) - operator applied to operand
-    if (token.type == TOK_EACH || token.type == TOK_COMMUTE ||
-        token.type == TOK_REDUCE || token.type == TOK_SCAN ||
-        token.type == TOK_REDUCE_FIRST || token.type == TOK_SCAN_FIRST) {
-        const char* op_name = nullptr;
-        if (token.type == TOK_EACH) {
-            op_name = "¨";
-        } else if (token.type == TOK_COMMUTE) {
-            op_name = "⍨";
-        } else if (token.type == TOK_REDUCE) {
-            op_name = "/";
-        } else if (token.type == TOK_SCAN) {
-            op_name = "\\";
-        } else if (token.type == TOK_REDUCE_FIRST) {
-            op_name = "⌿";
-        } else if (token.type == TOK_SCAN_FIRST) {
-            op_name = "⍀";
-        }
-
-        const char* interned_name = machine_->string_pool.intern(op_name);
-
-        // Create DerivedOperatorK: evaluate operand (left), then apply operator
-        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
-        return derived;
-    }
-
-    // Handle outer product (∘.)
-    // Syntax: A ∘.f B where A and B are arrays, f is a function
-    // In "3 ∘.× 5", left=3 (array), we need to parse × (function)
-    if (token.type == TOK_OUTER_PRODUCT) {
-        // Parse the function operand with high binding power to get just the function
-        Continuation* fn_operand = parse_expression(BP_POSTFIX_OP);
-        if (!fn_operand) {
-            error_message_ = "Outer product operator requires a function operand";
-            return nullptr;
-        }
-
-        const char* interned_name = machine_->string_pool.intern("∘.");
-
-        // Create derived operator from ∘. and the function
-        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
-
-        // Now create juxtaposition: left (∘.f)
-        // This applies ∘.f monadically to left, which will curry waiting for right argument
-        JuxtaposeK* jux = machine_->heap->allocate<JuxtaposeK>(left, derived);
-        return jux;
-    }
-
-    // Handle inner product (.)
-    // G2 Grammar Rule 4: fb-term dyadic-operator → derived-operator
-    // The second operand will be delivered via juxtaposition (Rule 3: derived-operator fb → fb-term)
-    if (token.type == TOK_DOT) {
-        const char* interned_name = machine_->string_pool.intern(".");
-        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
-        return derived;
-    }
-
-    // Handle rank operator (⍤)
-    // f⍤k applies function f to k-cells of the argument(s)
-    // Dyadic operator: first operand is function, second is rank specification
-    if (token.type == TOK_RANK) {
-        const char* interned_name = machine_->string_pool.intern("⍤");
-        DerivedOperatorK* derived = machine_->heap->allocate<DerivedOperatorK>(left, interned_name);
-        return derived;
-    }
-
-    // If we reach here, it's an unexpected token in infix position
-    // In G2 grammar, all valid infix tokens should be handled above
-    error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
-    return nullptr;
 }
 
 // Parse dfn body: parses statements from current position until }
