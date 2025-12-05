@@ -773,6 +773,133 @@ TEST_F(GrammarTest, MatrixScanWithDerivedOperator) {
     EXPECT_DOUBLE_EQ((*m)(1, 2), 15.0);
 }
 
+// ============================================================================
+// Outer Product Tests (via grammar)
+// ============================================================================
+
+TEST_F(GrammarTest, OuterProductScalars) {
+    // 5 ∘.+ 3 → 8
+    Value* result = eval("5 ∘.+ 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
+TEST_F(GrammarTest, OuterProductVectorVector) {
+    // (1 2 3) ∘.+ (10 20) → 2D matrix
+    Value* result = eval("(1 2 3) ∘.+ (10 20)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_EQ(m->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);  // 1+10
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 21.0);  // 1+20
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 12.0);  // 2+10
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 22.0);  // 2+20
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 13.0);  // 3+10
+    EXPECT_DOUBLE_EQ((*m)(2, 1), 23.0);  // 3+20
+}
+
+TEST_F(GrammarTest, OuterProductMultiply) {
+    // (2 3) ∘.× (10 100) → multiplication table
+    Value* result = eval("(2 3) ∘.× (10 100)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 20.0);   // 2×10
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 200.0);  // 2×100
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 30.0);   // 3×10
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 300.0);  // 3×100
+}
+
+TEST_F(GrammarTest, OuterProductWithDerivedOperator) {
+    // (1 2) ∘.+⍨ (10 20) → uses commuted plus (same result since + is commutative)
+    Value* result = eval("(1 2) ∘.+⍨ (10 20)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 21.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 22.0);
+}
+
+TEST_F(GrammarTest, OuterProductWithCommuteNonCommutative) {
+    // (10 20) ∘.-⍨ (1 2) → -⍨ swaps args: (1-10, 1-20, 2-10, 2-20)
+    Value* result = eval("(10 20) ∘.-⍨ (1 2)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 2);
+    // -⍨ means rhs - lhs: outer product applies f(lhs[i], rhs[j]) → rhs[j] - lhs[i]
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -9.0);   // 1-10
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -8.0);   // 2-10
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -19.0);  // 1-20
+    EXPECT_DOUBLE_EQ((*m)(1, 1), -18.0);  // 2-20
+}
+
+// ============================================================================
+// Inner Product Tests (via grammar)
+// ============================================================================
+
+TEST_F(GrammarTest, InnerProductVectorDot) {
+    // (1 2 3) +.× (4 5 6) → dot product: 1×4 + 2×5 + 3×6 = 32
+    Value* result = eval("(1 2 3) +.× (4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 32.0);
+}
+
+TEST_F(GrammarTest, InnerProductMatrixMultiply) {
+    // Matrix multiplication: (2 2⍴1 2 3 4) +.× (2 2⍴5 6 7 8)
+    // [1 2] × [5 6] = [19 22]
+    // [3 4]   [7 8]   [43 50]
+    Value* result = eval("(2 2⍴1 2 3 4) +.× (2 2⍴5 6 7 8)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 19.0);  // 1×5 + 2×7
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 22.0);  // 1×6 + 2×8
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 43.0);  // 3×5 + 4×7
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 50.0);  // 3×6 + 4×8
+}
+
+TEST_F(GrammarTest, InnerProductMatrixVector) {
+    // Matrix × vector: (2 2⍴1 2 3 4) +.× (5 7)
+    Value* result = eval("(2 2⍴1 2 3 4) +.× (5 7)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 19.0);  // 1×5 + 2×7
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 43.0);  // 3×5 + 4×7
+}
+
+TEST_F(GrammarTest, InnerProductWithDerivedOperator) {
+    // Use commuted multiply: (1 2 3) +.×⍨ (4 5 6)
+    // ×⍨ is same as × (commutative), so same result as dot product
+    Value* result = eval("(1 2 3) +.×⍨ (4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 32.0);
+}
+
+TEST_F(GrammarTest, InnerProductDifferentOperators) {
+    // (10 20 30) +.÷ (2 4 5) → 10÷2 + 20÷4 + 30÷5 = 5 + 5 + 6 = 16
+    Value* result = eval("(10 20 30) +.÷ (2 4 5)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

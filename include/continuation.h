@@ -905,7 +905,8 @@ protected:
 enum class CellIterMode {
     COLLECT,      // Gather all results (each, rank)
     FOLD_RIGHT,   // Accumulate right-to-left, single result (reduce)
-    SCAN_RIGHT    // Accumulate right-to-left, keep all intermediates (scan)
+    SCAN_RIGHT,   // Accumulate right-to-left, keep all intermediates (scan)
+    OUTER         // Cartesian product iteration (outer product)
 };
 
 class CellIterK : public Continuation {
@@ -926,18 +927,34 @@ public:
     int orig_cols;
     bool orig_is_vector;
 
+    // For OUTER mode: dimensions for Cartesian product
+    int lhs_total;          // Total elements in lhs (for OUTER)
+    int rhs_total;          // Total elements in rhs (for OUTER)
+    int lhs_cols;           // Columns in lhs (for extracting elements)
+    int rhs_cols;           // Columns in rhs (for extracting elements)
+
     CellIterK(Value* f, Value* l, Value* r, int lk, int rk, int total,
               CellIterMode m, int rows, int cols, bool is_vec)
         : fn(f), lhs(l), rhs(r), left_rank(lk), right_rank(rk),
           total_cells(total), current_cell(0), mode(m), accumulator(nullptr),
-          orig_rows(rows), orig_cols(cols), orig_is_vector(is_vec) {
-        if (mode == CellIterMode::COLLECT || mode == CellIterMode::SCAN_RIGHT) {
+          orig_rows(rows), orig_cols(cols), orig_is_vector(is_vec),
+          lhs_total(0), rhs_total(0), lhs_cols(1), rhs_cols(1) {
+        if (mode == CellIterMode::COLLECT || mode == CellIterMode::SCAN_RIGHT || mode == CellIterMode::OUTER) {
             results.reserve(total);
         }
         // For fold/scan modes, start from the last cell
         if (mode == CellIterMode::FOLD_RIGHT || mode == CellIterMode::SCAN_RIGHT) {
             current_cell = total - 1;
         }
+    }
+
+    // Constructor for OUTER mode with explicit dimensions
+    CellIterK(Value* f, Value* l, Value* r, int l_total, int r_total, int l_cols, int r_cols)
+        : fn(f), lhs(l), rhs(r), left_rank(0), right_rank(0),
+          total_cells(l_total * r_total), current_cell(0), mode(CellIterMode::OUTER),
+          accumulator(nullptr), orig_rows(l_total), orig_cols(r_total), orig_is_vector(false),
+          lhs_total(l_total), rhs_total(r_total), lhs_cols(l_cols), rhs_cols(r_cols) {
+        results.reserve(total_cells);
     }
 
     ~CellIterK() override {}
@@ -1086,6 +1103,76 @@ public:
     explicit RowScanCollectK(RowScanK* i) : iter(i) {}
 
     ~RowScanCollectK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// ReduceResultK - Reduce the vector in ctrl.value with a function
+// ============================================================================
+// Used for chaining: after computing a vector result, reduce it
+// Example: inner product applies g element-wise, then reduces with f
+
+class ReduceResultK : public Continuation {
+public:
+    Value* fn;  // Function to reduce with
+
+    explicit ReduceResultK(Value* f) : fn(f) {}
+
+    ~ReduceResultK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// InnerProductIterK - Iterates over output cells for matrix inner product
+// ============================================================================
+// For each output position (i,j), extracts row i from lhs and col j from rhs,
+// then computes vector inner product (g element-wise, f reduce)
+
+class InnerProductIterK : public Continuation {
+public:
+    Value* f_fn;            // Function for reduction
+    Value* g_fn;            // Function for element-wise
+    Value* lhs;             // Left matrix
+    Value* rhs;             // Right matrix
+    int lhs_rows;           // Rows in lhs
+    int lhs_cols;           // Cols in lhs (= common dimension)
+    int rhs_cols;           // Cols in rhs
+    int current_i;          // Current output row
+    int current_j;          // Current output col
+    std::vector<Value*> results;  // Collected results
+
+    InnerProductIterK(Value* f, Value* g, Value* l, Value* r,
+                      int lr, int lc, int rc)
+        : f_fn(f), g_fn(g), lhs(l), rhs(r),
+          lhs_rows(lr), lhs_cols(lc), rhs_cols(rc),
+          current_i(0), current_j(0) {
+        results.reserve(lr * rc);
+    }
+
+    ~InnerProductIterK() override {}
+
+    void mark(APLHeap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// InnerProductCollectK - Collects inner product cell result
+class InnerProductCollectK : public Continuation {
+public:
+    InnerProductIterK* iter;
+
+    explicit InnerProductCollectK(InnerProductIterK* i) : iter(i) {}
+
+    ~InnerProductCollectK() override {}
 
     void mark(APLHeap* heap) override;
 

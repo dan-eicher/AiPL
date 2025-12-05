@@ -1957,6 +1957,71 @@ void CellIterK::invoke(Machine* machine) {
 
         machine->push_kont(machine->heap->allocate<CellCollectK>(this));
         machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, element, accumulator));
+
+    } else if (mode == CellIterMode::OUTER) {
+        // Cartesian product iteration for outer product
+        if (current_cell >= total_cells) {
+            // Done - assemble results into matrix
+            if (lhs_total == 1 && rhs_total == 1) {
+                // Scalar result
+                machine->ctrl.set_value(results[0]);
+            } else if (rhs_total == 1) {
+                // Column vector result
+                Eigen::VectorXd vec(lhs_total);
+                for (int i = 0; i < lhs_total; i++) {
+                    vec(i) = results[i]->as_scalar();
+                }
+                machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+            } else {
+                // Matrix result
+                Eigen::MatrixXd mat(lhs_total, rhs_total);
+                for (int i = 0; i < lhs_total; i++) {
+                    for (int j = 0; j < rhs_total; j++) {
+                        mat(i, j) = results[i * rhs_total + j]->as_scalar();
+                    }
+                }
+                machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+            }
+            return;
+        }
+
+        // Compute (i, j) from linear index
+        int i = current_cell / rhs_total;
+        int j = current_cell % rhs_total;
+
+        // Extract lhs[i] and rhs[j]
+        Value* left_cell;
+        Value* right_cell;
+
+        if (lhs->is_scalar()) {
+            left_cell = lhs;
+        } else {
+            const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
+            int li = i / lhs_cols;
+            int lj = i % lhs_cols;
+            if (lhs->is_vector()) {
+                left_cell = machine->heap->allocate_scalar((*lhs_mat)(i, 0));
+            } else {
+                left_cell = machine->heap->allocate_scalar((*lhs_mat)(li, lj));
+            }
+        }
+
+        if (rhs->is_scalar()) {
+            right_cell = rhs;
+        } else {
+            const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
+            int ri = j / rhs_cols;
+            int rj = j % rhs_cols;
+            if (rhs->is_vector()) {
+                right_cell = machine->heap->allocate_scalar((*rhs_mat)(j, 0));
+            } else {
+                right_cell = machine->heap->allocate_scalar((*rhs_mat)(ri, rj));
+            }
+        }
+
+        // Push collector and dispatch function dyadically
+        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, left_cell, right_cell));
     }
 }
 
@@ -1983,6 +2048,9 @@ void CellCollectK::invoke(Machine* machine) {
         iter->accumulator = result;
         iter->results.push_back(result);
         iter->current_cell--;
+    } else if (iter->mode == CellIterMode::OUTER) {
+        iter->results.push_back(result);
+        iter->current_cell++;
     }
 
     // Continue iteration
@@ -2201,6 +2269,125 @@ void RowScanCollectK::invoke(Machine* machine) {
 }
 
 void RowScanCollectK::mark(APLHeap* heap) {
+    (void)heap;
+}
+
+// ============================================================================
+// ReduceResultK - Implementation
+// ============================================================================
+// Takes the vector in ctrl.value and reduces it with fn
+
+void ReduceResultK::invoke(Machine* machine) {
+    Value* vec = machine->ctrl.value;
+
+    // Handle scalar - just return it
+    if (vec->is_scalar()) {
+        // Already a scalar, nothing to reduce
+        return;
+    }
+
+    // Handle empty vector - would need identity element, for now error
+    int len = vec->rows();
+    if (len == 0) {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot reduce empty vector"));
+        return;
+    }
+
+    // Single element - return as-is
+    if (len == 1) {
+        const Eigen::MatrixXd* mat = vec->as_matrix();
+        machine->ctrl.set_value(machine->heap->allocate_scalar((*mat)(0, 0)));
+        return;
+    }
+
+    // Multiple elements - use CellIterK FOLD_RIGHT
+    machine->push_kont(machine->heap->allocate<CellIterK>(
+        fn, nullptr, vec, 0, 0, len,
+        CellIterMode::FOLD_RIGHT, len, 1, true));
+}
+
+void ReduceResultK::mark(APLHeap* heap) {
+    if (fn) heap->mark_value(fn);
+}
+
+// ============================================================================
+// InnerProductIterK - Implementation
+// ============================================================================
+// Iterates over output cells for matrix inner product
+
+void InnerProductIterK::invoke(Machine* machine) {
+    int total_cells = lhs_rows * rhs_cols;
+
+    if (current_i * rhs_cols + current_j >= total_cells) {
+        // Done - assemble results
+        if (lhs_rows == 1 && rhs_cols == 1) {
+            // Scalar result
+            machine->ctrl.set_value(results[0]);
+        } else if (rhs_cols == 1) {
+            // Vector result
+            Eigen::VectorXd vec(lhs_rows);
+            for (int i = 0; i < lhs_rows; i++) {
+                vec(i) = results[i]->as_scalar();
+            }
+            machine->ctrl.set_value(machine->heap->allocate_vector(vec));
+        } else {
+            // Matrix result
+            Eigen::MatrixXd mat(lhs_rows, rhs_cols);
+            for (int i = 0; i < lhs_rows; i++) {
+                for (int j = 0; j < rhs_cols; j++) {
+                    mat(i, j) = results[i * rhs_cols + j]->as_scalar();
+                }
+            }
+            machine->ctrl.set_value(machine->heap->allocate_matrix(mat));
+        }
+        return;
+    }
+
+    // Extract row current_i from lhs and column current_j from rhs
+    const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
+    const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
+
+    Eigen::VectorXd row_vec = lhs_mat->row(current_i).transpose();
+    Eigen::VectorXd col_vec = rhs_mat->col(current_j);
+
+    Value* row = machine->heap->allocate_vector(row_vec);
+    Value* col = machine->heap->allocate_vector(col_vec);
+
+    // For vector inner product: first apply g element-wise, then reduce with f
+    // Push: collector -> ReduceResultK(f) -> dyadic CellIterK COLLECT(g)
+    machine->push_kont(machine->heap->allocate<InnerProductCollectK>(this));
+    machine->push_kont(machine->heap->allocate<ReduceResultK>(f_fn));
+    machine->push_kont(machine->heap->allocate<CellIterK>(
+        g_fn, row, col, 0, 0, lhs_cols,
+        CellIterMode::COLLECT, lhs_cols, 1, true));
+}
+
+void InnerProductIterK::mark(APLHeap* heap) {
+    if (f_fn) heap->mark_value(f_fn);
+    if (g_fn) heap->mark_value(g_fn);
+    if (lhs) heap->mark_value(lhs);
+    if (rhs) heap->mark_value(rhs);
+    for (Value* v : results) {
+        if (v) heap->mark_value(v);
+    }
+}
+
+void InnerProductCollectK::invoke(Machine* machine) {
+    Value* result = machine->ctrl.value;
+    iter->results.push_back(result);
+
+    // Advance to next cell
+    iter->current_j++;
+    if (iter->current_j >= iter->rhs_cols) {
+        iter->current_j = 0;
+        iter->current_i++;
+    }
+
+    // Continue iteration
+    machine->push_kont(iter);
+}
+
+void InnerProductCollectK::mark(APLHeap* heap) {
     (void)heap;
 }
 
