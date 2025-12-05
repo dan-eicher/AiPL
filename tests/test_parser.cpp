@@ -4,7 +4,6 @@
 #include "parser.h"
 #include "machine.h"
 #include "continuation.h"
-#include "environment.h"
 
 using namespace apl;
 
@@ -15,8 +14,7 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
-        init_global_environment(machine);  // Initialize built-in operators
-        parser = machine->parser;  // Use machine's parser
+        parser = machine->parser;
     }
 
     void TearDown() override {

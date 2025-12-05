@@ -79,6 +79,10 @@ public:
             heap->collect(this);
         }
     }
+
+private:
+    // Initialize global environment with APL primitives and operators
+    void init_globals();
 };
 
 } // namespace apl

@@ -16,7 +16,6 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
-        init_global_environment(machine);
     }
 
     void TearDown() override {

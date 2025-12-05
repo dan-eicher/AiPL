@@ -11,7 +11,6 @@
 #include "machine.h"
 #include "parser.h"
 #include "value.h"
-#include "environment.h"
 
 using namespace apl;
 
@@ -21,7 +20,6 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
-        init_global_environment(machine);
     }
 
     void TearDown() override {

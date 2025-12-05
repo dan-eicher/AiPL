@@ -4,11 +4,10 @@
 #include "primitives.h"
 #include "operators.h"
 #include "value.h"
-#include "environment.h"
+#include "machine.h"
 #include <cmath>
 
 using namespace apl;
-#include "machine.h"
 
 // Test fixture
 class PrimitivesTest : public ::testing::Test {
@@ -638,9 +637,6 @@ TEST_F(PrimitivesTest, Drop) {
 // ============================================================================
 
 TEST_F(PrimitivesTest, EnvironmentInit) {
-    
-    init_global_environment(machine);
-
     // Verify arithmetic primitives are bound
     Value* plus = machine->env->lookup("+");
     ASSERT_NE(plus, nullptr);
@@ -662,8 +658,6 @@ TEST_F(PrimitivesTest, EnvironmentInit) {
 }
 
 TEST_F(PrimitivesTest, PrimitiveLookupAndApply) {
-    init_global_environment(machine);
-
     // Lookup primitive from environment and apply it
     Value* plus = machine->env->lookup("+");
     ASSERT_NE(plus, nullptr);

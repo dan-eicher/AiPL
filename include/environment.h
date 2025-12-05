@@ -75,7 +75,4 @@ public:
     void mark(APLHeap* heap) override;
 };
 
-// Initialize the global environment with built-in primitives
-void init_global_environment(Machine* machine);
-
 } // namespace apl

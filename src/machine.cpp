@@ -4,6 +4,8 @@
 #include "continuation.h"
 #include "completion.h"
 #include "parser.h"
+#include "primitives.h"
+#include "operators.h"
 #include <stdexcept>
 
 namespace apl {
@@ -14,6 +16,37 @@ Machine::Machine() {
     heap->set_machine(this);  // Give heap back-pointer for GC
     env = heap->allocate<Environment>();  // Global environment (GC-managed)
     parser = new Parser(this);  // Parser owned by machine
+    init_globals();  // Populate with APL primitives and operators
+}
+
+// Initialize global environment with all built-in primitives and operators
+void Machine::init_globals() {
+    // Arithmetic primitives
+    env->define("+", heap->allocate_primitive(&prim_plus));
+    env->define("-", heap->allocate_primitive(&prim_minus));
+    env->define("×", heap->allocate_primitive(&prim_times));
+    env->define("÷", heap->allocate_primitive(&prim_divide));
+    env->define("*", heap->allocate_primitive(&prim_star));
+    env->define("=", heap->allocate_primitive(&prim_equal));
+
+    // Array operations
+    env->define("⍴", heap->allocate_primitive(&prim_rho));
+    env->define(",", heap->allocate_primitive(&prim_comma));
+    env->define("⍉", heap->allocate_primitive(&prim_transpose));
+    env->define("⍳", heap->allocate_primitive(&prim_iota));
+    env->define("↑", heap->allocate_primitive(&prim_uptack));
+    env->define("↓", heap->allocate_primitive(&prim_downtack));
+
+    // Operators (higher-order functions)
+    env->define(".", heap->allocate_operator(&op_dot));
+    env->define("∘.", heap->allocate_operator(&op_outer_dot));
+    env->define("¨", heap->allocate_operator(&op_diaeresis));
+    env->define("⍨", heap->allocate_operator(&op_tilde));
+    env->define("/", heap->allocate_operator(&op_reduce));
+    env->define("⌿", heap->allocate_operator(&op_reduce_first));
+    env->define("\\", heap->allocate_operator(&op_scan));
+    env->define("⍀", heap->allocate_operator(&op_scan_first));
+    env->define("⍤", heap->allocate_operator(&op_rank_op));
 }
 
 // Destructor

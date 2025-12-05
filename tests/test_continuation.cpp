@@ -7,7 +7,6 @@
 #include "value.h"
 #include "primitives.h"
 #include "operators.h"
-#include "environment.h"
 
 using namespace apl;
 
@@ -18,8 +17,7 @@ protected:
 
     void SetUp() override {
         machine = new Machine();
-        heap = machine->heap;  // Use machine's heap
-        init_global_environment(machine);  // Initialize built-in primitives and operators
+        heap = machine->heap;
     }
 
     void TearDown() override {

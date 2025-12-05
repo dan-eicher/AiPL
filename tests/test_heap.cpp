@@ -24,12 +24,11 @@ protected:
 
 // Test basic heap creation
 TEST_F(HeapTest, Creation) {
-    // Machine constructor allocates one Environment for global env
-    // So we expect 1 environment allocated, not 0
-    EXPECT_EQ(machine->heap->young_size(), 0);  // No Values yet
-    EXPECT_EQ(machine->heap->old_size(), 0);
-    EXPECT_EQ(machine->heap->total_size(), 0);  // Only counting Values
-    EXPECT_EQ(machine->heap->bytes_allocated, sizeof(Environment));  // One Environment from Machine()
+    // Machine constructor now initializes global environment with primitives
+    // So heap is not empty at startup - just verify it's in a valid state
+    EXPECT_GT(machine->heap->young_size(), 0);  // Primitives allocated
+    EXPECT_EQ(machine->heap->old_size(), 0);    // Nothing promoted yet
+    EXPECT_GT(machine->heap->bytes_allocated, 0);
     EXPECT_FALSE(machine->heap->gc_in_progress);
 }
 
@@ -42,13 +41,15 @@ TEST_F(HeapTest, ScalarCacheInit) {
 
 // Test allocate scalar with caching
 TEST_F(HeapTest, AllocateScalarWithCache) {
+    size_t initial_size = machine->heap->young_size();
+
     // Allocate a cacheable scalar
     Value* v1 = machine->heap->allocate_scalar(42.0);
 
     ASSERT_NE(v1, nullptr);
     EXPECT_EQ(v1->tag, ValueType::SCALAR);
     EXPECT_DOUBLE_EQ(v1->as_scalar(), 42.0);
-    EXPECT_EQ(machine->heap->young_size(), 1);
+    EXPECT_EQ(machine->heap->young_size(), initial_size + 1);
 
     // Check it's in cache
     EXPECT_EQ(machine->heap->scalar_cache[42 + 128], v1);
@@ -57,7 +58,7 @@ TEST_F(HeapTest, AllocateScalarWithCache) {
     Value* v2 = machine->heap->allocate_scalar(42.0);
 
     EXPECT_EQ(v1, v2);  // Same pointer
-    EXPECT_EQ(machine->heap->young_size(), 1);  // No new allocation
+    EXPECT_EQ(machine->heap->young_size(), initial_size + 1);  // No new allocation
 }
 
 // Test scalar cache range
@@ -90,24 +91,27 @@ TEST_F(HeapTest, ScalarCacheRange) {
 
 // Test allocate regular value
 TEST_F(HeapTest, AllocateValue) {
-    Value* v = machine->heap->allocate_scalar(99.5);
-    // allocate_scalar already calls allocate() internally, don't double-allocate!
+    size_t initial_size = machine->heap->young_size();
+    size_t initial_bytes = machine->heap->bytes_allocated;
 
-    EXPECT_EQ(machine->heap->young_size(), 1);
-    EXPECT_GT(machine->heap->bytes_allocated, sizeof(Environment));  // Environment + Value
+    Value* v = machine->heap->allocate_scalar(99.5);
+
+    EXPECT_EQ(machine->heap->young_size(), initial_size + 1);
+    EXPECT_GT(machine->heap->bytes_allocated, initial_bytes);
 }
 
 // Test allocate vector
 TEST_F(HeapTest, AllocateVector) {
+    size_t initial_size = machine->heap->young_size();
+    size_t initial_bytes = machine->heap->bytes_allocated;
+
     Eigen::VectorXd vec(5);
     vec << 1, 2, 3, 4, 5;
 
     Value* v = machine->heap->allocate_vector(vec);
-    // allocate_vector already calls allocate() internally, don't double-allocate!
 
-    EXPECT_EQ(machine->heap->young_size(), 1);
-    // Should count Environment + Value + matrix storage
-    EXPECT_GT(machine->heap->bytes_allocated, sizeof(Environment) + sizeof(Value));
+    EXPECT_EQ(machine->heap->young_size(), initial_size + 1);
+    EXPECT_GT(machine->heap->bytes_allocated, initial_bytes);
 }
 
 // Test clear marks
@@ -161,11 +165,14 @@ TEST_F(HeapTest, MarkFromRoots) {
 
 // Test promote survivors
 TEST_F(HeapTest, PromoteSurvivors) {
-    Value* v1 = machine->heap->allocate_scalar(1.0);
-    Value* v2 = machine->heap->allocate_scalar(2.0);
+    size_t initial_young = machine->heap->young_size();
+    size_t initial_old = machine->heap->old_size();
 
-    EXPECT_EQ(machine->heap->young_size(), 2);
-    EXPECT_EQ(machine->heap->old_size(), 0);
+    Value* v1 = machine->heap->allocate_scalar(200.5);  // Non-cached value
+    Value* v2 = machine->heap->allocate_scalar(201.5);  // Non-cached value
+
+    EXPECT_EQ(machine->heap->young_size(), initial_young + 2);
+    EXPECT_EQ(machine->heap->old_size(), initial_old);
 
     // Mark v1 for survival
     v1->marked = true;
@@ -173,31 +180,36 @@ TEST_F(HeapTest, PromoteSurvivors) {
 
     machine->heap->promote_survivors();
 
-    EXPECT_EQ(machine->heap->young_size(), 1);  // v2 still in young
-    EXPECT_EQ(machine->heap->old_size(), 1);    // v1 promoted
+    EXPECT_EQ(machine->heap->young_size(), initial_young + 1);  // v2 still in young
+    EXPECT_EQ(machine->heap->old_size(), initial_old + 1);      // v1 promoted
     EXPECT_TRUE(v1->in_old_generation);
     EXPECT_FALSE(v2->in_old_generation);
 }
 
 // Test sweep
 TEST_F(HeapTest, Sweep) {
-    Value* v1 = machine->heap->allocate_scalar(1.0);
-    Value* v2 = machine->heap->allocate_scalar(2.0);
-    Value* v3 = machine->heap->allocate_scalar(3.0);
+    size_t initial_young = machine->heap->young_size();
 
-    EXPECT_EQ(machine->heap->young_size(), 3);
+    Value* v1 = machine->heap->allocate_scalar(200.5);  // Non-cached
+    Value* v2 = machine->heap->allocate_scalar(201.5);  // Non-cached
+    Value* v3 = machine->heap->allocate_scalar(202.5);  // Non-cached
 
-    // Mark only v1 and v3
+    EXPECT_EQ(machine->heap->young_size(), initial_young + 3);
+
+    // Mark v1 and v3 (and all pre-existing objects to keep them alive)
+    machine->heap->mark_from_roots(machine);
     v1->marked = true;
-    v2->marked = false;
+    v2->marked = false;  // This one should be swept
     v3->marked = true;
 
+    size_t size_before_sweep = machine->heap->young_size();
     size_t initial_bytes = machine->heap->bytes_allocated;
 
     machine->heap->sweep();
 
-    EXPECT_EQ(machine->heap->young_size(), 2);  // v2 should be swept
-    EXPECT_LT(machine->heap->bytes_allocated, initial_bytes);  // Less memory used
+    // Exactly one object (v2) should be swept
+    EXPECT_EQ(machine->heap->young_size(), size_before_sweep - 1);
+    EXPECT_LT(machine->heap->bytes_allocated, initial_bytes);
 }
 
 // Test minor GC
@@ -227,9 +239,13 @@ TEST_F(HeapTest, MinorGC) {
 TEST_F(HeapTest, MajorGC) {
     Machine* machine = new Machine();
 
+    size_t initial_size = machine->heap->total_size();
+
     // Use non-cacheable values so v2 can actually be collected
     Value* v1 = machine->heap->allocate_scalar(200.0);
     Value* v2 = machine->heap->allocate_scalar(300.0);
+
+    EXPECT_EQ(machine->heap->total_size(), initial_size + 2);
 
     // Set v1 as root
     machine->ctrl.set_value(v1);
@@ -237,7 +253,7 @@ TEST_F(HeapTest, MajorGC) {
     machine->heap->major_gc(machine);
 
     // v1 should survive, v2 should be collected
-    EXPECT_EQ(machine->heap->total_size(), 1);
+    EXPECT_EQ(machine->heap->total_size(), initial_size + 1);
     EXPECT_EQ(machine->heap->major_gc_count, 1);
     EXPECT_EQ(machine->heap->minor_gc_count, 0);  // Reset after major GC
 
@@ -615,31 +631,27 @@ TEST_F(HeapTest, ComplexContinuationGraph) {
 
 // Test template allocation for Value types
 TEST_F(HeapTest, TemplateAllocationValue) {
-    // Note: We can't directly use machine->heap->allocate<Value>() for Value types
-    // because Value is not a leaf type with a public constructor.
-    // The template interface works with Continuation types.
-    // For Values, we use the helper methods like allocate_scalar, allocate_vector, etc.
+    size_t initial_size = machine->heap->young_size();
 
-    // Test the helper methods work correctly
     Value* v1 = machine->heap->allocate_scalar(42.0);
     EXPECT_NE(v1, nullptr);
     EXPECT_EQ(v1->tag, ValueType::SCALAR);
     EXPECT_DOUBLE_EQ(v1->as_scalar(), 42.0);
-    EXPECT_EQ(machine->heap->young_size(), 1);
+    EXPECT_EQ(machine->heap->young_size(), initial_size + 1);
 
     Eigen::VectorXd vec(3);
     vec << 1, 2, 3;
     Value* v2 = machine->heap->allocate_vector(vec);
     EXPECT_NE(v2, nullptr);
     EXPECT_EQ(v2->tag, ValueType::VECTOR);
-    EXPECT_EQ(machine->heap->young_size(), 2);
+    EXPECT_EQ(machine->heap->young_size(), initial_size + 2);
 
     Eigen::MatrixXd mat(2, 2);
     mat << 1, 2, 3, 4;
     Value* v3 = machine->heap->allocate_matrix(mat);
     EXPECT_NE(v3, nullptr);
     EXPECT_EQ(v3->tag, ValueType::MATRIX);
-    EXPECT_EQ(machine->heap->young_size(), 3);
+    EXPECT_EQ(machine->heap->young_size(), initial_size + 3);
 }
 
 // Test template allocation for Continuation types
