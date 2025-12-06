@@ -39,6 +39,9 @@ PrimitiveFn prim_transpose = { "⍉", fn_transpose, nullptr };
 PrimitiveFn prim_iota      = { "⍳", fn_iota, nullptr };
 PrimitiveFn prim_uptack    = { "↑", nullptr, fn_take };
 PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
+PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate };
+PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
+PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -1765,6 +1768,177 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
         result = mat->topRows(result_rows);
     }
 
+    m->result = m->heap->allocate_matrix(result);
+}
+
+// ============================================================================
+// Reverse/Rotate Functions
+// ============================================================================
+
+// Reverse (⌽) - monadic: reverse elements along last axis
+void fn_reverse(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        // Scalar reversal is identity
+        m->result = m->heap->allocate_scalar(omega->as_scalar());
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    if (omega->is_vector()) {
+        // Reverse vector elements
+        Eigen::VectorXd result(mat->rows());
+        for (int i = 0; i < mat->rows(); ++i) {
+            result(i) = (*mat)(mat->rows() - 1 - i, 0);
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // For matrices: reverse columns within each row (last axis)
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    for (int i = 0; i < mat->rows(); ++i) {
+        for (int j = 0; j < mat->cols(); ++j) {
+            result(i, j) = (*mat)(i, mat->cols() - 1 - j);
+        }
+    }
+    m->result = m->heap->allocate_matrix(result);
+}
+
+// Reverse First (⊖) - monadic: reverse elements along first axis
+void fn_reverse_first(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        // Scalar reversal is identity
+        m->result = m->heap->allocate_scalar(omega->as_scalar());
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    if (omega->is_vector()) {
+        // For vectors, first axis is the only axis, so same as reverse
+        Eigen::VectorXd result(mat->rows());
+        for (int i = 0; i < mat->rows(); ++i) {
+            result(i) = (*mat)(mat->rows() - 1 - i, 0);
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // For matrices: reverse rows (first axis)
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    for (int i = 0; i < mat->rows(); ++i) {
+        result.row(i) = mat->row(mat->rows() - 1 - i);
+    }
+    m->result = m->heap->allocate_matrix(result);
+}
+
+// Tally (≢) - monadic: count along first axis
+void fn_tally(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        // Scalar has no first axis, tally is 1
+        m->result = m->heap->allocate_scalar(1.0);
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    // First axis is number of rows
+    m->result = m->heap->allocate_scalar(static_cast<double>(mat->rows()));
+}
+
+// Rotate (⌽) - dyadic: rotate elements along last axis
+void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
+    if (!lhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: rotate count must be scalar"));
+        return;
+    }
+
+    int n = static_cast<int>(lhs->as_scalar());
+
+    if (rhs->is_scalar()) {
+        // Rotating a scalar is identity
+        m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+
+    if (rhs->is_vector()) {
+        int len = mat->rows();
+        if (len == 0) {
+            m->result = m->heap->allocate_vector(mat->col(0));
+            return;
+        }
+        // Normalize rotation (positive = left rotate, APL convention)
+        n = ((n % len) + len) % len;
+        Eigen::VectorXd result(len);
+        for (int i = 0; i < len; ++i) {
+            result(i) = (*mat)((i + n) % len, 0);
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // For matrices: rotate columns within each row
+    int cols = mat->cols();
+    if (cols == 0) {
+        m->result = m->heap->allocate_matrix(*mat);
+        return;
+    }
+    n = ((n % cols) + cols) % cols;
+    Eigen::MatrixXd result(mat->rows(), cols);
+    for (int i = 0; i < mat->rows(); ++i) {
+        for (int j = 0; j < cols; ++j) {
+            result(i, j) = (*mat)(i, (j + n) % cols);
+        }
+    }
+    m->result = m->heap->allocate_matrix(result);
+}
+
+// Rotate First (⊖) - dyadic: rotate elements along first axis
+void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
+    if (!lhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: rotate count must be scalar"));
+        return;
+    }
+
+    int n = static_cast<int>(lhs->as_scalar());
+
+    if (rhs->is_scalar()) {
+        // Rotating a scalar is identity
+        m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+
+    if (rhs->is_vector()) {
+        // For vectors, first axis is the only axis
+        int len = mat->rows();
+        if (len == 0) {
+            m->result = m->heap->allocate_vector(mat->col(0));
+            return;
+        }
+        n = ((n % len) + len) % len;
+        Eigen::VectorXd result(len);
+        for (int i = 0; i < len; ++i) {
+            result(i) = (*mat)((i + n) % len, 0);
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // For matrices: rotate rows (first axis)
+    int rows = mat->rows();
+    if (rows == 0) {
+        m->result = m->heap->allocate_matrix(*mat);
+        return;
+    }
+    n = ((n % rows) + rows) % rows;
+    Eigen::MatrixXd result(rows, mat->cols());
+    for (int i = 0; i < rows; ++i) {
+        result.row(i) = mat->row((i + n) % rows);
+    }
     m->result = m->heap->allocate_matrix(result);
 }
 

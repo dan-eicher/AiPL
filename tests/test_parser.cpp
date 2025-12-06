@@ -2632,6 +2632,212 @@ TEST_F(ParserTest, BinomialPascalsRow) {
     EXPECT_DOUBLE_EQ((*vec)(4, 0), 1.0);
 }
 
+// ============================================================================
+// Reverse/Rotate Tests (⌽ ⊖ ≢)
+// ============================================================================
+
+// Reverse (⌽) monadic tests
+TEST_F(ParserTest, ReverseVector) {
+    Continuation* k = parser->parse("⌽ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 1.0);
+}
+
+TEST_F(ParserTest, ReverseScalar) {
+    Continuation* k = parser->parse("⌽ 42");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(ParserTest, ReverseMatrix) {
+    // Reverse last axis of matrix (reverse columns within each row)
+    Continuation* k = parser->parse("⌽ 2 3 ⍴ 1 2 3 4 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    // Row 0: 3 2 1
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 1.0);
+    // Row 1: 6 5 4
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 4.0);
+}
+
+// Rotate (⌽) dyadic tests
+TEST_F(ParserTest, RotateVectorLeft) {
+    // Positive rotation = left rotate
+    Continuation* k = parser->parse("2 ⌽ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 2.0);
+}
+
+TEST_F(ParserTest, RotateVectorRight) {
+    // Negative rotation = right rotate
+    Continuation* k = parser->parse("¯2 ⌽ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 3.0);
+}
+
+TEST_F(ParserTest, RotateZero) {
+    // Zero rotation = identity
+    Continuation* k = parser->parse("0 ⌽ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+// Reverse First (⊖) monadic tests
+TEST_F(ParserTest, ReverseFirstVector) {
+    // For vectors, first axis is the only axis
+    Continuation* k = parser->parse("⊖ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 1.0);
+}
+
+TEST_F(ParserTest, ReverseFirstMatrix) {
+    // Reverse first axis of matrix (reverse rows)
+    Continuation* k = parser->parse("⊖ 2 3 ⍴ 1 2 3 4 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    // Row 0 is now old row 1: 4 5 6
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 6.0);
+    // Row 1 is now old row 0: 1 2 3
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 3.0);
+}
+
+// Rotate First (⊖) dyadic tests
+TEST_F(ParserTest, RotateFirstMatrix) {
+    // Rotate rows of matrix
+    Continuation* k = parser->parse("1 ⊖ 3 2 ⍴ 1 2 3 4 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 2);
+    // Original: [[1,2],[3,4],[5,6]], rotated 1 up: [[3,4],[5,6],[1,2]]
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 1), 2.0);
+}
+
+// Tally (≢) tests
+TEST_F(ParserTest, TallyVector) {
+    Continuation* k = parser->parse("≢ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(ParserTest, TallyScalar) {
+    // Tally of scalar is 1
+    Continuation* k = parser->parse("≢ 42");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, TallyMatrix) {
+    // Tally of matrix is number of rows
+    Continuation* k = parser->parse("≢ 3 4 ⍴ ⍳12");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(ParserTest, TallyEmpty) {
+    // Tally of empty vector is 0
+    Continuation* k = parser->parse("≢ 0 ↑ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -67,6 +67,11 @@ enum TokenType {
     TOK_LOG,            // ⍟ (logarithm)
     TOK_FACTORIAL,      // ! (factorial/binomial)
 
+    // Reverse/Rotate
+    TOK_REVERSE,        // ⌽ (reverse/rotate)
+    TOK_REVERSE_FIRST,  // ⊖ (reverse first/rotate first)
+    TOK_TALLY,          // ≢ (tally - count along first axis)
+
     // Structural
     TOK_ASSIGN,         // ←
     TOK_LPAREN,         // (

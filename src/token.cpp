@@ -48,6 +48,9 @@ const char* token_type_name(TokenType type) {
         case TOK_STILE: return "|";
         case TOK_LOG: return "⍟";
         case TOK_FACTORIAL: return "!";
+        case TOK_REVERSE: return "⌽";
+        case TOK_REVERSE_FIRST: return "⊖";
+        case TOK_TALLY: return "≢";
         case TOK_ASSIGN: return "←";
         case TOK_LPAREN: return "(";
         case TOK_RPAREN: return ")";

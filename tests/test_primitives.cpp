@@ -1996,3 +1996,174 @@ TEST_F(PrimitivesTest, LogicalPrimitivesRegistered) {
     ASSERT_NE(machine->env->lookup("⍱"), nullptr);
 }
 
+// ============================================================================
+// Reverse/Rotate/Tally Tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, ReverseVector) {
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_reverse(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, ReverseScalar) {
+    Value* scalar = machine->heap->allocate_scalar(42.0);
+
+    fn_reverse(machine, scalar);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 42.0);
+}
+
+TEST_F(PrimitivesTest, ReverseMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_reverse(machine, mat);
+
+    ASSERT_TRUE(machine->result->is_matrix());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 2);
+    EXPECT_EQ(res->cols(), 3);
+    // Row 0: 3 2 1
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 2), 1.0);
+    // Row 1: 6 5 4
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 2), 4.0);
+}
+
+TEST_F(PrimitivesTest, ReverseFirstMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_reverse_first(machine, mat);
+
+    ASSERT_TRUE(machine->result->is_matrix());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 2);
+    EXPECT_EQ(res->cols(), 3);
+    // Rows are swapped
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 2), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 2), 3.0);
+}
+
+TEST_F(PrimitivesTest, RotateVectorPositive) {
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* count = machine->heap->allocate_scalar(2.0);
+
+    fn_rotate(machine, count, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+    // Rotated left by 2: 3 4 5 1 2
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 2.0);
+}
+
+TEST_F(PrimitivesTest, RotateVectorNegative) {
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* count = machine->heap->allocate_scalar(-2.0);
+
+    fn_rotate(machine, count, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+    // Rotated right by 2: 4 5 1 2 3
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, RotateFirstMatrix) {
+    Eigen::MatrixXd m(3, 2);
+    m << 1.0, 2.0,
+         3.0, 4.0,
+         5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+    Value* count = machine->heap->allocate_scalar(1.0);
+
+    fn_rotate_first(machine, count, mat);
+
+    ASSERT_TRUE(machine->result->is_matrix());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_EQ(res->cols(), 2);
+    // Rows rotated up by 1: [[3,4],[5,6],[1,2]]
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 1), 2.0);
+}
+
+TEST_F(PrimitivesTest, TallyVector) {
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_tally(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, TallyScalar) {
+    Value* scalar = machine->heap->allocate_scalar(42.0);
+
+    fn_tally(machine, scalar);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, TallyMatrix) {
+    Eigen::MatrixXd m(3, 4);
+    m.setZero();
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_tally(machine, mat);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, ReverseRotateTallyRegistered) {
+    ASSERT_NE(machine->env->lookup("⌽"), nullptr);
+    ASSERT_NE(machine->env->lookup("⊖"), nullptr);
+    ASSERT_NE(machine->env->lookup("≢"), nullptr);
+}
+

@@ -24,6 +24,9 @@ void fn_not(Machine* m, Value* omega);           // ~ monadic (not)
 void fn_magnitude(Machine* m, Value* omega);     // | monadic (absolute value)
 void fn_natural_log(Machine* m, Value* omega);   // ⍟ monadic (natural logarithm)
 void fn_factorial(Machine* m, Value* omega);     // ! monadic (factorial)
+void fn_reverse(Machine* m, Value* omega);       // ⌽ monadic (reverse last axis)
+void fn_reverse_first(Machine* m, Value* omega); // ⊖ monadic (reverse first axis)
+void fn_tally(Machine* m, Value* omega);         // ≢ monadic (count along first axis)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -46,6 +49,8 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs);       // ⍱ dyadic (nor)
 void fn_residue(Machine* m, Value* lhs, Value* rhs);   // | dyadic (modulo/residue)
 void fn_logarithm(Machine* m, Value* lhs, Value* rhs); // ⍟ dyadic (logarithm base)
 void fn_binomial(Machine* m, Value* lhs, Value* rhs);  // ! dyadic (binomial/combinations)
+void fn_rotate(Machine* m, Value* lhs, Value* rhs);    // ⌽ dyadic (rotate last axis)
+void fn_rotate_first(Machine* m, Value* lhs, Value* rhs); // ⊖ dyadic (rotate first axis)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -69,6 +74,9 @@ extern PrimitiveFn prim_nor;       // ⍱ symbol
 extern PrimitiveFn prim_stile;     // | symbol (magnitude/residue)
 extern PrimitiveFn prim_log;       // ⍟ symbol (logarithm)
 extern PrimitiveFn prim_factorial; // ! symbol (factorial/binomial)
+extern PrimitiveFn prim_reverse;   // ⌽ symbol (reverse/rotate)
+extern PrimitiveFn prim_reverse_first; // ⊖ symbol (reverse first/rotate first)
+extern PrimitiveFn prim_tally;     // ≢ symbol (tally)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

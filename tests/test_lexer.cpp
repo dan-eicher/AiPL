@@ -623,6 +623,16 @@ TEST_F(LexerTest, HighMinusExponentInVector) {
     EXPECT_DOUBLE_EQ(tokens[0].vector_data[2], 5e-6);     // 0.000005
 }
 
+// Test reverse/rotate/tally tokens
+TEST_F(LexerTest, ReverseRotateTally) {
+    auto tokens = tokenize("⌽ ⊖ ≢");
+
+    ASSERT_EQ(tokens.size(), 4);  // 3 tokens + EOF
+    EXPECT_EQ(tokens[0].type, TOK_REVERSE);
+    EXPECT_EQ(tokens[1].type, TOK_REVERSE_FIRST);
+    EXPECT_EQ(tokens[2].type, TOK_TALLY);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

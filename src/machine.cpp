@@ -52,6 +52,9 @@ void Machine::init_globals() {
     env->define("⍳", heap->allocate_primitive(&prim_iota));
     env->define("↑", heap->allocate_primitive(&prim_uptack));
     env->define("↓", heap->allocate_primitive(&prim_downtack));
+    env->define("⌽", heap->allocate_primitive(&prim_reverse));
+    env->define("⊖", heap->allocate_primitive(&prim_reverse_first));
+    env->define("≢", heap->allocate_primitive(&prim_tally));
 
     // Operators (higher-order functions)
     env->define(".", heap->allocate_operator(&op_dot));
