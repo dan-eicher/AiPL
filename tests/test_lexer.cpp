@@ -550,6 +550,70 @@ TEST_F(LexerTest, OperatorAdjacentToVector) {
     EXPECT_EQ(tokens[3].type, TOK_EOF);
 }
 
+// ============================================================================
+// High Minus (¯) Tests
+// ============================================================================
+
+TEST_F(LexerTest, HighMinusScalar) {
+    auto tokens = tokenize("¯3.14");
+
+    ASSERT_EQ(tokens.size(), 2);  // NUMBER + EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[0].number, -3.14);
+}
+
+TEST_F(LexerTest, HighMinusInteger) {
+    auto tokens = tokenize("¯42");
+
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[0].number, -42.0);
+}
+
+TEST_F(LexerTest, HighMinusInVector) {
+    auto tokens = tokenize("1 ¯2 3 ¯4.5");
+
+    ASSERT_EQ(tokens.size(), 2);  // VECTOR + EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[0].vector_size, 4);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[0], 1.0);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[1], -2.0);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[2], 3.0);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[3], -4.5);
+}
+
+TEST_F(LexerTest, HighMinusMixedWithOperators) {
+    auto tokens = tokenize("¯5+3");
+
+    ASSERT_EQ(tokens.size(), 4);  // NUMBER + NUMBER + EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[0].number, -5.0);
+    EXPECT_EQ(tokens[1].type, TOK_PLUS);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[2].number, 3.0);
+}
+
+TEST_F(LexerTest, HighMinusExponent) {
+    auto tokens = tokenize("¯1.5e¯3");
+
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);
+    // ¯1.5e¯3 should be -1.5e-3 = -0.0015
+    EXPECT_DOUBLE_EQ(tokens[0].number, -1.5e-3);
+}
+
+// Test high minus in exponent within vector literals
+TEST_F(LexerTest, HighMinusExponentInVector) {
+    auto tokens = tokenize("1e2 ¯3e¯4 5e¯6");
+
+    ASSERT_EQ(tokens.size(), 2);  // TOK_NUMBER_VECTOR + EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER_VECTOR);
+    ASSERT_EQ(tokens[0].vector_size, 3);
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[0], 1e2);      // 100
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[1], -3e-4);    // -0.0003
+    EXPECT_DOUBLE_EQ(tokens[0].vector_data[2], 5e-6);     // 0.000005
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

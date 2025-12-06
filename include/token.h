@@ -55,6 +55,12 @@ enum TokenType {
     TOK_AND,            // ∧
     TOK_OR,             // ∨
     TOK_NOT,            // ~
+    TOK_NAND,           // ⍲
+    TOK_NOR,            // ⍱
+
+    // Min/Max
+    TOK_CEILING,        // ⌈
+    TOK_FLOOR,          // ⌊
 
     // Structural
     TOK_ASSIGN,         // ←

@@ -18,6 +18,9 @@ void fn_negate(Machine* m, Value* omega);        // - monadic (negation)
 void fn_signum(Machine* m, Value* omega);        // × monadic (signum/sign)
 void fn_reciprocal(Machine* m, Value* omega);    // ÷ monadic (reciprocal)
 void fn_exponential(Machine* m, Value* omega);   // * monadic (exponential e^x)
+void fn_ceiling(Machine* m, Value* omega);       // ⌈ monadic (ceiling)
+void fn_floor(Machine* m, Value* omega);         // ⌊ monadic (floor)
+void fn_not(Machine* m, Value* omega);           // ~ monadic (not)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -31,6 +34,12 @@ void fn_less(Machine* m, Value* lhs, Value* rhs);      // < dyadic (less than)
 void fn_greater(Machine* m, Value* lhs, Value* rhs);   // > dyadic (greater than)
 void fn_less_eq(Machine* m, Value* lhs, Value* rhs);   // ≤ dyadic (less or equal)
 void fn_greater_eq(Machine* m, Value* lhs, Value* rhs);// ≥ dyadic (greater or equal)
+void fn_maximum(Machine* m, Value* lhs, Value* rhs);   // ⌈ dyadic (maximum)
+void fn_minimum(Machine* m, Value* lhs, Value* rhs);   // ⌊ dyadic (minimum)
+void fn_and(Machine* m, Value* lhs, Value* rhs);       // ∧ dyadic (and/lcm)
+void fn_or(Machine* m, Value* lhs, Value* rhs);        // ∨ dyadic (or/gcd)
+void fn_nand(Machine* m, Value* lhs, Value* rhs);      // ⍲ dyadic (nand)
+void fn_nor(Machine* m, Value* lhs, Value* rhs);       // ⍱ dyadic (nor)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -44,6 +53,13 @@ extern PrimitiveFn prim_less;      // < symbol
 extern PrimitiveFn prim_greater;   // > symbol
 extern PrimitiveFn prim_less_eq;   // ≤ symbol
 extern PrimitiveFn prim_greater_eq;// ≥ symbol
+extern PrimitiveFn prim_ceiling;   // ⌈ symbol
+extern PrimitiveFn prim_floor;     // ⌊ symbol
+extern PrimitiveFn prim_and;       // ∧ symbol
+extern PrimitiveFn prim_or;        // ∨ symbol
+extern PrimitiveFn prim_not;       // ~ symbol
+extern PrimitiveFn prim_nand;      // ⍲ symbol
+extern PrimitiveFn prim_nor;       // ⍱ symbol
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

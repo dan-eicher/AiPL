@@ -1746,3 +1746,227 @@ TEST_F(PrimitivesTest, ComparisonPrimitivesRegistered) {
     ASSERT_TRUE(ge->is_function());
 }
 
+// ============================================================================
+// Min/Max Tests (⌈ ⌊)
+// ============================================================================
+
+TEST_F(PrimitivesTest, CeilingMonadicScalar) {
+    Value* v = machine->heap->allocate_scalar(3.2);
+    fn_ceiling(machine, v);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 4.0);
+}
+
+TEST_F(PrimitivesTest, CeilingMonadicNegative) {
+    Value* v = machine->heap->allocate_scalar(-3.2);
+    fn_ceiling(machine, v);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), -3.0);
+}
+
+TEST_F(PrimitivesTest, CeilingMonadicVector) {
+    Eigen::VectorXd v(3);
+    v << 1.2, 2.7, -1.5;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_ceiling(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), -1.0);
+}
+
+TEST_F(PrimitivesTest, FloorMonadicScalar) {
+    Value* v = machine->heap->allocate_scalar(3.7);
+    fn_floor(machine, v);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, FloorMonadicNegative) {
+    Value* v = machine->heap->allocate_scalar(-3.2);
+    fn_floor(machine, v);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), -4.0);
+}
+
+TEST_F(PrimitivesTest, FloorMonadicVector) {
+    Eigen::VectorXd v(3);
+    v << 1.2, 2.7, -1.5;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_floor(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), -2.0);
+}
+
+TEST_F(PrimitivesTest, MaximumDyadicScalars) {
+    Value* a = machine->heap->allocate_scalar(3.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_maximum(machine, a, b);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, MaximumDyadicVectors) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 1.0, 5.0, 3.0;
+    v2 << 4.0, 2.0, 6.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+    fn_maximum(machine, vec1, vec2);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 6.0);
+}
+
+TEST_F(PrimitivesTest, MinimumDyadicScalars) {
+    Value* a = machine->heap->allocate_scalar(3.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_minimum(machine, a, b);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, MinimumDyadicVectors) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 1.0, 5.0, 3.0;
+    v2 << 4.0, 2.0, 6.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+    fn_minimum(machine, vec1, vec2);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+// ============================================================================
+// Logical Function Tests (∧ ∨ ~ ⍲ ⍱)
+// ============================================================================
+
+TEST_F(PrimitivesTest, NotMonadicScalar) {
+    Value* zero = machine->heap->allocate_scalar(0.0);
+    fn_not(machine, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+
+    Value* one = machine->heap->allocate_scalar(1.0);
+    fn_not(machine, one);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, NotMonadicVector) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 0.0, 1.0, 0.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_not(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, AndDyadicScalars) {
+    Value* one = machine->heap->allocate_scalar(1.0);
+    Value* zero = machine->heap->allocate_scalar(0.0);
+
+    fn_and(machine, one, one);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+
+    fn_and(machine, one, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+
+    fn_and(machine, zero, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, AndDyadicVectors) {
+    Eigen::VectorXd v1(4), v2(4);
+    v1 << 1.0, 0.0, 1.0, 0.0;
+    v2 << 1.0, 1.0, 0.0, 0.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+    fn_and(machine, vec1, vec2);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 1∧1
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 0∧1
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);  // 1∧0
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 0.0);  // 0∧0
+}
+
+TEST_F(PrimitivesTest, OrDyadicScalars) {
+    Value* one = machine->heap->allocate_scalar(1.0);
+    Value* zero = machine->heap->allocate_scalar(0.0);
+
+    fn_or(machine, one, one);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+
+    fn_or(machine, one, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+
+    fn_or(machine, zero, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, OrDyadicVectors) {
+    Eigen::VectorXd v1(4), v2(4);
+    v1 << 1.0, 0.0, 1.0, 0.0;
+    v2 << 1.0, 1.0, 0.0, 0.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+    fn_or(machine, vec1, vec2);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 1∨1
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);  // 0∨1
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);  // 1∨0
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 0.0);  // 0∨0
+}
+
+TEST_F(PrimitivesTest, NandDyadicScalars) {
+    Value* one = machine->heap->allocate_scalar(1.0);
+    Value* zero = machine->heap->allocate_scalar(0.0);
+
+    fn_nand(machine, one, one);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);  // ~(1∧1)
+
+    fn_nand(machine, one, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // ~(1∧0)
+
+    fn_nand(machine, zero, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // ~(0∧0)
+}
+
+TEST_F(PrimitivesTest, NorDyadicScalars) {
+    Value* one = machine->heap->allocate_scalar(1.0);
+    Value* zero = machine->heap->allocate_scalar(0.0);
+
+    fn_nor(machine, one, one);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);  // ~(1∨1)
+
+    fn_nor(machine, one, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);  // ~(1∨0)
+
+    fn_nor(machine, zero, zero);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // ~(0∨0)
+}
+
+TEST_F(PrimitivesTest, LogicalPrimitivesRegistered) {
+    ASSERT_NE(machine->env->lookup("⌈"), nullptr);
+    ASSERT_NE(machine->env->lookup("⌊"), nullptr);
+    ASSERT_NE(machine->env->lookup("∧"), nullptr);
+    ASSERT_NE(machine->env->lookup("∨"), nullptr);
+    ASSERT_NE(machine->env->lookup("~"), nullptr);
+    ASSERT_NE(machine->env->lookup("⍲"), nullptr);
+    ASSERT_NE(machine->env->lookup("⍱"), nullptr);
+}
+

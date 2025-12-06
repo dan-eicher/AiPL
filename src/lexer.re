@@ -7,6 +7,51 @@
 
 namespace apl {
 
+// Parse an APL number from start to end, handling high minus (¯) in both
+// the leading position and in the exponent (e.g., ¯1.5e¯3)
+static double parse_apl_number(const char* start, const char* end) {
+    const char* p = start;
+    bool negative = false;
+
+    // Check for leading high minus (¯ = U+00AF = 0xC2 0xAF in UTF-8)
+    if (p < end - 1 && (unsigned char)p[0] == 0xC2 && (unsigned char)p[1] == 0xAF) {
+        negative = true;
+        p += 2;
+    }
+
+    // Check if there's a high minus in the exponent
+    bool has_exp_minus = false;
+    for (const char* q = p; q < end - 1; q++) {
+        if ((unsigned char)q[0] == 0xC2 && (unsigned char)q[1] == 0xAF) {
+            has_exp_minus = true;
+            break;
+        }
+    }
+
+    double num;
+    if (has_exp_minus) {
+        // Build temporary string with high minus replaced by regular minus
+        size_t len = end - p;
+        char* temp = new char[len + 1];
+        size_t dst = 0;
+        for (const char* q = p; q < end; ) {
+            if (q < end - 1 && (unsigned char)q[0] == 0xC2 && (unsigned char)q[1] == 0xAF) {
+                temp[dst++] = '-';
+                q += 2;
+            } else {
+                temp[dst++] = *q++;
+            }
+        }
+        temp[dst] = '\0';
+        num = std::atof(temp);
+        delete[] temp;
+    } else {
+        num = std::atof(p);
+    }
+
+    return negative ? -num : num;
+}
+
 // Lexer constructor
 Lexer::Lexer(const char* input)
     : cursor_(input)
@@ -36,8 +81,12 @@ Lexer::Lexer(const char* input)
     digit = [0-9];
     digits = digit+;
 
+    // High minus (macron) for negative literals
+    high_minus = "¯";  // U+00AF
+
     // Numbers (integer or float)
-    number = digits ("." digits)? ([eE] [+\-]? digits)?;
+    // APL uses ¯ (high minus) for negative literals: ¯3.14 and ¯1.5e¯10
+    number = high_minus? digits ("." digits)? ([eE] ([+\-] | high_minus)? digits)?;
 
     // Numeric vector literals (ISO 13751)
     // Space-separated numbers: "1 2 3" → vector [1, 2, 3]
@@ -75,6 +124,10 @@ Lexer::Lexer(const char* input)
     greater_eq = "≥";    // U+2265
     and_sym = "∧";       // U+2227
     or_sym = "∨";        // U+2228
+    nand_sym = "⍲";      // U+2372
+    nor_sym = "⍱";       // U+2371
+    ceiling = "⌈";       // U+2308
+    floor_sym = "⌊";     // U+230A
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
@@ -127,8 +180,9 @@ Token Lexer::next_token() {
             while (p < cursor_ && idx < count) {
                 while (p < cursor_ && (*p == ' ' || *p == '\t')) p++;
                 if (p >= cursor_) break;
-                vec_data[idx++] = std::atof(p);
+                const char* num_start = p;
                 while (p < cursor_ && *p != ' ' && *p != '\t') p++;
+                vec_data[idx++] = parse_apl_number(num_start, p);
             }
 
             column_ += (cursor_ - token_start);
@@ -137,7 +191,7 @@ Token Lexer::next_token() {
 
         // Single number
         number {
-            double num = std::atof(token_start);
+            double num = parse_apl_number(token_start, cursor_);
             column_ += (cursor_ - token_start);
             return Token(num, token_line, token_column);
         }
@@ -240,6 +294,10 @@ Token Lexer::next_token() {
         greater_eq { column_++; return Token(TOK_GREATER_EQUAL, token_line, token_column); }
         and_sym { column_++; return Token(TOK_AND, token_line, token_column); }
         or_sym { column_++; return Token(TOK_OR, token_line, token_column); }
+        nand_sym { column_++; return Token(TOK_NAND, token_line, token_column); }
+        nor_sym { column_++; return Token(TOK_NOR, token_line, token_column); }
+        ceiling { column_++; return Token(TOK_CEILING, token_line, token_column); }
+        floor_sym { column_++; return Token(TOK_FLOOR, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }

@@ -21,6 +21,13 @@ PrimitiveFn prim_less      = { "<", nullptr, fn_less };
 PrimitiveFn prim_greater   = { ">", nullptr, fn_greater };
 PrimitiveFn prim_less_eq   = { "≤", nullptr, fn_less_eq };
 PrimitiveFn prim_greater_eq = { "≥", nullptr, fn_greater_eq };
+PrimitiveFn prim_ceiling   = { "⌈", fn_ceiling, fn_maximum };
+PrimitiveFn prim_floor     = { "⌊", fn_floor, fn_minimum };
+PrimitiveFn prim_and       = { "∧", nullptr, fn_and };
+PrimitiveFn prim_or        = { "∨", nullptr, fn_or };
+PrimitiveFn prim_not       = { "~", fn_not, nullptr };
+PrimitiveFn prim_nand      = { "⍲", nullptr, fn_nand };
+PrimitiveFn prim_nor       = { "⍱", nullptr, fn_nor };
 
 // Array operation primitives
 PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
@@ -654,6 +661,389 @@ void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
         result(i) = (lmat->data()[i] >= rmat->data()[i]) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// ============================================================================
+// Min/Max Functions (⌈ ⌊)
+// ============================================================================
+
+// Maximum (⌈) - dyadic
+void fn_maximum(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(std::max(lhs->data.scalar, rhs->data.scalar));
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result = rmat->array().max(lhs->data.scalar);
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result = lmat->array().max(rhs->data.scalar);
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in maximum"));
+        return;
+    }
+
+    Eigen::MatrixXd result = lmat->array().max(rmat->array());
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Minimum (⌊) - dyadic
+void fn_minimum(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(std::min(lhs->data.scalar, rhs->data.scalar));
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result = rmat->array().min(lhs->data.scalar);
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result = lmat->array().min(rhs->data.scalar);
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in minimum"));
+        return;
+    }
+
+    Eigen::MatrixXd result = lmat->array().min(rmat->array());
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Ceiling (⌈) - monadic
+void fn_ceiling(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(std::ceil(omega->data.scalar));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result = mat->array().ceil();
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Floor (⌊) - monadic
+void fn_floor(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(std::floor(omega->data.scalar));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result = mat->array().floor();
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// ============================================================================
+// Logical Functions (∧ ∨ ~ ⍲ ⍱)
+// ============================================================================
+
+// And (∧) - dyadic
+// For booleans: logical AND
+// For integers: LCM (Least Common Multiple) - not implemented yet
+void fn_and(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        // Boolean interpretation: both non-zero
+        double result = (lhs->data.scalar != 0.0 && rhs->data.scalar != 0.0) ? 1.0 : 0.0;
+        m->result = m->heap->allocate_scalar(result);
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar != 0.0 && rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] != 0.0 && rhs->data.scalar != 0.0) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in and"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] != 0.0 && rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Or (∨) - dyadic
+// For booleans: logical OR
+// For integers: GCD (Greatest Common Divisor) - not implemented yet
+void fn_or(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        double result = (lhs->data.scalar != 0.0 || rhs->data.scalar != 0.0) ? 1.0 : 0.0;
+        m->result = m->heap->allocate_scalar(result);
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar != 0.0 || rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] != 0.0 || rhs->data.scalar != 0.0) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in or"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] != 0.0 || rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Not (~) - monadic
+void fn_not(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(omega->data.scalar == 0.0 ? 1.0 : 0.0);
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    for (int i = 0; i < mat->size(); ++i) {
+        result(i) = (mat->data()[i] == 0.0) ? 1.0 : 0.0;
+    }
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Nand (⍲) - dyadic
+void fn_nand(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        double result = (lhs->data.scalar != 0.0 && rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+        m->result = m->heap->allocate_scalar(result);
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar != 0.0 && rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] != 0.0 && rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in nand"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] != 0.0 && rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Nor (⍱) - dyadic
+void fn_nor(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        double result = (lhs->data.scalar != 0.0 || rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+        m->result = m->heap->allocate_scalar(result);
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar != 0.0 || rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] != 0.0 || rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in nor"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] != 0.0 || rmat->data()[i] != 0.0) ? 0.0 : 1.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {

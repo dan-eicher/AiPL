@@ -41,6 +41,10 @@ const char* token_type_name(TokenType type) {
         case TOK_AND: return "∧";
         case TOK_OR: return "∨";
         case TOK_NOT: return "~";
+        case TOK_NAND: return "⍲";
+        case TOK_NOR: return "⍱";
+        case TOK_CEILING: return "⌈";
+        case TOK_FLOOR: return "⌊";
         case TOK_ASSIGN: return "←";
         case TOK_LPAREN: return "(";
         case TOK_RPAREN: return ")";

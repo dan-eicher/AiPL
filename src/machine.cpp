@@ -34,6 +34,13 @@ void Machine::init_globals() {
     env->define(">", heap->allocate_primitive(&prim_greater));
     env->define("≤", heap->allocate_primitive(&prim_less_eq));
     env->define("≥", heap->allocate_primitive(&prim_greater_eq));
+    env->define("⌈", heap->allocate_primitive(&prim_ceiling));
+    env->define("⌊", heap->allocate_primitive(&prim_floor));
+    env->define("∧", heap->allocate_primitive(&prim_and));
+    env->define("∨", heap->allocate_primitive(&prim_or));
+    env->define("~", heap->allocate_primitive(&prim_not));
+    env->define("⍲", heap->allocate_primitive(&prim_nand));
+    env->define("⍱", heap->allocate_primitive(&prim_nor));
 
     // Array operations
     env->define("⍴", heap->allocate_primitive(&prim_rho));

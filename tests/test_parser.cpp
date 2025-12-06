@@ -1621,6 +1621,273 @@ TEST_F(ParserTest, ComparisonInExpression) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
+// ============================================================================
+// Min/Max Tests (⌈ ⌊)
+// ============================================================================
+
+TEST_F(ParserTest, CeilingMonadic) {
+    Continuation* k = parser->parse("⌈ 3.2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+}
+
+TEST_F(ParserTest, CeilingMonadicNegative) {
+    Continuation* k = parser->parse("⌈ ¯3.2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -3.0);
+}
+
+TEST_F(ParserTest, FloorMonadic) {
+    Continuation* k = parser->parse("⌊ 3.7");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(ParserTest, FloorMonadicNegative) {
+    Continuation* k = parser->parse("⌊ ¯3.2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -4.0);
+}
+
+TEST_F(ParserTest, MaximumDyadic) {
+    Continuation* k = parser->parse("3 ⌈ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(ParserTest, MinimumDyadic) {
+    Continuation* k = parser->parse("3 ⌊ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(ParserTest, MaximumDyadicVector) {
+    Continuation* k = parser->parse("1 5 3 ⌈ 4 2 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 4.0);  // max(1,4)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 5.0);  // max(5,2)
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 6.0);  // max(3,6)
+}
+
+TEST_F(ParserTest, MinimumDyadicVector) {
+    Continuation* k = parser->parse("1 5 3 ⌊ 4 2 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // min(1,4)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);  // min(5,2)
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);  // min(3,6)
+}
+
+// ============================================================================
+// Logical Function Tests (∧ ∨ ~ ⍲ ⍱)
+// ============================================================================
+
+TEST_F(ParserTest, AndDyadicTrue) {
+    Continuation* k = parser->parse("1 ∧ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, AndDyadicFalse) {
+    Continuation* k = parser->parse("1 ∧ 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, OrDyadicTrue) {
+    Continuation* k = parser->parse("0 ∨ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, OrDyadicFalse) {
+    Continuation* k = parser->parse("0 ∨ 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, NotMonadicTrue) {
+    Continuation* k = parser->parse("~ 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, NotMonadicFalse) {
+    Continuation* k = parser->parse("~ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, NotMonadicVector) {
+    Continuation* k = parser->parse("~ 1 0 1 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);
+}
+
+TEST_F(ParserTest, NandDyadic) {
+    // 1 ⍲ 1 = 0 (not (1 and 1))
+    Continuation* k = parser->parse("1 ⍲ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, NandDyadicTrue) {
+    // 1 ⍲ 0 = 1 (not (1 and 0))
+    Continuation* k = parser->parse("1 ⍲ 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, NorDyadic) {
+    // 0 ⍱ 0 = 1 (not (0 or 0))
+    Continuation* k = parser->parse("0 ⍱ 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, NorDyadicFalse) {
+    // 0 ⍱ 1 = 0 (not (0 or 1))
+    Continuation* k = parser->parse("0 ⍱ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, LogicalVectorAnd) {
+    Continuation* k = parser->parse("1 0 1 1 ∧ 1 1 0 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 1∧1
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 0∧1
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // 1∧0
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);  // 1∧1
+}
+
+TEST_F(ParserTest, LogicalVectorOr) {
+    Continuation* k = parser->parse("1 0 0 1 ∨ 0 0 1 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 1∨0
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 0∨0
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // 0∨1
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);  // 1∨1
+}
+
+// Test logical operations in expressions
+TEST_F(ParserTest, LogicalExpression) {
+    // Count where both conditions are true
+    // (⍳5) gives 0 1 2 3 4
+    // > 1 gives 0 0 1 1 1
+    // < 4 gives 1 1 1 1 0
+    // ∧ gives 0 0 1 1 0
+    // +/ gives 2
+    Continuation* k = parser->parse("+/ ((⍳5) > 1) ∧ ((⍳5) < 4)");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

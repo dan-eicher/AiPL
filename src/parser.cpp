@@ -178,6 +178,13 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_LESS_EQUAL:
                 case TOK_GREATER:
                 case TOK_GREATER_EQUAL:
+                case TOK_CEILING:
+                case TOK_FLOOR:
+                case TOK_AND:
+                case TOK_OR:
+                case TOK_NOT:
+                case TOK_NAND:
+                case TOK_NOR:
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -263,7 +270,14 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_LESS:
         case TOK_LESS_EQUAL:
         case TOK_GREATER:
-        case TOK_GREATER_EQUAL: {
+        case TOK_GREATER_EQUAL:
+        case TOK_CEILING:
+        case TOK_FLOOR:
+        case TOK_AND:
+        case TOK_OR:
+        case TOK_NOT:
+        case TOK_NAND:
+        case TOK_NOR: {
             // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
             // They are NOT special monadic operators in the grammar
             // Monadic behavior emerges from juxtaposition + runtime semantics
@@ -285,6 +299,13 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_LESS_EQUAL:    op_name = "≤"; break;
                 case TOK_GREATER:       op_name = ">"; break;
                 case TOK_GREATER_EQUAL: op_name = "≥"; break;
+                case TOK_CEILING:       op_name = "⌈"; break;
+                case TOK_FLOOR:         op_name = "⌊"; break;
+                case TOK_AND:           op_name = "∧"; break;
+                case TOK_OR:            op_name = "∨"; break;
+                case TOK_NOT:           op_name = "~"; break;
+                case TOK_NAND:          op_name = "⍲"; break;
+                case TOK_NOR:           op_name = "⍱"; break;
                 default: break;
             }
 
