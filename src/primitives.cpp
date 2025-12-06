@@ -28,6 +28,9 @@ PrimitiveFn prim_or        = { "∨", nullptr, fn_or };
 PrimitiveFn prim_not       = { "~", fn_not, nullptr };
 PrimitiveFn prim_nand      = { "⍲", nullptr, fn_nand };
 PrimitiveFn prim_nor       = { "⍱", nullptr, fn_nor };
+PrimitiveFn prim_stile     = { "|", fn_magnitude, fn_residue };
+PrimitiveFn prim_log       = { "⍟", fn_natural_log, fn_logarithm };
+PrimitiveFn prim_factorial = { "!", fn_factorial, fn_binomial };
 
 // Array operation primitives
 PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
@@ -1044,6 +1047,252 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
         result(i) = (lmat->data()[i] != 0.0 || rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// ============================================================================
+// Arithmetic Extension Functions (| ⍟ !)
+// ============================================================================
+
+// Magnitude (|) - monadic (absolute value)
+void fn_magnitude(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(std::abs(omega->data.scalar));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result = mat->array().abs();
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Residue (|) - dyadic (modulo: lhs | rhs means rhs mod lhs)
+// APL semantics: A|B gives the remainder when B is divided by A
+// Result has the same sign as A (or 0)
+void fn_residue(Machine* m, Value* lhs, Value* rhs) {
+    auto residue = [](double a, double b) -> double {
+        if (a == 0.0) return b;  // 0|B = B
+        double r = std::fmod(b, a);
+        // Adjust sign to match divisor (APL semantics)
+        if (r != 0.0 && ((a > 0.0) != (r > 0.0))) {
+            r += a;
+        }
+        return r;
+    };
+
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(residue(lhs->data.scalar, rhs->data.scalar));
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = residue(lhs->data.scalar, rmat->data()[i]);
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = residue(lmat->data()[i], rhs->data.scalar);
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in residue"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = residue(lmat->data()[i], rmat->data()[i]);
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Natural Logarithm (⍟) - monadic
+void fn_natural_log(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(std::log(omega->data.scalar));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result = mat->array().log();
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Logarithm (⍟) - dyadic (lhs ⍟ rhs = log base lhs of rhs)
+void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
+    // log_a(b) = ln(b) / ln(a)
+    auto log_base = [](double base, double val) -> double {
+        return std::log(val) / std::log(base);
+    };
+
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(log_base(lhs->data.scalar, rhs->data.scalar));
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        double ln_base = std::log(lhs->data.scalar);
+        Eigen::MatrixXd result = rmat->array().log() / ln_base;
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        double ln_val = std::log(rhs->data.scalar);
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = ln_val / std::log(lmat->data()[i]);
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in logarithm"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = log_base(lmat->data()[i], rmat->data()[i]);
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Factorial (!) - monadic
+// Uses gamma function: n! = gamma(n+1)
+void fn_factorial(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(std::tgamma(omega->data.scalar + 1.0));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    for (int i = 0; i < mat->size(); ++i) {
+        result(i) = std::tgamma(mat->data()[i] + 1.0);
+    }
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Binomial (!) - dyadic (lhs ! rhs = "rhs choose lhs" = C(rhs, lhs))
+// Uses gamma function: C(n,k) = n! / (k! * (n-k)!) = gamma(n+1) / (gamma(k+1) * gamma(n-k+1))
+void fn_binomial(Machine* m, Value* lhs, Value* rhs) {
+    auto binomial = [](double k, double n) -> double {
+        // C(n,k) using gamma function for generalized binomial
+        return std::tgamma(n + 1.0) / (std::tgamma(k + 1.0) * std::tgamma(n - k + 1.0));
+    };
+
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(binomial(lhs->data.scalar, rhs->data.scalar));
+        return;
+    }
+
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = binomial(lhs->data.scalar, rmat->data()[i]);
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = binomial(lmat->data()[i], rhs->data.scalar);
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in binomial"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = binomial(lmat->data()[i], rmat->data()[i]);
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {

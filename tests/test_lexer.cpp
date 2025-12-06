@@ -192,6 +192,15 @@ TEST_F(LexerTest, LogicalOperators) {
     EXPECT_EQ(tokens[2].type, TOK_NOT);
 }
 
+// Test arithmetic extension operators
+TEST_F(LexerTest, ArithmeticExtensionOperators) {
+    auto tokens = tokenize("| ⍟ !");
+
+    EXPECT_EQ(tokens[0].type, TOK_STILE);
+    EXPECT_EQ(tokens[1].type, TOK_LOG);
+    EXPECT_EQ(tokens[2].type, TOK_FACTORIAL);
+}
+
 // Test outer product
 TEST_F(LexerTest, OuterProduct) {
     auto tokens = tokenize("∘.×");

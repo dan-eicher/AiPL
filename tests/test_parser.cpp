@@ -1888,6 +1888,225 @@ TEST_F(ParserTest, LogicalExpression) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
 }
 
+// ============================================================================
+// Arithmetic Extension Tests (| ⍟ !)
+// ============================================================================
+
+// Magnitude (|) tests
+TEST_F(ParserTest, MagnitudeMonadic) {
+    Continuation* k = parser->parse("| ¯5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(ParserTest, MagnitudePositive) {
+    Continuation* k = parser->parse("| 3.5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.5);
+}
+
+TEST_F(ParserTest, MagnitudeVector) {
+    Continuation* k = parser->parse("| ¯1 2 ¯3 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+}
+
+// Residue (|) tests - APL: A|B means B mod A
+TEST_F(ParserTest, ResidueDyadic) {
+    // 3|7 = 1 (7 mod 3)
+    Continuation* k = parser->parse("3 | 7");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, ResidueZeroDivisor) {
+    // 0|5 = 5 (special case)
+    Continuation* k = parser->parse("0 | 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(ParserTest, ResidueVector) {
+    // 3| 0 1 2 3 4 5 6 = 0 1 2 0 1 2 0
+    Continuation* k = parser->parse("3 | 0 1 2 3 4 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 7);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(5, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(6, 0), 0.0);
+}
+
+// Natural Log (⍟) tests
+TEST_F(ParserTest, NaturalLogMonadic) {
+    // ⍟ e ≈ 1
+    Continuation* k = parser->parse("⍟ 2.718281828");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), 1.0, 1e-6);
+}
+
+TEST_F(ParserTest, NaturalLogOne) {
+    // ⍟ 1 = 0
+    Continuation* k = parser->parse("⍟ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// Logarithm (⍟) dyadic tests
+TEST_F(ParserTest, LogarithmDyadic) {
+    // 10 ⍟ 100 = 2 (log base 10 of 100)
+    Continuation* k = parser->parse("10 ⍟ 100");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), 2.0, 1e-10);
+}
+
+TEST_F(ParserTest, LogarithmBase2) {
+    // 2 ⍟ 8 = 3 (log base 2 of 8)
+    Continuation* k = parser->parse("2 ⍟ 8");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), 3.0, 1e-10);
+}
+
+// Factorial (!) tests
+TEST_F(ParserTest, FactorialMonadic) {
+    // !5 = 120
+    Continuation* k = parser->parse("! 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 120.0);
+}
+
+TEST_F(ParserTest, FactorialZero) {
+    // !0 = 1
+    Continuation* k = parser->parse("! 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, FactorialVector) {
+    // ! 0 1 2 3 4 = 1 1 2 6 24
+    Continuation* k = parser->parse("! 0 1 2 3 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 24.0);
+}
+
+// Binomial (!) dyadic tests - k!n = C(n,k) = "n choose k"
+TEST_F(ParserTest, BinomialDyadic) {
+    // 2!5 = C(5,2) = 10
+    Continuation* k = parser->parse("2 ! 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(ParserTest, BinomialZero) {
+    // 0!n = 1 for any n
+    Continuation* k = parser->parse("0 ! 7");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, BinomialSame) {
+    // n!n = 1
+    Continuation* k = parser->parse("5 ! 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, BinomialPascalsRow) {
+    // 0 1 2 3 4 ! 4 = 1 4 6 4 1 (row 4 of Pascal's triangle)
+    Continuation* k = parser->parse("(0 1 2 3 4) ! 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 1.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

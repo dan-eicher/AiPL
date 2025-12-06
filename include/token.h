@@ -62,6 +62,11 @@ enum TokenType {
     TOK_CEILING,        // ⌈
     TOK_FLOOR,          // ⌊
 
+    // Arithmetic extensions
+    TOK_STILE,          // | (magnitude/residue)
+    TOK_LOG,            // ⍟ (logarithm)
+    TOK_FACTORIAL,      // ! (factorial/binomial)
+
     // Structural
     TOK_ASSIGN,         // ←
     TOK_LPAREN,         // (

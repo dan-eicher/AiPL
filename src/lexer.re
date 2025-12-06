@@ -128,6 +128,7 @@ Lexer::Lexer(const char* input)
     nor_sym = "⍱";       // U+2371
     ceiling = "⌈";       // U+2308
     floor_sym = "⌊";     // U+230A
+    log_sym = "⍟";       // U+235F
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
@@ -298,6 +299,9 @@ Token Lexer::next_token() {
         nor_sym { column_++; return Token(TOK_NOR, token_line, token_column); }
         ceiling { column_++; return Token(TOK_CEILING, token_line, token_column); }
         floor_sym { column_++; return Token(TOK_FLOOR, token_line, token_column); }
+        log_sym { column_++; return Token(TOK_LOG, token_line, token_column); }
+        "|" { column_++; return Token(TOK_STILE, token_line, token_column); }
+        "!" { column_++; return Token(TOK_FACTORIAL, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }

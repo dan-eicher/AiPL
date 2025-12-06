@@ -41,6 +41,9 @@ void Machine::init_globals() {
     env->define("~", heap->allocate_primitive(&prim_not));
     env->define("⍲", heap->allocate_primitive(&prim_nand));
     env->define("⍱", heap->allocate_primitive(&prim_nor));
+    env->define("|", heap->allocate_primitive(&prim_stile));
+    env->define("⍟", heap->allocate_primitive(&prim_log));
+    env->define("!", heap->allocate_primitive(&prim_factorial));
 
     // Array operations
     env->define("⍴", heap->allocate_primitive(&prim_rho));

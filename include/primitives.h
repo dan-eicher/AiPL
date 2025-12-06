@@ -21,6 +21,9 @@ void fn_exponential(Machine* m, Value* omega);   // * monadic (exponential e^x)
 void fn_ceiling(Machine* m, Value* omega);       // ⌈ monadic (ceiling)
 void fn_floor(Machine* m, Value* omega);         // ⌊ monadic (floor)
 void fn_not(Machine* m, Value* omega);           // ~ monadic (not)
+void fn_magnitude(Machine* m, Value* omega);     // | monadic (absolute value)
+void fn_natural_log(Machine* m, Value* omega);   // ⍟ monadic (natural logarithm)
+void fn_factorial(Machine* m, Value* omega);     // ! monadic (factorial)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -40,6 +43,9 @@ void fn_and(Machine* m, Value* lhs, Value* rhs);       // ∧ dyadic (and/lcm)
 void fn_or(Machine* m, Value* lhs, Value* rhs);        // ∨ dyadic (or/gcd)
 void fn_nand(Machine* m, Value* lhs, Value* rhs);      // ⍲ dyadic (nand)
 void fn_nor(Machine* m, Value* lhs, Value* rhs);       // ⍱ dyadic (nor)
+void fn_residue(Machine* m, Value* lhs, Value* rhs);   // | dyadic (modulo/residue)
+void fn_logarithm(Machine* m, Value* lhs, Value* rhs); // ⍟ dyadic (logarithm base)
+void fn_binomial(Machine* m, Value* lhs, Value* rhs);  // ! dyadic (binomial/combinations)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -60,6 +66,9 @@ extern PrimitiveFn prim_or;        // ∨ symbol
 extern PrimitiveFn prim_not;       // ~ symbol
 extern PrimitiveFn prim_nand;      // ⍲ symbol
 extern PrimitiveFn prim_nor;       // ⍱ symbol
+extern PrimitiveFn prim_stile;     // | symbol (magnitude/residue)
+extern PrimitiveFn prim_log;       // ⍟ symbol (logarithm)
+extern PrimitiveFn prim_factorial; // ! symbol (factorial/binomial)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)
