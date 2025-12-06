@@ -1407,6 +1407,220 @@ TEST_F(ParserTest, DerivedOperatorCommuteDyadic) {
     EXPECT_NE(right_lit, nullptr) << "Inner right should be LiteralK(3)";
 }
 
+// ============================================================================
+// Comparison Operator Tests (≠ < > ≤ ≥)
+// ============================================================================
+
+TEST_F(ParserTest, NotEqualDyadicTrue) {
+    Continuation* k = parser->parse("5 ≠ 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≠3 is true
+}
+
+TEST_F(ParserTest, NotEqualDyadicFalse) {
+    Continuation* k = parser->parse("5 ≠ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5≠5 is false
+}
+
+TEST_F(ParserTest, NotEqualDyadicVector) {
+    Continuation* k = parser->parse("1 2 3 ≠ 1 5 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);  // 1≠1 false
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);  // 2≠5 true
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // 3≠3 false
+}
+
+TEST_F(ParserTest, LessThanDyadicTrue) {
+    Continuation* k = parser->parse("3 < 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 3<5 is true
+}
+
+TEST_F(ParserTest, LessThanDyadicFalse) {
+    Continuation* k = parser->parse("5 < 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5<3 is false
+}
+
+TEST_F(ParserTest, LessThanDyadicVector) {
+    Continuation* k = parser->parse("1 5 3 < 2 3 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 1<2 true
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 5<3 false
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // 3<3 false
+}
+
+TEST_F(ParserTest, GreaterThanDyadicTrue) {
+    Continuation* k = parser->parse("5 > 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5>3 is true
+}
+
+TEST_F(ParserTest, GreaterThanDyadicFalse) {
+    Continuation* k = parser->parse("3 > 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 3>5 is false
+}
+
+TEST_F(ParserTest, GreaterThanDyadicVector) {
+    Continuation* k = parser->parse("5 2 3 > 3 4 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 5>3 true
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 2>4 false
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // 3>3 false
+}
+
+TEST_F(ParserTest, LessOrEqualDyadicLess) {
+    Continuation* k = parser->parse("3 ≤ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 3≤5 is true
+}
+
+TEST_F(ParserTest, LessOrEqualDyadicEqual) {
+    Continuation* k = parser->parse("5 ≤ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≤5 is true
+}
+
+TEST_F(ParserTest, LessOrEqualDyadicFalse) {
+    Continuation* k = parser->parse("7 ≤ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 7≤5 is false
+}
+
+TEST_F(ParserTest, LessOrEqualDyadicVector) {
+    Continuation* k = parser->parse("1 5 3 ≤ 2 3 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 1≤2 true
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 5≤3 false
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // 3≤3 true
+}
+
+TEST_F(ParserTest, GreaterOrEqualDyadicGreater) {
+    Continuation* k = parser->parse("7 ≥ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 7≥5 is true
+}
+
+TEST_F(ParserTest, GreaterOrEqualDyadicEqual) {
+    Continuation* k = parser->parse("5 ≥ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≥5 is true
+}
+
+TEST_F(ParserTest, GreaterOrEqualDyadicFalse) {
+    Continuation* k = parser->parse("3 ≥ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 3≥5 is false
+}
+
+TEST_F(ParserTest, GreaterOrEqualDyadicVector) {
+    Continuation* k = parser->parse("5 2 3 ≥ 3 4 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 5≥3 true
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 2≥4 false
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // 3≥3 true
+}
+
+// Test comparisons in expressions
+TEST_F(ParserTest, ComparisonInExpression) {
+    // Count elements less than 3: +/ (⍳5) < 3
+    // ⍳5 = 0 1 2 3 4
+    // < 3 = 1 1 1 0 0
+    // +/ = 3
+    Continuation* k = parser->parse("+/ (⍳5) < 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

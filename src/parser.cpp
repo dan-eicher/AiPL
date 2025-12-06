@@ -173,6 +173,11 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_RAVEL:
                 case TOK_IOTA:
                 case TOK_EQUAL:
+                case TOK_NOT_EQUAL:
+                case TOK_LESS:
+                case TOK_LESS_EQUAL:
+                case TOK_GREATER:
+                case TOK_GREATER_EQUAL:
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -253,7 +258,12 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_RESHAPE:
         case TOK_RAVEL:
         case TOK_IOTA:
-        case TOK_EQUAL: {
+        case TOK_EQUAL:
+        case TOK_NOT_EQUAL:
+        case TOK_LESS:
+        case TOK_LESS_EQUAL:
+        case TOK_GREATER:
+        case TOK_GREATER_EQUAL: {
             // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
             // They are NOT special monadic operators in the grammar
             // Monadic behavior emerges from juxtaposition + runtime semantics
@@ -261,15 +271,20 @@ Continuation* Parser::nud(const Token& token) {
 
             const char* op_name = nullptr;
             switch (token.type) {
-                case TOK_PLUS:    op_name = "+"; break;
-                case TOK_MINUS:   op_name = "-"; break;
-                case TOK_TIMES:   op_name = "×"; break;
-                case TOK_POWER:   op_name = "*"; break;
-                case TOK_DIVIDE:  op_name = "÷"; break;
-                case TOK_RESHAPE: op_name = "⍴"; break;
-                case TOK_RAVEL:   op_name = ","; break;
-                case TOK_IOTA:    op_name = "⍳"; break;
-                case TOK_EQUAL:   op_name = "="; break;
+                case TOK_PLUS:          op_name = "+"; break;
+                case TOK_MINUS:         op_name = "-"; break;
+                case TOK_TIMES:         op_name = "×"; break;
+                case TOK_POWER:         op_name = "*"; break;
+                case TOK_DIVIDE:        op_name = "÷"; break;
+                case TOK_RESHAPE:       op_name = "⍴"; break;
+                case TOK_RAVEL:         op_name = ","; break;
+                case TOK_IOTA:          op_name = "⍳"; break;
+                case TOK_EQUAL:         op_name = "="; break;
+                case TOK_NOT_EQUAL:     op_name = "≠"; break;
+                case TOK_LESS:          op_name = "<"; break;
+                case TOK_LESS_EQUAL:    op_name = "≤"; break;
+                case TOK_GREATER:       op_name = ">"; break;
+                case TOK_GREATER_EQUAL: op_name = "≥"; break;
                 default: break;
             }
 

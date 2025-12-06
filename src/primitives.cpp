@@ -16,6 +16,11 @@ PrimitiveFn prim_times   = { "×", fn_signum, fn_multiply };
 PrimitiveFn prim_divide  = { "÷", fn_reciprocal, fn_divide };
 PrimitiveFn prim_star    = { "*", fn_exponential, fn_power };
 PrimitiveFn prim_equal   = { "=", nullptr, fn_equal };  // No monadic form for equals
+PrimitiveFn prim_not_equal = { "≠", nullptr, fn_not_equal };
+PrimitiveFn prim_less      = { "<", nullptr, fn_less };
+PrimitiveFn prim_greater   = { ">", nullptr, fn_greater };
+PrimitiveFn prim_less_eq   = { "≤", nullptr, fn_less_eq };
+PrimitiveFn prim_greater_eq = { "≥", nullptr, fn_greater_eq };
 
 // Array operation primitives
 PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
@@ -359,6 +364,296 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
         result(i) = (lmat->data()[i] == rmat->data()[i]) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Not Equal (≠)
+void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
+    // Fast path: scalar ≠ scalar
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(lhs->data.scalar != rhs->data.scalar ? 1.0 : 0.0);
+        return;
+    }
+
+    // Scalar extension
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar != rmat->data()[i]) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] != rhs->data.scalar) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    // Array ≠ Array: element-wise not equal
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in not-equal"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] != rmat->data()[i]) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Less Than (<)
+void fn_less(Machine* m, Value* lhs, Value* rhs) {
+    // Fast path: scalar < scalar
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(lhs->data.scalar < rhs->data.scalar ? 1.0 : 0.0);
+        return;
+    }
+
+    // Scalar extension
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar < rmat->data()[i]) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] < rhs->data.scalar) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    // Array < Array: element-wise less than
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in less-than"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] < rmat->data()[i]) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Greater Than (>)
+void fn_greater(Machine* m, Value* lhs, Value* rhs) {
+    // Fast path: scalar > scalar
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(lhs->data.scalar > rhs->data.scalar ? 1.0 : 0.0);
+        return;
+    }
+
+    // Scalar extension
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar > rmat->data()[i]) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] > rhs->data.scalar) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    // Array > Array: element-wise greater than
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in greater-than"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] > rmat->data()[i]) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Less Than or Equal (≤)
+void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
+    // Fast path: scalar ≤ scalar
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(lhs->data.scalar <= rhs->data.scalar ? 1.0 : 0.0);
+        return;
+    }
+
+    // Scalar extension
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar <= rmat->data()[i]) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] <= rhs->data.scalar) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    // Array ≤ Array: element-wise less than or equal
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in less-or-equal"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] <= rmat->data()[i]) ? 1.0 : 0.0;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Greater Than or Equal (≥)
+void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
+    // Fast path: scalar ≥ scalar
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(lhs->data.scalar >= rhs->data.scalar ? 1.0 : 0.0);
+        return;
+    }
+
+    // Scalar extension
+    if (lhs->is_scalar()) {
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = (lhs->data.scalar >= rmat->data()[i]) ? 1.0 : 0.0;
+        }
+        if (rhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = (lmat->data()[i] >= rhs->data.scalar) ? 1.0 : 0.0;
+        }
+        if (lhs->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    // Array ≥ Array: element-wise greater than or equal
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in greater-or-equal"));
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = (lmat->data()[i] >= rmat->data()[i]) ? 1.0 : 0.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {

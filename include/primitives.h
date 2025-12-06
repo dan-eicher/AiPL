@@ -26,6 +26,11 @@ void fn_multiply(Machine* m, Value* lhs, Value* rhs);  // × dyadic (multiplicat
 void fn_divide(Machine* m, Value* lhs, Value* rhs);    // ÷ dyadic (division)
 void fn_power(Machine* m, Value* lhs, Value* rhs);     // * dyadic (power)
 void fn_equal(Machine* m, Value* lhs, Value* rhs);     // = dyadic (equality)
+void fn_not_equal(Machine* m, Value* lhs, Value* rhs); // ≠ dyadic (not equal)
+void fn_less(Machine* m, Value* lhs, Value* rhs);      // < dyadic (less than)
+void fn_greater(Machine* m, Value* lhs, Value* rhs);   // > dyadic (greater than)
+void fn_less_eq(Machine* m, Value* lhs, Value* rhs);   // ≤ dyadic (less or equal)
+void fn_greater_eq(Machine* m, Value* lhs, Value* rhs);// ≥ dyadic (greater or equal)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -34,6 +39,11 @@ extern PrimitiveFn prim_times;     // × symbol
 extern PrimitiveFn prim_divide;    // ÷ symbol
 extern PrimitiveFn prim_star;      // * symbol
 extern PrimitiveFn prim_equal;     // = symbol
+extern PrimitiveFn prim_not_equal; // ≠ symbol
+extern PrimitiveFn prim_less;      // < symbol
+extern PrimitiveFn prim_greater;   // > symbol
+extern PrimitiveFn prim_less_eq;   // ≤ symbol
+extern PrimitiveFn prim_greater_eq;// ≥ symbol
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

@@ -29,6 +29,11 @@ void Machine::init_globals() {
     env->define("÷", heap->allocate_primitive(&prim_divide));
     env->define("*", heap->allocate_primitive(&prim_star));
     env->define("=", heap->allocate_primitive(&prim_equal));
+    env->define("≠", heap->allocate_primitive(&prim_not_equal));
+    env->define("<", heap->allocate_primitive(&prim_less));
+    env->define(">", heap->allocate_primitive(&prim_greater));
+    env->define("≤", heap->allocate_primitive(&prim_less_eq));
+    env->define("≥", heap->allocate_primitive(&prim_greater_eq));
 
     // Array operations
     env->define("⍴", heap->allocate_primitive(&prim_rho));

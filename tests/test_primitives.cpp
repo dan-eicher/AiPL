@@ -1408,3 +1408,341 @@ TEST_F(PrimitivesTest, DividePreservesVector) {
     ASSERT_TRUE(result->is_vector()) << "Vector ÷ Vector should produce vector";
 }
 
+// ============================================================================
+// Comparison Tests (≠ < > ≤ ≥)
+// ============================================================================
+
+TEST_F(PrimitivesTest, FnNotEqualScalarsDifferent) {
+    Value* a = machine->heap->allocate_scalar(5.0);
+    Value* b = machine->heap->allocate_scalar(3.0);
+    fn_not_equal(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≠3 is true
+}
+
+TEST_F(PrimitivesTest, FnNotEqualScalarsSame) {
+    Value* a = machine->heap->allocate_scalar(5.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_not_equal(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5≠5 is false
+}
+
+TEST_F(PrimitivesTest, FnNotEqualVectors) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 1.0, 2.0, 3.0;
+    v2 << 1.0, 5.0, 3.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_not_equal(machine, vec1, vec2);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);  // 1≠1 is false
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);  // 2≠5 is true
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);  // 3≠3 is false
+}
+
+TEST_F(PrimitivesTest, LessThanScalars) {
+    Value* a = machine->heap->allocate_scalar(3.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_less(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 3<5 is true
+}
+
+TEST_F(PrimitivesTest, LessThanScalarsFalse) {
+    Value* a = machine->heap->allocate_scalar(5.0);
+    Value* b = machine->heap->allocate_scalar(3.0);
+    fn_less(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5<3 is false
+}
+
+TEST_F(PrimitivesTest, LessThanScalarsEqual) {
+    Value* a = machine->heap->allocate_scalar(5.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_less(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5<5 is false
+}
+
+TEST_F(PrimitivesTest, LessThanVectors) {
+    Eigen::VectorXd v1(4), v2(4);
+    v1 << 1.0, 5.0, 3.0, 3.0;
+    v2 << 2.0, 3.0, 3.0, 4.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_less(machine, vec1, vec2);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 1<2 is true
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 5<3 is false
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);  // 3<3 is false
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);  // 3<4 is true
+}
+
+TEST_F(PrimitivesTest, GreaterThanScalars) {
+    Value* a = machine->heap->allocate_scalar(5.0);
+    Value* b = machine->heap->allocate_scalar(3.0);
+    fn_greater(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5>3 is true
+}
+
+TEST_F(PrimitivesTest, GreaterThanScalarsFalse) {
+    Value* a = machine->heap->allocate_scalar(3.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_greater(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 3>5 is false
+}
+
+TEST_F(PrimitivesTest, GreaterThanVectors) {
+    Eigen::VectorXd v1(4), v2(4);
+    v1 << 5.0, 2.0, 3.0, 4.0;
+    v2 << 3.0, 4.0, 3.0, 2.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_greater(machine, vec1, vec2);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 5>3 is true
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 2>4 is false
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);  // 3>3 is false
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);  // 4>2 is true
+}
+
+TEST_F(PrimitivesTest, LessOrEqualScalarsLess) {
+    Value* a = machine->heap->allocate_scalar(3.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_less_eq(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 3≤5 is true
+}
+
+TEST_F(PrimitivesTest, LessOrEqualScalarsEqual) {
+    Value* a = machine->heap->allocate_scalar(5.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_less_eq(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≤5 is true
+}
+
+TEST_F(PrimitivesTest, LessOrEqualScalarsFalse) {
+    Value* a = machine->heap->allocate_scalar(7.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_less_eq(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 7≤5 is false
+}
+
+TEST_F(PrimitivesTest, LessOrEqualVectors) {
+    Eigen::VectorXd v1(4), v2(4);
+    v1 << 1.0, 5.0, 3.0, 4.0;
+    v2 << 2.0, 3.0, 3.0, 5.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_less_eq(machine, vec1, vec2);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 1≤2 is true
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 5≤3 is false
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);  // 3≤3 is true
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);  // 4≤5 is true
+}
+
+TEST_F(PrimitivesTest, GreaterOrEqualScalarsGreater) {
+    Value* a = machine->heap->allocate_scalar(7.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_greater_eq(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 7≥5 is true
+}
+
+TEST_F(PrimitivesTest, GreaterOrEqualScalarsEqual) {
+    Value* a = machine->heap->allocate_scalar(5.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_greater_eq(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≥5 is true
+}
+
+TEST_F(PrimitivesTest, GreaterOrEqualScalarsFalse) {
+    Value* a = machine->heap->allocate_scalar(3.0);
+    Value* b = machine->heap->allocate_scalar(5.0);
+    fn_greater_eq(machine, a, b);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 3≥5 is false
+}
+
+TEST_F(PrimitivesTest, GreaterOrEqualVectors) {
+    Eigen::VectorXd v1(4), v2(4);
+    v1 << 5.0, 2.0, 3.0, 4.0;
+    v2 << 3.0, 4.0, 3.0, 2.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_greater_eq(machine, vec1, vec2);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 5≥3 is true
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 2≥4 is false
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);  // 3≥3 is true
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);  // 4≥2 is true
+}
+
+// Scalar extension tests for comparisons
+TEST_F(PrimitivesTest, LessThanScalarVector) {
+    Value* scalar = machine->heap->allocate_scalar(3.0);
+    Eigen::VectorXd v(4);
+    v << 1.0, 3.0, 5.0, 2.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_less(machine, scalar, vec);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);  // 3<1 is false
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 3<3 is false
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);  // 3<5 is true
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 0.0);  // 3<2 is false
+}
+
+TEST_F(PrimitivesTest, GreaterThanVectorScalar) {
+    Eigen::VectorXd v(4);
+    v << 1.0, 3.0, 5.0, 2.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* scalar = machine->heap->allocate_scalar(3.0);
+
+    fn_greater(machine, vec, scalar);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);  // 1>3 is false
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 3>3 is false
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);  // 5>3 is true
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 0.0);  // 2>3 is false
+}
+
+// Shape mismatch error tests for comparisons
+TEST_F(PrimitivesTest, ComparisonShapeMismatchError) {
+    Eigen::VectorXd v1(3), v2(4);
+    v1 << 1.0, 2.0, 3.0;
+    v2 << 1.0, 2.0, 3.0, 4.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_less(machine, vec1, vec2);
+    EXPECT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+    machine->kont_stack.clear();
+
+    fn_greater(machine, vec1, vec2);
+    EXPECT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+    machine->kont_stack.clear();
+
+    fn_less_eq(machine, vec1, vec2);
+    EXPECT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+    machine->kont_stack.clear();
+
+    fn_greater_eq(machine, vec1, vec2);
+    EXPECT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+    machine->kont_stack.clear();
+
+    fn_not_equal(machine, vec1, vec2);
+    EXPECT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// Vector status preservation tests for comparisons
+TEST_F(PrimitivesTest, ComparisonPreservesVector) {
+    Eigen::VectorXd v1(3), v2(3);
+    v1 << 1.0, 2.0, 3.0;
+    v2 << 2.0, 2.0, 2.0;
+    Value* vec1 = machine->heap->allocate_vector(v1);
+    Value* vec2 = machine->heap->allocate_vector(v2);
+
+    fn_less(machine, vec1, vec2);
+    ASSERT_TRUE(machine->result->is_vector()) << "< should preserve vector status";
+
+    fn_greater(machine, vec1, vec2);
+    ASSERT_TRUE(machine->result->is_vector()) << "> should preserve vector status";
+
+    fn_less_eq(machine, vec1, vec2);
+    ASSERT_TRUE(machine->result->is_vector()) << "≤ should preserve vector status";
+
+    fn_greater_eq(machine, vec1, vec2);
+    ASSERT_TRUE(machine->result->is_vector()) << "≥ should preserve vector status";
+
+    fn_not_equal(machine, vec1, vec2);
+    ASSERT_TRUE(machine->result->is_vector()) << "≠ should preserve vector status";
+}
+
+// Environment binding tests for new comparisons
+TEST_F(PrimitivesTest, ComparisonPrimitivesRegistered) {
+    Value* neq = machine->env->lookup("≠");
+    ASSERT_NE(neq, nullptr);
+    ASSERT_TRUE(neq->is_function());
+
+    Value* lt = machine->env->lookup("<");
+    ASSERT_NE(lt, nullptr);
+    ASSERT_TRUE(lt->is_function());
+
+    Value* gt = machine->env->lookup(">");
+    ASSERT_NE(gt, nullptr);
+    ASSERT_TRUE(gt->is_function());
+
+    Value* le = machine->env->lookup("≤");
+    ASSERT_NE(le, nullptr);
+    ASSERT_TRUE(le->is_function());
+
+    Value* ge = machine->env->lookup("≥");
+    ASSERT_NE(ge, nullptr);
+    ASSERT_TRUE(ge->is_function());
+}
+
