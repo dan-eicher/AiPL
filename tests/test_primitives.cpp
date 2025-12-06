@@ -810,20 +810,46 @@ TEST_F(PrimitivesTest, ErrorReciprocalVector) {
 
 }
 
-TEST_F(PrimitivesTest, ErrorReshapeIncompatibleSize) {
-    Eigen::VectorXd v(6);
-    v << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0;
+TEST_F(PrimitivesTest, ReshapeWithCycling) {
+    // APL reshape cycles through source data when target is larger
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    // Try to reshape 6 elements into 2×4 (needs 8 elements)
+    // Reshape 3 elements into 2×3 (needs 6 elements) - should cycle: 1,2,3,1,2,3
     Eigen::VectorXd shape(2);
-    shape << 2.0, 4.0;
+    shape << 2.0, 3.0;
+    Value* shape_val = machine->heap->allocate_vector(shape);
+
+    fn_reshape(machine, shape_val, vec);
+    EXPECT_EQ(machine->kont_stack.size(), 0);  // No error
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_matrix());
+    const Eigen::MatrixXd* mat = machine->result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    // Row 0: 1, 2, 3
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 3.0);
+    // Row 1: 1, 2, 3 (cycled)
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 3.0);
+}
+
+TEST_F(PrimitivesTest, ErrorReshapeEmptyToNonEmpty) {
+    // Cannot reshape empty array to non-empty shape
+    Eigen::VectorXd v(0);  // Empty vector
+    Value* vec = machine->heap->allocate_vector(v);
+
+    Eigen::VectorXd shape(1);
+    shape << 3.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
 
     fn_reshape(machine, shape_val, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
-
 }
 
 TEST_F(PrimitivesTest, ErrorReshapeNonIntegerShape) {

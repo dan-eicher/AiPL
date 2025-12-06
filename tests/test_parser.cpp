@@ -1889,6 +1889,531 @@ TEST_F(ParserTest, LogicalExpression) {
 }
 
 // ============================================================================
+// Comprehensive Basic Arithmetic Tests (+ - × ÷ *)
+// ============================================================================
+
+// Addition (+) comprehensive tests
+TEST_F(ParserTest, AdditionDyadicVectors) {
+    Continuation* k = parser->parse("1 2 3 + 4 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 9.0);
+}
+
+TEST_F(ParserTest, AdditionScalarExtensionLeft) {
+    Continuation* k = parser->parse("10 + 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 13.0);
+}
+
+TEST_F(ParserTest, AdditionScalarExtensionRight) {
+    Continuation* k = parser->parse("1 2 3 + 10");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 13.0);
+}
+
+TEST_F(ParserTest, IdentityMonadicVector) {
+    // Monadic + is identity/conjugate
+    Continuation* k = parser->parse("+ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+// Subtraction (-) comprehensive tests
+TEST_F(ParserTest, SubtractionDyadicVectors) {
+    Continuation* k = parser->parse("10 20 30 - 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 18.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 27.0);
+}
+
+TEST_F(ParserTest, SubtractionScalarExtension) {
+    Continuation* k = parser->parse("100 - 10 20 30");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 90.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 80.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 70.0);
+}
+
+TEST_F(ParserTest, NegationMonadicVector) {
+    Continuation* k = parser->parse("- 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), -3.0);
+}
+
+// Multiplication (×) comprehensive tests
+TEST_F(ParserTest, MultiplicationDyadicVectors) {
+    Continuation* k = parser->parse("2 3 4 × 5 6 7");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 18.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 28.0);
+}
+
+TEST_F(ParserTest, MultiplicationScalarExtension) {
+    Continuation* k = parser->parse("10 × 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 20.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 30.0);
+}
+
+TEST_F(ParserTest, SignumMonadicVector) {
+    // Monadic × is signum: -1, 0, or 1
+    Continuation* k = parser->parse("× ¯5 0 7");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);
+}
+
+// Division (÷) comprehensive tests
+TEST_F(ParserTest, DivisionDyadicVectors) {
+    Continuation* k = parser->parse("10 20 30 ÷ 2 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 6.0);
+}
+
+TEST_F(ParserTest, DivisionScalarExtension) {
+    Continuation* k = parser->parse("100 ÷ 2 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 50.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 25.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 20.0);
+}
+
+TEST_F(ParserTest, ReciprocalMonadicVector) {
+    // Monadic ÷ is reciprocal
+    Continuation* k = parser->parse("÷ 2 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.5);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.25);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.2);
+}
+
+// Power (*) comprehensive tests
+TEST_F(ParserTest, PowerDyadicVectors) {
+    Continuation* k = parser->parse("2 3 4 * 2 2 2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 16.0);
+}
+
+TEST_F(ParserTest, PowerScalarExtension) {
+    Continuation* k = parser->parse("2 * 1 2 3 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 8.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 16.0);
+}
+
+TEST_F(ParserTest, ExponentialMonadicVector) {
+    // Monadic * is e^x
+    Continuation* k = parser->parse("* 0 1 2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);                // e^0 = 1
+    EXPECT_NEAR((*vec)(1, 0), 2.718281828, 1e-6);       // e^1 ≈ 2.718
+    EXPECT_NEAR((*vec)(2, 0), 7.389056099, 1e-6);       // e^2 ≈ 7.389
+}
+
+// ============================================================================
+// Comprehensive Array Operation Tests (⍴ , ⍉ ⍳ ↑ ↓)
+// ============================================================================
+
+// Transpose (⍉) tests
+TEST_F(ParserTest, TransposeMatrix) {
+    // Create 2x3 matrix and transpose to 3x2
+    Continuation* k = parser->parse("⍉ 2 3 ⍴ 1 2 3 4 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 2);
+    // Original was: 1 2 3
+    //               4 5 6
+    // Transposed:   1 4
+    //               2 5
+    //               3 6
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 1), 6.0);
+}
+
+TEST_F(ParserTest, TransposeVector) {
+    // Transpose of vector is itself
+    Continuation* k = parser->parse("⍉ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+// Take (↑) tests
+TEST_F(ParserTest, TakePositive) {
+    // Take first 3 elements
+    Continuation* k = parser->parse("3 ↑ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+TEST_F(ParserTest, TakeNegative) {
+    // Take last 3 elements
+    Continuation* k = parser->parse("¯3 ↑ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);
+}
+
+TEST_F(ParserTest, TakeOverextend) {
+    // Take more than available - pads with zeros
+    Continuation* k = parser->parse("5 ↑ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 0.0);
+}
+
+// Drop (↓) tests
+TEST_F(ParserTest, DropPositive) {
+    // Drop first 2 elements
+    Continuation* k = parser->parse("2 ↓ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);
+}
+
+TEST_F(ParserTest, DropNegative) {
+    // Drop last 2 elements
+    Continuation* k = parser->parse("¯2 ↓ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+TEST_F(ParserTest, DropAll) {
+    // Drop more than available - empty result
+    Continuation* k = parser->parse("10 ↓ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 0);
+}
+
+// Iota (⍳) additional tests
+TEST_F(ParserTest, IotaZero) {
+    // ⍳0 gives empty vector
+    Continuation* k = parser->parse("⍳ 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 0);
+}
+
+TEST_F(ParserTest, IotaOne) {
+    // ⍳1 gives [0]
+    Continuation* k = parser->parse("⍳ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 1);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+}
+
+// Shape (⍴) additional tests
+TEST_F(ParserTest, ShapeScalar) {
+    // Shape of scalar is empty vector
+    Continuation* k = parser->parse("⍴ 42");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 0);
+}
+
+TEST_F(ParserTest, ShapeMatrix) {
+    // Shape of 2x3 matrix is [2, 3]
+    Continuation* k = parser->parse("⍴ 2 3 ⍴ ⍳ 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 2);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 3.0);
+}
+
+// Reshape (⍴) additional tests
+TEST_F(ParserTest, ReshapeWithCycling) {
+    // Reshape cycles data: 2 3 ⍴ 1 2 gives matrix with 1 2 1 2 1 2
+    Continuation* k = parser->parse("2 3 ⍴ 1 2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 2.0);
+}
+
+TEST_F(ParserTest, ReshapeToVector) {
+    // Single dimension reshape creates vector
+    Continuation* k = parser->parse("6 ⍴ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 6);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(5, 0), 3.0);
+}
+
+// Catenate (,) additional tests
+TEST_F(ParserTest, CatenateScalars) {
+    // Catenate two scalars creates a 2-element vector
+    Continuation* k = parser->parse("1 , 2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 2);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+}
+
+TEST_F(ParserTest, CatenateVectorScalar) {
+    // Catenate vector with scalar
+    Continuation* k = parser->parse("1 2 3 , 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+}
+
+// Ravel (,) additional tests
+TEST_F(ParserTest, RavelMatrix) {
+    // Ravel 2x3 matrix to 6-element vector
+    Continuation* k = parser->parse(", 2 3 ⍴ ⍳ 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 6);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(5, 0), 5.0);
+}
+
+TEST_F(ParserTest, RavelScalar) {
+    // Ravel scalar creates 1-element vector
+    Continuation* k = parser->parse(", 42");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 1);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 42.0);
+}
+
+// ============================================================================
 // Arithmetic Extension Tests (| ⍟ !)
 // ============================================================================
 

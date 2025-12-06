@@ -1314,8 +1314,12 @@ void fn_conjugate(Machine* m, Value* omega) {
         return;
     }
 
-    // For arrays, return a copy
-    m->result = m->heap->allocate_matrix(*omega->as_matrix());
+    // For arrays, return a copy preserving vector/matrix distinction
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(omega->as_matrix()->col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(*omega->as_matrix());
+    }
 }
 
 // Negation (-)
@@ -1515,9 +1519,9 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
         }
     }
 
-    // Validate: target size must match source size (no cycling/truncating for now)
-    if (target_size != static_cast<int>(source.size())) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: reshape size must match array size"));
+    // APL reshape cycles through source data; empty source with non-empty target is an error
+    if (source.size() == 0 && target_size > 0) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot reshape empty array to non-empty shape"));
         return;
     }
 
@@ -1586,10 +1590,8 @@ void fn_transpose(Machine* m, Value* omega) {
     }
 
     if (omega->is_vector()) {
-        // Vector transpose gives a 1×n matrix
-        const Eigen::MatrixXd* vec = omega->as_matrix();
-        Eigen::MatrixXd result = vec->transpose();
-        m->result = m->heap->allocate_matrix(result);
+        // Vector transpose is identity (returns vector unchanged)
+        m->result = m->heap->allocate_vector(omega->as_matrix()->col(0));
         return;
     }
 
