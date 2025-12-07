@@ -2399,7 +2399,7 @@ TEST_F(PrimitivesTest, ReverseRotateTallyRegistered) {
 // ============================================================================
 
 TEST_F(PrimitivesTest, IndexOfFound) {
-    // 1 2 3 4 5 ⍳ 3 → 2 (0-origin index)
+    // 1 2 3 4 5 ⍳ 3 → 3 (1-origin index per ISO 13751)
     Eigen::VectorXd haystack(5);
     haystack << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* lhs = machine->heap->allocate_vector(haystack);
@@ -2408,11 +2408,11 @@ TEST_F(PrimitivesTest, IndexOfFound) {
     fn_index_of(machine, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 2.0);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
 }
 
 TEST_F(PrimitivesTest, IndexOfNotFound) {
-    // 1 2 3 ⍳ 7 → 3 (not found = length of haystack)
+    // 1 2 3 ⍳ 7 → 4 (not found = 1 + length of haystack, per ISO 13751)
     Eigen::VectorXd haystack(3);
     haystack << 1.0, 2.0, 3.0;
     Value* lhs = machine->heap->allocate_vector(haystack);
@@ -2421,11 +2421,11 @@ TEST_F(PrimitivesTest, IndexOfNotFound) {
     fn_index_of(machine, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 4.0);
 }
 
 TEST_F(PrimitivesTest, IndexOfVector) {
-    // 10 20 30 40 ⍳ 30 20 99 → 2 1 4
+    // 10 20 30 40 ⍳ 30 20 99 → 3 2 5 (1-origin per ISO 13751)
     Eigen::VectorXd haystack(4);
     haystack << 10.0, 20.0, 30.0, 40.0;
     Eigen::VectorXd needles(3);
@@ -2437,20 +2437,20 @@ TEST_F(PrimitivesTest, IndexOfVector) {
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
-    EXPECT_DOUBLE_EQ((*res)(0, 0), 2.0);  // 30 found at index 2
-    EXPECT_DOUBLE_EQ((*res)(1, 0), 1.0);  // 20 found at index 1
-    EXPECT_DOUBLE_EQ((*res)(2, 0), 4.0);  // 99 not found → 4
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);  // 30 found at index 3 (1-origin)
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);  // 20 found at index 2 (1-origin)
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);  // 99 not found → 5 (1+length)
 }
 
 TEST_F(PrimitivesTest, IndexOfScalarHaystack) {
-    // 5 ⍳ 5 → 0 (found at index 0)
+    // 5 ⍳ 5 → 1 (found at index 1, 1-origin per ISO 13751)
     Value* lhs = machine->heap->allocate_scalar(5.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
 
     fn_index_of(machine, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
 TEST_F(PrimitivesTest, MemberOfFound) {
@@ -2537,7 +2537,7 @@ TEST_F(PrimitivesTest, SearchFunctionsRegistered) {
 // ============================================================================
 
 TEST_F(PrimitivesTest, GradeUpVector) {
-    // ⍋ 3 1 4 1 5 → 1 3 0 2 4 (indices for ascending order, 0-origin)
+    // ⍋ 3 1 4 1 5 → 2 4 1 3 5 (indices for ascending order, 1-origin per ISO 13751)
     Eigen::VectorXd v(5);
     v << 3.0, 1.0, 4.0, 1.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
@@ -2547,15 +2547,15 @@ TEST_F(PrimitivesTest, GradeUpVector) {
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 5);
-    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);  // 1 (value 1)
-    EXPECT_DOUBLE_EQ((*res)(1, 0), 3.0);  // 3 (value 1)
-    EXPECT_DOUBLE_EQ((*res)(2, 0), 0.0);  // 0 (value 3)
-    EXPECT_DOUBLE_EQ((*res)(3, 0), 2.0);  // 2 (value 4)
-    EXPECT_DOUBLE_EQ((*res)(4, 0), 4.0);  // 4 (value 5)
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 2.0);  // index 2 (value 1)
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);  // index 4 (value 1)
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);  // index 1 (value 3)
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 3.0);  // index 3 (value 4)
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 5.0);  // index 5 (value 5)
 }
 
 TEST_F(PrimitivesTest, GradeDownVector) {
-    // ⍒ 3 1 4 1 5 → 4 2 0 1 3 (indices for descending order, 0-origin)
+    // ⍒ 3 1 4 1 5 → 5 3 1 2 4 (indices for descending order, 1-origin per ISO 13751)
     Eigen::VectorXd v(5);
     v << 3.0, 1.0, 4.0, 1.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
@@ -2565,35 +2565,35 @@ TEST_F(PrimitivesTest, GradeDownVector) {
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 5);
-    EXPECT_DOUBLE_EQ((*res)(0, 0), 4.0);  // 4 (value 5)
-    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);  // 2 (value 4)
-    EXPECT_DOUBLE_EQ((*res)(2, 0), 0.0);  // 0 (value 3)
-    EXPECT_DOUBLE_EQ((*res)(3, 0), 1.0);  // 1 (value 1)
-    EXPECT_DOUBLE_EQ((*res)(4, 0), 3.0);  // 3 (value 1)
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 5.0);  // index 5 (value 5)
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 3.0);  // index 3 (value 4)
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);  // index 1 (value 3)
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 2.0);  // index 2 (value 1)
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 4.0);  // index 4 (value 1)
 }
 
 TEST_F(PrimitivesTest, GradeUpScalar) {
-    // ⍋ 5 → 0 (single element)
+    // ⍋ 5 → 1 (single element, 1-origin)
     Value* scalar = machine->heap->allocate_scalar(5.0);
 
     fn_grade_up(machine, scalar);
 
     ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
 TEST_F(PrimitivesTest, GradeDownScalar) {
-    // ⍒ 5 → 0 (single element)
+    // ⍒ 5 → 1 (single element, 1-origin)
     Value* scalar = machine->heap->allocate_scalar(5.0);
 
     fn_grade_down(machine, scalar);
 
     ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
 TEST_F(PrimitivesTest, GradeUpAlreadySorted) {
-    // ⍋ 1 2 3 4 5 → 0 1 2 3 4
+    // ⍋ 1 2 3 4 5 → 1 2 3 4 5 (1-origin)
     Eigen::VectorXd v(5);
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
@@ -2603,12 +2603,12 @@ TEST_F(PrimitivesTest, GradeUpAlreadySorted) {
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     for (int i = 0; i < 5; ++i) {
-        EXPECT_DOUBLE_EQ((*res)(i, 0), static_cast<double>(i));
+        EXPECT_DOUBLE_EQ((*res)(i, 0), static_cast<double>(i + 1));
     }
 }
 
 TEST_F(PrimitivesTest, GradeDownReversed) {
-    // ⍒ 1 2 3 4 5 → 4 3 2 1 0
+    // ⍒ 1 2 3 4 5 → 5 4 3 2 1 (1-origin)
     Eigen::VectorXd v(5);
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
@@ -2618,7 +2618,7 @@ TEST_F(PrimitivesTest, GradeDownReversed) {
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     for (int i = 0; i < 5; ++i) {
-        EXPECT_DOUBLE_EQ((*res)(i, 0), static_cast<double>(4 - i));
+        EXPECT_DOUBLE_EQ((*res)(i, 0), static_cast<double>(5 - i));
     }
 }
 
@@ -3794,40 +3794,40 @@ TEST_F(PrimitivesTest, SquadZeroIndexError) {
 // ============================================================================
 
 TEST_F(PrimitivesTest, SquadStringScalarIndex) {
-    // 'hello'[2] → 'e'
+    // 'hello'[2] → 101 (ASCII 'e')
     Value* str = machine->heap->allocate_string("hello");
     Value* idx = machine->heap->allocate_scalar(2.0);
 
     fn_squad(machine, str, idx);
 
-    ASSERT_EQ(machine->result->tag, ValueType::STRING);
-    EXPECT_STREQ(machine->result->data.string, "e");
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 101.0);  // 'e'
 }
 
 TEST_F(PrimitivesTest, SquadStringFirstChar) {
-    // 'hello'[1] → 'h'
+    // 'hello'[1] → 104 (ASCII 'h')
     Value* str = machine->heap->allocate_string("hello");
     Value* idx = machine->heap->allocate_scalar(1.0);
 
     fn_squad(machine, str, idx);
 
-    ASSERT_EQ(machine->result->tag, ValueType::STRING);
-    EXPECT_STREQ(machine->result->data.string, "h");
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 104.0);  // 'h'
 }
 
 TEST_F(PrimitivesTest, SquadStringLastChar) {
-    // 'hello'[5] → 'o'
+    // 'hello'[5] → 111 (ASCII 'o')
     Value* str = machine->heap->allocate_string("hello");
     Value* idx = machine->heap->allocate_scalar(5.0);
 
     fn_squad(machine, str, idx);
 
-    ASSERT_EQ(machine->result->tag, ValueType::STRING);
-    EXPECT_STREQ(machine->result->data.string, "o");
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 111.0);  // 'o'
 }
 
 TEST_F(PrimitivesTest, SquadStringVectorIndex) {
-    // 'hello'[1 3 5] → 'hlo'
+    // 'hello'[1 3 5] → 104 108 111 (ASCII for 'hlo')
     Value* str = machine->heap->allocate_string("hello");
     Eigen::VectorXd idx_v(3);
     idx_v << 1.0, 3.0, 5.0;
@@ -3835,8 +3835,12 @@ TEST_F(PrimitivesTest, SquadStringVectorIndex) {
 
     fn_squad(machine, str, idx);
 
-    ASSERT_EQ(machine->result->tag, ValueType::STRING);
-    EXPECT_STREQ(machine->result->data.string, "hlo");
+    ASSERT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->size(), 3);
+    auto* mat = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 104.0);  // 'h'
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 108.0);  // 'l'
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 111.0);  // 'o'
 }
 
 TEST_F(PrimitivesTest, SquadStringOutOfBoundsError) {
@@ -3891,19 +3895,25 @@ TEST_F(PrimitivesTest, BracketIndexVariable) {
 }
 
 TEST_F(PrimitivesTest, BracketIndexString) {
-    // 'hello'[2] → 'e'
+    // 'hello'[2] → 101 (ASCII 'e')
     Value* result = machine->eval("'hello'[2]");
     ASSERT_NE(result, nullptr);
-    ASSERT_EQ(result->tag, ValueType::STRING);
-    EXPECT_STREQ(result->data.string, "e");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 101.0);  // 'e'
 }
 
 TEST_F(PrimitivesTest, BracketIndexStringMultiple) {
-    // 'abcde'[5 4 3 2 1] → 'edcba'
+    // 'abcde'[5 4 3 2 1] → 101 100 99 98 97 (ASCII for 'edcba')
     Value* result = machine->eval("'abcde'[5 4 3 2 1]");
     ASSERT_NE(result, nullptr);
-    ASSERT_EQ(result->tag, ValueType::STRING);
-    EXPECT_STREQ(result->data.string, "edcba");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 101.0);  // 'e'
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 100.0);  // 'd'
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 99.0);   // 'c'
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 98.0);   // 'b'
+    EXPECT_DOUBLE_EQ((*mat)(4, 0), 97.0);   // 'a'
 }
 
 TEST_F(PrimitivesTest, BracketIndexChained) {

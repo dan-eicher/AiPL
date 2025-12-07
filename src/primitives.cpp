@@ -2033,6 +2033,7 @@ void fn_first(Machine* m, Value* omega) {
         return;
     }
 
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (mat->size() == 0) {
@@ -2069,6 +2070,7 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
@@ -2137,6 +2139,7 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
@@ -2236,6 +2239,7 @@ void fn_reverse_first(Machine* m, Value* omega) {
         return;
     }
 
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (omega->is_vector()) {
@@ -2287,6 +2291,7 @@ void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
@@ -2336,6 +2341,7 @@ void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
@@ -2390,17 +2396,20 @@ static Eigen::VectorXd flatten_value(Value* val) {
 }
 
 // Index Of (⍳) - dyadic: find indices of rhs elements in lhs
-// Returns index of first occurrence of each element, or ≢lhs if not found (0-origin)
+// Returns index of first occurrence of each element, or 1+≢lhs if not found (1-origin per ISO 13751)
 void fn_index_of(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get lhs as a flat array of values to search in
     Eigen::VectorXd haystack = flatten_value(lhs);
-    double not_found = static_cast<double>(haystack.size());
+    double not_found = static_cast<double>(haystack.size() + 1);  // 1-origin: past last valid index
 
-    // Search for needle in haystack, return index or not_found
+    // Search for needle in haystack, return 1-based index or not_found
     auto find_index = [&haystack, not_found](double needle) -> double {
         for (int i = 0; i < haystack.size(); ++i) {
             if (haystack(i) == needle) {
-                return static_cast<double>(i);
+                return static_cast<double>(i + 1);  // 1-origin
             }
         }
         return not_found;
@@ -2439,6 +2448,9 @@ void fn_enlist(Machine* m, Value* omega) {
 // Member Of (∊) - dyadic: check if elements of lhs are in rhs
 // Returns boolean array with 1 where element is found, 0 otherwise
 void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get rhs as flat array to search in
     Eigen::VectorXd set = flatten_value(rhs);
 
@@ -2480,14 +2492,15 @@ void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Grade Up (⍋) - monadic: return indices that would sort array in ascending order
-// ⍋ 3 1 4 1 5 → 1 3 0 2 4 (0-origin)
+// ⍋ 3 1 4 1 5 → 2 4 1 3 5 (1-origin per ISO 13751)
 void fn_grade_up(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        // Grade of scalar is 0 (index of single element)
-        m->result = m->heap->allocate_scalar(0.0);
+        // Grade of scalar is 1 (index of single element, 1-origin)
+        m->result = m->heap->allocate_scalar(1.0);
         return;
     }
 
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     Eigen::VectorXd data = flatten_value(omega);
     int n = data.size();
 
@@ -2502,24 +2515,25 @@ void fn_grade_up(Machine* m, Value* omega) {
         return data(a) < data(b);
     });
 
-    // Convert to result vector
+    // Convert to result vector (1-origin per ISO 13751)
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
-        result(i) = static_cast<double>(indices[i]);
+        result(i) = static_cast<double>(indices[i] + 1);
     }
 
     m->result = m->heap->allocate_vector(result);
 }
 
 // Grade Down (⍒) - monadic: return indices that would sort array in descending order
-// ⍒ 3 1 4 1 5 → 4 2 0 1 3 (0-origin)
+// ⍒ 3 1 4 1 5 → 5 3 1 2 4 (1-origin per ISO 13751)
 void fn_grade_down(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        // Grade of scalar is 0 (index of single element)
-        m->result = m->heap->allocate_scalar(0.0);
+        // Grade of scalar is 1 (index of single element, 1-origin)
+        m->result = m->heap->allocate_scalar(1.0);
         return;
     }
 
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     Eigen::VectorXd data = flatten_value(omega);
     int n = data.size();
 
@@ -2534,10 +2548,10 @@ void fn_grade_down(Machine* m, Value* omega) {
         return data(a) > data(b);
     });
 
-    // Convert to result vector
+    // Convert to result vector (1-origin per ISO 13751)
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
-        result(i) = static_cast<double>(indices[i]);
+        result(i) = static_cast<double>(indices[i] + 1);
     }
 
     m->result = m->heap->allocate_vector(result);
@@ -2552,6 +2566,9 @@ void fn_grade_down(Machine* m, Value* omega) {
 // 1 1 1 / 4 5 6 → 4 5 6 (compress)
 // 0 1 0 / 4 5 6 → 5 (filter)
 void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get counts from lhs
     Eigen::VectorXd counts = flatten_value(lhs);
 
@@ -2657,6 +2674,7 @@ void fn_unique(Machine* m, Value* omega) {
         return;
     }
 
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     Eigen::VectorXd data = flatten_value(omega);
     int n = data.size();
 
@@ -2693,6 +2711,9 @@ void fn_unique(Machine* m, Value* omega) {
 // Union (∪ dyadic) - unique elements from both arrays (left first, then unique from right)
 // 1 2 3 ∪ 3 4 5 → 1 2 3 4 5
 void fn_union(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     Eigen::VectorXd left = flatten_value(lhs);
     Eigen::VectorXd right = flatten_value(rhs);
 
@@ -2749,6 +2770,9 @@ void fn_union(Machine* m, Value* lhs, Value* rhs) {
 // Without (~ dyadic) - elements of left that are not in right
 // 1 2 3 4 5 ~ 2 4 → 1 3 5
 void fn_without(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     Eigen::VectorXd left = flatten_value(lhs);
     Eigen::VectorXd right = flatten_value(rhs);
 
@@ -2884,6 +2908,9 @@ void fn_deal(Machine* m, Value* lhs, Value* rhs) {
 // 1 0 1 0 0 1 \ 'ABC' → 'A B  C' (with spaces being fill)
 // 1 0 1 1 \ 1 2 3 → 1 0 2 3
 void fn_expand(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get boolean mask from lhs
     Eigen::VectorXd mask = flatten_value(lhs);
 
@@ -2976,6 +3003,9 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
 // 10⊥1 2 3 → 123 (decimal digits)
 // 24 60 60⊥1 30 45 → 5445 (hours:mins:secs to seconds)
 void fn_decode(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get the radix and digits as vectors
     Eigen::VectorXd radix = flatten_value(lhs);
     Eigen::VectorXd digits = flatten_value(rhs);
@@ -3015,6 +3045,9 @@ void fn_decode(Machine* m, Value* lhs, Value* rhs) {
 // 10 10 10⊤345 → 3 4 5 (decimal digits)
 // 24 60 60⊤5445 → 1 30 45 (seconds to hours:mins:secs)
 void fn_encode(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get the radix vector
     Eigen::VectorXd radix = flatten_value(lhs);
     int n = radix.size();
@@ -3112,39 +3145,10 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
         }
     }
 
-    // Handle STRING indexing
-    if (lhs->tag == ValueType::STRING) {
-        const char* str = lhs->data.string;
-        int str_len = strlen(str);
+    // Convert STRING to char vector so all arrays use the same code path
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
 
-        if (rhs->is_scalar()) {
-            int idx = static_cast<int>(rhs->as_scalar()) - 1;  // 1-based to 0-based
-            if (idx < 0 || idx >= str_len) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
-                return;
-            }
-            char result[2] = {str[idx], '\0'};
-            m->result = m->heap->allocate_string(m->string_pool.intern(result));
-            return;
-        } else if (rhs->is_array()) {
-            const Eigen::MatrixXd* idx_mat = rhs->as_matrix();
-            int n = idx_mat->rows();
-            std::string result;
-            result.reserve(n);
-            for (int i = 0; i < n; i++) {
-                int idx = static_cast<int>((*idx_mat)(i, 0)) - 1;
-                if (idx < 0 || idx >= str_len) {
-                    m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
-                    return;
-                }
-                result += str[idx];
-            }
-            m->result = m->heap->allocate_string(m->string_pool.intern(result.c_str()));
-            return;
-        }
-    }
-
-    // Handle numeric array indexing
+    // Handle array indexing
     if (!lhs->is_array() && !lhs->is_scalar()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot index non-array value"));
         return;

@@ -2945,19 +2945,8 @@ TEST_F(ParserTest, TallyEmpty) {
 // ============================================================================
 
 TEST_F(ParserTest, IndexOfScalar) {
-    // 1 2 3 4 5 ⍳ 3 → 2 (0-origin)
+    // 1 2 3 4 5 ⍳ 3 → 3 (1-origin per ISO 13751)
     Continuation* k = parser->parse("1 2 3 4 5 ⍳ 3");
-    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
-
-    Value* result = eval(k);
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
-}
-
-TEST_F(ParserTest, IndexOfNotFound) {
-    // 1 2 3 ⍳ 7 → 3 (length of haystack)
-    Continuation* k = parser->parse("1 2 3 ⍳ 7");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     Value* result = eval(k);
@@ -2966,8 +2955,19 @@ TEST_F(ParserTest, IndexOfNotFound) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
+TEST_F(ParserTest, IndexOfNotFound) {
+    // 1 2 3 ⍳ 7 → 4 (1 + length of haystack, per ISO 13751)
+    Continuation* k = parser->parse("1 2 3 ⍳ 7");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+}
+
 TEST_F(ParserTest, IndexOfVector) {
-    // 10 20 30 40 ⍳ 30 10 99 → 2 0 4
+    // 10 20 30 40 ⍳ 30 10 99 → 3 1 5 (1-origin per ISO 13751)
     Continuation* k = parser->parse("10 20 30 40 ⍳ 30 10 99");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -2976,14 +2976,14 @@ TEST_F(ParserTest, IndexOfVector) {
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 3);
-    EXPECT_DOUBLE_EQ((*vec)(0, 0), 2.0);  // 30 at index 2
-    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 10 at index 0
-    EXPECT_DOUBLE_EQ((*vec)(2, 0), 4.0);  // 99 not found
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 3.0);  // 30 at index 3 (1-origin)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);  // 10 at index 1 (1-origin)
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);  // 99 not found → 5 (1+length)
 }
 
 TEST_F(ParserTest, IndexOfDuplicates) {
     // First occurrence is returned
-    // 5 3 5 7 3 ⍳ 3 5 → 1 0
+    // 5 3 5 7 3 ⍳ 3 5 → 2 1 (1-origin per ISO 13751)
     Continuation* k = parser->parse("5 3 5 7 3 ⍳ 3 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -2991,8 +2991,8 @@ TEST_F(ParserTest, IndexOfDuplicates) {
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 3 first at index 1
-    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 5 first at index 0
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 2.0);  // 3 first at index 2 (1-origin)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);  // 5 first at index 1 (1-origin)
 }
 
 TEST_F(ParserTest, MemberOfScalarFound) {
@@ -3092,14 +3092,14 @@ TEST_F(ParserTest, EnlistMatrix) {
 
 TEST_F(ParserTest, IndexOfWithArithmetic) {
     // Combined with arithmetic
-    // (⍳5) ⍳ 2+1 → 2 (find 3 in 1 2 3 4 5, returns 0-based index)
+    // (⍳5) ⍳ 2+1 → 3 (find 3 in 1 2 3 4 5, returns 1-based index per ISO 13751)
     Continuation* k = parser->parse("(⍳5) ⍳ 2+1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     Value* result = eval(k);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
 // ============================================================================
@@ -3107,7 +3107,7 @@ TEST_F(ParserTest, IndexOfWithArithmetic) {
 // ============================================================================
 
 TEST_F(ParserTest, GradeUpVector) {
-    // ⍋ 3 1 4 1 5 → 1 3 0 2 4 (indices for ascending sort, 0-origin)
+    // ⍋ 3 1 4 1 5 → 2 4 1 3 5 (indices for ascending sort, 1-origin per ISO 13751)
     Continuation* k = parser->parse("⍋ 3 1 4 1 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -3116,15 +3116,15 @@ TEST_F(ParserTest, GradeUpVector) {
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 5);
-    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // index of first 1
-    EXPECT_DOUBLE_EQ((*vec)(1, 0), 3.0);  // index of second 1
-    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // index of 3
-    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);  // index of 4
-    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);  // index of 5
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 2.0);  // index of first 1
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);  // index of second 1
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // index of 3
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 3.0);  // index of 4
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 5.0);  // index of 5
 }
 
 TEST_F(ParserTest, GradeDownVector) {
-    // ⍒ 3 1 4 1 5 → 4 2 0 1 3 (indices for descending sort, 0-origin)
+    // ⍒ 3 1 4 1 5 → 5 3 1 2 4 (indices for descending sort, 1-origin per ISO 13751)
     Continuation* k = parser->parse("⍒ 3 1 4 1 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -3133,37 +3133,37 @@ TEST_F(ParserTest, GradeDownVector) {
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 5);
-    EXPECT_DOUBLE_EQ((*vec)(0, 0), 4.0);  // index of 5 (largest)
-    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);  // index of 4
-    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // index of 3
-    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);  // index of first 1
-    EXPECT_DOUBLE_EQ((*vec)(4, 0), 3.0);  // index of second 1
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);  // index of 5 (largest)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 3.0);  // index of 4
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // index of 3
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);  // index of first 1
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);  // index of second 1
 }
 
 TEST_F(ParserTest, GradeUpScalar) {
-    // ⍋ 5 → 0 (single element, index is 0)
+    // ⍋ 5 → 1 (single element, 1-origin)
     Continuation* k = parser->parse("⍋ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     Value* result = eval(k);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 }
 
 TEST_F(ParserTest, GradeDownScalar) {
-    // ⍒ 5 → 0 (single element, index is 0)
+    // ⍒ 5 → 1 (single element, 1-origin)
     Continuation* k = parser->parse("⍒ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     Value* result = eval(k);
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 }
 
 TEST_F(ParserTest, GradeUpWithIota) {
-    // ⍋ ⍳5 → 0 1 2 3 4 (already sorted, returns 0-based indices)
+    // ⍋ ⍳5 → 1 2 3 4 5 (already sorted, returns 1-based indices)
     Continuation* k = parser->parse("⍋ ⍳5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -3173,12 +3173,12 @@ TEST_F(ParserTest, GradeUpWithIota) {
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 5);
     for (int i = 0; i < 5; ++i) {
-        EXPECT_DOUBLE_EQ((*vec)(i, 0), static_cast<double>(i));
+        EXPECT_DOUBLE_EQ((*vec)(i, 0), static_cast<double>(i + 1));
     }
 }
 
 TEST_F(ParserTest, GradeDownWithIota) {
-    // ⍒ ⍳5 → 4 3 2 1 0 (reverse order, returns 0-based indices)
+    // ⍒ ⍳5 → 5 4 3 2 1 (reverse order, returns 1-based indices)
     Continuation* k = parser->parse("⍒ ⍳5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -3188,12 +3188,12 @@ TEST_F(ParserTest, GradeDownWithIota) {
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 5);
     for (int i = 0; i < 5; ++i) {
-        EXPECT_DOUBLE_EQ((*vec)(i, 0), static_cast<double>(4 - i));
+        EXPECT_DOUBLE_EQ((*vec)(i, 0), static_cast<double>(5 - i));
     }
 }
 
 TEST_F(ParserTest, GradeNegativeValues) {
-    // ⍋ ¯3 1 ¯2 0 → 0 2 3 1 (sorted: -3 -2 0 1)
+    // ⍋ ¯3 1 ¯2 0 → 1 3 4 2 (sorted: -3 -2 0 1, 1-origin)
     Continuation* k = parser->parse("⍋ ¯3 1 ¯2 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
@@ -3202,10 +3202,10 @@ TEST_F(ParserTest, GradeNegativeValues) {
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 4);
-    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);  // index of -3 (smallest)
-    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);  // index of -2
-    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);  // index of 0
-    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);  // index of 1 (largest)
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // index of -3 (smallest)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 3.0);  // index of -2
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 4.0);  // index of 0
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);  // index of 1 (largest)
 }
 
 // ============================================================================

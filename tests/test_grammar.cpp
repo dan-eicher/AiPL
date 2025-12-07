@@ -336,23 +336,23 @@ TEST_F(GrammarTest, GPrimeBasicCase_Plus) {
 }
 
 TEST_F(GrammarTest, GPrimeBasicCase_Iota) {
-    // "1 2 3 ⍳ 2" → dyadic ⍳ (index-of): find 2 in vector 1 2 3 → index 1
+    // "1 2 3 ⍳ 2" → dyadic ⍳ (index-of): find 2 in vector 1 2 3 → index 2 (1-origin per ISO 13751)
     Value* result = eval("1 2 3 ⍳ 2");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
 }
 
 TEST_F(GrammarTest, GPrimeBasicCase_IotaVector) {
-    // "1 2 3 ⍳ 3 1 5" → find indices of 3,1,5 in 1 2 3 → 2 0 3(not found)
+    // "1 2 3 ⍳ 3 1 5" → find indices of 3,1,5 in 1 2 3 → 3 1 4(not found) (1-origin per ISO 13751)
     Value* result = eval("1 2 3 ⍳ 3 1 5");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 3);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 3 is at index 2
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);  // 1 is at index 0
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);  // 5 not found, returns length
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);  // 3 is at index 3 (1-origin)
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 1 is at index 1 (1-origin)
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 4.0);  // 5 not found, returns 1+length
 }
 
 TEST_F(GrammarTest, GPrimeBasicCase_Minus) {

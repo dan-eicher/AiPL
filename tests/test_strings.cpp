@@ -378,6 +378,46 @@ TEST_F(StringTest, IndexedAssignStringChained) {
     EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(3, 0), 68.0);  // 'D'
 }
 
+// ============================================================================
+// Character Grading (⍋ ⍒ on strings)
+// ============================================================================
+
+TEST_F(StringTest, GradeUpString) {
+    // ⍋'cab' → indices that sort to 'abc': 2 3 1 (1-origin per ISO 13751)
+    Value* result = eval("⍋'cab'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);  // 'a' at index 2
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);  // 'b' at index 3
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);  // 'c' at index 1
+}
+
+TEST_F(StringTest, GradeDownString) {
+    // ⍒'cab' → indices that sort descending: 1 3 2 (1-origin per ISO 13751)
+    Value* result = eval("⍒'cab'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 'c' at index 1
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);  // 'b' at index 3
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 2.0);  // 'a' at index 2
+}
+
+TEST_F(StringTest, GradeUpSortString) {
+    // Use grade to sort: 'cab'[⍋'cab'] → 'abc'
+    Value* result = eval("'cab'[⍋'cab']");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 97.0);   // 'a'
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 98.0);   // 'b'
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 99.0);   // 'c'
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
