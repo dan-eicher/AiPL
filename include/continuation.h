@@ -864,13 +864,16 @@ protected:
 // Grammar: derived-operator ::= fb-term dyadic-operator
 // Semantics: x₂(x₁) where x₁ is fb-term, x₂ is operator
 // Result is a new operator (monadic)
+// Optional axis_cont for axis specification: f/[k] where k is axis
 class DerivedOperatorK : public Continuation {
 public:
     Continuation* operand_cont;   // The fb-term to evaluate
+    Continuation* axis_cont;      // Optional axis expression (for f/[k] syntax)
     const char* op_name;          // The dyadic operator name
 
-    DerivedOperatorK(Continuation* operand, const char* operator_name)
-        : operand_cont(operand), op_name(operator_name) {}
+    DerivedOperatorK(Continuation* operand, const char* operator_name,
+                     Continuation* axis = nullptr)
+        : operand_cont(operand), axis_cont(axis), op_name(operator_name) {}
 
     ~DerivedOperatorK() override {}
 
@@ -881,14 +884,32 @@ protected:
 };
 
 // ApplyDerivedOperatorK - Apply dyadic operator to its first operand
-// Creates a DERIVED_OPERATOR value
+// Creates a DERIVED_OPERATOR value (or OPERATOR_CURRY if axis is specified)
 class ApplyDerivedOperatorK : public Continuation {
 public:
     const char* op_name;
+    Continuation* axis_cont;      // Optional axis (for f/[k] syntax)
 
-    ApplyDerivedOperatorK(const char* operator_name) : op_name(operator_name) {}
+    ApplyDerivedOperatorK(const char* operator_name, Continuation* axis = nullptr)
+        : op_name(operator_name), axis_cont(axis) {}
 
     ~ApplyDerivedOperatorK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ApplyAxisK - Apply axis specification to a derived operator
+// Creates OPERATOR_CURRY with axis as second operand
+class ApplyAxisK : public Continuation {
+public:
+    Value* derived_op;            // The DERIVED_OPERATOR value
+
+    ApplyAxisK(Value* derived) : derived_op(derived) {}
+
+    ~ApplyAxisK() override {}
 
     void mark(Heap* heap) override;
 

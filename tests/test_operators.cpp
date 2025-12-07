@@ -262,6 +262,148 @@ TEST_F(OperatorsTest, RankCellCountMismatch) {
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
+// ========================================================================
+// Axis Specification Tests (f/[k] and f\[k])
+// ========================================================================
+
+// Helper to evaluate APL expression
+static Value* eval(Machine* m, const char* expr) {
+    return m->eval(expr);
+}
+
+TEST_F(OperatorsTest, ReduceAxisLastOnMatrix) {
+    // +/[2] is same as +/ (reduce along last axis)
+    // ⍳6 = 0 1 2 3 4 5 (0-origin)
+    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    Value* result = eval(machine, "+/[2] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    // Row sums: 0+1+2=3, 3+4+5=12
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 12.0);
+}
+
+TEST_F(OperatorsTest, ReduceAxisFirstOnMatrix) {
+    // +/[1] is same as +⌿ (reduce along first axis)
+    // ⍳6 = 0 1 2 3 4 5 (0-origin)
+    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    Value* result = eval(machine, "+/[1] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    // Column sums: 0+3=3, 1+4=5, 2+5=7
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 7.0);
+}
+
+TEST_F(OperatorsTest, ReduceFirstAxisEquivalent) {
+    // +⌿[1] should give same result as +⌿
+    Value* result1 = eval(machine, "+⌿ 2 3⍴⍳6");
+    Value* result2 = eval(machine, "+⌿[1] 2 3⍴⍳6");
+    ASSERT_NE(result1, nullptr);
+    ASSERT_NE(result2, nullptr);
+    EXPECT_TRUE(result1->is_vector());
+    EXPECT_TRUE(result2->is_vector());
+    EXPECT_EQ(result1->size(), result2->size());
+    for (int i = 0; i < result1->size(); i++) {
+        EXPECT_DOUBLE_EQ(result1->as_matrix()->coeff(i, 0),
+                         result2->as_matrix()->coeff(i, 0));
+    }
+}
+
+TEST_F(OperatorsTest, ScanAxisLastOnMatrix) {
+    // Scan with axis [2] is same as scan along last axis
+    // ⍳6 = 0 1 2 3 4 5 (0-origin)
+    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    Value* result = eval(machine, "+\\[2] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    // Running row sums:
+    // Row 0: 0, 0+1=1, 0+1+2=3
+    // Row 1: 3, 3+4=7, 3+4+5=12
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 7.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 12.0);
+}
+
+TEST_F(OperatorsTest, ScanAxisFirstOnMatrix) {
+    // Scan with axis [1] is same as scan-first (along first axis)
+    // ⍳6 = 0 1 2 3 4 5 (0-origin)
+    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    Value* result = eval(machine, "+\\[1] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    // Running column sums:
+    // Row 0: 0, 1, 2 (first row unchanged)
+    // Row 1: 0+3=3, 1+4=5, 2+5=7
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 7.0);
+}
+
+TEST_F(OperatorsTest, ReduceAxisOnVector) {
+    // +/[1] on vector is same as +/
+    Value* result = eval(machine, "+/[1] 1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, ScanAxisOnVector) {
+    // Scan with axis [1] on vector is same as regular scan
+    Value* result = eval(machine, "+\\[1] 1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*mat)(4, 0), 15.0);
+}
+
+TEST_F(OperatorsTest, ReduceAxisExpression) {
+    // Axis can be an expression
+    // ⍳6 = 0 1 2 3 4 5 (0-origin)
+    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    Value* result = eval(machine, "+/[1+1] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    // Same as +/[2] = row sums: 0+1+2=3, 3+4+5=12
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 12.0);
+}
+
+TEST_F(OperatorsTest, ReduceAxisWithDifferentFunction) {
+    // ×/[1] - product along first axis
+    // ⍳6 = 0 1 2 3 4 5 (0-origin)
+    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    Value* result = eval(machine, "×/[1] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    // Column products: 0×3=0, 1×4=4, 2×5=10
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 10.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

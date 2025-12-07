@@ -241,6 +241,25 @@ TEST_F(StringTest, ReduceOverString) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 131.0);  // 65 + 66
 }
 
+TEST_F(StringTest, ReduceAxisOverString) {
+    // +/[1] on string should work same as +/ (strings are 1D)
+    Value* result = eval("+/[1]'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 198.0);  // 65 + 66 + 67
+}
+
+TEST_F(StringTest, ScanAxisOverString) {
+    // +\[1] on string gives running sum of codepoints
+    Value* result = eval("+\\[1]'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 65.0);   // A
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 131.0);  // A+B
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 198.0);  // A+B+C
+}
+
 TEST_F(StringTest, EachOverString) {
     // Negate each codepoint
     Value* result = eval("-¨'AB'");

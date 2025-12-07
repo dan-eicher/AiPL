@@ -983,6 +983,65 @@ TEST_F(ContinuationTest, RowScanKFirstAxis) {
     EXPECT_DOUBLE_EQ((*m)(1, 2), 9.0);
 }
 
+// ============================================================================
+// ApplyAxisK tests - for axis specification (f/[k])
+// ============================================================================
+
+// Test: ApplyAxisK creates OPERATOR_CURRY with axis
+TEST_F(ContinuationTest, ApplyAxisKCreatesOperatorCurry) {
+    // Create a derived operator (+/)
+    // First need a primitive function value for +
+    Value* plus_prim = heap->allocate_primitive(&prim_plus);
+    Value* derived = heap->allocate_derived_operator(&op_reduce, plus_prim);
+
+    // Set up ApplyAxisK with the derived operator
+    ApplyAxisK* apply_axis = heap->allocate<ApplyAxisK>(derived);
+
+    // Set machine->result to the axis value (e.g., 1)
+    machine->result = heap->allocate_scalar(1.0);
+
+    // Push and execute
+    machine->push_kont(apply_axis);
+    Value* result = machine->execute();
+
+    // Result should be an OPERATOR_CURRY
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CURRIED_FN);
+    EXPECT_EQ(result->data.curried_fn->curry_type, Value::CurryType::OPERATOR_CURRY);
+
+    // The curried function should have the derived operator and axis
+    EXPECT_EQ(result->data.curried_fn->fn, derived);
+    EXPECT_TRUE(result->data.curried_fn->first_arg->is_scalar());
+    EXPECT_DOUBLE_EQ(result->data.curried_fn->first_arg->as_scalar(), 1.0);
+}
+
+// Test: ApplyAxisK marks derived_op during GC
+TEST_F(ContinuationTest, ApplyAxisKMarksDerivedOp) {
+    Value* plus_prim = heap->allocate_primitive(&prim_plus);
+    Value* derived = heap->allocate_derived_operator(&op_reduce, plus_prim);
+    ApplyAxisK* apply_axis = heap->allocate<ApplyAxisK>(derived);
+
+    // Should not crash when marking
+    apply_axis->mark(heap);
+}
+
+// Test: ApplyAxisK with scan operator
+TEST_F(ContinuationTest, ApplyAxisKWithScanOperator) {
+    Value* plus_prim = heap->allocate_primitive(&prim_plus);
+    Value* derived = heap->allocate_derived_operator(&op_scan, plus_prim);
+
+    ApplyAxisK* apply_axis = heap->allocate<ApplyAxisK>(derived);
+    machine->result = heap->allocate_scalar(2.0);  // axis 2
+
+    machine->push_kont(apply_axis);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CURRIED_FN);
+    EXPECT_EQ(result->data.curried_fn->curry_type, Value::CurryType::OPERATOR_CURRY);
+    EXPECT_DOUBLE_EQ(result->data.curried_fn->first_arg->as_scalar(), 2.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

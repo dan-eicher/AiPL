@@ -966,10 +966,19 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // Have both array arguments - call dyadic operator
                 op->dyadic(machine, left_val, first_operand, second_operand, right_val);
             } else if (right_val) {
-                // Only have one array argument - curry to wait for second (like g' for functions)
-                // Monadic vs dyadic decision happens at top level via g' finalization
-                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
-                machine->result = curried;
+                // Only have right array argument
+                // Reduce/scan with axis: call dyadic with nullptr left (monadic axis form)
+                // Other operators (inner product): curry to wait for left array
+                const char* op_name = op->name;
+                if (strcmp(op_name, "/") == 0 || strcmp(op_name, "\\") == 0 ||
+                    strcmp(op_name, "⌿") == 0 || strcmp(op_name, "⍀") == 0) {
+                    // Reduce/scan: dyadic form handles nullptr left_val
+                    op->dyadic(machine, nullptr, first_operand, second_operand, right_val);
+                } else {
+                    // Other operators: need both arrays, curry to wait for left
+                    Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                    machine->result = curried;
+                }
             } else {
                 machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator curry expects array argument"));
             }
@@ -1135,7 +1144,15 @@ void DispatchFunctionK::invoke(Machine* machine) {
         // For operators with BOTH monadic and dyadic forms (like commute ⍨),
         // curry with G_PRIME when given one argument. This allows `2 +⍨ 3` to work correctly
         // by deferring until we know if there's a left argument.
+        // Exception: reduce/scan operators should apply monadic immediately - their dyadic
+        // form is only used with axis specification (f/[k]), which creates OPERATOR_CURRY
         if (op->monadic && op->dyadic && !left_val && right_val) {
+            // Reduce/scan operators apply monadic immediately (dyadic form is for axis only)
+            if (strcmp(op->name, "/") == 0 || strcmp(op->name, "\\") == 0 ||
+                strcmp(op->name, "⌿") == 0 || strcmp(op->name, "⍀") == 0) {
+                op->monadic(machine, first_operand, right_val);
+                return;
+            }
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
             machine->result = curried;
             return;
@@ -1703,13 +1720,17 @@ void RestoreEnvK::mark(Heap* heap) {
 // DerivedOperatorK implementation - partially apply dyadic operator
 void DerivedOperatorK::invoke(Machine* machine) {
     // Push continuation to apply operator after operand is evaluated
-    machine->push_kont(machine->heap->allocate<ApplyDerivedOperatorK>(op_name));
+    // Pass axis_cont if present (for f/[k] syntax)
+    machine->push_kont(machine->heap->allocate<ApplyDerivedOperatorK>(op_name, axis_cont));
     machine->push_kont(operand_cont);
 }
 
 void DerivedOperatorK::mark(Heap* heap) {
     if (operand_cont) {
         heap->mark_continuation(operand_cont);
+    }
+    if (axis_cont) {
+        heap->mark_continuation(axis_cont);
     }
 }
 
@@ -1745,15 +1766,40 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
         //   - The first operand
         // When this derived operator is applied, it will call op->monadic() or op->dyadic()
         Value* derived = machine->heap->allocate_derived_operator(op, first_operand);
-        machine->result = derived;
+
+        // If axis is specified (f/[k] syntax), evaluate it and create OPERATOR_CURRY
+        if (axis_cont) {
+            machine->push_kont(machine->heap->allocate<ApplyAxisK>(derived));
+            machine->push_kont(axis_cont);
+        } else {
+            machine->result = derived;
+        }
     } else {
         machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Operator has neither monadic nor dyadic form"));
     }
 }
 
 void ApplyDerivedOperatorK::mark(Heap* heap) {
-    // op_name is an interned string, not GC-managed
-    (void)heap;
+    if (axis_cont) {
+        heap->mark_continuation(axis_cont);
+    }
+}
+
+// ApplyAxisK implementation - apply axis to derived operator
+void ApplyAxisK::invoke(Machine* machine) {
+    Value* axis = machine->result;
+
+    // Create OPERATOR_CURRY: derived_op curried with axis as second operand
+    // When this is applied to omega, DispatchFunctionK will call op->dyadic
+    Value* curried = machine->heap->allocate_curried_fn(
+        derived_op, axis, Value::CurryType::OPERATOR_CURRY);
+    machine->result = curried;
+}
+
+void ApplyAxisK::mark(Heap* heap) {
+    if (derived_op) {
+        heap->mark_value(derived_op);
+    }
 }
 
 // ============================================================================

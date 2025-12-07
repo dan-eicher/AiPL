@@ -472,6 +472,199 @@ void fn_scan_first(Machine* m, Value* func, Value* omega) {
 }
 
 // ========================================================================
+// Axis-specified Reduction and Scan (f/[k] and f\[k])
+// ========================================================================
+// These are the dyadic forms where the "second operand" is the axis specification.
+// Called as: op->dyadic(m, lhs, func, axis, rhs)
+// where lhs is nullptr for monadic use.
+
+// Helper: validate axis specification and return 1-based axis number
+// Returns -1 on error (after pushing ThrowErrorK)
+static int validate_axis(Machine* m, Value* axis, int max_rank) {
+    if (!axis || !axis->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis must be a scalar"));
+        return -1;
+    }
+
+    double axis_val = axis->as_scalar();
+    int k = static_cast<int>(axis_val);
+
+    if (axis_val != static_cast<double>(k) || k < 1 || k > max_rank) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis out of range"));
+        return -1;
+    }
+
+    return k;
+}
+
+// Reduce with axis specification: f/[k]B
+// Dyadic operator form where second operand is axis
+void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) {
+    (void)lhs;  // Always nullptr for monadic use
+
+    // Handle replicate: if "func" is actually an array, this is invalid
+    if (func->is_array() || func->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: replicate does not support axis specification"));
+        return;
+    }
+
+    if (!func->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a function"));
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
+    // String → char vector conversion
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    int max_rank = rhs->is_vector() ? 1 : 2;
+    int k = validate_axis(m, axis, max_rank);
+    if (k < 0) return;
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+
+    if (rhs->is_vector()) {
+        // Vector only has axis 1 - same as regular reduce
+        int len = mat->rows();
+        if (len == 0) {
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                return;
+            }
+            m->result = m->heap->allocate_scalar(identity);
+            return;
+        }
+        if (len == 1) {
+            m->result = m->heap->allocate_scalar((*mat)(0, 0));
+            return;
+        }
+        m->push_kont(m->heap->allocate<CellIterK>(
+            func, nullptr, rhs, 0, 0, len,
+            CellIterMode::FOLD_RIGHT, len, 1, true));
+        return;
+    }
+
+    // Matrix: k=1 is first axis (rows), k=2 is last axis (columns)
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (k == 1) {
+        // Reduce along first axis (like ⌿)
+        if (rows == 0) {
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                return;
+            }
+            Eigen::VectorXd result = Eigen::VectorXd::Constant(cols, identity);
+            m->result = m->heap->allocate_vector(result);
+            return;
+        }
+        if (rows == 1) {
+            m->result = m->heap->allocate_vector(mat->row(0).transpose());
+            return;
+        }
+        m->push_kont(m->heap->allocate<RowReduceK>(func, rhs, cols, rows, true));
+    } else {
+        // k == 2: Reduce along last axis (like /)
+        if (cols == 0) {
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                return;
+            }
+            Eigen::VectorXd result = Eigen::VectorXd::Constant(rows, identity);
+            m->result = m->heap->allocate_vector(result);
+            return;
+        }
+        if (cols == 1) {
+            m->result = m->heap->allocate_vector(mat->col(0));
+            return;
+        }
+        m->push_kont(m->heap->allocate<RowReduceK>(func, rhs, rows, cols, false));
+    }
+}
+
+// Scan with axis specification: f\[k]B
+// Dyadic operator form where second operand is axis
+void fn_scan_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) {
+    (void)lhs;  // Always nullptr for monadic use
+
+    // Handle expand: if "func" is actually an array, this is invalid
+    if (func->is_array() || func->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: expand does not support axis specification"));
+        return;
+    }
+
+    if (!func->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
+    // String → char vector conversion
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    int max_rank = rhs->is_vector() ? 1 : 2;
+    int k = validate_axis(m, axis, max_rank);
+    if (k < 0) return;
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+
+    if (rhs->is_vector()) {
+        // Vector only has axis 1 - same as regular scan
+        int len = mat->rows();
+        if (len == 0) {
+            m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+            return;
+        }
+        if (len == 1) {
+            m->result = m->heap->allocate_scalar((*mat)(0, 0));
+            return;
+        }
+        m->push_kont(m->heap->allocate<PrefixScanK>(func, rhs, len));
+        return;
+    }
+
+    // Matrix: k=1 is first axis (rows), k=2 is last axis (columns)
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (k == 1) {
+        // Scan along first axis (like ⍀)
+        if (rows == 0) {
+            m->result = m->heap->allocate_matrix(Eigen::MatrixXd(0, cols));
+            return;
+        }
+        if (rows == 1) {
+            m->result = rhs;
+            return;
+        }
+        m->push_kont(m->heap->allocate<RowScanK>(func, rhs, cols, rows, true));
+    } else {
+        // k == 2: Scan along last axis (like \)
+        if (cols == 0) {
+            m->result = m->heap->allocate_matrix(Eigen::MatrixXd(rows, 0));
+            return;
+        }
+        if (cols == 1) {
+            m->result = rhs;
+            return;
+        }
+        m->push_kont(m->heap->allocate<RowScanK>(func, rhs, rows, cols, false));
+    }
+}
+
+// ========================================================================
 // PrimitiveOp struct definitions
 // ========================================================================
 
@@ -501,28 +694,29 @@ PrimitiveOp op_tilde = {
 
 // Reduction operators (monadic - take function operand, return derived function)
 // Note: These are operators, not primitives, so they need special handling
+// Dyadic forms handle axis specification: f/[k]B
 PrimitiveOp op_reduce = {
     "/",
-    fn_reduce,            // Monadic: f/B
-    nullptr               // No dyadic form (N-wise reduction not yet implemented)
+    fn_reduce,            // Monadic: f/B (reduce along last axis)
+    fn_reduce_axis        // Dyadic: f/[k]B (reduce along axis k)
 };
 
 PrimitiveOp op_reduce_first = {
     "⌿",
-    fn_reduce_first,      // Monadic: f⌿B
-    nullptr               // No dyadic form
+    fn_reduce_first,      // Monadic: f⌿B (reduce along first axis)
+    fn_reduce_axis        // Dyadic: f⌿[k]B (reduce along axis k)
 };
 
 PrimitiveOp op_scan = {
     "\\",
-    fn_scan,              // Monadic: f\B
-    nullptr               // No dyadic form
+    fn_scan,              // Monadic: f\B (scan along last axis)
+    fn_scan_axis          // Dyadic: f\[k]B (scan along axis k)
 };
 
 PrimitiveOp op_scan_first = {
     "⍀",
-    fn_scan_first,        // Monadic: f⍀B
-    nullptr               // No dyadic form
+    fn_scan_first,        // Monadic: f⍀B (scan along first axis)
+    fn_scan_axis          // Dyadic: f⍀[k]B (scan along axis k)
 };
 
 // ========================================================================

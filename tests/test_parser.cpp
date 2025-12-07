@@ -1250,6 +1250,66 @@ TEST_F(ParserTest, PrimitiveFunctionWithOperator) {
     EXPECT_STREQ(derived->op_name, "/");
 }
 
+// Test: Reduce without axis has nullptr axis_cont
+TEST_F(ParserTest, ReduceWithoutAxisHasNullAxis) {
+    Continuation* k = parser->parse("+/");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr);
+    EXPECT_EQ(derived->axis_cont, nullptr) << "+/ should have no axis";
+}
+
+// Test: Reduce with axis [1] has non-null axis_cont
+TEST_F(ParserTest, ReduceWithAxisHasAxisCont) {
+    Continuation* k = parser->parse("+/[1]");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr) << "+/[1] should create DerivedOperatorK";
+    EXPECT_STREQ(derived->op_name, "/");
+    ASSERT_NE(derived->axis_cont, nullptr) << "+/[1] should have axis continuation";
+
+    // The axis should be a literal 1
+    LiteralK* axis_lit = dynamic_cast<LiteralK*>(derived->axis_cont);
+    ASSERT_NE(axis_lit, nullptr) << "Axis should be a literal";
+    EXPECT_DOUBLE_EQ(axis_lit->literal_value, 1.0);
+}
+
+// Test: Reduce with axis expression [1+1]
+TEST_F(ParserTest, ReduceWithAxisExpression) {
+    Continuation* k = parser->parse("+/[1+1]");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr);
+    EXPECT_STREQ(derived->op_name, "/");
+    ASSERT_NE(derived->axis_cont, nullptr) << "+/[1+1] should have axis continuation";
+    // Axis is an expression, not just a literal
+}
+
+// Test: Scan with axis
+TEST_F(ParserTest, ScanWithAxisHasAxisCont) {
+    Continuation* k = parser->parse("+\\[2]");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr) << "+\\[2] should create DerivedOperatorK";
+    EXPECT_STREQ(derived->op_name, "\\");
+    ASSERT_NE(derived->axis_cont, nullptr) << "+\\[2] should have axis continuation";
+}
+
+// Test: Reduce-first with axis
+TEST_F(ParserTest, ReduceFirstWithAxisHasAxisCont) {
+    Continuation* k = parser->parse("+⌿[1]");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr);
+    EXPECT_STREQ(derived->op_name, "⌿");
+    ASSERT_NE(derived->axis_cont, nullptr);
+}
+
 // Test: Derived operator followed by primitive function (juxtaposition)
 TEST_F(ParserTest, DerivedOperatorWithPrimitiveFunctionJuxtaposition) {
     Continuation* k = parser->parse("+/ ×");

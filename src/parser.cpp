@@ -492,20 +492,38 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         case TOK_REDUCE_FIRST:
         case TOK_SCAN_FIRST: {
             const char* op_name = nullptr;
+            bool supports_axis = false;
             switch (token.type) {
                 case TOK_EACH:         op_name = "¨";  break;
                 case TOK_COMMUTE:      op_name = "⍨";  break;
-                case TOK_REDUCE:       op_name = "/";  break;
-                case TOK_SCAN:         op_name = "\\"; break;
-                case TOK_REDUCE_FIRST: op_name = "⌿";  break;
-                case TOK_SCAN_FIRST:   op_name = "⍀";  break;
+                case TOK_REDUCE:       op_name = "/";  supports_axis = true; break;
+                case TOK_SCAN:         op_name = "\\"; supports_axis = true; break;
+                case TOK_REDUCE_FIRST: op_name = "⌿";  supports_axis = true; break;
+                case TOK_SCAN_FIRST:   op_name = "⍀";  supports_axis = true; break;
                 default: break;
             }
 
             const char* interned_name = machine->string_pool.intern(op_name);
 
+            // Check for axis specification: f/[k] syntax
+            Continuation* axis_cont = nullptr;
+            if (supports_axis && current_token_.type == TOK_LBRACKET) {
+                advance();  // consume [
+                axis_cont = parse_expression(0);
+                if (!axis_cont) {
+                    error_message_ = "Expected axis expression after [";
+                    return nullptr;
+                }
+                if (current_token_.type != TOK_RBRACKET) {
+                    error_message_ = "Expected ] after axis expression";
+                    return nullptr;
+                }
+                advance();  // consume ]
+            }
+
             // Create DerivedOperatorK: evaluate operand (left), then apply operator
-            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
+            // If axis_cont is present, it will be evaluated and applied via OPERATOR_CURRY
+            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name, axis_cont);
             return derived;
         }
 
@@ -867,6 +885,7 @@ int Parser::get_binding_power(const Token& token) {
         // Give them negative binding power to stop parsing
         case TOK_RPAREN:
         case TOK_RBRACE:
+        case TOK_RBRACKET:
             return -1;
 
         default:
