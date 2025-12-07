@@ -6,6 +6,7 @@
 #include "continuation.h"
 #include <cmath>
 #include <stdexcept>
+#include <random>
 
 namespace apl {
 
@@ -47,6 +48,7 @@ PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, nullptr };
 PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
 PrimitiveFn prim_union     = { "∪", fn_unique, fn_union };
 PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular };
+PrimitiveFn prim_question  = { "?", fn_roll, fn_deal };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -2484,6 +2486,183 @@ void fn_without(Machine* m, Value* lhs, Value* rhs) {
         }
         if (!in_right) {
             result(out_idx++) = left(i);
+        }
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// ============================================================================
+// Random Functions (?)
+// ============================================================================
+
+// Thread-local random number generator
+static thread_local std::mt19937_64 rng(std::random_device{}());
+
+// Roll (? monadic) - random integer from 0 to B-1
+// ?N returns random integer in [0, N)
+void fn_roll(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        int n = static_cast<int>(omega->data.scalar);
+        if (n <= 0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
+            return;
+        }
+        std::uniform_int_distribution<int> dist(0, n - 1);
+        m->result = m->heap->allocate_scalar(static_cast<double>(dist(rng)));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+
+    for (int i = 0; i < mat->size(); ++i) {
+        int n = static_cast<int>(mat->data()[i]);
+        if (n <= 0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
+            return;
+        }
+        std::uniform_int_distribution<int> dist(0, n - 1);
+        result(i) = static_cast<double>(dist(rng));
+    }
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Deal (? dyadic) - A unique random values from 0 to B-1
+// A?B returns A unique random integers from [0, B)
+void fn_deal(Machine* m, Value* lhs, Value* rhs) {
+    if (!lhs->is_scalar() || !rhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: deal arguments must be scalars"));
+        return;
+    }
+
+    int a = static_cast<int>(lhs->data.scalar);
+    int b = static_cast<int>(rhs->data.scalar);
+
+    if (a < 0 || b <= 0) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: deal arguments must be positive"));
+        return;
+    }
+
+    if (a > b) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot deal more values than range"));
+        return;
+    }
+
+    if (a == 0) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
+    // Fisher-Yates shuffle approach for unique selection
+    // Create array 0..b-1, shuffle first 'a' elements
+    Eigen::VectorXd pool(b);
+    for (int i = 0; i < b; ++i) {
+        pool(i) = static_cast<double>(i);
+    }
+
+    // Partial Fisher-Yates: only shuffle first 'a' positions
+    for (int i = 0; i < a; ++i) {
+        std::uniform_int_distribution<int> dist(i, b - 1);
+        int j = dist(rng);
+        std::swap(pool(i), pool(j));
+    }
+
+    // Return first 'a' elements
+    Eigen::VectorXd result = pool.head(a);
+    m->result = m->heap->allocate_vector(result);
+}
+
+// ============================================================================
+// Expand Function (\)
+// ============================================================================
+
+// Expand (\ dyadic) - opposite of replicate
+// Where A is 1, take from B. Where A is 0, insert fill element (0)
+// 1 0 1 0 0 1 \ 'ABC' → 'A B  C' (with spaces being fill)
+// 1 0 1 1 \ 1 2 3 → 1 0 2 3
+void fn_expand(Machine* m, Value* lhs, Value* rhs) {
+    // Get boolean mask from lhs
+    Eigen::VectorXd mask = flatten_value(lhs);
+
+    // Count number of 1s in mask - must equal length of rhs
+    int ones_count = 0;
+    for (int i = 0; i < mask.size(); ++i) {
+        int val = static_cast<int>(mask(i));
+        if (val != 0 && val != 1) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: expand mask must be boolean"));
+            return;
+        }
+        if (val == 1) ones_count++;
+    }
+
+    // Handle scalar/vector rhs
+    if (rhs->is_scalar()) {
+        if (ones_count != 1) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
+            return;
+        }
+
+        double val = rhs->data.scalar;
+        Eigen::VectorXd result(mask.size());
+        int src_idx = 0;
+        for (int i = 0; i < mask.size(); ++i) {
+            if (static_cast<int>(mask(i)) == 1) {
+                result(i) = val;
+                src_idx++;
+            } else {
+                result(i) = 0.0;  // Fill element
+            }
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    if (!rhs->is_vector()) {
+        // Matrix case: expand along last axis (columns)
+        const Eigen::MatrixXd* mat = rhs->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+
+        if (ones_count != cols) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
+            return;
+        }
+
+        Eigen::MatrixXd result(rows, mask.size());
+        int src_col = 0;
+        for (int j = 0; j < mask.size(); ++j) {
+            if (static_cast<int>(mask(j)) == 1) {
+                result.col(j) = mat->col(src_col++);
+            } else {
+                result.col(j) = Eigen::VectorXd::Zero(rows);  // Fill column
+            }
+        }
+
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
+    // Vector case
+    Eigen::VectorXd data = flatten_value(rhs);
+
+    if (ones_count != data.size()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
+        return;
+    }
+
+    Eigen::VectorXd result(mask.size());
+    int src_idx = 0;
+    for (int i = 0; i < mask.size(); ++i) {
+        if (static_cast<int>(mask(i)) == 1) {
+            result(i) = data(src_idx++);
+        } else {
+            result(i) = 0.0;  // Fill element
         }
     }
 

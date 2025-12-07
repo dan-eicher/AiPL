@@ -370,6 +370,12 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega) {
 // ISO-13751: Item I of Z is f/B[⍳I] (reduction of first I elements)
 // Uses PrefixScanK for continuation-based execution
 void fn_scan(Machine* m, Value* func, Value* omega) {
+    // Handle expand: if "func" is actually an array, this is A \ B (expand)
+    if (func->is_basic_value()) {
+        fn_expand(m, func, omega);
+        return;
+    }
+
     if (!func->is_function()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
         return;

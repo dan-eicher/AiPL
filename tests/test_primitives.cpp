@@ -3083,3 +3083,248 @@ TEST_F(PrimitivesTest, CircularVector) {
 TEST_F(PrimitivesTest, CircularRegistered) {
     ASSERT_NE(machine->env->lookup("○"), nullptr);
 }
+
+// ========================================================================
+// Roll (? monadic) Tests
+// ========================================================================
+
+TEST_F(PrimitivesTest, RollScalar) {
+    // ?6 returns random integer in [0,6)
+    Value* arg = machine->heap->allocate_scalar(6.0);
+    fn_roll(machine, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    double result = machine->result->as_scalar();
+    EXPECT_GE(result, 0.0);
+    EXPECT_LT(result, 6.0);
+    EXPECT_EQ(result, std::floor(result));  // Should be integer
+}
+
+TEST_F(PrimitivesTest, RollVector) {
+    // ?3 3 3 returns vector of random integers in [0,3)
+    Eigen::VectorXd v(3);
+    v << 3.0, 3.0, 3.0;
+    Value* arg = machine->heap->allocate_vector(v);
+
+    fn_roll(machine, arg);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_GE((*res)(i, 0), 0.0);
+        EXPECT_LT((*res)(i, 0), 3.0);
+        EXPECT_EQ((*res)(i, 0), std::floor((*res)(i, 0)));
+    }
+}
+
+TEST_F(PrimitivesTest, RollErrorZero) {
+    // ?0 is an error
+    Value* arg = machine->heap->allocate_scalar(0.0);
+    fn_roll(machine, arg);
+
+    // Should push error continuation
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+TEST_F(PrimitivesTest, RollErrorNegative) {
+    // ?¯5 is an error
+    Value* arg = machine->heap->allocate_scalar(-5.0);
+    fn_roll(machine, arg);
+
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// ========================================================================
+// Deal (? dyadic) Tests
+// ========================================================================
+
+TEST_F(PrimitivesTest, DealBasic) {
+    // 3?10 returns 3 unique random integers from [0,10)
+    Value* count = machine->heap->allocate_scalar(3.0);
+    Value* range = machine->heap->allocate_scalar(10.0);
+
+    fn_deal(machine, count, range);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+
+    // All values should be in range [0,10)
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_GE((*res)(i, 0), 0.0);
+        EXPECT_LT((*res)(i, 0), 10.0);
+    }
+
+    // All values should be unique
+    double v0 = (*res)(0, 0);
+    double v1 = (*res)(1, 0);
+    double v2 = (*res)(2, 0);
+    EXPECT_NE(v0, v1);
+    EXPECT_NE(v0, v2);
+    EXPECT_NE(v1, v2);
+}
+
+TEST_F(PrimitivesTest, DealEmpty) {
+    // 0?5 returns empty vector
+    Value* count = machine->heap->allocate_scalar(0.0);
+    Value* range = machine->heap->allocate_scalar(5.0);
+
+    fn_deal(machine, count, range);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 0);
+}
+
+TEST_F(PrimitivesTest, DealAll) {
+    // 5?5 returns all 5 values (permutation)
+    Value* count = machine->heap->allocate_scalar(5.0);
+    Value* range = machine->heap->allocate_scalar(5.0);
+
+    fn_deal(machine, count, range);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+
+    // All values 0-4 should appear exactly once
+    Eigen::VectorXd counts = Eigen::VectorXd::Zero(5);
+    for (int i = 0; i < 5; ++i) {
+        int val = static_cast<int>((*res)(i, 0));
+        EXPECT_GE(val, 0);
+        EXPECT_LT(val, 5);
+        counts(val) += 1.0;
+    }
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_EQ(counts(i), 1.0);
+    }
+}
+
+TEST_F(PrimitivesTest, DealErrorTooMany) {
+    // 6?5 is an error (can't deal 6 from 5)
+    Value* count = machine->heap->allocate_scalar(6.0);
+    Value* range = machine->heap->allocate_scalar(5.0);
+
+    fn_deal(machine, count, range);
+
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// ========================================================================
+// Expand (\ dyadic) Tests
+// ========================================================================
+
+TEST_F(PrimitivesTest, ExpandBasic) {
+    // 1 0 1 1 \ 1 2 3 → 1 0 2 3
+    Eigen::VectorXd mask(4);
+    mask << 1.0, 0.0, 1.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+
+    Eigen::VectorXd data(3);
+    data << 1.0, 2.0, 3.0;
+    Value* data_val = machine->heap->allocate_vector(data);
+
+    fn_expand(machine, mask_val, data_val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 0.0);  // Fill element
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, ExpandAllOnes) {
+    // 1 1 1 \ 1 2 3 → 1 2 3 (identity)
+    Eigen::VectorXd mask(3);
+    mask << 1.0, 1.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+
+    Eigen::VectorXd data(3);
+    data << 1.0, 2.0, 3.0;
+    Value* data_val = machine->heap->allocate_vector(data);
+
+    fn_expand(machine, mask_val, data_val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, ExpandLeadingZeros) {
+    // 0 0 1 1 \ 1 2 → 0 0 1 2
+    Eigen::VectorXd mask(4);
+    mask << 0.0, 0.0, 1.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+
+    Eigen::VectorXd data(2);
+    data << 1.0, 2.0;
+    Value* data_val = machine->heap->allocate_vector(data);
+
+    fn_expand(machine, mask_val, data_val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 2.0);
+}
+
+TEST_F(PrimitivesTest, ExpandScalar) {
+    // 0 1 0 \ 5 → 0 5 0
+    Eigen::VectorXd mask(3);
+    mask << 0.0, 1.0, 0.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+
+    Value* data_val = machine->heap->allocate_scalar(5.0);
+
+    fn_expand(machine, mask_val, data_val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 0.0);
+}
+
+TEST_F(PrimitivesTest, ExpandLengthError) {
+    // 1 0 1 \ 1 2 3 is error (2 ones vs 3 elements)
+    Eigen::VectorXd mask(3);
+    mask << 1.0, 0.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+
+    Eigen::VectorXd data(3);
+    data << 1.0, 2.0, 3.0;
+    Value* data_val = machine->heap->allocate_vector(data);
+
+    fn_expand(machine, mask_val, data_val);
+
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+TEST_F(PrimitivesTest, ExpandDomainError) {
+    // 1 2 1 \ 1 2 is error (non-boolean mask)
+    Eigen::VectorXd mask(3);
+    mask << 1.0, 2.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+
+    Eigen::VectorXd data(2);
+    data << 1.0, 2.0;
+    Value* data_val = machine->heap->allocate_vector(data);
+
+    fn_expand(machine, mask_val, data_val);
+
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+TEST_F(PrimitivesTest, QuestionRegistered) {
+    ASSERT_NE(machine->env->lookup("?"), nullptr);
+}

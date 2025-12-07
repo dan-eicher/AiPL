@@ -32,6 +32,7 @@ void fn_grade_up(Machine* m, Value* omega);      // ⍋ monadic (grade up)
 void fn_grade_down(Machine* m, Value* omega);    // ⍒ monadic (grade down)
 void fn_unique(Machine* m, Value* omega);        // ∪ monadic (unique)
 void fn_pi_times(Machine* m, Value* omega);      // ○ monadic (pi times)
+void fn_roll(Machine* m, Value* omega);          // ? monadic (random)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -62,6 +63,8 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs); // / dyadic (replicate)
 void fn_union(Machine* m, Value* lhs, Value* rhs);     // ∪ dyadic (union)
 void fn_without(Machine* m, Value* lhs, Value* rhs);   // ~ dyadic (without)
 void fn_circular(Machine* m, Value* lhs, Value* rhs);  // ○ dyadic (circular functions)
+void fn_deal(Machine* m, Value* lhs, Value* rhs);      // ? dyadic (deal)
+void fn_expand(Machine* m, Value* lhs, Value* rhs);    // \ dyadic (expand)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -93,6 +96,7 @@ extern PrimitiveFn prim_grade_up;  // ⍋ symbol (grade up)
 extern PrimitiveFn prim_grade_down;// ⍒ symbol (grade down)
 extern PrimitiveFn prim_union;     // ∪ symbol (unique/union)
 extern PrimitiveFn prim_circle;    // ○ symbol (pi times/circular)
+extern PrimitiveFn prim_question;  // ? symbol (roll/deal)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

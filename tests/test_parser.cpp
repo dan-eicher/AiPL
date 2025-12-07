@@ -3511,6 +3511,129 @@ TEST_F(ParserTest, PiTimesVector) {
     EXPECT_NEAR((*vec)(3, 0), M_PI * 2.0, 1e-10);
 }
 
+// ========================================================================
+// Roll/Deal Tests (?)
+// ========================================================================
+
+TEST_F(ParserTest, RollBasic) {
+    // ?6 returns random integer in [0,6)
+    Continuation* k = parser->parse("?6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    double r = result->as_scalar();
+    EXPECT_GE(r, 0.0);
+    EXPECT_LT(r, 6.0);
+}
+
+TEST_F(ParserTest, RollVector) {
+    // ?3 3 3 returns vector of random integers
+    Continuation* k = parser->parse("?3 3 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_GE((*vec)(i, 0), 0.0);
+        EXPECT_LT((*vec)(i, 0), 3.0);
+    }
+}
+
+TEST_F(ParserTest, DealBasic) {
+    // 3?10 returns 3 unique random integers from [0,10)
+    Continuation* k = parser->parse("3?10");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+
+    // All unique
+    double v0 = (*vec)(0, 0);
+    double v1 = (*vec)(1, 0);
+    double v2 = (*vec)(2, 0);
+    EXPECT_NE(v0, v1);
+    EXPECT_NE(v0, v2);
+    EXPECT_NE(v1, v2);
+}
+
+TEST_F(ParserTest, DealPermutation) {
+    // 5?5 returns a permutation of 0 1 2 3 4
+    Continuation* k = parser->parse("5?5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+
+    // Should contain each of 0-4 exactly once
+    double sum = 0;
+    for (int i = 0; i < 5; ++i) {
+        sum += (*vec)(i, 0);
+    }
+    EXPECT_DOUBLE_EQ(sum, 10.0);  // 0+1+2+3+4 = 10
+}
+
+// ========================================================================
+// Expand Tests (\)
+// ========================================================================
+
+TEST_F(ParserTest, ExpandBasic) {
+    // 1 0 1 1 \ 1 2 3 → 1 0 2 3
+    Continuation* k = parser->parse("1 0 1 1 \\ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 3.0);
+}
+
+TEST_F(ParserTest, ExpandLeadingZeros) {
+    // 0 0 1 1 \ 5 6 → 0 0 5 6
+    Continuation* k = parser->parse("0 0 1 1 \\ 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 6.0);
+}
+
+TEST_F(ParserTest, ScanVsExpand) {
+    // +\1 2 3 → 1 3 6 (scan with function)
+    Continuation* k = parser->parse("+\\1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 6.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
