@@ -61,12 +61,18 @@ PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr };
 
 // Execute (⍎) - parse and evaluate a string as APL code
 void fn_execute(Machine* m, Value* omega) {
-    if (!omega->is_string()) {
+    // Convert to STRING if needed (handles both STRING and char vectors)
+    Value* str_val;
+    if (omega->is_string()) {
+        str_val = omega;
+    } else if (omega->is_array() && omega->is_char_data()) {
+        str_val = omega->to_string_value(m->heap);
+    } else {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: execute requires a string"));
         return;
     }
 
-    const char* code = omega->as_string();
+    const char* code = str_val->as_string();
     Continuation* k = m->parser->parse(code);
 
     if (!k) {
@@ -91,6 +97,10 @@ void fn_add(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar + rhs->data.scalar);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     // Scalar extension using Eigen broadcasting
     if (lhs->is_scalar()) {
@@ -144,6 +154,10 @@ void fn_subtract(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Scalar extension
     if (lhs->is_scalar()) {
         Eigen::MatrixXd result =
@@ -194,6 +208,10 @@ void fn_multiply(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar * rhs->data.scalar);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -249,6 +267,10 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar / rhs->data.scalar);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -317,6 +339,10 @@ void fn_power(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Scalar extension
     if (lhs->is_scalar()) {
         // lhs is scalar base, rhs is array of exponents: lhs^rhs[i]
@@ -372,6 +398,10 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar == rhs->data.scalar ? 1.0 : 0.0);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -431,6 +461,10 @@ void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Scalar extension
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -488,6 +522,10 @@ void fn_less(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar < rhs->data.scalar ? 1.0 : 0.0);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -547,6 +585,10 @@ void fn_greater(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Scalar extension
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -605,6 +647,10 @@ void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Scalar extension
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -662,6 +708,10 @@ void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar >= rhs->data.scalar ? 1.0 : 0.0);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -724,6 +774,10 @@ void fn_maximum(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result = rmat->array().max(lhs->data.scalar);
@@ -769,6 +823,10 @@ void fn_minimum(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(std::min(lhs->data.scalar, rhs->data.scalar));
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -816,6 +874,9 @@ void fn_ceiling(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->array().ceil();
 
@@ -832,6 +893,9 @@ void fn_floor(Machine* m, Value* omega) {
         m->result = m->heap->allocate_scalar(std::floor(omega->data.scalar));
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->array().floor();
@@ -857,6 +921,10 @@ void fn_and(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(result);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -916,6 +984,10 @@ void fn_or(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
@@ -971,6 +1043,9 @@ void fn_not(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result(mat->rows(), mat->cols());
     for (int i = 0; i < mat->size(); ++i) {
@@ -991,6 +1066,10 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(result);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1047,6 +1126,10 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(result);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1107,6 +1190,9 @@ void fn_magnitude(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->array().abs();
 
@@ -1135,6 +1221,10 @@ void fn_residue(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(residue(lhs->data.scalar, rhs->data.scalar));
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1191,6 +1281,9 @@ void fn_natural_log(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->array().log();
 
@@ -1212,6 +1305,10 @@ void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(log_base(lhs->data.scalar, rhs->data.scalar));
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1268,6 +1365,9 @@ void fn_factorial(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result(mat->rows(), mat->cols());
     for (int i = 0; i < mat->size(); ++i) {
@@ -1293,6 +1393,10 @@ void fn_binomial(Machine* m, Value* lhs, Value* rhs) {
         m->result = m->heap->allocate_scalar(binomial(lhs->data.scalar, rhs->data.scalar));
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1352,6 +1456,9 @@ void fn_pi_times(Machine* m, Value* omega) {
         m->result = m->heap->allocate_scalar(M_PI * omega->data.scalar);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = M_PI * mat->array();
@@ -1419,6 +1526,9 @@ void fn_circular(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = rhs->as_matrix();
     Eigen::MatrixXd result(mat->rows(), mat->cols());
 
@@ -1449,11 +1559,14 @@ void fn_conjugate(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     // For arrays, return a copy preserving vector/matrix distinction
     if (omega->is_vector()) {
-        m->result = m->heap->allocate_vector(omega->as_matrix()->col(0));
+        m->result = m->heap->allocate_vector(omega->as_matrix()->col(0), omega->is_char_data());
     } else {
-        m->result = m->heap->allocate_matrix(*omega->as_matrix());
+        m->result = m->heap->allocate_matrix(*omega->as_matrix(), omega->is_char_data());
     }
 }
 
@@ -1463,6 +1576,9 @@ void fn_negate(Machine* m, Value* omega) {
         m->result = m->heap->allocate_scalar(-omega->data.scalar);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     Eigen::MatrixXd result = -omega->as_matrix()->array();
     // Preserve vector/matrix distinction
@@ -1481,6 +1597,9 @@ void fn_signum(Machine* m, Value* omega) {
         m->result = m->heap->allocate_scalar(sign);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     // For arrays, apply sign element-wise
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -1512,6 +1631,9 @@ void fn_reciprocal(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for zeros
     if ((mat->array() == 0.0).any()) {
@@ -1535,6 +1657,9 @@ void fn_exponential(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     Eigen::MatrixXd result = omega->as_matrix()->array().exp();
     // Preserve vector/matrix distinction
     if (omega->is_vector()) {
@@ -1556,6 +1681,9 @@ void fn_shape(Machine* m, Value* omega) {
         m->result = m->heap->allocate_vector(shape);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
@@ -1638,6 +1766,9 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
 
     int target_size = target_rows * target_cols;
 
+    // String → char vector conversion for array operations
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get source data (row-major order per APL)
     Eigen::VectorXd source;
     if (rhs->is_scalar()) {
@@ -1682,6 +1813,9 @@ void fn_ravel(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Flatten in row-major order (APL standard)
     int size = mat->size();
@@ -1696,6 +1830,10 @@ void fn_ravel(Machine* m, Value* omega) {
 
 // Catenate (,) - dyadic: concatenate arrays
 void fn_catenate(Machine* m, Value* lhs, Value* rhs) {
+    // String → char vector conversion for array operations
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Convert both to matrices for uniform handling
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1724,9 +1862,12 @@ void fn_transpose(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     if (omega->is_vector()) {
         // Vector transpose is identity (returns vector unchanged)
-        m->result = m->heap->allocate_vector(omega->as_matrix()->col(0));
+        m->result = m->heap->allocate_vector(omega->as_matrix()->col(0), omega->is_char_data());
         return;
     }
 
@@ -1739,6 +1880,9 @@ void fn_transpose(Machine* m, Value* omega) {
 // Dyadic Transpose (⍉) - reorder axes
 // For 2D: 1 0⍉M is transpose, 0 1⍉M is identity
 void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
+    // String → char vector conversion for array operations
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
     // Get permutation as vector
     Eigen::VectorXd perm;
     if (lhs->is_scalar()) {
@@ -2057,6 +2201,9 @@ void fn_reverse(Machine* m, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (omega->is_vector()) {
@@ -2114,6 +2261,9 @@ void fn_tally(Machine* m, Value* omega) {
         m->result = m->heap->allocate_scalar(1.0);
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // First axis is number of rows

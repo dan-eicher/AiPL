@@ -136,4 +136,101 @@ void Value::mark(Heap* heap) {
     // Matrices will be handled when we add nested Value support
 }
 
+// Convert STRING to character vector (UTF-8 decode)
+Value* Value::to_char_vector(Heap* heap) {
+    // Already an array? Return as-is
+    if (is_array()) {
+        return this;
+    }
+
+    // Must be STRING
+    if (!is_string()) {
+        throw std::runtime_error("to_char_vector requires STRING or array");
+    }
+
+    const char* s = data.string;
+    std::vector<double> codepoints;
+
+    // Decode UTF-8 to codepoints
+    while (*s) {
+        unsigned char c = static_cast<unsigned char>(*s);
+        uint32_t cp;
+
+        if ((c & 0x80) == 0) {
+            // 1-byte (ASCII)
+            cp = c;
+            s += 1;
+        } else if ((c & 0xE0) == 0xC0) {
+            // 2-byte
+            cp = (c & 0x1F) << 6;
+            cp |= (static_cast<unsigned char>(s[1]) & 0x3F);
+            s += 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            // 3-byte
+            cp = (c & 0x0F) << 12;
+            cp |= (static_cast<unsigned char>(s[1]) & 0x3F) << 6;
+            cp |= (static_cast<unsigned char>(s[2]) & 0x3F);
+            s += 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            // 4-byte
+            cp = (c & 0x07) << 18;
+            cp |= (static_cast<unsigned char>(s[1]) & 0x3F) << 12;
+            cp |= (static_cast<unsigned char>(s[2]) & 0x3F) << 6;
+            cp |= (static_cast<unsigned char>(s[3]) & 0x3F);
+            s += 4;
+        } else {
+            // Invalid UTF-8, treat as single byte
+            cp = c;
+            s += 1;
+        }
+        codepoints.push_back(static_cast<double>(cp));
+    }
+
+    Eigen::VectorXd vec(codepoints.size());
+    for (size_t i = 0; i < codepoints.size(); ++i) {
+        vec(i) = codepoints[i];
+    }
+
+    return heap->allocate_vector(vec, true);  // is_char_data = true
+}
+
+// Convert character vector to STRING (UTF-8 encode)
+Value* Value::to_string_value(Heap* heap) {
+    // Already STRING? Return as-is
+    if (is_string()) {
+        return this;
+    }
+
+    // Must be an array with character data
+    if (!is_array()) {
+        throw std::runtime_error("to_string_value requires STRING or array");
+    }
+
+    const Eigen::MatrixXd* mat = as_matrix();
+    std::string result;
+
+    // Encode codepoints to UTF-8
+    for (int i = 0; i < mat->size(); ++i) {
+        uint32_t cp = static_cast<uint32_t>((*mat)(i % mat->rows(), i / mat->rows()));
+
+        if (cp < 0x80) {
+            result += static_cast<char>(cp);
+        } else if (cp < 0x800) {
+            result += static_cast<char>(0xC0 | (cp >> 6));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            result += static_cast<char>(0xE0 | (cp >> 12));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else {
+            result += static_cast<char>(0xF0 | (cp >> 18));
+            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (cp & 0x3F));
+        }
+    }
+
+    return heap->allocate_string(result.c_str());
+}
+
 } // namespace apl

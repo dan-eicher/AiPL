@@ -106,8 +106,11 @@ public:
         ~Data() {}  // Manual cleanup required
     } data;
 
+    // Character data flag - true if this vector/matrix contains character codepoints
+    bool is_character_data_;
+
     // Constructors (public so factory methods work, but new/delete are private)
-    Value() : GCObject(), tag(ValueType::SCALAR) {
+    Value() : GCObject(), tag(ValueType::SCALAR), is_character_data_(false) {
         data.scalar = 0.0;
         promoted_matrix_ = nullptr;
     }
@@ -130,6 +133,12 @@ public:
 
     // String access
     const char* as_string() const { return data.string; }
+
+    // Character data queries and conversion
+    bool is_char_data() const { return is_character_data_; }
+    void set_char_data(bool v) { is_character_data_ = v; }
+    Value* to_char_vector(Heap* heap);      // STRING → char VECTOR (returns this if already array)
+    Value* to_string_value(Heap* heap);     // char VECTOR → STRING (returns this if already STRING)
 
     // Shape queries (for arrays)
     int rank() const;           // 0 for scalar, 1 for vector, 2 for matrix

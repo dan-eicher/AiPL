@@ -117,9 +117,10 @@ Value* Heap::allocate_scalar(double d) {
 }
 
 // Allocate a vector
-Value* Heap::allocate_vector(const Eigen::VectorXd& v) {
+Value* Heap::allocate_vector(const Eigen::VectorXd& v, bool is_char_data) {
     Value* val = new Value();
     val->tag = ValueType::VECTOR;
+    val->is_character_data_ = is_char_data;
     // Store vector as n×1 matrix
     val->data.matrix = new Eigen::MatrixXd(v.size(), 1);
     val->data.matrix->col(0) = v;
@@ -127,9 +128,10 @@ Value* Heap::allocate_vector(const Eigen::VectorXd& v) {
 }
 
 // Allocate a matrix
-Value* Heap::allocate_matrix(const Eigen::MatrixXd& m) {
+Value* Heap::allocate_matrix(const Eigen::MatrixXd& m, bool is_char_data) {
     Value* val = new Value();
     val->tag = ValueType::MATRIX;
+    val->is_character_data_ = is_char_data;
     val->data.matrix = new Eigen::MatrixXd(m);
     return allocate(val);
 }

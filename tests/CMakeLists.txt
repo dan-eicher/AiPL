@@ -60,3 +60,8 @@ add_test(NAME OperatorsTest COMMAND test_operators)
 add_executable(test_grammar test_grammar.cpp)
 target_link_libraries(test_grammar apl_vm GTest::gtest)
 add_test(NAME GrammarTest COMMAND test_grammar)
+
+# String tests (STRING type, char vectors, UTF-8)
+add_executable(test_strings test_strings.cpp)
+target_link_libraries(test_strings apl_vm GTest::gtest)
+add_test(NAME StringTest COMMAND test_strings)

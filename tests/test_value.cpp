@@ -567,6 +567,193 @@ TEST_F(ValueTest, StringEmpty) {
     EXPECT_STREQ(str->as_string(), "");
 }
 
+// ============================================================================
+// String/Character Vector Conversion Tests
+// ============================================================================
+
+// Test to_char_vector with ASCII string
+TEST_F(ValueTest, StringToCharVectorASCII) {
+    Value* str = machine->heap->allocate_string("ABC");
+    Value* vec = str->to_char_vector(machine->heap);
+
+    EXPECT_TRUE(vec->is_vector());
+    EXPECT_TRUE(vec->is_char_data());
+    EXPECT_EQ(vec->size(), 3);
+
+    Eigen::MatrixXd* m = vec->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 65.0);  // 'A'
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 66.0);  // 'B'
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 67.0);  // 'C'
+}
+
+// Test to_string_value with ASCII codepoints
+TEST_F(ValueTest, CharVectorToStringASCII) {
+    Eigen::VectorXd vec(3);
+    vec << 72.0, 105.0, 33.0;  // 'H', 'i', '!'
+    Value* charVec = machine->heap->allocate_vector(vec, true);  // is_char_data = true
+
+    EXPECT_TRUE(charVec->is_char_data());
+
+    Value* str = charVec->to_string_value(machine->heap);
+    EXPECT_TRUE(str->is_string());
+    EXPECT_STREQ(str->as_string(), "Hi!");
+}
+
+// Test round-trip conversion ASCII
+TEST_F(ValueTest, StringRoundTripASCII) {
+    Value* original = machine->heap->allocate_string("Hello, World!");
+    Value* vec = original->to_char_vector(machine->heap);
+    Value* back = vec->to_string_value(machine->heap);
+
+    EXPECT_STREQ(back->as_string(), "Hello, World!");
+}
+
+// Test to_char_vector returns self if already array
+TEST_F(ValueTest, ToCharVectorIdempotent) {
+    Eigen::VectorXd vec(2);
+    vec << 65.0, 66.0;
+    Value* charVec = machine->heap->allocate_vector(vec, true);
+
+    Value* result = charVec->to_char_vector(machine->heap);
+    EXPECT_EQ(result, charVec);  // Same pointer - no conversion needed
+}
+
+// Test to_string_value returns self if already string
+TEST_F(ValueTest, ToStringValueIdempotent) {
+    Value* str = machine->heap->allocate_string("test");
+
+    Value* result = str->to_string_value(machine->heap);
+    EXPECT_EQ(result, str);  // Same pointer - no conversion needed
+}
+
+// Test empty string conversion
+TEST_F(ValueTest, EmptyStringToCharVector) {
+    Value* str = machine->heap->allocate_string("");
+    Value* vec = str->to_char_vector(machine->heap);
+
+    EXPECT_TRUE(vec->is_vector());
+    EXPECT_TRUE(vec->is_char_data());
+    EXPECT_EQ(vec->size(), 0);
+}
+
+// Test empty char vector conversion
+TEST_F(ValueTest, EmptyCharVectorToString) {
+    Eigen::VectorXd vec(0);
+    Value* charVec = machine->heap->allocate_vector(vec, true);
+
+    Value* str = charVec->to_string_value(machine->heap);
+    EXPECT_TRUE(str->is_string());
+    EXPECT_STREQ(str->as_string(), "");
+}
+
+// Test UTF-8 2-byte character (Greek letter alpha: α = U+03B1)
+TEST_F(ValueTest, StringToCharVectorUTF8TwoByte) {
+    Value* str = machine->heap->allocate_string("α");
+    Value* vec = str->to_char_vector(machine->heap);
+
+    EXPECT_TRUE(vec->is_vector());
+    EXPECT_TRUE(vec->is_char_data());
+    EXPECT_EQ(vec->size(), 1);  // One codepoint, not two bytes
+
+    Eigen::MatrixXd* m = vec->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0x03B1);  // U+03B1 = 945
+}
+
+// Test UTF-8 3-byte character (Euro sign: € = U+20AC)
+TEST_F(ValueTest, StringToCharVectorUTF8ThreeByte) {
+    Value* str = machine->heap->allocate_string("€");
+    Value* vec = str->to_char_vector(machine->heap);
+
+    EXPECT_TRUE(vec->is_vector());
+    EXPECT_EQ(vec->size(), 1);
+
+    Eigen::MatrixXd* m = vec->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0x20AC);  // U+20AC = 8364
+}
+
+// Test UTF-8 4-byte character (Emoji: 😀 = U+1F600)
+TEST_F(ValueTest, StringToCharVectorUTF8FourByte) {
+    Value* str = machine->heap->allocate_string("😀");
+    Value* vec = str->to_char_vector(machine->heap);
+
+    EXPECT_TRUE(vec->is_vector());
+    EXPECT_EQ(vec->size(), 1);
+
+    Eigen::MatrixXd* m = vec->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0x1F600);  // U+1F600 = 128512
+}
+
+// Test mixed ASCII and UTF-8
+TEST_F(ValueTest, StringToCharVectorMixed) {
+    Value* str = machine->heap->allocate_string("A⍳B");  // ASCII + APL iota + ASCII
+    Value* vec = str->to_char_vector(machine->heap);
+
+    EXPECT_EQ(vec->size(), 3);
+
+    Eigen::MatrixXd* m = vec->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 65.0);     // 'A'
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0x2373);   // APL iota = U+2373 = 9075
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 66.0);     // 'B'
+}
+
+// Test UTF-8 round-trip with multi-byte chars
+TEST_F(ValueTest, StringRoundTripUTF8) {
+    Value* original = machine->heap->allocate_string("Hello α€😀 World!");
+    Value* vec = original->to_char_vector(machine->heap);
+    Value* back = vec->to_string_value(machine->heap);
+
+    EXPECT_STREQ(back->as_string(), "Hello α€😀 World!");
+}
+
+// Test codepoint to UTF-8 encoding
+TEST_F(ValueTest, CharVectorToStringUTF8) {
+    Eigen::VectorXd vec(4);
+    vec << 65.0, 0x03B1, 0x20AC, 0x1F600;  // 'A', α, €, 😀
+    Value* charVec = machine->heap->allocate_vector(vec, true);
+
+    Value* str = charVec->to_string_value(machine->heap);
+    EXPECT_STREQ(str->as_string(), "Aα€😀");
+}
+
+// Test is_char_data flag preserved
+TEST_F(ValueTest, CharDataFlagPreserved) {
+    // Numeric vector should not have char data flag
+    Eigen::VectorXd numVec(3);
+    numVec << 1.0, 2.0, 3.0;
+    Value* numeric = machine->heap->allocate_vector(numVec);
+    EXPECT_FALSE(numeric->is_char_data());
+
+    // Char vector should have flag
+    Eigen::VectorXd charVec(3);
+    charVec << 65.0, 66.0, 67.0;
+    Value* chars = machine->heap->allocate_vector(charVec, true);
+    EXPECT_TRUE(chars->is_char_data());
+}
+
+// Test char data flag on matrix
+TEST_F(ValueTest, CharDataFlagMatrix) {
+    Eigen::MatrixXd mat(2, 2);
+    mat << 65.0, 66.0, 67.0, 68.0;  // A, B, C, D
+
+    Value* numMat = machine->heap->allocate_matrix(mat, false);
+    EXPECT_FALSE(numMat->is_char_data());
+
+    Value* charMat = machine->heap->allocate_matrix(mat, true);
+    EXPECT_TRUE(charMat->is_char_data());
+}
+
+// Test error: to_char_vector on non-string non-array
+TEST_F(ValueTest, ToCharVectorErrorOnFunction) {
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+    EXPECT_THROW(fn->to_char_vector(machine->heap), std::runtime_error);
+}
+
+// Test error: to_string_value on non-array non-string
+TEST_F(ValueTest, ToStringValueErrorOnFunction) {
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+    EXPECT_THROW(fn->to_string_value(machine->heap), std::runtime_error);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

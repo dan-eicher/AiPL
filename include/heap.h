@@ -82,8 +82,8 @@ public:
     Value* allocate_scalar(double d);
 
     // Convenient Value allocation helpers
-    Value* allocate_vector(const Eigen::VectorXd& v);
-    Value* allocate_matrix(const Eigen::MatrixXd& m);
+    Value* allocate_vector(const Eigen::VectorXd& v, bool is_char_data = false);
+    Value* allocate_matrix(const Eigen::MatrixXd& m, bool is_char_data = false);
     Value* allocate_string(const char* s);  // s must be interned (stable pointer)
     Value* allocate_primitive(PrimitiveFn* fn);
     Value* allocate_operator(PrimitiveOp* op);

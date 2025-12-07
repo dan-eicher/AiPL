@@ -113,6 +113,9 @@ void op_each(Machine* m, Value* f, Value* omega) {
         return;
     }
 
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
     int rows = omega->rows();
     int cols = omega->cols();
     int num_cells = rows * cols;
@@ -264,6 +267,9 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
         m->result = m->heap->allocate_scalar(omega->as_scalar());
         return;
     }
+
+    // String → char vector conversion for array operations
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
