@@ -2020,7 +2020,7 @@ void fn_iota(Machine* m, Value* omega) {
 
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
-        result(i) = i + 1;  // 1-based per ISO 13751 (⎕IO=1)
+        result(i) = i + m->io;  // Index origin (⎕IO)
     }
     m->result = m->heap->allocate_vector(result);
 }
@@ -2396,20 +2396,21 @@ static Eigen::VectorXd flatten_value(Value* val) {
 }
 
 // Index Of (⍳) - dyadic: find indices of rhs elements in lhs
-// Returns index of first occurrence of each element, or 1+≢lhs if not found (1-origin per ISO 13751)
+// Returns index of first occurrence of each element, or ⎕IO+≢lhs if not found
 void fn_index_of(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     // Get lhs as a flat array of values to search in
     Eigen::VectorXd haystack = flatten_value(lhs);
-    double not_found = static_cast<double>(haystack.size() + 1);  // 1-origin: past last valid index
+    int io = m->io;
+    double not_found = static_cast<double>(haystack.size() + io);  // ⎕IO + length
 
-    // Search for needle in haystack, return 1-based index or not_found
-    auto find_index = [&haystack, not_found](double needle) -> double {
+    // Search for needle in haystack, return index or not_found
+    auto find_index = [&haystack, not_found, io](double needle) -> double {
         for (int i = 0; i < haystack.size(); ++i) {
             if (haystack(i) == needle) {
-                return static_cast<double>(i + 1);  // 1-origin
+                return static_cast<double>(i + io);  // ⎕IO
             }
         }
         return not_found;
@@ -2492,11 +2493,11 @@ void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Grade Up (⍋) - monadic: return indices that would sort array in ascending order
-// ⍋ 3 1 4 1 5 → 2 4 1 3 5 (1-origin per ISO 13751)
+// ⍋ 3 1 4 1 5 → 2 4 1 3 5 (with ⎕IO=1)
 void fn_grade_up(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        // Grade of scalar is 1 (index of single element, 1-origin)
-        m->result = m->heap->allocate_scalar(1.0);
+        // Grade of scalar is ⎕IO (index of single element)
+        m->result = m->heap->allocate_scalar(static_cast<double>(m->io));
         return;
     }
 
@@ -2515,21 +2516,21 @@ void fn_grade_up(Machine* m, Value* omega) {
         return data(a) < data(b);
     });
 
-    // Convert to result vector (1-origin per ISO 13751)
+    // Convert to result vector (⎕IO)
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
-        result(i) = static_cast<double>(indices[i] + 1);
+        result(i) = static_cast<double>(indices[i] + m->io);
     }
 
     m->result = m->heap->allocate_vector(result);
 }
 
 // Grade Down (⍒) - monadic: return indices that would sort array in descending order
-// ⍒ 3 1 4 1 5 → 5 3 1 2 4 (1-origin per ISO 13751)
+// ⍒ 3 1 4 1 5 → 5 3 1 2 4 (with ⎕IO=1)
 void fn_grade_down(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        // Grade of scalar is 1 (index of single element, 1-origin)
-        m->result = m->heap->allocate_scalar(1.0);
+        // Grade of scalar is ⎕IO (index of single element)
+        m->result = m->heap->allocate_scalar(static_cast<double>(m->io));
         return;
     }
 
@@ -2548,10 +2549,10 @@ void fn_grade_down(Machine* m, Value* omega) {
         return data(a) > data(b);
     });
 
-    // Convert to result vector (1-origin per ISO 13751)
+    // Convert to result vector (⎕IO)
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
-        result(i) = static_cast<double>(indices[i] + 1);
+        result(i) = static_cast<double>(indices[i] + m->io);
     }
 
     m->result = m->heap->allocate_vector(result);
@@ -2820,16 +2821,17 @@ void fn_without(Machine* m, Value* lhs, Value* rhs) {
 // Thread-local random number generator
 static thread_local std::mt19937_64 rng(std::random_device{}());
 
-// Roll (? monadic) - random integer from 0 to B-1
-// ?N returns random integer in [0, N)
+// Roll (? monadic) - random integer from ⎕IO to N-1+⎕IO
+// ?N returns random integer in [⎕IO, N-1+⎕IO]
 void fn_roll(Machine* m, Value* omega) {
+    int io = m->io;
     if (omega->is_scalar()) {
         int n = static_cast<int>(omega->data.scalar);
         if (n <= 0) {
             m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
             return;
         }
-        std::uniform_int_distribution<int> dist(1, n);  // 1-based per ISO 13751 (⎕IO=1)
+        std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
         m->result = m->heap->allocate_scalar(static_cast<double>(dist(rng)));
         return;
     }
@@ -2843,7 +2845,7 @@ void fn_roll(Machine* m, Value* omega) {
             m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
             return;
         }
-        std::uniform_int_distribution<int> dist(1, n);  // 1-based per ISO 13751 (⎕IO=1)
+        std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
         result(i) = static_cast<double>(dist(rng));
     }
 
@@ -2884,7 +2886,7 @@ void fn_deal(Machine* m, Value* lhs, Value* rhs) {
     // Create array 1..b (1-based per ISO 13751), shuffle first 'a' elements
     Eigen::VectorXd pool(b);
     for (int i = 0; i < b; ++i) {
-        pool(i) = static_cast<double>(i + 1);  // 1-based per ISO 13751 (⎕IO=1)
+        pool(i) = static_cast<double>(i + m->io);  // ⎕IO
     }
 
     // Partial Fisher-Yates: only shuffle first 'a' positions
@@ -3160,7 +3162,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
     bool is_vec = (cols == 1);
 
     if (rhs->is_scalar()) {
-        int idx = static_cast<int>(rhs->as_scalar()) - 1;
+        int idx = static_cast<int>(rhs->as_scalar()) - m->io;  // ⎕IO
         if (is_vec) {
             if (idx < 0 || idx >= rows) {
                 m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
@@ -3185,7 +3187,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
         if (is_vec) {
             Eigen::VectorXd result(n);
             for (int i = 0; i < n; i++) {
-                int idx = static_cast<int>((*idx_mat)(i, 0)) - 1;
+                int idx = static_cast<int>((*idx_mat)(i, 0)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
                     m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
                     return;
@@ -3196,7 +3198,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
         } else {
             Eigen::MatrixXd result(n, cols);
             for (int i = 0; i < n; i++) {
-                int idx = static_cast<int>((*idx_mat)(i, 0)) - 1;
+                int idx = static_cast<int>((*idx_mat)(i, 0)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
                     m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
                     return;

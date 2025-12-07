@@ -22,6 +22,7 @@ public:
     Value* result;                          // Result of last continuation
     Environment* env;                       // Environment (variable bindings)
     std::vector<Continuation*> kont_stack;  // Continuation stack
+    int io = 1;                             // Index origin (⎕IO): 0 or 1
 
     // Memory management
     Heap* heap;                          // Garbage-collected heap

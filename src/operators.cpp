@@ -478,7 +478,7 @@ void fn_scan_first(Machine* m, Value* func, Value* omega) {
 // Called as: op->dyadic(m, lhs, func, axis, rhs)
 // where lhs is nullptr for monadic use.
 
-// Helper: validate axis specification and return 1-based axis number
+// Helper: validate axis specification and return ⎕IO-based axis number
 // Returns 0 if axis is nullptr (caller should use default)
 // Returns -1 on error (after pushing ThrowErrorK)
 static int validate_axis(Machine* m, Value* axis, int max_rank) {
@@ -493,8 +493,9 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
 
     double axis_val = axis->as_scalar();
     int k = static_cast<int>(axis_val);
+    int io = m->io;
 
-    if (axis_val != static_cast<double>(k) || k < 1 || k > max_rank) {
+    if (axis_val != static_cast<double>(k) || k < io || k > max_rank - 1 + io) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis out of range"));
         return -1;
     }
@@ -1163,7 +1164,7 @@ void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
     }
 
     double k = axis->as_scalar();
-    int axis_idx = static_cast<int>(std::round(k)) - 1;
+    int axis_idx = static_cast<int>(std::round(k)) - m->io;  // ⎕IO
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
@@ -1219,7 +1220,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
 
     double k = axis->as_scalar();
     bool laminate = !is_near_integer(k);
-    int axis_idx = static_cast<int>(std::floor(k)) - 1;
+    int axis_idx = static_cast<int>(std::floor(k)) - m->io;  // ⎕IO
 
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
@@ -1263,7 +1264,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
         return;
     }
 
-    int cat_axis = static_cast<int>(std::round(k)) - 1;
+    int cat_axis = static_cast<int>(std::round(k)) - m->io;  // ⎕IO
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
         Eigen::VectorXd result(2);

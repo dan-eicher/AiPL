@@ -2696,7 +2696,7 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
         return;
     }
 
-    int idx = static_cast<int>(index_val->as_scalar()) - 1;  // 1-based to 0-based
+    int idx = static_cast<int>(index_val->as_scalar()) - machine->io;  // ⎕IO
 
     // Numeric array indexed assignment
     if (!arr->is_array()) {
