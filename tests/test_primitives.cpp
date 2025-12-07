@@ -3667,3 +3667,28 @@ TEST_F(PrimitivesTest, DyadicTransposeInvalidPermError) {
 TEST_F(PrimitivesTest, DominoRegistered) {
     ASSERT_NE(machine->env->lookup("⌹"), nullptr);
 }
+
+// ============================================================================
+// Execute (⍎) tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, ExecuteRequiresString) {
+    // ⍎5 → DOMAIN ERROR (not a string)
+    Value* val = machine->heap->allocate_scalar(5.0);
+    fn_execute(machine, val);
+    ASSERT_FALSE(machine->kont_stack.empty());
+    auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(k, nullptr);
+}
+
+TEST_F(PrimitivesTest, ExecutePushesContination) {
+    // ⍎'42' should push a continuation
+    Value* str = machine->heap->allocate_string("42");
+    size_t stack_before = machine->kont_stack.size();
+    fn_execute(machine, str);
+    EXPECT_GT(machine->kont_stack.size(), stack_before);
+}
+
+TEST_F(PrimitivesTest, ExecuteRegistered) {
+    ASSERT_NE(machine->env->lookup("⍎"), nullptr);
+}

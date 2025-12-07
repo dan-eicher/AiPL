@@ -3840,6 +3840,37 @@ TEST_F(ParserTest, DyadicTransposeEqualsMonadic) {
     EXPECT_TRUE(mat1->isApprox(*mat2));
 }
 
+// ============================================================================
+// String literal parsing tests
+// ============================================================================
+
+TEST_F(ParserTest, StringLiteralParses) {
+    Continuation* k = parser->parse("'hello'");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "hello");
+}
+
+TEST_F(ParserTest, EmptyStringParses) {
+    Continuation* k = parser->parse("''");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "");
+}
+
+TEST_F(ParserTest, StringAsArgument) {
+    // String should work as an argument (is_basic_value)
+    // Just parse, don't need to eval since ⍎ isn't about parsing
+    Continuation* k = parser->parse("⍎'1'");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

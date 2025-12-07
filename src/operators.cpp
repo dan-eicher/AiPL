@@ -248,7 +248,8 @@ static double get_identity_for_function(Value* func) {
 // Uses CellIterK FOLD_RIGHT for continuation-based execution
 void fn_reduce(Machine* m, Value* func, Value* omega) {
     // Handle replicate: if "func" is actually an array, this is A / B (replicate)
-    if (func->is_basic_value()) {
+    // Note: use is_array()/is_scalar() not is_basic_value() to exclude strings
+    if (func->is_array() || func->is_scalar()) {
         fn_replicate(m, func, omega);
         return;
     }
@@ -371,7 +372,8 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega) {
 // Uses PrefixScanK for continuation-based execution
 void fn_scan(Machine* m, Value* func, Value* omega) {
     // Handle expand: if "func" is actually an array, this is A \ B (expand)
-    if (func->is_basic_value()) {
+    // Note: use is_array()/is_scalar() not is_basic_value() to exclude strings
+    if (func->is_array() || func->is_scalar()) {
         fn_expand(m, func, omega);
         return;
     }

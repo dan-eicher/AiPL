@@ -134,6 +134,14 @@ Value* Heap::allocate_matrix(const Eigen::MatrixXd& m) {
     return allocate(val);
 }
 
+// Allocate a string value (re-intern to ensure stable pointer)
+Value* Heap::allocate_string(const char* s) {
+    Value* val = new Value();
+    val->tag = ValueType::STRING;
+    val->data.string = machine->string_pool.intern(s);
+    return allocate(val);
+}
+
 // Allocate a primitive function value
 Value* Heap::allocate_primitive(PrimitiveFn* fn) {
     Value* val = new Value();

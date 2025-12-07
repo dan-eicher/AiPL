@@ -159,6 +159,7 @@ Continuation* Parser::parse_expression(int min_bp) {
             switch (next.type) {
                 case TOK_NUMBER:
                 case TOK_NUMBER_VECTOR:
+                case TOK_STRING:
                 case TOK_LPAREN:
                 case TOK_NAME:
                 case TOK_ALPHA:  // ⍺ in dfns
@@ -203,6 +204,7 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_DECODE:
                 case TOK_ENCODE:
                 case TOK_DOMINO:
+                case TOK_EXECUTE:
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -255,6 +257,13 @@ Continuation* Parser::nud(const Token& token) {
             Value* vec_val = machine->heap->allocate_vector(vec);
             // Create StrandK that holds this vector Value
             StrandK* strand = machine->heap->allocate<StrandK>(vec_val);
+            return strand;
+        }
+
+        case TOK_STRING: {
+            // String literal: 'hello' → string value
+            Value* str_val = machine->heap->allocate_string(token.name);
+            StrandK* strand = machine->heap->allocate<StrandK>(str_val);
             return strand;
         }
 
@@ -313,7 +322,8 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_QUESTION:
         case TOK_DECODE:
         case TOK_ENCODE:
-        case TOK_DOMINO: {
+        case TOK_DOMINO:
+        case TOK_EXECUTE: {
             // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
             // They are NOT special monadic operators in the grammar
             // Monadic behavior emerges from juxtaposition + runtime semantics
@@ -360,6 +370,7 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_DECODE:        op_name = "⊥"; break;
                 case TOK_ENCODE:        op_name = "⊤"; break;
                 case TOK_DOMINO:        op_name = "⌹"; break;
+                case TOK_EXECUTE:       op_name = "⍎"; break;
                 default: break;
             }
 

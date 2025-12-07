@@ -1139,6 +1139,61 @@ TEST_F(GrammarTest, InnerProductDifferentOperators) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);
 }
 
+// ============================================================================
+// Execute (⍎) end-to-end tests
+// ============================================================================
+
+TEST_F(GrammarTest, ExecuteSimpleNumber) {
+    // ⍎'42' → 42
+    Value* result = eval("⍎'42'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(GrammarTest, ExecuteArithmetic) {
+    // ⍎'1+2' → 3
+    Value* result = eval("⍎'1+2'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(GrammarTest, ExecuteVector) {
+    // ⍎'1 2 3' → 1 2 3
+    Value* result = eval("⍎'1 2 3'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+TEST_F(GrammarTest, ExecuteWithReduce) {
+    // ⍎'+/⍳5' → 10 (sum of 0 1 2 3 4)
+    Value* result = eval("⍎'+/⍳5'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(GrammarTest, ExecuteComplex) {
+    // ⍎'2×3+4' → 14 (right-to-left: 3+4=7, 2×7=14)
+    Value* result = eval("⍎'2×3+4'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
+}
+
+TEST_F(GrammarTest, ExecuteInExpression) {
+    // 1 + ⍎'2' → 3
+    Value* result = eval("1 + ⍎'2'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

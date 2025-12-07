@@ -4,6 +4,7 @@
 #include "value.h"
 #include "machine.h"
 #include "continuation.h"
+#include "parser.h"
 #include <cmath>
 #include <stdexcept>
 #include <random>
@@ -52,6 +53,32 @@ PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular };
 PrimitiveFn prim_question  = { "?", fn_roll, fn_deal };
 PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode };
 PrimitiveFn prim_encode    = { "⊤", nullptr, fn_encode };
+PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr };
+
+// ============================================================================
+// Execute Function (⍎)
+// ============================================================================
+
+// Execute (⍎) - parse and evaluate a string as APL code
+void fn_execute(Machine* m, Value* omega) {
+    if (!omega->is_string()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: execute requires a string"));
+        return;
+    }
+
+    const char* code = omega->as_string();
+    Continuation* k = m->parser->parse(code);
+
+    if (!k) {
+        // Parse error
+        const char* msg = m->string_pool.intern(m->parser->get_error().c_str());
+        m->push_kont(m->heap->allocate<ThrowErrorK>(msg));
+        return;
+    }
+
+    // Push the parsed continuation to execute
+    m->push_kont(k);
+}
 
 // ============================================================================
 // Dyadic Arithmetic Functions

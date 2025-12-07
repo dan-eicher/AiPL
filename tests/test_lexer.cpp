@@ -706,6 +706,42 @@ TEST_F(LexerTest, ReservedNestedArrayTokens) {
     EXPECT_EQ(tokens[2].type, TOK_MATCH);
 }
 
+// String literal tests
+TEST_F(LexerTest, StringLiteralSimple) {
+    auto tokens = tokenize("'hello'");
+    ASSERT_EQ(tokens.size(), 2);  // string + EOF
+    EXPECT_EQ(tokens[0].type, TOK_STRING);
+    EXPECT_STREQ(tokens[0].name, "hello");
+}
+
+TEST_F(LexerTest, StringLiteralEmpty) {
+    auto tokens = tokenize("''");
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_STRING);
+    EXPECT_STREQ(tokens[0].name, "");
+}
+
+TEST_F(LexerTest, StringLiteralWithSpaces) {
+    auto tokens = tokenize("'hello world'");
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_STRING);
+    EXPECT_STREQ(tokens[0].name, "hello world");
+}
+
+TEST_F(LexerTest, StringLiteralEscapedQuote) {
+    // APL uses '' inside string to represent a single quote
+    auto tokens = tokenize("'it''s'");
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_STRING);
+    EXPECT_STREQ(tokens[0].name, "it's");
+}
+
+TEST_F(LexerTest, ExecuteToken) {
+    auto tokens = tokenize("⍎");
+    ASSERT_EQ(tokens.size(), 2);
+    EXPECT_EQ(tokens[0].type, TOK_EXECUTE);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

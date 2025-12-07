@@ -50,6 +50,7 @@ enum class ValueType {
     SCALAR,     // Single numeric value (double)
     VECTOR,     // 1D array stored as n×1 matrix
     MATRIX,     // 2D array
+    STRING,     // Character string (interned pointer)
     PRIMITIVE,  // Primitive function (C function pointer)
     CLOSURE,    // User-defined function (continuation graph)
     OPERATOR,   // Higher-order operator (takes functions, returns derived functions)
@@ -93,6 +94,7 @@ public:
     union Data {
         double scalar;              // For SCALAR
         Eigen::MatrixXd* matrix;    // For VECTOR and MATRIX (vectors stored as n×1)
+        const char* string;         // For STRING (interned pointer, not owned)
         PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
         Continuation* closure;      // For CLOSURE (user-defined function body)
         PrimitiveOp* op;            // For OPERATOR
@@ -116,14 +118,18 @@ public:
     bool is_vector() const { return tag == ValueType::VECTOR; }
     bool is_matrix() const { return tag == ValueType::MATRIX; }
     bool is_array() const { return tag == ValueType::VECTOR || tag == ValueType::MATRIX; }
+    bool is_string() const { return tag == ValueType::STRING; }
     bool is_primitive() const { return tag == ValueType::PRIMITIVE; }
     bool is_closure() const { return tag == ValueType::CLOSURE; }
     bool is_function() const { return tag == ValueType::PRIMITIVE || tag == ValueType::CLOSURE || tag == ValueType::CURRIED_FN || tag == ValueType::DERIVED_OPERATOR; }
     bool is_operator() const { return tag == ValueType::OPERATOR || tag == ValueType::DERIVED_OPERATOR; }
     bool is_derived_operator() const { return tag == ValueType::DERIVED_OPERATOR; }
     bool is_curried_fn() const { return tag == ValueType::CURRIED_FN; }
-    // G2 grammar: "bas" type = basic values (scalars, vectors, matrices)
-    bool is_basic_value() const { return is_scalar() || is_array(); }
+    // G2 grammar: "bas" type = basic values (scalars, vectors, matrices, strings)
+    bool is_basic_value() const { return is_scalar() || is_array() || is_string(); }
+
+    // String access
+    const char* as_string() const { return data.string; }
 
     // Shape queries (for arrays)
     int rank() const;           // 0 for scalar, 1 for vector, 2 for matrix

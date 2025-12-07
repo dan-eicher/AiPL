@@ -539,6 +539,34 @@ TEST_F(ValueTest, DerivedOperatorWithFunction) {
 
 }
 
+// String Value tests
+TEST_F(ValueTest, StringBasic) {
+    Value* str = machine->heap->allocate_string("hello");
+    EXPECT_TRUE(str->is_string());
+    EXPECT_FALSE(str->is_scalar());
+    EXPECT_FALSE(str->is_array());
+    EXPECT_STREQ(str->as_string(), "hello");
+}
+
+TEST_F(ValueTest, StringIsBasicValue) {
+    Value* str = machine->heap->allocate_string("test");
+    EXPECT_TRUE(str->is_basic_value());
+    EXPECT_FALSE(str->is_function());
+}
+
+TEST_F(ValueTest, StringInterning) {
+    // Same string content should give same pointer (interned)
+    Value* str1 = machine->heap->allocate_string("same");
+    Value* str2 = machine->heap->allocate_string("same");
+    EXPECT_EQ(str1->as_string(), str2->as_string());  // Same pointer
+}
+
+TEST_F(ValueTest, StringEmpty) {
+    Value* str = machine->heap->allocate_string("");
+    EXPECT_TRUE(str->is_string());
+    EXPECT_STREQ(str->as_string(), "");
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
