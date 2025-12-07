@@ -28,6 +28,8 @@ void fn_reverse(Machine* m, Value* omega);       // ⌽ monadic (reverse last ax
 void fn_reverse_first(Machine* m, Value* omega); // ⊖ monadic (reverse first axis)
 void fn_tally(Machine* m, Value* omega);         // ≢ monadic (count along first axis)
 void fn_enlist(Machine* m, Value* omega);        // ∊ monadic (enlist/flatten)
+void fn_grade_up(Machine* m, Value* omega);      // ⍋ monadic (grade up)
+void fn_grade_down(Machine* m, Value* omega);    // ⍒ monadic (grade down)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -54,6 +56,7 @@ void fn_rotate(Machine* m, Value* lhs, Value* rhs);    // ⌽ dyadic (rotate las
 void fn_rotate_first(Machine* m, Value* lhs, Value* rhs); // ⊖ dyadic (rotate first axis)
 void fn_index_of(Machine* m, Value* lhs, Value* rhs);  // ⍳ dyadic (index of)
 void fn_member_of(Machine* m, Value* lhs, Value* rhs); // ∊ dyadic (member of)
+void fn_replicate(Machine* m, Value* lhs, Value* rhs); // / dyadic (replicate)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -81,6 +84,8 @@ extern PrimitiveFn prim_reverse;   // ⌽ symbol (reverse/rotate)
 extern PrimitiveFn prim_reverse_first; // ⊖ symbol (reverse first/rotate first)
 extern PrimitiveFn prim_tally;     // ≢ symbol (tally)
 extern PrimitiveFn prim_member;    // ∊ symbol (enlist/member)
+extern PrimitiveFn prim_grade_up;  // ⍋ symbol (grade up)
+extern PrimitiveFn prim_grade_down;// ⍒ symbol (grade down)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

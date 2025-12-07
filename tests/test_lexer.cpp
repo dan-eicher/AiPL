@@ -641,6 +641,15 @@ TEST_F(LexerTest, MemberOf) {
     EXPECT_EQ(tokens[0].type, TOK_MEMBER);
 }
 
+// Test grade tokens (⍋ ⍒)
+TEST_F(LexerTest, GradeUpDown) {
+    auto tokens = tokenize("⍋ ⍒");
+
+    ASSERT_EQ(tokens.size(), 3);  // 2 tokens + EOF
+    EXPECT_EQ(tokens[0].type, TOK_GRADE_UP);
+    EXPECT_EQ(tokens[1].type, TOK_GRADE_DOWN);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

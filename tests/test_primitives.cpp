@@ -1997,6 +1997,233 @@ TEST_F(PrimitivesTest, LogicalPrimitivesRegistered) {
 }
 
 // ============================================================================
+// Arithmetic Extensions Tests (| ⍟ !)
+// ============================================================================
+
+// Magnitude/Absolute Value (| monadic)
+TEST_F(PrimitivesTest, MagnitudePositive) {
+    Value* val = machine->heap->allocate_scalar(5.0);
+    fn_magnitude(machine, val);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, MagnitudeNegative) {
+    Value* val = machine->heap->allocate_scalar(-5.0);
+    fn_magnitude(machine, val);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, MagnitudeZero) {
+    Value* val = machine->heap->allocate_scalar(0.0);
+    fn_magnitude(machine, val);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, MagnitudeVector) {
+    Eigen::VectorXd v(4);
+    v << -3.0, 4.0, -5.0, 0.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_magnitude(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 0.0);
+}
+
+// Residue (| dyadic)
+TEST_F(PrimitivesTest, ResidueBasic) {
+    // 3 | 7 → 1 (7 mod 3)
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Value* rhs = machine->heap->allocate_scalar(7.0);
+    fn_residue(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, ResidueExact) {
+    // 3 | 9 → 0
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Value* rhs = machine->heap->allocate_scalar(9.0);
+    fn_residue(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, ResidueNegative) {
+    // 3 | -7 → 2 (APL residue always non-negative for positive divisor)
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Value* rhs = machine->heap->allocate_scalar(-7.0);
+    fn_residue(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 2.0);
+}
+
+TEST_F(PrimitivesTest, ResidueVector) {
+    // 3 | 1 2 3 4 5 → 1 2 0 1 2
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* rhs = machine->heap->allocate_vector(v);
+    fn_residue(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 2.0);
+}
+
+// Natural Logarithm (⍟ monadic)
+TEST_F(PrimitivesTest, NaturalLogE) {
+    // ⍟ e → 1
+    Value* val = machine->heap->allocate_scalar(std::exp(1.0));
+    fn_natural_log(machine, val);
+    EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, NaturalLogOne) {
+    // ⍟ 1 → 0
+    Value* val = machine->heap->allocate_scalar(1.0);
+    fn_natural_log(machine, val);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, NaturalLogVector) {
+    Eigen::VectorXd v(3);
+    v << 1.0, std::exp(1.0), std::exp(2.0);
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_natural_log(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 0.0);
+    EXPECT_NEAR((*res)(1, 0), 1.0, 1e-10);
+    EXPECT_NEAR((*res)(2, 0), 2.0, 1e-10);
+}
+
+// Logarithm (⍟ dyadic)
+TEST_F(PrimitivesTest, LogarithmBase10) {
+    // 10 ⍟ 100 → 2
+    Value* lhs = machine->heap->allocate_scalar(10.0);
+    Value* rhs = machine->heap->allocate_scalar(100.0);
+    fn_logarithm(machine, lhs, rhs);
+    EXPECT_NEAR(machine->result->as_scalar(), 2.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, LogarithmBase2) {
+    // 2 ⍟ 8 → 3
+    Value* lhs = machine->heap->allocate_scalar(2.0);
+    Value* rhs = machine->heap->allocate_scalar(8.0);
+    fn_logarithm(machine, lhs, rhs);
+    EXPECT_NEAR(machine->result->as_scalar(), 3.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, LogarithmVector) {
+    // 2 ⍟ 1 2 4 8 → 0 1 2 3
+    Value* lhs = machine->heap->allocate_scalar(2.0);
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 4.0, 8.0;
+    Value* rhs = machine->heap->allocate_vector(v);
+    fn_logarithm(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_NEAR((*res)(0, 0), 0.0, 1e-10);
+    EXPECT_NEAR((*res)(1, 0), 1.0, 1e-10);
+    EXPECT_NEAR((*res)(2, 0), 2.0, 1e-10);
+    EXPECT_NEAR((*res)(3, 0), 3.0, 1e-10);
+}
+
+// Factorial (! monadic)
+TEST_F(PrimitivesTest, FactorialZero) {
+    // ! 0 → 1
+    Value* val = machine->heap->allocate_scalar(0.0);
+    fn_factorial(machine, val);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, FactorialOne) {
+    // ! 1 → 1
+    Value* val = machine->heap->allocate_scalar(1.0);
+    fn_factorial(machine, val);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, FactorialFive) {
+    // ! 5 → 120
+    Value* val = machine->heap->allocate_scalar(5.0);
+    fn_factorial(machine, val);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 120.0);
+}
+
+TEST_F(PrimitivesTest, FactorialVector) {
+    // ! 0 1 2 3 4 5 → 1 1 2 6 24 120
+    Eigen::VectorXd v(6);
+    v << 0.0, 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_factorial(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 24.0);
+    EXPECT_DOUBLE_EQ((*res)(5, 0), 120.0);
+}
+
+// Binomial (! dyadic)
+TEST_F(PrimitivesTest, BinomialBasic) {
+    // 2 ! 5 → 10 (5 choose 2)
+    Value* lhs = machine->heap->allocate_scalar(2.0);
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+    fn_binomial(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 10.0);
+}
+
+TEST_F(PrimitivesTest, BinomialZeroK) {
+    // 0 ! 5 → 1
+    Value* lhs = machine->heap->allocate_scalar(0.0);
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+    fn_binomial(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, BinomialSame) {
+    // 5 ! 5 → 1
+    Value* lhs = machine->heap->allocate_scalar(5.0);
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+    fn_binomial(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, BinomialPascalsRow) {
+    // 0 1 2 3 4 ! 4 → 1 4 6 4 1 (row of Pascal's triangle)
+    Eigen::VectorXd v(5);
+    v << 0.0, 1.0, 2.0, 3.0, 4.0;
+    Value* lhs = machine->heap->allocate_vector(v);
+    Value* rhs = machine->heap->allocate_scalar(4.0);
+    fn_binomial(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, ArithmeticExtensionsRegistered) {
+    ASSERT_NE(machine->env->lookup("|"), nullptr);
+    ASSERT_NE(machine->env->lookup("⍟"), nullptr);
+    ASSERT_NE(machine->env->lookup("!"), nullptr);
+}
+
+// ============================================================================
 // Reverse/Rotate/Tally Tests
 // ============================================================================
 
@@ -2303,4 +2530,174 @@ TEST_F(PrimitivesTest, SearchFunctionsRegistered) {
     // ⍳ should already be registered (monadic iota)
     ASSERT_NE(machine->env->lookup("⍳"), nullptr);
     ASSERT_NE(machine->env->lookup("∊"), nullptr);
+}
+
+// ============================================================================
+// Grade Functions (⍋ ⍒)
+// ============================================================================
+
+TEST_F(PrimitivesTest, GradeUpVector) {
+    // ⍋ 3 1 4 1 5 → 1 3 0 2 4 (indices for ascending order, 0-origin)
+    Eigen::VectorXd v(5);
+    v << 3.0, 1.0, 4.0, 1.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_grade_up(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);  // 1 (value 1)
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 3.0);  // 3 (value 1)
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 0.0);  // 0 (value 3)
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 2.0);  // 2 (value 4)
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 4.0);  // 4 (value 5)
+}
+
+TEST_F(PrimitivesTest, GradeDownVector) {
+    // ⍒ 3 1 4 1 5 → 4 2 0 1 3 (indices for descending order, 0-origin)
+    Eigen::VectorXd v(5);
+    v << 3.0, 1.0, 4.0, 1.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_grade_down(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 4.0);  // 4 (value 5)
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);  // 2 (value 4)
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 0.0);  // 0 (value 3)
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 1.0);  // 1 (value 1)
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 3.0);  // 3 (value 1)
+}
+
+TEST_F(PrimitivesTest, GradeUpScalar) {
+    // ⍋ 5 → 0 (single element)
+    Value* scalar = machine->heap->allocate_scalar(5.0);
+
+    fn_grade_up(machine, scalar);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, GradeDownScalar) {
+    // ⍒ 5 → 0 (single element)
+    Value* scalar = machine->heap->allocate_scalar(5.0);
+
+    fn_grade_down(machine, scalar);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, GradeUpAlreadySorted) {
+    // ⍋ 1 2 3 4 5 → 0 1 2 3 4
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_grade_up(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_DOUBLE_EQ((*res)(i, 0), static_cast<double>(i));
+    }
+}
+
+TEST_F(PrimitivesTest, GradeDownReversed) {
+    // ⍒ 1 2 3 4 5 → 4 3 2 1 0
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_grade_down(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_DOUBLE_EQ((*res)(i, 0), static_cast<double>(4 - i));
+    }
+}
+
+TEST_F(PrimitivesTest, GradeFunctionsRegistered) {
+    ASSERT_NE(machine->env->lookup("⍋"), nullptr);
+    ASSERT_NE(machine->env->lookup("⍒"), nullptr);
+}
+
+// ============================================================================
+// Replicate Function (/)
+// ============================================================================
+
+TEST_F(PrimitivesTest, ReplicateBasic) {
+    // 2 0 3 / 1 2 3 → 1 1 3 3 3
+    Eigen::VectorXd counts(3);
+    counts << 2.0, 0.0, 3.0;
+    Eigen::VectorXd data(3);
+    data << 1.0, 2.0, 3.0;
+    Value* lhs = machine->heap->allocate_vector(counts);
+    Value* rhs = machine->heap->allocate_vector(data);
+
+    fn_replicate(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);  // 2+0+3 = 5
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, ReplicateCompress) {
+    // 1 0 1 0 1 / 10 20 30 40 50 → 10 30 50 (filter)
+    Eigen::VectorXd counts(5);
+    counts << 1.0, 0.0, 1.0, 0.0, 1.0;
+    Eigen::VectorXd data(5);
+    data << 10.0, 20.0, 30.0, 40.0, 50.0;
+    Value* lhs = machine->heap->allocate_vector(counts);
+    Value* rhs = machine->heap->allocate_vector(data);
+
+    fn_replicate(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 30.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 50.0);
+}
+
+TEST_F(PrimitivesTest, ReplicateAllZero) {
+    // 0 0 0 / 1 2 3 → (empty)
+    Eigen::VectorXd counts(3);
+    counts << 0.0, 0.0, 0.0;
+    Eigen::VectorXd data(3);
+    data << 1.0, 2.0, 3.0;
+    Value* lhs = machine->heap->allocate_vector(counts);
+    Value* rhs = machine->heap->allocate_vector(data);
+
+    fn_replicate(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 0);
+}
+
+TEST_F(PrimitivesTest, ReplicateScalar) {
+    // 3 / 5 → 5 5 5
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+
+    fn_replicate(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
 }

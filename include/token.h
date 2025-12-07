@@ -75,6 +75,10 @@ enum TokenType {
     // Search
     TOK_MEMBER,         // ∊ (member of)
 
+    // Grade
+    TOK_GRADE_UP,       // ⍋ (grade up)
+    TOK_GRADE_DOWN,     // ⍒ (grade down)
+
     // Structural
     TOK_ASSIGN,         // ←
     TOK_LPAREN,         // (

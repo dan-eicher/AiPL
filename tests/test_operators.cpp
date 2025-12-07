@@ -118,14 +118,29 @@ TEST_F(OperatorsTest, CommuteVectors) {
     EXPECT_DOUBLE_EQ((*result)(2, 0), -27.0);  // 3-30
 }
 
-TEST_F(OperatorsTest, ErrorReduceNonFunction) {
-    Eigen::VectorXd v(3);
-    v << 1.0, 2.0, 3.0;
-    Value* vec = machine->heap->allocate_vector(v);
+TEST_F(OperatorsTest, ReplicateViaReduce) {
+    // When reduce receives an array as "function", it's replicate
+    // 1 2 3 / 4 5 6 → 4 5 5 6 6 6
+    Eigen::VectorXd counts(3);
+    counts << 1.0, 2.0, 3.0;
+    Value* count_vec = machine->heap->allocate_vector(counts);
 
-    fn_reduce(machine, vec, vec);
-    EXPECT_EQ(machine->kont_stack.size(), 1);
-    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+    Eigen::VectorXd data(3);
+    data << 4.0, 5.0, 6.0;
+    Value* data_vec = machine->heap->allocate_vector(data);
+
+    fn_reduce(machine, count_vec, data_vec);
+
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* result = machine->result->as_matrix();
+    EXPECT_EQ(result->rows(), 6);  // 1+2+3 = 6
+    EXPECT_DOUBLE_EQ((*result)(0, 0), 4.0);  // 1 copy of 4
+    EXPECT_DOUBLE_EQ((*result)(1, 0), 5.0);  // 2 copies of 5
+    EXPECT_DOUBLE_EQ((*result)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*result)(3, 0), 6.0);  // 3 copies of 6
+    EXPECT_DOUBLE_EQ((*result)(4, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*result)(5, 0), 6.0);
 }
 
 TEST_F(OperatorsTest, ErrorScanNonFunction) {

@@ -43,6 +43,8 @@ PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate };
 PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
 PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
 PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
+PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, nullptr };
+PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -2048,6 +2050,168 @@ void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
         result(i / lmat->cols(), i % lmat->cols()) = is_member((*lmat)(i / lmat->cols(), i % lmat->cols()));
     }
     m->result = m->heap->allocate_matrix(result);
+}
+
+// ============================================================================
+// Grade Functions (⍋ ⍒)
+// ============================================================================
+
+// Grade Up (⍋) - monadic: return indices that would sort array in ascending order
+// ⍋ 3 1 4 1 5 → 1 3 0 2 4 (0-origin)
+void fn_grade_up(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        // Grade of scalar is 0 (index of single element)
+        m->result = m->heap->allocate_scalar(0.0);
+        return;
+    }
+
+    Eigen::VectorXd data = flatten_value(omega);
+    int n = data.size();
+
+    // Create index array
+    std::vector<int> indices(n);
+    for (int i = 0; i < n; ++i) {
+        indices[i] = i;
+    }
+
+    // Sort indices by corresponding data values (ascending)
+    std::sort(indices.begin(), indices.end(), [&data](int a, int b) {
+        return data(a) < data(b);
+    });
+
+    // Convert to result vector
+    Eigen::VectorXd result(n);
+    for (int i = 0; i < n; ++i) {
+        result(i) = static_cast<double>(indices[i]);
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// Grade Down (⍒) - monadic: return indices that would sort array in descending order
+// ⍒ 3 1 4 1 5 → 4 2 0 1 3 (0-origin)
+void fn_grade_down(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        // Grade of scalar is 0 (index of single element)
+        m->result = m->heap->allocate_scalar(0.0);
+        return;
+    }
+
+    Eigen::VectorXd data = flatten_value(omega);
+    int n = data.size();
+
+    // Create index array
+    std::vector<int> indices(n);
+    for (int i = 0; i < n; ++i) {
+        indices[i] = i;
+    }
+
+    // Sort indices by corresponding data values (descending)
+    std::sort(indices.begin(), indices.end(), [&data](int a, int b) {
+        return data(a) > data(b);
+    });
+
+    // Convert to result vector
+    Eigen::VectorXd result(n);
+    for (int i = 0; i < n; ++i) {
+        result(i) = static_cast<double>(indices[i]);
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// ============================================================================
+// Replicate Function (/)
+// ============================================================================
+
+// Replicate (/) - dyadic: replicate elements of rhs by counts in lhs
+// 2 0 3 / 1 2 3 → 1 1 3 3 3
+// 1 1 1 / 4 5 6 → 4 5 6 (compress)
+// 0 1 0 / 4 5 6 → 5 (filter)
+void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
+    // Get counts from lhs
+    Eigen::VectorXd counts = flatten_value(lhs);
+
+    // For now, support vectors only (last axis replication)
+    if (!rhs->is_scalar() && !rhs->is_vector()) {
+        // Matrix case: replicate along last axis (columns)
+        const Eigen::MatrixXd* mat = rhs->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+
+        if (counts.size() != cols) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: replicate count must match array length"));
+            return;
+        }
+
+        // Calculate total output columns
+        int total_cols = 0;
+        for (int i = 0; i < counts.size(); ++i) {
+            int c = static_cast<int>(counts(i));
+            if (c < 0) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: replicate count must be non-negative"));
+                return;
+            }
+            total_cols += c;
+        }
+
+        if (total_cols == 0) {
+            // Empty result - return empty vector (shape 0)
+            Eigen::VectorXd empty(0);
+            m->result = m->heap->allocate_vector(empty);
+            return;
+        }
+
+        Eigen::MatrixXd result(rows, total_cols);
+        int out_col = 0;
+        for (int j = 0; j < cols; ++j) {
+            int rep = static_cast<int>(counts(j));
+            for (int r = 0; r < rep; ++r) {
+                result.col(out_col++) = mat->col(j);
+            }
+        }
+
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
+    // Scalar or vector case
+    Eigen::VectorXd data = flatten_value(rhs);
+
+    if (counts.size() != data.size()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: replicate count must match array length"));
+        return;
+    }
+
+    // Calculate total output size
+    int total = 0;
+    for (int i = 0; i < counts.size(); ++i) {
+        int c = static_cast<int>(counts(i));
+        if (c < 0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: replicate count must be non-negative"));
+            return;
+        }
+        total += c;
+    }
+
+    if (total == 0) {
+        // Empty result
+        Eigen::VectorXd empty(0);
+        m->result = m->heap->allocate_vector(empty);
+        return;
+    }
+
+    // Build result
+    Eigen::VectorXd result(total);
+    int out_idx = 0;
+    for (int i = 0; i < data.size(); ++i) {
+        int rep = static_cast<int>(counts(i));
+        for (int r = 0; r < rep; ++r) {
+            result(out_idx++) = data(i);
+        }
+    }
+
+    m->result = m->heap->allocate_vector(result);
 }
 
 } // namespace apl

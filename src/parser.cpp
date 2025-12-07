@@ -195,6 +195,8 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_REVERSE_FIRST:
                 case TOK_TALLY:
                 case TOK_MEMBER:
+                case TOK_GRADE_UP:
+                case TOK_GRADE_DOWN:
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -297,7 +299,9 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_REVERSE:
         case TOK_REVERSE_FIRST:
         case TOK_TALLY:
-        case TOK_MEMBER: {
+        case TOK_MEMBER:
+        case TOK_GRADE_UP:
+        case TOK_GRADE_DOWN: {
             // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
             // They are NOT special monadic operators in the grammar
             // Monadic behavior emerges from juxtaposition + runtime semantics
@@ -336,6 +340,8 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_REVERSE_FIRST: op_name = "⊖"; break;
                 case TOK_TALLY:         op_name = "≢"; break;
                 case TOK_MEMBER:        op_name = "∊"; break;
+                case TOK_GRADE_UP:      op_name = "⍋"; break;
+                case TOK_GRADE_DOWN:    op_name = "⍒"; break;
                 default: break;
             }
 

@@ -133,6 +133,8 @@ Lexer::Lexer(const char* input)
     reverse_first = "⊖"; // U+2296
     tally = "≢";         // U+2262
     member_of = "∊";     // U+220A (small element of)
+    grade_up = "⍋";      // U+234B (grade up)
+    grade_down = "⍒";    // U+2352 (grade down)
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
@@ -310,6 +312,8 @@ Token Lexer::next_token() {
         reverse_first { column_++; return Token(TOK_REVERSE_FIRST, token_line, token_column); }
         tally { column_++; return Token(TOK_TALLY, token_line, token_column); }
         member_of { column_++; return Token(TOK_MEMBER, token_line, token_column); }
+        grade_up { column_++; return Token(TOK_GRADE_UP, token_line, token_column); }
+        grade_down { column_++; return Token(TOK_GRADE_DOWN, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }

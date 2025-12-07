@@ -3000,6 +3000,220 @@ TEST_F(ParserTest, IndexOfWithArithmetic) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
+// ============================================================================
+// Grade Functions (⍋ ⍒)
+// ============================================================================
+
+TEST_F(ParserTest, GradeUpVector) {
+    // ⍋ 3 1 4 1 5 → 1 3 0 2 4 (indices for ascending sort, 0-origin)
+    Continuation* k = parser->parse("⍋ 3 1 4 1 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // index of first 1
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 3.0);  // index of second 1
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // index of 3
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);  // index of 4
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);  // index of 5
+}
+
+TEST_F(ParserTest, GradeDownVector) {
+    // ⍒ 3 1 4 1 5 → 4 2 0 1 3 (indices for descending sort, 0-origin)
+    Continuation* k = parser->parse("⍒ 3 1 4 1 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 4.0);  // index of 5 (largest)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);  // index of 4
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 0.0);  // index of 3
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);  // index of first 1
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 3.0);  // index of second 1
+}
+
+TEST_F(ParserTest, GradeUpScalar) {
+    // ⍋ 5 → 0 (single element, index is 0)
+    Continuation* k = parser->parse("⍋ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, GradeDownScalar) {
+    // ⍒ 5 → 0 (single element, index is 0)
+    Continuation* k = parser->parse("⍒ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, GradeUpWithIota) {
+    // ⍋ ⍳5 → 0 1 2 3 4 (already sorted)
+    Continuation* k = parser->parse("⍋ ⍳5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_DOUBLE_EQ((*vec)(i, 0), static_cast<double>(i));
+    }
+}
+
+TEST_F(ParserTest, GradeDownWithIota) {
+    // ⍒ ⍳5 → 4 3 2 1 0 (reverse order)
+    Continuation* k = parser->parse("⍒ ⍳5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_DOUBLE_EQ((*vec)(i, 0), static_cast<double>(4 - i));
+    }
+}
+
+TEST_F(ParserTest, GradeNegativeValues) {
+    // ⍋ ¯3 1 ¯2 0 → 0 2 3 1 (sorted: -3 -2 0 1)
+    Continuation* k = parser->parse("⍋ ¯3 1 ¯2 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);  // index of -3 (smallest)
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);  // index of -2
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);  // index of 0
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);  // index of 1 (largest)
+}
+
+// ============================================================================
+// Replicate Function (/)
+// ============================================================================
+
+TEST_F(ParserTest, ReplicateBasic) {
+    // 2 0 3 / 1 2 3 → 1 1 3 3 3
+    Continuation* k = parser->parse("2 0 3 / 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);  // 2+0+3 = 5
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 2 copies of 1
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);  // 0 copies of 2, 3 copies of 3
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 3.0);
+}
+
+TEST_F(ParserTest, ReplicateCompress) {
+    // 1 0 1 / 4 5 6 → 4 6 (compression with boolean mask)
+    Continuation* k = parser->parse("1 0 1 / 4 5 6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 2);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 6.0);
+}
+
+TEST_F(ParserTest, ReplicateAllZero) {
+    // 0 0 0 / 1 2 3 → empty vector
+    Continuation* k = parser->parse("0 0 0 / 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 0);
+}
+
+TEST_F(ParserTest, ReplicateScalar) {
+    // 3 / 5 → 5 5 5
+    Continuation* k = parser->parse("3 / 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);
+}
+
+TEST_F(ParserTest, ReplicateWithIota) {
+    // 1 2 3 / ⍳3 → 0 1 1 2 2 2
+    Continuation* k = parser->parse("1 2 3 / ⍳3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 6);  // 1+2+3 = 6
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);  // 1 copy of 0
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);  // 2 copies of 1
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 2.0);  // 3 copies of 2
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(5, 0), 2.0);
+}
+
+TEST_F(ParserTest, ReduceStillWorks) {
+    // Verify that +/ still works as reduce (not replicate)
+    // +/ 1 2 3 4 → 10
+    Continuation* k = parser->parse("+/ 1 2 3 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(ParserTest, ReplicateVsReduceDistinction) {
+    // Array / Array is replicate
+    // Function / Array is reduce
+    // Test both in sequence
+    Continuation* k1 = parser->parse("×/ 1 2 3 4");  // reduce: 24
+    ASSERT_NE(k1, nullptr);
+    Value* result1 = eval(k1);
+    EXPECT_DOUBLE_EQ(result1->as_scalar(), 24.0);
+
+    Continuation* k2 = parser->parse("2 2 2 2 / 1 2 3 4");  // replicate: 1 1 2 2 3 3 4 4
+    ASSERT_NE(k2, nullptr);
+    Value* result2 = eval(k2);
+    const Eigen::MatrixXd* vec = result2->as_matrix();
+    EXPECT_EQ(vec->rows(), 8);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

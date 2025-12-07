@@ -247,6 +247,12 @@ static double get_identity_for_function(Value* func) {
 // Reduce (/) - apply dyadic function between elements, right to left
 // Uses CellIterK FOLD_RIGHT for continuation-based execution
 void fn_reduce(Machine* m, Value* func, Value* omega) {
+    // Handle replicate: if "func" is actually an array, this is A / B (replicate)
+    if (func->is_basic_value()) {
+        fn_replicate(m, func, omega);
+        return;
+    }
+
     if (!func->is_function()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a function"));
         return;
