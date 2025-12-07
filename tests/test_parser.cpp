@@ -3425,6 +3425,92 @@ TEST_F(ParserTest, DyadicTakeStillWorks) {
     EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
 }
 
+// ============================================================================
+// Circular Functions (○) Tests
+// ============================================================================
+
+TEST_F(ParserTest, PiTimesScalar) {
+    // ○ 1 → π
+    Continuation* k = parser->parse("○ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), M_PI, 1e-10);
+}
+
+TEST_F(ParserTest, PiTimesHalf) {
+    // ○ 0.5 → π/2
+    Continuation* k = parser->parse("○ 0.5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), M_PI / 2.0, 1e-10);
+}
+
+TEST_F(ParserTest, CircularSin) {
+    // 1 ○ (○ 0.5) → sin(π/2) = 1
+    Continuation* k = parser->parse("1 ○ (○ 0.5)");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(ParserTest, CircularCos) {
+    // 2 ○ 0 → cos(0) = 1
+    Continuation* k = parser->parse("2 ○ 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(ParserTest, CircularSqrt) {
+    // 0 ○ 0.6 → sqrt(1-0.36) = 0.8
+    Continuation* k = parser->parse("0 ○ 0.6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), 0.8, 1e-10);
+}
+
+TEST_F(ParserTest, CircularAtan) {
+    // ¯3 ○ 1 → atan(1) = π/4
+    Continuation* k = parser->parse("¯3 ○ 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_NEAR(result->as_scalar(), M_PI / 4.0, 1e-10);
+}
+
+TEST_F(ParserTest, PiTimesVector) {
+    // ○ 0 0.5 1 2 → 0, π/2, π, 2π
+    Continuation* k = parser->parse("○ 0 0.5 1 2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_NEAR((*vec)(0, 0), 0.0, 1e-10);
+    EXPECT_NEAR((*vec)(1, 0), M_PI / 2.0, 1e-10);
+    EXPECT_NEAR((*vec)(2, 0), M_PI, 1e-10);
+    EXPECT_NEAR((*vec)(3, 0), M_PI * 2.0, 1e-10);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

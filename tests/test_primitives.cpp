@@ -2948,3 +2948,138 @@ TEST_F(PrimitivesTest, FirstSingleElementVector) {
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 99.0);
 }
+
+// ============================================================================
+// Circular Functions (○) Tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, PiTimesScalar) {
+    Value* one = machine->heap->allocate_scalar(1.0);
+
+    fn_pi_times(machine, one);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), M_PI, 1e-10);
+}
+
+TEST_F(PrimitivesTest, PiTimesVector) {
+    Eigen::VectorXd v(3);
+    v << 0.5, 1.0, 2.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_pi_times(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_NEAR((*res)(0, 0), M_PI * 0.5, 1e-10);
+    EXPECT_NEAR((*res)(1, 0), M_PI, 1e-10);
+    EXPECT_NEAR((*res)(2, 0), M_PI * 2.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularSin) {
+    // 1○x = sin(x)
+    Value* fn_code = machine->heap->allocate_scalar(1.0);
+    Value* arg = machine->heap->allocate_scalar(M_PI / 2.0);  // sin(π/2) = 1
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularCos) {
+    // 2○x = cos(x)
+    Value* fn_code = machine->heap->allocate_scalar(2.0);
+    Value* arg = machine->heap->allocate_scalar(0.0);  // cos(0) = 1
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularTan) {
+    // 3○x = tan(x)
+    Value* fn_code = machine->heap->allocate_scalar(3.0);
+    Value* arg = machine->heap->allocate_scalar(M_PI / 4.0);  // tan(π/4) = 1
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularSqrt1MinusX2) {
+    // 0○x = sqrt(1-x²)
+    Value* fn_code = machine->heap->allocate_scalar(0.0);
+    Value* arg = machine->heap->allocate_scalar(0.6);  // sqrt(1-0.36) = sqrt(0.64) = 0.8
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 0.8, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularAsin) {
+    // ¯1○x = asin(x)
+    Value* fn_code = machine->heap->allocate_scalar(-1.0);
+    Value* arg = machine->heap->allocate_scalar(1.0);  // asin(1) = π/2
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), M_PI / 2.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularAtan) {
+    // ¯3○x = atan(x)
+    Value* fn_code = machine->heap->allocate_scalar(-3.0);
+    Value* arg = machine->heap->allocate_scalar(1.0);  // atan(1) = π/4
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), M_PI / 4.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularSinh) {
+    // 5○x = sinh(x)
+    Value* fn_code = machine->heap->allocate_scalar(5.0);
+    Value* arg = machine->heap->allocate_scalar(0.0);  // sinh(0) = 0
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularCosh) {
+    // 6○x = cosh(x)
+    Value* fn_code = machine->heap->allocate_scalar(6.0);
+    Value* arg = machine->heap->allocate_scalar(0.0);  // cosh(0) = 1
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularVector) {
+    // Apply sin to vector
+    Value* fn_code = machine->heap->allocate_scalar(1.0);
+    Eigen::VectorXd v(3);
+    v << 0.0, M_PI / 6.0, M_PI / 2.0;  // sin: 0, 0.5, 1
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_circular(machine, fn_code, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_NEAR((*res)(0, 0), 0.0, 1e-10);
+    EXPECT_NEAR((*res)(1, 0), 0.5, 1e-10);
+    EXPECT_NEAR((*res)(2, 0), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularRegistered) {
+    ASSERT_NE(machine->env->lookup("○"), nullptr);
+}

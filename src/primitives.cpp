@@ -46,6 +46,7 @@ PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
 PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, nullptr };
 PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
 PrimitiveFn prim_union     = { "∪", fn_unique, fn_union };
+PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -1303,6 +1304,101 @@ void fn_binomial(Machine* m, Value* lhs, Value* rhs) {
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// ============================================================================
+// Circular Functions (○)
+// ============================================================================
+
+// Pi Times (○) - monadic: multiply by pi
+void fn_pi_times(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(M_PI * omega->data.scalar);
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result = M_PI * mat->array();
+
+    if (omega->is_vector()) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Helper for circular function dispatch
+static double circular_function(int fn_code, double x) {
+    switch (fn_code) {
+        case 0:  return std::sqrt(1.0 - x * x);           // sqrt(1-x²)
+        case 1:  return std::sin(x);                      // sin
+        case 2:  return std::cos(x);                      // cos
+        case 3:  return std::tan(x);                      // tan
+        case 4:  return std::sqrt(1.0 + x * x);           // sqrt(1+x²)
+        case 5:  return std::sinh(x);                     // sinh
+        case 6:  return std::cosh(x);                     // cosh
+        case 7:  return std::tanh(x);                     // tanh
+        case -1: return std::asin(x);                     // asin
+        case -2: return std::acos(x);                     // acos
+        case -3: return std::atan(x);                     // atan
+        case -4: return x * std::sqrt((x - 1.0) / (x + 1.0)); // (-1+x)×((x-1)÷x+1)*0.5
+        case -5: return std::asinh(x);                    // asinh
+        case -6: return std::acosh(x);                    // acosh
+        case -7: return std::atanh(x);                    // atanh
+        // For complex numbers (not implemented): -12 to -8 and 8 to 12
+        default: return std::nan("");                     // Invalid function code
+    }
+}
+
+// Circular Functions (○) - dyadic: A○B applies function A to B
+void fn_circular(Machine* m, Value* lhs, Value* rhs) {
+    // Left argument must be scalar integer in range -12 to 12
+    if (!lhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: circular function code must be scalar"));
+        return;
+    }
+
+    double fn_val = lhs->data.scalar;
+    int fn_code = static_cast<int>(std::round(fn_val));
+
+    if (std::abs(fn_val - fn_code) > 1e-10) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: circular function code must be integer"));
+        return;
+    }
+
+    if (fn_code < -7 || fn_code > 7) {
+        // We only support -7 to 7 (no complex number support)
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: circular function code must be -7 to 7"));
+        return;
+    }
+
+    // Apply to right argument
+    if (rhs->is_scalar()) {
+        double result = circular_function(fn_code, rhs->data.scalar);
+        if (std::isnan(result)) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid argument for circular function"));
+            return;
+        }
+        m->result = m->heap->allocate_scalar(result);
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+
+    for (int i = 0; i < mat->size(); ++i) {
+        result(i) = circular_function(fn_code, mat->data()[i]);
+        if (std::isnan(result(i))) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid argument for circular function"));
+            return;
+        }
+    }
+
+    if (rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
     } else {
         m->result = m->heap->allocate_matrix(result);
