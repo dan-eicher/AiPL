@@ -3328,3 +3328,159 @@ TEST_F(PrimitivesTest, ExpandDomainError) {
 TEST_F(PrimitivesTest, QuestionRegistered) {
     ASSERT_NE(machine->env->lookup("?"), nullptr);
 }
+
+// ========================================================================
+// Decode (⊥ dyadic) Tests
+// ========================================================================
+
+TEST_F(PrimitivesTest, DecodeBinary) {
+    // 2⊥1 0 1 1 → 11 (binary 1011 = 11)
+    Value* radix = machine->heap->allocate_scalar(2.0);
+    Eigen::VectorXd digits(4);
+    digits << 1.0, 0.0, 1.0, 1.0;
+    Value* digits_val = machine->heap->allocate_vector(digits);
+
+    fn_decode(machine, radix, digits_val);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 11.0);
+}
+
+TEST_F(PrimitivesTest, DecodeDecimal) {
+    // 10⊥1 2 3 → 123
+    Value* radix = machine->heap->allocate_scalar(10.0);
+    Eigen::VectorXd digits(3);
+    digits << 1.0, 2.0, 3.0;
+    Value* digits_val = machine->heap->allocate_vector(digits);
+
+    fn_decode(machine, radix, digits_val);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 123.0);
+}
+
+TEST_F(PrimitivesTest, DecodeMixedRadix) {
+    // 24 60 60⊥1 30 45 → 5445 (1h 30m 45s in seconds)
+    Eigen::VectorXd radix(3);
+    radix << 24.0, 60.0, 60.0;
+    Value* radix_val = machine->heap->allocate_vector(radix);
+
+    Eigen::VectorXd digits(3);
+    digits << 1.0, 30.0, 45.0;
+    Value* digits_val = machine->heap->allocate_vector(digits);
+
+    fn_decode(machine, radix_val, digits_val);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5445.0);
+}
+
+TEST_F(PrimitivesTest, DecodeEmpty) {
+    // Empty decode returns 0
+    Value* radix = machine->heap->allocate_scalar(10.0);
+    Value* digits_val = machine->heap->allocate_vector(Eigen::VectorXd(0));
+
+    fn_decode(machine, radix, digits_val);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+// ========================================================================
+// Encode (⊤ dyadic) Tests
+// ========================================================================
+
+TEST_F(PrimitivesTest, EncodeBinary) {
+    // 2 2 2 2⊤11 → 1 0 1 1
+    Eigen::VectorXd radix(4);
+    radix << 2.0, 2.0, 2.0, 2.0;
+    Value* radix_val = machine->heap->allocate_vector(radix);
+    Value* val = machine->heap->allocate_scalar(11.0);
+
+    fn_encode(machine, radix_val, val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, EncodeDecimal) {
+    // 10 10 10⊤345 → 3 4 5
+    Eigen::VectorXd radix(3);
+    radix << 10.0, 10.0, 10.0;
+    Value* radix_val = machine->heap->allocate_vector(radix);
+    Value* val = machine->heap->allocate_scalar(345.0);
+
+    fn_encode(machine, radix_val, val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, EncodeMixedRadix) {
+    // 24 60 60⊤5445 → 1 30 45 (seconds to h:m:s)
+    Eigen::VectorXd radix(3);
+    radix << 24.0, 60.0, 60.0;
+    Value* radix_val = machine->heap->allocate_vector(radix);
+    Value* val = machine->heap->allocate_scalar(5445.0);
+
+    fn_encode(machine, radix_val, val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 30.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 45.0);
+}
+
+TEST_F(PrimitivesTest, EncodeOverflow) {
+    // 2 2 2⊤15 → 1 1 1 (only last 3 bits, overflow discarded)
+    Eigen::VectorXd radix(3);
+    radix << 2.0, 2.0, 2.0;
+    Value* radix_val = machine->heap->allocate_vector(radix);
+    Value* val = machine->heap->allocate_scalar(15.0);  // 1111 in binary
+
+    fn_encode(machine, radix_val, val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, DecodeEncodeRoundtrip) {
+    // Encode then decode should give original value (within radix range)
+    Eigen::VectorXd radix(4);
+    radix << 2.0, 2.0, 2.0, 2.0;
+    Value* radix_val = machine->heap->allocate_vector(radix);
+    Value* original = machine->heap->allocate_scalar(13.0);
+
+    // Encode: 13 → 1 1 0 1
+    fn_encode(machine, radix_val, original);
+    Value* encoded = machine->result;
+
+    // Decode: 1 1 0 1 → 13
+    fn_decode(machine, machine->heap->allocate_scalar(2.0), encoded);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 13.0);
+}
+
+TEST_F(PrimitivesTest, DecodeRegistered) {
+    ASSERT_NE(machine->env->lookup("⊥"), nullptr);
+}
+
+TEST_F(PrimitivesTest, EncodeRegistered) {
+    ASSERT_NE(machine->env->lookup("⊤"), nullptr);
+}

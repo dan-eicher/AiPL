@@ -65,6 +65,8 @@ void fn_without(Machine* m, Value* lhs, Value* rhs);   // ~ dyadic (without)
 void fn_circular(Machine* m, Value* lhs, Value* rhs);  // ○ dyadic (circular functions)
 void fn_deal(Machine* m, Value* lhs, Value* rhs);      // ? dyadic (deal)
 void fn_expand(Machine* m, Value* lhs, Value* rhs);    // \ dyadic (expand)
+void fn_decode(Machine* m, Value* lhs, Value* rhs);    // ⊥ dyadic (decode/base value)
+void fn_encode(Machine* m, Value* lhs, Value* rhs);    // ⊤ dyadic (encode/representation)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -97,6 +99,8 @@ extern PrimitiveFn prim_grade_down;// ⍒ symbol (grade down)
 extern PrimitiveFn prim_union;     // ∪ symbol (unique/union)
 extern PrimitiveFn prim_circle;    // ○ symbol (pi times/circular)
 extern PrimitiveFn prim_question;  // ? symbol (roll/deal)
+extern PrimitiveFn prim_decode;    // ⊥ symbol (decode/base value)
+extern PrimitiveFn prim_encode;    // ⊤ symbol (encode/representation)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

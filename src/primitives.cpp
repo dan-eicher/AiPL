@@ -49,6 +49,8 @@ PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
 PrimitiveFn prim_union     = { "∪", fn_unique, fn_union };
 PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular };
 PrimitiveFn prim_question  = { "?", fn_roll, fn_deal };
+PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode };
+PrimitiveFn prim_encode    = { "⊤", nullptr, fn_encode };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -2663,6 +2665,113 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
             result(i) = data(src_idx++);
         } else {
             result(i) = 0.0;  // Fill element
+        }
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// ============================================================================
+// Encode/Decode Functions (⊥ ⊤)
+// ============================================================================
+
+// Decode (⊥ dyadic) - base value / polynomial evaluation
+// A⊥B evaluates B as digits in radix A using Horner's method
+// 2⊥1 0 1 1 → 11 (binary to decimal)
+// 10⊥1 2 3 → 123 (decimal digits)
+// 24 60 60⊥1 30 45 → 5445 (hours:mins:secs to seconds)
+void fn_decode(Machine* m, Value* lhs, Value* rhs) {
+    // Get the radix and digits as vectors
+    Eigen::VectorXd radix = flatten_value(lhs);
+    Eigen::VectorXd digits = flatten_value(rhs);
+
+    int n = digits.size();
+
+    // If radix is scalar, extend it to match digits length
+    if (radix.size() == 1) {
+        double r = radix(0);
+        radix.resize(n);
+        radix.setConstant(r);
+    }
+
+    // Radix and digits must have same length after extension
+    if (radix.size() != n) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: decode radix and digits must have same length"));
+        return;
+    }
+
+    if (n == 0) {
+        m->result = m->heap->allocate_scalar(0.0);
+        return;
+    }
+
+    // Horner's method: Z = digits[0], then Z = radix[i]*Z + digits[i] for i=1..n-1
+    double z = digits(0);
+    for (int i = 1; i < n; ++i) {
+        z = radix(i) * z + digits(i);
+    }
+
+    m->result = m->heap->allocate_scalar(z);
+}
+
+// Encode (⊤ dyadic) - representation / convert to digits in radix
+// A⊤B converts B to representation in radix A
+// 2 2 2 2⊤11 → 1 0 1 1 (decimal to binary)
+// 10 10 10⊤345 → 3 4 5 (decimal digits)
+// 24 60 60⊤5445 → 1 30 45 (seconds to hours:mins:secs)
+void fn_encode(Machine* m, Value* lhs, Value* rhs) {
+    // Get the radix vector
+    Eigen::VectorXd radix = flatten_value(lhs);
+    int n = radix.size();
+
+    if (n == 0) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
+    // Right argument should be scalar for basic encode
+    if (!rhs->is_scalar()) {
+        // For vector rhs, apply encode to each element (result is matrix)
+        Eigen::VectorXd values = flatten_value(rhs);
+        int num_values = values.size();
+
+        Eigen::MatrixXd result(n, num_values);
+        for (int v = 0; v < num_values; ++v) {
+            double val = values(v);
+            // Work from right to left (last radix first)
+            for (int i = n - 1; i >= 0; --i) {
+                double r = radix(i);
+                if (r == 0) {
+                    // Special case: radix 0 means "remainder" (no modulo)
+                    result(i, v) = val;
+                    val = 0;
+                } else {
+                    double digit = std::fmod(val, r);
+                    if (digit < 0) digit += r;  // Ensure non-negative
+                    result(i, v) = digit;
+                    val = std::floor(val / r);
+                }
+            }
+        }
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
+    double val = rhs->as_scalar();
+    Eigen::VectorXd result(n);
+
+    // Work from right to left (last radix first)
+    for (int i = n - 1; i >= 0; --i) {
+        double r = radix(i);
+        if (r == 0) {
+            // Special case: radix 0 means "remainder" (no modulo)
+            result(i) = val;
+            val = 0;
+        } else {
+            double digit = std::fmod(val, r);
+            if (digit < 0) digit += r;  // Ensure non-negative
+            result(i) = digit;
+            val = std::floor(val / r);
         }
     }
 

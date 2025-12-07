@@ -3634,6 +3634,100 @@ TEST_F(ParserTest, ScanVsExpand) {
     EXPECT_DOUBLE_EQ((*vec)(2, 0), 6.0);
 }
 
+// ========================================================================
+// Decode/Encode Tests (⊥ ⊤)
+// ========================================================================
+
+TEST_F(ParserTest, DecodeBinary) {
+    // 2⊥1 0 1 1 → 11
+    Continuation* k = parser->parse("2⊥1 0 1 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 11.0);
+}
+
+TEST_F(ParserTest, DecodeDecimal) {
+    // 10⊥1 2 3 → 123
+    Continuation* k = parser->parse("10⊥1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 123.0);
+}
+
+TEST_F(ParserTest, DecodeMixedRadix) {
+    // 24 60 60⊥1 30 45 → 5445
+    Continuation* k = parser->parse("24 60 60⊥1 30 45");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5445.0);
+}
+
+TEST_F(ParserTest, EncodeBinary) {
+    // 2 2 2 2⊤11 → 1 0 1 1
+    Continuation* k = parser->parse("2 2 2 2⊤11");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 1.0);
+}
+
+TEST_F(ParserTest, EncodeDecimal) {
+    // 10 10 10⊤345 → 3 4 5
+    Continuation* k = parser->parse("10 10 10⊤345");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);
+}
+
+TEST_F(ParserTest, EncodeMixedRadix) {
+    // 24 60 60⊤5445 → 1 30 45
+    Continuation* k = parser->parse("24 60 60⊤5445");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 30.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 45.0);
+}
+
+TEST_F(ParserTest, DecodeEncodeRoundtrip) {
+    // 2⊥2 2 2 2⊤13 → 13 (encode then decode)
+    Continuation* k = parser->parse("2⊥2 2 2 2⊤13");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 13.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
