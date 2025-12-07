@@ -79,6 +79,9 @@ enum TokenType {
     TOK_GRADE_UP,       // ⍋ (grade up)
     TOK_GRADE_DOWN,     // ⍒ (grade down)
 
+    // Set functions
+    TOK_UNION,          // ∪ (unique/union)
+
     // Structural
     TOK_ASSIGN,         // ←
     TOK_LPAREN,         // (

@@ -25,7 +25,7 @@ PrimitiveFn prim_ceiling   = { "⌈", fn_ceiling, fn_maximum };
 PrimitiveFn prim_floor     = { "⌊", fn_floor, fn_minimum };
 PrimitiveFn prim_and       = { "∧", nullptr, fn_and };
 PrimitiveFn prim_or        = { "∨", nullptr, fn_or };
-PrimitiveFn prim_not       = { "~", fn_not, nullptr };
+PrimitiveFn prim_not       = { "~", fn_not, fn_without };
 PrimitiveFn prim_nand      = { "⍲", nullptr, fn_nand };
 PrimitiveFn prim_nor       = { "⍱", nullptr, fn_nor };
 PrimitiveFn prim_stile     = { "|", fn_magnitude, fn_residue };
@@ -45,6 +45,7 @@ PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
 PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
 PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, nullptr };
 PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
+PrimitiveFn prim_union     = { "∪", fn_unique, fn_union };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -2208,6 +2209,158 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
         int rep = static_cast<int>(counts(i));
         for (int r = 0; r < rep; ++r) {
             result(out_idx++) = data(i);
+        }
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// ============================================================================
+// Set Functions (∪ ~)
+// ============================================================================
+
+// Helper: check if value exists in first n elements of array
+static bool value_in_array(double val, const Eigen::VectorXd& arr, int n) {
+    for (int i = 0; i < n; ++i) {
+        if (arr(i) == val) return true;
+    }
+    return false;
+}
+
+// Unique (∪ monadic) - return unique elements in order of first appearance
+// ∪ 1 2 2 3 1 4 → 1 2 3 4
+void fn_unique(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = omega;
+        return;
+    }
+
+    Eigen::VectorXd data = flatten_value(omega);
+    int n = data.size();
+
+    // First pass: count unique elements
+    int unique_count = 0;
+    for (int i = 0; i < n; ++i) {
+        bool found = false;
+        for (int j = 0; j < i; ++j) {
+            if (data(j) == data(i)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) unique_count++;
+    }
+
+    if (unique_count == 0) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
+    // Second pass: collect unique elements
+    Eigen::VectorXd result(unique_count);
+    int out_idx = 0;
+    for (int i = 0; i < n; ++i) {
+        if (!value_in_array(data(i), result, out_idx)) {
+            result(out_idx++) = data(i);
+        }
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// Union (∪ dyadic) - unique elements from both arrays (left first, then unique from right)
+// 1 2 3 ∪ 3 4 5 → 1 2 3 4 5
+void fn_union(Machine* m, Value* lhs, Value* rhs) {
+    Eigen::VectorXd left = flatten_value(lhs);
+    Eigen::VectorXd right = flatten_value(rhs);
+
+    // First pass: count unique from left
+    int left_unique = 0;
+    for (int i = 0; i < left.size(); ++i) {
+        bool found = false;
+        for (int j = 0; j < i; ++j) {
+            if (left(j) == left(i)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) left_unique++;
+    }
+
+    // Build unique left first (we need it to check right against)
+    Eigen::VectorXd left_uniq(left_unique);
+    int idx = 0;
+    for (int i = 0; i < left.size(); ++i) {
+        if (!value_in_array(left(i), left_uniq, idx)) {
+            left_uniq(idx++) = left(i);
+        }
+    }
+
+    // Count how many from right are new
+    int right_new = 0;
+    for (int i = 0; i < right.size(); ++i) {
+        bool in_left = value_in_array(right(i), left_uniq, left_unique);
+        bool dup_in_right = false;
+        for (int j = 0; j < i; ++j) {
+            if (right(j) == right(i)) {
+                dup_in_right = true;
+                break;
+            }
+        }
+        if (!in_left && !dup_in_right) right_new++;
+    }
+
+    // Build result
+    Eigen::VectorXd result(left_unique + right_new);
+    result.head(left_unique) = left_uniq;
+
+    idx = left_unique;
+    for (int i = 0; i < right.size(); ++i) {
+        if (!value_in_array(right(i), result, idx)) {
+            result(idx++) = right(i);
+        }
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// Without (~ dyadic) - elements of left that are not in right
+// 1 2 3 4 5 ~ 2 4 → 1 3 5
+void fn_without(Machine* m, Value* lhs, Value* rhs) {
+    Eigen::VectorXd left = flatten_value(lhs);
+    Eigen::VectorXd right = flatten_value(rhs);
+
+    // First pass: count elements not in right
+    int count = 0;
+    for (int i = 0; i < left.size(); ++i) {
+        bool in_right = false;
+        for (int j = 0; j < right.size(); ++j) {
+            if (right(j) == left(i)) {
+                in_right = true;
+                break;
+            }
+        }
+        if (!in_right) count++;
+    }
+
+    if (count == 0) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
+    // Second pass: collect elements
+    Eigen::VectorXd result(count);
+    int out_idx = 0;
+    for (int i = 0; i < left.size(); ++i) {
+        bool in_right = false;
+        for (int j = 0; j < right.size(); ++j) {
+            if (right(j) == left(i)) {
+                in_right = true;
+                break;
+            }
+        }
+        if (!in_right) {
+            result(out_idx++) = left(i);
         }
     }
 

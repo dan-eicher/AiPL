@@ -54,6 +54,7 @@ const char* token_type_name(TokenType type) {
         case TOK_MEMBER: return "∊";
         case TOK_GRADE_UP: return "⍋";
         case TOK_GRADE_DOWN: return "⍒";
+        case TOK_UNION: return "∪";
         case TOK_ASSIGN: return "←";
         case TOK_LPAREN: return "(";
         case TOK_RPAREN: return ")";

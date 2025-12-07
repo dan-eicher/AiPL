@@ -135,6 +135,7 @@ Lexer::Lexer(const char* input)
     member_of = "∊";     // U+220A (small element of)
     grade_up = "⍋";      // U+234B (grade up)
     grade_down = "⍒";    // U+2352 (grade down)
+    union_sym = "∪";     // U+222A (union/unique)
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
@@ -314,6 +315,7 @@ Token Lexer::next_token() {
         member_of { column_++; return Token(TOK_MEMBER, token_line, token_column); }
         grade_up { column_++; return Token(TOK_GRADE_UP, token_line, token_column); }
         grade_down { column_++; return Token(TOK_GRADE_DOWN, token_line, token_column); }
+        union_sym { column_++; return Token(TOK_UNION, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }

@@ -30,6 +30,7 @@ void fn_tally(Machine* m, Value* omega);         // ≢ monadic (count along fir
 void fn_enlist(Machine* m, Value* omega);        // ∊ monadic (enlist/flatten)
 void fn_grade_up(Machine* m, Value* omega);      // ⍋ monadic (grade up)
 void fn_grade_down(Machine* m, Value* omega);    // ⍒ monadic (grade down)
+void fn_unique(Machine* m, Value* omega);        // ∪ monadic (unique)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -57,6 +58,8 @@ void fn_rotate_first(Machine* m, Value* lhs, Value* rhs); // ⊖ dyadic (rotate 
 void fn_index_of(Machine* m, Value* lhs, Value* rhs);  // ⍳ dyadic (index of)
 void fn_member_of(Machine* m, Value* lhs, Value* rhs); // ∊ dyadic (member of)
 void fn_replicate(Machine* m, Value* lhs, Value* rhs); // / dyadic (replicate)
+void fn_union(Machine* m, Value* lhs, Value* rhs);     // ∪ dyadic (union)
+void fn_without(Machine* m, Value* lhs, Value* rhs);   // ~ dyadic (without)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -86,6 +89,7 @@ extern PrimitiveFn prim_tally;     // ≢ symbol (tally)
 extern PrimitiveFn prim_member;    // ∊ symbol (enlist/member)
 extern PrimitiveFn prim_grade_up;  // ⍋ symbol (grade up)
 extern PrimitiveFn prim_grade_down;// ⍒ symbol (grade down)
+extern PrimitiveFn prim_union;     // ∪ symbol (unique/union)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

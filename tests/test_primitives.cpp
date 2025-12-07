@@ -2701,3 +2701,187 @@ TEST_F(PrimitivesTest, ReplicateScalar) {
     EXPECT_DOUBLE_EQ((*res)(1, 0), 5.0);
     EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
 }
+
+// ============================================================================
+// Set Functions (∪ ~)
+// ============================================================================
+
+TEST_F(PrimitivesTest, UniqueVector) {
+    // ∪ 1 2 2 3 1 4 → 1 2 3 4
+    Eigen::VectorXd v(6);
+    v << 1.0, 2.0, 2.0, 3.0, 1.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_unique(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 4.0);
+}
+
+TEST_F(PrimitivesTest, UniqueScalar) {
+    // ∪ 5 → 5
+    Value* val = machine->heap->allocate_scalar(5.0);
+
+    fn_unique(machine, val);
+
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, UniqueAllSame) {
+    // ∪ 3 3 3 3 → 3
+    Eigen::VectorXd v(4);
+    v << 3.0, 3.0, 3.0, 3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_unique(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 1);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, UniqueAlreadyUnique) {
+    // ∪ 1 2 3 4 → 1 2 3 4
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_unique(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+}
+
+TEST_F(PrimitivesTest, UnionBasic) {
+    // 1 2 3 ∪ 3 4 5 → 1 2 3 4 5
+    Eigen::VectorXd left(3), right(3);
+    left << 1.0, 2.0, 3.0;
+    right << 3.0, 4.0, 5.0;
+    Value* lhs = machine->heap->allocate_vector(left);
+    Value* rhs = machine->heap->allocate_vector(right);
+
+    fn_union(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, UnionNoOverlap) {
+    // 1 2 ∪ 3 4 → 1 2 3 4
+    Eigen::VectorXd left(2), right(2);
+    left << 1.0, 2.0;
+    right << 3.0, 4.0;
+    Value* lhs = machine->heap->allocate_vector(left);
+    Value* rhs = machine->heap->allocate_vector(right);
+
+    fn_union(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+}
+
+TEST_F(PrimitivesTest, UnionWithDuplicates) {
+    // 1 1 2 ∪ 2 3 3 → 1 2 3
+    Eigen::VectorXd left(3), right(3);
+    left << 1.0, 1.0, 2.0;
+    right << 2.0, 3.0, 3.0;
+    Value* lhs = machine->heap->allocate_vector(left);
+    Value* rhs = machine->heap->allocate_vector(right);
+
+    fn_union(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, WithoutBasic) {
+    // 1 2 3 4 5 ~ 2 4 → 1 3 5
+    Eigen::VectorXd left(5), right(2);
+    left << 1.0, 2.0, 3.0, 4.0, 5.0;
+    right << 2.0, 4.0;
+    Value* lhs = machine->heap->allocate_vector(left);
+    Value* rhs = machine->heap->allocate_vector(right);
+
+    fn_without(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, WithoutNoMatch) {
+    // 1 2 3 ~ 4 5 6 → 1 2 3
+    Eigen::VectorXd left(3), right(3);
+    left << 1.0, 2.0, 3.0;
+    right << 4.0, 5.0, 6.0;
+    Value* lhs = machine->heap->allocate_vector(left);
+    Value* rhs = machine->heap->allocate_vector(right);
+
+    fn_without(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+}
+
+TEST_F(PrimitivesTest, WithoutAllMatch) {
+    // 1 2 3 ~ 1 2 3 → (empty)
+    Eigen::VectorXd left(3), right(3);
+    left << 1.0, 2.0, 3.0;
+    right << 1.0, 2.0, 3.0;
+    Value* lhs = machine->heap->allocate_vector(left);
+    Value* rhs = machine->heap->allocate_vector(right);
+
+    fn_without(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 0);
+}
+
+TEST_F(PrimitivesTest, WithoutPreservesDuplicates) {
+    // 1 2 2 3 3 3 ~ 2 → 1 3 3 3
+    Eigen::VectorXd left(6), right(1);
+    left << 1.0, 2.0, 2.0, 3.0, 3.0, 3.0;
+    right << 2.0;
+    Value* lhs = machine->heap->allocate_vector(left);
+    Value* rhs = machine->heap->allocate_vector(right);
+
+    fn_without(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 4);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, SetFunctionsRegistered) {
+    ASSERT_NE(machine->env->lookup("∪"), nullptr);
+    // ~ should already be registered for logical not
+    ASSERT_NE(machine->env->lookup("~"), nullptr);
+}

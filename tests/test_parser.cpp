@@ -3214,6 +3214,150 @@ TEST_F(ParserTest, ReplicateVsReduceDistinction) {
     EXPECT_EQ(vec->rows(), 8);
 }
 
+// ============================================================================
+// Set Functions (∪ ~)
+// ============================================================================
+
+TEST_F(ParserTest, UniqueVector) {
+    // ∪ 1 2 2 3 1 4 → 1 2 3 4
+    Continuation* k = parser->parse("∪ 1 2 2 3 1 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+}
+
+TEST_F(ParserTest, UniqueScalar) {
+    // ∪ 5 → 5
+    Continuation* k = parser->parse("∪ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(ParserTest, UniqueWithIota) {
+    // ∪ 1 0 2 0 3 0 → 1 0 2 3 (preserves order of first appearance)
+    Continuation* k = parser->parse("∪ 1 0 2 0 3 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 3.0);
+}
+
+TEST_F(ParserTest, UnionBasic) {
+    // 1 2 3 ∪ 3 4 5 → 1 2 3 4 5
+    Continuation* k = parser->parse("1 2 3 ∪ 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 5.0);
+}
+
+TEST_F(ParserTest, UnionNoOverlap) {
+    // 1 2 ∪ 3 4 → 1 2 3 4
+    Continuation* k = parser->parse("1 2 ∪ 3 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+}
+
+TEST_F(ParserTest, WithoutBasic) {
+    // 1 2 3 4 5 ~ 2 4 → 1 3 5
+    Continuation* k = parser->parse("1 2 3 4 5 ~ 2 4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 5.0);
+}
+
+TEST_F(ParserTest, WithoutNoMatch) {
+    // 1 2 3 ~ 4 5 → 1 2 3
+    Continuation* k = parser->parse("1 2 3 ~ 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+}
+
+TEST_F(ParserTest, WithoutAllMatch) {
+    // 1 2 3 ~ 1 2 3 → (empty)
+    Continuation* k = parser->parse("1 2 3 ~ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 0);
+}
+
+TEST_F(ParserTest, MonadicNotStillWorks) {
+    // Verify ~ still works as monadic not
+    // ~ 0 1 0 1 → 1 0 1 0
+    Continuation* k = parser->parse("~ 0 1 0 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 0.0);
+}
+
+TEST_F(ParserTest, SetFunctionsWithArithmetic) {
+    // ∪ (⍳5) + 0 → 0 1 2 3 4 (unique of already unique)
+    Continuation* k = parser->parse("∪ (⍳5) + 0");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 5);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

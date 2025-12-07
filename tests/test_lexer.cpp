@@ -209,6 +209,25 @@ TEST_F(LexerTest, OuterProduct) {
     EXPECT_EQ(tokens[1].type, TOK_TIMES);
 }
 
+// Test set function operators
+TEST_F(LexerTest, SetFunctionOperators) {
+    auto tokens = tokenize("∪ ~");
+
+    ASSERT_EQ(tokens.size(), 3);  // ∪, ~, EOF
+    EXPECT_EQ(tokens[0].type, TOK_UNION);
+    EXPECT_EQ(tokens[1].type, TOK_NOT);
+}
+
+// Test rank operator
+TEST_F(LexerTest, RankOperator) {
+    auto tokens = tokenize("+⍤2");
+
+    ASSERT_EQ(tokens.size(), 4);  // +, ⍤, 2, EOF
+    EXPECT_EQ(tokens[0].type, TOK_PLUS);
+    EXPECT_EQ(tokens[1].type, TOK_RANK);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+}
+
 // Test line tracking
 TEST_F(LexerTest, LineTracking) {
     auto tokens = tokenize("a\nb\nc");
