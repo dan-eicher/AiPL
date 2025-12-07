@@ -202,6 +202,7 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_QUESTION:
                 case TOK_DECODE:
                 case TOK_ENCODE:
+                case TOK_DOMINO:
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -311,7 +312,8 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_CIRCLE:
         case TOK_QUESTION:
         case TOK_DECODE:
-        case TOK_ENCODE: {
+        case TOK_ENCODE:
+        case TOK_DOMINO: {
             // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
             // They are NOT special monadic operators in the grammar
             // Monadic behavior emerges from juxtaposition + runtime semantics
@@ -357,6 +359,7 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_QUESTION:      op_name = "?"; break;
                 case TOK_DECODE:        op_name = "⊥"; break;
                 case TOK_ENCODE:        op_name = "⊤"; break;
+                case TOK_DOMINO:        op_name = "⌹"; break;
                 default: break;
             }
 

@@ -36,7 +36,8 @@ PrimitiveFn prim_factorial = { "!", fn_factorial, fn_binomial };
 // Array operation primitives
 PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
 PrimitiveFn prim_comma     = { ",", fn_ravel, fn_catenate };
-PrimitiveFn prim_transpose = { "⍉", fn_transpose, nullptr };
+PrimitiveFn prim_transpose = { "⍉", fn_transpose, fn_dyadic_transpose };
+PrimitiveFn prim_domino    = { "⌹", fn_matrix_inverse, fn_matrix_divide };
 PrimitiveFn prim_iota      = { "⍳", fn_iota, fn_index_of };
 PrimitiveFn prim_uptack    = { "↑", fn_first, fn_take };
 PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
@@ -1706,6 +1707,121 @@ void fn_transpose(Machine* m, Value* omega) {
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->transpose();
     m->result = m->heap->allocate_matrix(result);
+}
+
+// Dyadic Transpose (⍉) - reorder axes
+// For 2D: 1 0⍉M is transpose, 0 1⍉M is identity
+void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
+    // Get permutation as vector
+    Eigen::VectorXd perm;
+    if (lhs->is_scalar()) {
+        perm.resize(1);
+        perm(0) = lhs->as_scalar();
+    } else if (lhs->is_vector()) {
+        perm = lhs->as_matrix()->col(0);
+    } else {
+        // Flatten matrix row-major
+        const Eigen::MatrixXd* mat = lhs->as_matrix();
+        perm.resize(mat->size());
+        int idx = 0;
+        for (int r = 0; r < mat->rows(); ++r) {
+            for (int c = 0; c < mat->cols(); ++c) {
+                perm(idx++) = (*mat)(r, c);
+            }
+        }
+    }
+
+    if (rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
+    if (rhs->is_vector()) {
+        if (perm.size() != 1 || perm(0) != 0.0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: invalid axis permutation for vector"));
+            return;
+        }
+        m->result = m->heap->allocate_vector(rhs->as_matrix()->col(0));
+        return;
+    }
+
+    // Matrix: permutation must be 0 1 (identity) or 1 0 (transpose)
+    if (perm.size() != 2) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: permutation must match array rank"));
+        return;
+    }
+
+    int p0 = static_cast<int>(perm(0));
+    int p1 = static_cast<int>(perm(1));
+
+    if (p0 == 0 && p1 == 1) {
+        m->result = m->heap->allocate_matrix(*rhs->as_matrix());
+    } else if (p0 == 1 && p1 == 0) {
+        m->result = m->heap->allocate_matrix(rhs->as_matrix()->transpose());
+    } else {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid axis permutation"));
+    }
+}
+
+// Matrix Inverse (⌹) - monadic
+void fn_matrix_inverse(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        double val = omega->as_scalar();
+        if (val == 0.0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot invert zero"));
+            return;
+        }
+        m->result = m->heap->allocate_scalar(1.0 / val);
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    Eigen::MatrixXd result = mat->completeOrthogonalDecomposition().pseudoInverse();
+
+    if (omega->is_vector()) {
+        // Pseudo-inverse of column vector is row vector (1×n matrix)
+        m->result = m->heap->allocate_matrix(result);
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
+}
+
+// Matrix Divide (⌹) - dyadic: solve B×X = A for X
+void fn_matrix_divide(Machine* m, Value* lhs, Value* rhs) {
+    if (rhs->is_scalar()) {
+        double divisor = rhs->as_scalar();
+        if (divisor == 0.0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            return;
+        }
+        if (lhs->is_scalar()) {
+            m->result = m->heap->allocate_scalar(lhs->as_scalar() / divisor);
+        } else {
+            Eigen::MatrixXd result = lhs->as_matrix()->array() / divisor;
+            if (lhs->is_vector()) {
+                m->result = m->heap->allocate_vector(result.col(0));
+            } else {
+                m->result = m->heap->allocate_matrix(result);
+            }
+        }
+        return;
+    }
+
+    // Solve B×X = A using least squares
+    Eigen::MatrixXd A = lhs->is_scalar()
+        ? Eigen::MatrixXd::Constant(1, 1, lhs->as_scalar())
+        : *lhs->as_matrix();
+    const Eigen::MatrixXd& B = *rhs->as_matrix();
+
+    Eigen::MatrixXd result = B.colPivHouseholderQr().solve(A);
+
+    if (result.size() == 1) {
+        m->result = m->heap->allocate_scalar(result(0, 0));
+    } else if (result.cols() == 1) {
+        m->result = m->heap->allocate_vector(result.col(0));
+    } else {
+        m->result = m->heap->allocate_matrix(result);
+    }
 }
 
 // Iota (⍳) - monadic: generate indices from 0 to n-1

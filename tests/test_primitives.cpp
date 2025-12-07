@@ -3484,3 +3484,186 @@ TEST_F(PrimitivesTest, DecodeRegistered) {
 TEST_F(PrimitivesTest, EncodeRegistered) {
     ASSERT_NE(machine->env->lookup("⊤"), nullptr);
 }
+
+// ============================================================================
+// Matrix Inverse (⌹) monadic tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, MatrixInverseScalar) {
+    // ⌹4 → 0.25 (reciprocal)
+    Value* val = machine->heap->allocate_scalar(4.0);
+    fn_matrix_inverse(machine, val);
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.25);
+}
+
+TEST_F(PrimitivesTest, MatrixInverseScalarZeroError) {
+    // ⌹0 → DOMAIN ERROR
+    Value* val = machine->heap->allocate_scalar(0.0);
+    fn_matrix_inverse(machine, val);
+    ASSERT_FALSE(machine->kont_stack.empty());
+    auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(k, nullptr);
+}
+
+TEST_F(PrimitivesTest, MatrixInverse2x2) {
+    // Inverse of [[1,2],[3,4]]
+    Eigen::MatrixXd mat(2, 2);
+    mat << 1, 2, 3, 4;
+    Value* val = machine->heap->allocate_matrix(mat);
+    fn_matrix_inverse(machine, val);
+    ASSERT_FALSE(machine->result->is_scalar());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 2);
+    EXPECT_EQ(res->cols(), 2);
+    // Check A * A^-1 ≈ I
+    Eigen::MatrixXd product = mat * (*res);
+    EXPECT_NEAR(product(0, 0), 1.0, 1e-10);
+    EXPECT_NEAR(product(0, 1), 0.0, 1e-10);
+    EXPECT_NEAR(product(1, 0), 0.0, 1e-10);
+    EXPECT_NEAR(product(1, 1), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, MatrixInverseVector) {
+    // Pseudoinverse of vector
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* val = machine->heap->allocate_vector(vec);
+    fn_matrix_inverse(machine, val);
+    // Should return a matrix (1x3 pseudoinverse)
+    ASSERT_FALSE(machine->result->is_scalar());
+}
+
+// ============================================================================
+// Matrix Divide (⌹) dyadic tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, MatrixDivideScalarScalar) {
+    // 6 ⌹ 2 → 3
+    Value* lhs = machine->heap->allocate_scalar(6.0);
+    Value* rhs = machine->heap->allocate_scalar(2.0);
+    fn_matrix_divide(machine, lhs, rhs);
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, MatrixDivideByZeroError) {
+    // 6 ⌹ 0 → DOMAIN ERROR
+    Value* lhs = machine->heap->allocate_scalar(6.0);
+    Value* rhs = machine->heap->allocate_scalar(0.0);
+    fn_matrix_divide(machine, lhs, rhs);
+    ASSERT_FALSE(machine->kont_stack.empty());
+    auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(k, nullptr);
+}
+
+TEST_F(PrimitivesTest, MatrixDivideVectorByScalar) {
+    // (1 2 3) ⌹ 2 → 0.5 1 1.5
+    Eigen::VectorXd vec(3);
+    vec << 2, 4, 6;
+    Value* lhs = machine->heap->allocate_vector(vec);
+    Value* rhs = machine->heap->allocate_scalar(2.0);
+    fn_matrix_divide(machine, lhs, rhs);
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, MatrixDivideLinearSystem) {
+    // Solve A*x = b where A = [[1,0],[0,1]], b = [3,4]
+    // Solution: x = [3,4]
+    Eigen::MatrixXd A(2, 2);
+    A << 1, 0, 0, 1;
+    Eigen::VectorXd b(2);
+    b << 3, 4;
+    Value* lhs = machine->heap->allocate_vector(b);
+    Value* rhs = machine->heap->allocate_matrix(A);
+    fn_matrix_divide(machine, lhs, rhs);
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_NEAR((*res)(0, 0), 3.0, 1e-10);
+    EXPECT_NEAR((*res)(1, 0), 4.0, 1e-10);
+}
+
+// ============================================================================
+// Dyadic Transpose (⍉) tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, DyadicTransposeScalar) {
+    // 0⍉5 → 5 (scalar unchanged)
+    Value* lhs = machine->heap->allocate_scalar(0.0);
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+    fn_dyadic_transpose(machine, lhs, rhs);
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, DyadicTransposeVectorIdentity) {
+    // 0⍉(1 2 3) → 1 2 3
+    Value* lhs = machine->heap->allocate_scalar(0.0);
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    fn_dyadic_transpose(machine, lhs, rhs);
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, DyadicTransposeMatrixIdentity) {
+    // 0 1⍉M → M (identity permutation)
+    Eigen::VectorXd perm(2);
+    perm << 0, 1;
+    Value* lhs = machine->heap->allocate_vector(perm);
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3, 4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    fn_dyadic_transpose(machine, lhs, rhs);
+    ASSERT_FALSE(machine->result->is_scalar());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 2);
+    EXPECT_EQ(res->cols(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 2), 6.0);
+}
+
+TEST_F(PrimitivesTest, DyadicTransposeMatrixSwap) {
+    // 1 0⍉M → transpose
+    Eigen::VectorXd perm(2);
+    perm << 1, 0;
+    Value* lhs = machine->heap->allocate_vector(perm);
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3, 4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    fn_dyadic_transpose(machine, lhs, rhs);
+    ASSERT_FALSE(machine->result->is_scalar());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_EQ(res->cols(), 2);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 1), 6.0);
+}
+
+TEST_F(PrimitivesTest, DyadicTransposeInvalidPermError) {
+    // 2 2⍉M → DOMAIN ERROR
+    Eigen::VectorXd perm(2);
+    perm << 2, 2;
+    Value* lhs = machine->heap->allocate_vector(perm);
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3, 4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    fn_dyadic_transpose(machine, lhs, rhs);
+    ASSERT_FALSE(machine->kont_stack.empty());
+    auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(k, nullptr);
+}
+
+TEST_F(PrimitivesTest, DominoRegistered) {
+    ASSERT_NE(machine->env->lookup("⌹"), nullptr);
+}

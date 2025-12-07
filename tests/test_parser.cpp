@@ -3728,6 +3728,118 @@ TEST_F(ParserTest, DecodeEncodeRoundtrip) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 13.0);
 }
 
+// ============================================================================
+// Matrix Inverse (⌹) monadic tests
+// ============================================================================
+
+TEST_F(ParserTest, MatrixInverseScalar) {
+    // ⌹4 → 0.25
+    Continuation* k = parser->parse("⌹4");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.25);
+}
+
+TEST_F(ParserTest, MatrixInverseMatrix) {
+    // ⌹2 2⍴1 0 0 1 → identity (inverse of identity is identity)
+    Continuation* k = parser->parse("⌹2 2⍴1 0 0 1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_FALSE(result->is_scalar());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 2);
+    EXPECT_NEAR((*mat)(0, 0), 1.0, 1e-10);
+    EXPECT_NEAR((*mat)(1, 1), 1.0, 1e-10);
+}
+
+// ============================================================================
+// Matrix Divide (⌹) dyadic tests
+// ============================================================================
+
+TEST_F(ParserTest, MatrixDivideScalars) {
+    // 6⌹2 → 3
+    Continuation* k = parser->parse("6⌹2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(ParserTest, MatrixDivideVectorByScalar) {
+    // (2 4 6)⌹2 → 1 2 3
+    Continuation* k = parser->parse("(2 4 6)⌹2");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+// ============================================================================
+// Dyadic Transpose (⍉) tests
+// ============================================================================
+
+TEST_F(ParserTest, DyadicTransposeIdentity) {
+    // 0 1⍉2 3⍴⍳6 → same matrix
+    Continuation* k = parser->parse("0 1⍉2 3⍴⍳6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_FALSE(result->is_scalar());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+}
+
+TEST_F(ParserTest, DyadicTransposeSwap) {
+    // 1 0⍉2 3⍴⍳6 → 3x2 transpose
+    Continuation* k = parser->parse("1 0⍉2 3⍴⍳6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_FALSE(result->is_scalar());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 2);
+    // Original: 0 1 2 / 3 4 5, transposed: 0 3 / 1 4 / 2 5
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 1), 5.0);
+}
+
+TEST_F(ParserTest, DyadicTransposeEqualsMonadic) {
+    // 1 0⍉M ≡ ⍉M for 2D matrix
+    // Both should give same result
+    Continuation* k1 = parser->parse("1 0⍉2 3⍴⍳6");
+    ASSERT_NE(k1, nullptr) << "Parse error: " << parser->get_error();
+    Value* result1 = eval(k1);
+
+    Continuation* k2 = parser->parse("⍉2 3⍴⍳6");
+    ASSERT_NE(k2, nullptr) << "Parse error: " << parser->get_error();
+    Value* result2 = eval(k2);
+
+    const Eigen::MatrixXd* mat1 = result1->as_matrix();
+    const Eigen::MatrixXd* mat2 = result2->as_matrix();
+    EXPECT_EQ(mat1->rows(), mat2->rows());
+    EXPECT_EQ(mat1->cols(), mat2->cols());
+    EXPECT_TRUE(mat1->isApprox(*mat2));
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
