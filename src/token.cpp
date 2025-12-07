@@ -55,6 +55,15 @@ const char* token_type_name(TokenType type) {
         case TOK_GRADE_UP: return "⍋";
         case TOK_GRADE_DOWN: return "⍒";
         case TOK_UNION: return "∪";
+        case TOK_CIRCLE: return "○";
+        case TOK_QUESTION: return "?";
+        case TOK_DECODE: return "⊥";
+        case TOK_ENCODE: return "⊤";
+        case TOK_DOMINO: return "⌹";
+        case TOK_EXECUTE: return "⍎";
+        case TOK_ENCLOSE: return "⊂";
+        case TOK_DISCLOSE: return "⊃";
+        case TOK_MATCH: return "≡";
         case TOK_ASSIGN: return "←";
         case TOK_LPAREN: return "(";
         case TOK_RPAREN: return ")";

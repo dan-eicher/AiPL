@@ -82,6 +82,25 @@ enum TokenType {
     // Set functions
     TOK_UNION,          // ∪ (unique/union)
 
+    // Circular/Random
+    TOK_CIRCLE,         // ○ (pi times / circular functions)
+    TOK_QUESTION,       // ? (roll / deal)
+
+    // Encode/Decode
+    TOK_DECODE,         // ⊥ (decode / base value)
+    TOK_ENCODE,         // ⊤ (encode / representation)
+
+    // Matrix operations
+    TOK_DOMINO,         // ⌹ (matrix inverse / divide)
+
+    // Execute
+    TOK_EXECUTE,        // ⍎ (execute string as APL)
+
+    // Reserved (nested arrays - not yet implemented)
+    TOK_ENCLOSE,        // ⊂ (enclose)
+    TOK_DISCLOSE,       // ⊃ (disclose / pick)
+    TOK_MATCH,          // ≡ (depth / match)
+
     // Structural
     TOK_ASSIGN,         // ←
     TOK_LPAREN,         // (

@@ -98,6 +98,7 @@ void fn_ravel(Machine* m, Value* omega);                    // , monadic (flatte
 void fn_catenate(Machine* m, Value* lhs, Value* rhs);       // , dyadic (concatenate)
 void fn_transpose(Machine* m, Value* omega);                // ⍉ monadic (transpose)
 void fn_iota(Machine* m, Value* omega);                     // ⍳ monadic (index generator)
+void fn_first(Machine* m, Value* omega);                    // ↑ monadic (first element)
 void fn_take(Machine* m, Value* lhs, Value* rhs);           // ↑ dyadic (take)
 void fn_drop(Machine* m, Value* lhs, Value* rhs);           // ↓ dyadic (drop)
 
@@ -106,7 +107,7 @@ extern PrimitiveFn prim_rho;       // ⍴ symbol (shape/reshape)
 extern PrimitiveFn prim_comma;     // , symbol (ravel/catenate)
 extern PrimitiveFn prim_transpose; // ⍉ symbol (transpose)
 extern PrimitiveFn prim_iota;      // ⍳ symbol (index generator)
-extern PrimitiveFn prim_uptack;    // ↑ symbol (take)
+extern PrimitiveFn prim_uptack;    // ↑ symbol (first/take)
 extern PrimitiveFn prim_downtack;  // ↓ symbol (drop)
 
 } // namespace apl

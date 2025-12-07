@@ -669,6 +669,43 @@ TEST_F(LexerTest, GradeUpDown) {
     EXPECT_EQ(tokens[1].type, TOK_GRADE_DOWN);
 }
 
+// Test circular/random tokens (○ ?)
+TEST_F(LexerTest, CircularRandom) {
+    auto tokens = tokenize("○ ?");
+
+    ASSERT_EQ(tokens.size(), 3);  // 2 tokens + EOF
+    EXPECT_EQ(tokens[0].type, TOK_CIRCLE);
+    EXPECT_EQ(tokens[1].type, TOK_QUESTION);
+}
+
+// Test encode/decode tokens (⊥ ⊤)
+TEST_F(LexerTest, EncodeDecode) {
+    auto tokens = tokenize("⊥ ⊤");
+
+    ASSERT_EQ(tokens.size(), 3);  // 2 tokens + EOF
+    EXPECT_EQ(tokens[0].type, TOK_DECODE);
+    EXPECT_EQ(tokens[1].type, TOK_ENCODE);
+}
+
+// Test matrix/execute tokens (⌹ ⍎)
+TEST_F(LexerTest, MatrixExecute) {
+    auto tokens = tokenize("⌹ ⍎");
+
+    ASSERT_EQ(tokens.size(), 3);  // 2 tokens + EOF
+    EXPECT_EQ(tokens[0].type, TOK_DOMINO);
+    EXPECT_EQ(tokens[1].type, TOK_EXECUTE);
+}
+
+// Test reserved nested array tokens (⊂ ⊃ ≡)
+TEST_F(LexerTest, ReservedNestedArrayTokens) {
+    auto tokens = tokenize("⊂ ⊃ ≡");
+
+    ASSERT_EQ(tokens.size(), 4);  // 3 tokens + EOF
+    EXPECT_EQ(tokens[0].type, TOK_ENCLOSE);
+    EXPECT_EQ(tokens[1].type, TOK_DISCLOSE);
+    EXPECT_EQ(tokens[2].type, TOK_MATCH);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

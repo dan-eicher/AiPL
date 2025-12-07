@@ -2885,3 +2885,66 @@ TEST_F(PrimitivesTest, SetFunctionsRegistered) {
     // ~ should already be registered for logical not
     ASSERT_NE(machine->env->lookup("~"), nullptr);
 }
+
+// ============================================================================
+// First (↑ monadic) Tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, FirstScalar) {
+    Value* scalar = machine->heap->allocate_scalar(42.0);
+
+    fn_first(machine, scalar);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 42.0);
+}
+
+TEST_F(PrimitivesTest, FirstVector) {
+    Eigen::VectorXd v(4);
+    v << 10.0, 20.0, 30.0, 40.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_first(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 10.0);
+}
+
+TEST_F(PrimitivesTest, FirstMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1, 2, 3,
+         4, 5, 6;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_first(machine, mat);
+
+    // First of matrix returns first row as vector
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, FirstEmptyVector) {
+    Eigen::VectorXd v(0);
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_first(machine, vec);
+
+    // First of empty returns 0 (prototype)
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, FirstSingleElementVector) {
+    Eigen::VectorXd v(1);
+    v << 99.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_first(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 99.0);
+}

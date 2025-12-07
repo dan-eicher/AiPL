@@ -37,7 +37,7 @@ PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
 PrimitiveFn prim_comma     = { ",", fn_ravel, fn_catenate };
 PrimitiveFn prim_transpose = { "⍉", fn_transpose, nullptr };
 PrimitiveFn prim_iota      = { "⍳", fn_iota, fn_index_of };
-PrimitiveFn prim_uptack    = { "↑", nullptr, fn_take };
+PrimitiveFn prim_uptack    = { "↑", fn_first, fn_take };
 PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
 PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate };
 PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
@@ -1634,6 +1634,33 @@ void fn_iota(Machine* m, Value* omega) {
         result(i) = i;
     }
     m->result = m->heap->allocate_vector(result);
+}
+
+// First (↑) - monadic: return first element
+void fn_first(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        // First of scalar is the scalar itself
+        m->result = m->heap->allocate_scalar(omega->as_scalar());
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    if (mat->size() == 0) {
+        // First of empty array - return 0 (prototype element)
+        m->result = m->heap->allocate_scalar(0.0);
+        return;
+    }
+
+    if (omega->is_vector()) {
+        // First of vector is the first element as scalar
+        m->result = m->heap->allocate_scalar((*mat)(0, 0));
+        return;
+    }
+
+    // First of matrix is the first row as vector
+    Eigen::VectorXd first_row = mat->row(0);
+    m->result = m->heap->allocate_vector(first_row);
 }
 
 // Take (↑) - dyadic: take first n elements

@@ -3358,6 +3358,73 @@ TEST_F(ParserTest, SetFunctionsWithArithmetic) {
     EXPECT_EQ(vec->rows(), 5);
 }
 
+// ============================================================================
+// First (↑ monadic) Tests
+// ============================================================================
+
+TEST_F(ParserTest, FirstOfVector) {
+    // ↑ 10 20 30 → 10
+    Continuation* k = parser->parse("↑ 10 20 30");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(ParserTest, FirstOfScalar) {
+    // ↑ 42 → 42
+    Continuation* k = parser->parse("↑ 42");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(ParserTest, FirstOfIota) {
+    // ↑ ⍳5 → 0
+    Continuation* k = parser->parse("↑ ⍳5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, FirstOfMatrix) {
+    // ↑ 2 3 ⍴ ⍳6 → 0 1 2 (first row)
+    Continuation* k = parser->parse("↑ 2 3 ⍴ ⍳6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 2.0);
+}
+
+TEST_F(ParserTest, DyadicTakeStillWorks) {
+    // 3 ↑ 1 2 3 4 5 → 1 2 3
+    Continuation* k = parser->parse("3 ↑ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

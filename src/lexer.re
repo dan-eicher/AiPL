@@ -136,6 +136,14 @@ Lexer::Lexer(const char* input)
     grade_up = "⍋";      // U+234B (grade up)
     grade_down = "⍒";    // U+2352 (grade down)
     union_sym = "∪";     // U+222A (union/unique)
+    circle = "○";        // U+25CB (pi times / circular)
+    decode = "⊥";        // U+22A5 (decode / base value)
+    encode = "⊤";        // U+22A4 (encode / representation)
+    domino = "⌹";        // U+2339 (matrix inverse / divide)
+    execute = "⍎";       // U+234E (execute)
+    enclose = "⊂";       // U+2282 (enclose - reserved)
+    disclose = "⊃";      // U+2283 (disclose - reserved)
+    match = "≡";         // U+2261 (depth/match - reserved)
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
@@ -316,6 +324,15 @@ Token Lexer::next_token() {
         grade_up { column_++; return Token(TOK_GRADE_UP, token_line, token_column); }
         grade_down { column_++; return Token(TOK_GRADE_DOWN, token_line, token_column); }
         union_sym { column_++; return Token(TOK_UNION, token_line, token_column); }
+        circle { column_++; return Token(TOK_CIRCLE, token_line, token_column); }
+        "?" { column_++; return Token(TOK_QUESTION, token_line, token_column); }
+        decode { column_++; return Token(TOK_DECODE, token_line, token_column); }
+        encode { column_++; return Token(TOK_ENCODE, token_line, token_column); }
+        domino { column_++; return Token(TOK_DOMINO, token_line, token_column); }
+        execute { column_++; return Token(TOK_EXECUTE, token_line, token_column); }
+        enclose { column_++; return Token(TOK_ENCLOSE, token_line, token_column); }
+        disclose { column_++; return Token(TOK_DISCLOSE, token_line, token_column); }
+        match { column_++; return Token(TOK_MATCH, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }
