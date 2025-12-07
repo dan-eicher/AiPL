@@ -27,6 +27,7 @@ void fn_factorial(Machine* m, Value* omega);     // ! monadic (factorial)
 void fn_reverse(Machine* m, Value* omega);       // ⌽ monadic (reverse last axis)
 void fn_reverse_first(Machine* m, Value* omega); // ⊖ monadic (reverse first axis)
 void fn_tally(Machine* m, Value* omega);         // ≢ monadic (count along first axis)
+void fn_enlist(Machine* m, Value* omega);        // ∊ monadic (enlist/flatten)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -51,6 +52,8 @@ void fn_logarithm(Machine* m, Value* lhs, Value* rhs); // ⍟ dyadic (logarithm 
 void fn_binomial(Machine* m, Value* lhs, Value* rhs);  // ! dyadic (binomial/combinations)
 void fn_rotate(Machine* m, Value* lhs, Value* rhs);    // ⌽ dyadic (rotate last axis)
 void fn_rotate_first(Machine* m, Value* lhs, Value* rhs); // ⊖ dyadic (rotate first axis)
+void fn_index_of(Machine* m, Value* lhs, Value* rhs);  // ⍳ dyadic (index of)
+void fn_member_of(Machine* m, Value* lhs, Value* rhs); // ∊ dyadic (member of)
 
 // PrimitiveFn structs that combine monadic and dyadic forms
 extern PrimitiveFn prim_plus;      // + symbol
@@ -77,6 +80,7 @@ extern PrimitiveFn prim_factorial; // ! symbol (factorial/binomial)
 extern PrimitiveFn prim_reverse;   // ⌽ symbol (reverse/rotate)
 extern PrimitiveFn prim_reverse_first; // ⊖ symbol (reverse first/rotate first)
 extern PrimitiveFn prim_tally;     // ≢ symbol (tally)
+extern PrimitiveFn prim_member;    // ∊ symbol (enlist/member)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

@@ -2167,3 +2167,140 @@ TEST_F(PrimitivesTest, ReverseRotateTallyRegistered) {
     ASSERT_NE(machine->env->lookup("≢"), nullptr);
 }
 
+// ============================================================================
+// Search Functions (⍳ dyadic, ∊)
+// ============================================================================
+
+TEST_F(PrimitivesTest, IndexOfFound) {
+    // 1 2 3 4 5 ⍳ 3 → 2 (0-origin index)
+    Eigen::VectorXd haystack(5);
+    haystack << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* lhs = machine->heap->allocate_vector(haystack);
+    Value* rhs = machine->heap->allocate_scalar(3.0);
+
+    fn_index_of(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 2.0);
+}
+
+TEST_F(PrimitivesTest, IndexOfNotFound) {
+    // 1 2 3 ⍳ 7 → 3 (not found = length of haystack)
+    Eigen::VectorXd haystack(3);
+    haystack << 1.0, 2.0, 3.0;
+    Value* lhs = machine->heap->allocate_vector(haystack);
+    Value* rhs = machine->heap->allocate_scalar(7.0);
+
+    fn_index_of(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, IndexOfVector) {
+    // 10 20 30 40 ⍳ 30 20 99 → 2 1 4
+    Eigen::VectorXd haystack(4);
+    haystack << 10.0, 20.0, 30.0, 40.0;
+    Eigen::VectorXd needles(3);
+    needles << 30.0, 20.0, 99.0;
+    Value* lhs = machine->heap->allocate_vector(haystack);
+    Value* rhs = machine->heap->allocate_vector(needles);
+
+    fn_index_of(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 2.0);  // 30 found at index 2
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 1.0);  // 20 found at index 1
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 4.0);  // 99 not found → 4
+}
+
+TEST_F(PrimitivesTest, IndexOfScalarHaystack) {
+    // 5 ⍳ 5 → 0 (found at index 0)
+    Value* lhs = machine->heap->allocate_scalar(5.0);
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+
+    fn_index_of(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, MemberOfFound) {
+    // 3 ∊ 1 2 3 4 5 → 1
+    Value* lhs = machine->heap->allocate_scalar(3.0);
+    Eigen::VectorXd set(5);
+    set << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* rhs = machine->heap->allocate_vector(set);
+
+    fn_member_of(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, MemberOfNotFound) {
+    // 7 ∊ 1 2 3 → 0
+    Value* lhs = machine->heap->allocate_scalar(7.0);
+    Eigen::VectorXd set(3);
+    set << 1.0, 2.0, 3.0;
+    Value* rhs = machine->heap->allocate_vector(set);
+
+    fn_member_of(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, MemberOfVector) {
+    // 1 5 3 7 ∊ 1 2 3 → 1 0 1 0
+    Eigen::VectorXd query(4);
+    query << 1.0, 5.0, 3.0, 7.0;
+    Eigen::VectorXd set(3);
+    set << 1.0, 2.0, 3.0;
+    Value* lhs = machine->heap->allocate_vector(query);
+    Value* rhs = machine->heap->allocate_vector(set);
+
+    fn_member_of(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);  // 1 is in set
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 0.0);  // 5 is not in set
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 1.0);  // 3 is in set
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 0.0);  // 7 is not in set
+}
+
+TEST_F(PrimitivesTest, EnlistVector) {
+    // ∊ 1 2 3 → 1 2 3 (same as ravel for simple arrays)
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+
+    fn_enlist(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, EnlistScalar) {
+    // ∊ 5 → 5 (1-element vector)
+    Value* scalar = machine->heap->allocate_scalar(5.0);
+
+    fn_enlist(machine, scalar);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 1);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, SearchFunctionsRegistered) {
+    // ⍳ should already be registered (monadic iota)
+    ASSERT_NE(machine->env->lookup("⍳"), nullptr);
+    ASSERT_NE(machine->env->lookup("∊"), nullptr);
+}

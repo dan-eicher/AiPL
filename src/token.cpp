@@ -51,6 +51,7 @@ const char* token_type_name(TokenType type) {
         case TOK_REVERSE: return "⌽";
         case TOK_REVERSE_FIRST: return "⊖";
         case TOK_TALLY: return "≢";
+        case TOK_MEMBER: return "∊";
         case TOK_ASSIGN: return "←";
         case TOK_LPAREN: return "(";
         case TOK_RPAREN: return ")";

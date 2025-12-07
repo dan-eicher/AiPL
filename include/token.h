@@ -72,6 +72,9 @@ enum TokenType {
     TOK_REVERSE_FIRST,  // ⊖ (reverse first/rotate first)
     TOK_TALLY,          // ≢ (tally - count along first axis)
 
+    // Search
+    TOK_MEMBER,         // ∊ (member of)
+
     // Structural
     TOK_ASSIGN,         // ←
     TOK_LPAREN,         // (

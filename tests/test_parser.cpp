@@ -2838,6 +2838,168 @@ TEST_F(ParserTest, TallyEmpty) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
 }
 
+// ============================================================================
+// Search Functions (⍳ dyadic, ∊)
+// ============================================================================
+
+TEST_F(ParserTest, IndexOfScalar) {
+    // 1 2 3 4 5 ⍳ 3 → 2 (0-origin)
+    Continuation* k = parser->parse("1 2 3 4 5 ⍳ 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+TEST_F(ParserTest, IndexOfNotFound) {
+    // 1 2 3 ⍳ 7 → 3 (length of haystack)
+    Continuation* k = parser->parse("1 2 3 ⍳ 7");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(ParserTest, IndexOfVector) {
+    // 10 20 30 40 ⍳ 30 10 99 → 2 0 4
+    Continuation* k = parser->parse("10 20 30 40 ⍳ 30 10 99");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 2.0);  // 30 at index 2
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 10 at index 0
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 4.0);  // 99 not found
+}
+
+TEST_F(ParserTest, IndexOfDuplicates) {
+    // First occurrence is returned
+    // 5 3 5 7 3 ⍳ 3 5 → 1 0
+    Continuation* k = parser->parse("5 3 5 7 3 ⍳ 3 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 3 first at index 1
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 5 first at index 0
+}
+
+TEST_F(ParserTest, MemberOfScalarFound) {
+    // 3 ∊ 1 2 3 4 5 → 1
+    Continuation* k = parser->parse("3 ∊ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(ParserTest, MemberOfScalarNotFound) {
+    // 7 ∊ 1 2 3 → 0
+    Continuation* k = parser->parse("7 ∊ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(ParserTest, MemberOfVector) {
+    // 1 5 3 7 ∊ 1 2 3 → 1 0 1 0
+    Continuation* k = parser->parse("1 5 3 7 ∊ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 4);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 1 in set
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);  // 5 not in set
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);  // 3 in set
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 0.0);  // 7 not in set
+}
+
+TEST_F(ParserTest, MemberOfWithIota) {
+    // 5 7 2 ∊ ⍳10 → 1 1 1 (all found in 0..9)
+    Continuation* k = parser->parse("5 7 2 ∊ ⍳10");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 1.0);
+}
+
+TEST_F(ParserTest, EnlistVector) {
+    // ∊ 1 2 3 → 1 2 3 (identity for simple vector)
+    Continuation* k = parser->parse("∊ 1 2 3");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+TEST_F(ParserTest, EnlistScalar) {
+    // ∊ 5 → 5 (1-element vector)
+    Continuation* k = parser->parse("∊ 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 1);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
+}
+
+TEST_F(ParserTest, EnlistMatrix) {
+    // ∊ 2 3 ⍴ ⍳6 → 0 1 2 3 4 5 (flatten to vector)
+    Continuation* k = parser->parse("∊ 2 3 ⍴ ⍳6");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 6);
+    for (int i = 0; i < 6; ++i) {
+        EXPECT_DOUBLE_EQ((*vec)(i, 0), static_cast<double>(i));
+    }
+}
+
+TEST_F(ParserTest, IndexOfWithArithmetic) {
+    // Combined with arithmetic
+    // (⍳5) ⍳ 2+1 → 3 (find 3 in 0 1 2 3 4)
+    Continuation* k = parser->parse("(⍳5) ⍳ 2+1");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

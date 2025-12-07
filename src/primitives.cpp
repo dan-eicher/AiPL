@@ -36,12 +36,13 @@ PrimitiveFn prim_factorial = { "!", fn_factorial, fn_binomial };
 PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
 PrimitiveFn prim_comma     = { ",", fn_ravel, fn_catenate };
 PrimitiveFn prim_transpose = { "⍉", fn_transpose, nullptr };
-PrimitiveFn prim_iota      = { "⍳", fn_iota, nullptr };
+PrimitiveFn prim_iota      = { "⍳", fn_iota, fn_index_of };
 PrimitiveFn prim_uptack    = { "↑", nullptr, fn_take };
 PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
 PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate };
 PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
 PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
+PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -1938,6 +1939,113 @@ void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
     Eigen::MatrixXd result(rows, mat->cols());
     for (int i = 0; i < rows; ++i) {
         result.row(i) = mat->row((i + n) % rows);
+    }
+    m->result = m->heap->allocate_matrix(result);
+}
+
+// ============================================================================
+// Search Functions (⍳ dyadic, ∊)
+// ============================================================================
+
+// Helper: flatten a Value to a row-major VectorXd
+static Eigen::VectorXd flatten_value(Value* val) {
+    if (val->is_scalar()) {
+        Eigen::VectorXd v(1);
+        v(0) = val->as_scalar();
+        return v;
+    }
+    const Eigen::MatrixXd* mat = val->as_matrix();
+    int size = mat->size();
+    int cols = mat->cols();
+    Eigen::VectorXd result(size);
+    for (int i = 0; i < size; ++i) {
+        result(i) = (*mat)(i / cols, i % cols);
+    }
+    return result;
+}
+
+// Index Of (⍳) - dyadic: find indices of rhs elements in lhs
+// Returns index of first occurrence of each element, or ≢lhs if not found (0-origin)
+void fn_index_of(Machine* m, Value* lhs, Value* rhs) {
+    // Get lhs as a flat array of values to search in
+    Eigen::VectorXd haystack = flatten_value(lhs);
+    double not_found = static_cast<double>(haystack.size());
+
+    // Search for needle in haystack, return index or not_found
+    auto find_index = [&haystack, not_found](double needle) -> double {
+        for (int i = 0; i < haystack.size(); ++i) {
+            if (haystack(i) == needle) {
+                return static_cast<double>(i);
+            }
+        }
+        return not_found;
+    };
+
+    if (rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(find_index(rhs->as_scalar()));
+        return;
+    }
+
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+
+    if (rhs->is_vector()) {
+        Eigen::VectorXd result(rmat->rows());
+        for (int i = 0; i < rmat->rows(); ++i) {
+            result(i) = find_index((*rmat)(i, 0));
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+    for (int i = 0; i < rmat->size(); ++i) {
+        result(i / rmat->cols(), i % rmat->cols()) = find_index((*rmat)(i / rmat->cols(), i % rmat->cols()));
+    }
+    m->result = m->heap->allocate_matrix(result);
+}
+
+// Enlist (∊) - monadic: flatten nested structure to simple vector
+// For simple arrays, this is equivalent to ravel (,)
+void fn_enlist(Machine* m, Value* omega) {
+    // For simple numeric arrays (our current implementation), enlist = ravel
+    fn_ravel(m, omega);
+}
+
+// Member Of (∊) - dyadic: check if elements of lhs are in rhs
+// Returns boolean array with 1 where element is found, 0 otherwise
+void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
+    // Get rhs as flat array to search in
+    Eigen::VectorXd set = flatten_value(rhs);
+
+    // Check if val is in set
+    auto is_member = [&set](double val) -> double {
+        for (int i = 0; i < set.size(); ++i) {
+            if (set(i) == val) {
+                return 1.0;
+            }
+        }
+        return 0.0;
+    };
+
+    if (lhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(is_member(lhs->as_scalar()));
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+
+    if (lhs->is_vector()) {
+        Eigen::VectorXd result(lmat->rows());
+        for (int i = 0; i < lmat->rows(); ++i) {
+            result(i) = is_member((*lmat)(i, 0));
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i / lmat->cols(), i % lmat->cols()) = is_member((*lmat)(i / lmat->cols(), i % lmat->cols()));
     }
     m->result = m->heap->allocate_matrix(result);
 }

@@ -269,46 +269,287 @@ TEST_F(GrammarTest, DyadicOperatorCurrying) {
 // g' = λx. λy. if null(y) then g₁(x)
 //             else if bas(y) then g₂(x,y)
 //             else y(g₁(x))
+//
+// The g' transformation is applied to functions that have both monadic and
+// dyadic forms. When such a function f is applied to a value x, it creates
+// a "curried" function g'(f,x) that waits to see what comes next:
+//   - If nothing (null(y)): apply f monadically to x
+//   - If a basic value (bas(y)): apply f dyadically with x as left arg
+//   - If another function (y is function): apply f monadically to x,
+//     then pass the result to y
 // ============================================================================
 
-TEST_F(GrammarTest, GPrimeNullCase) {
-    // At top level (y is null), curried function should finalize to monadic
-    // "+ 3" creates curried function, which at top level applies monadically
+// ---------------------------------------------------------------------------
+// Case 1: null(y) - Monadic application at top level
+// ---------------------------------------------------------------------------
+
+TEST_F(GrammarTest, GPrimeNullCase_Plus) {
+    // "+ 3" at top level: + creates G_PRIME(+, 3), y is null → monadic +
+    // Monadic + is conjugate (identity for reals)
     Value* result = eval("+ 3");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    // Monadic + is conjugate (identity for reals)
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
-TEST_F(GrammarTest, GPrimeBasicCase) {
-    // When y is basic value, apply dyadically: g₂(x,y)
-    // "2 + 3" → +(2) creates curried, then apply to 3 → 2+3 = 5
+TEST_F(GrammarTest, GPrimeNullCase_Iota) {
+    // "⍳5" at top level: ⍳ has both forms, creates G_PRIME(⍳, 5)
+    // y is null → apply monadic ⍳ → 0 1 2 3 4
+    Value* result = eval("⍳5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 5);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 4.0);
+}
+
+TEST_F(GrammarTest, GPrimeNullCase_Minus) {
+    // "- 5" at top level: - has both forms, creates G_PRIME(-, 5)
+    // y is null → apply monadic - → -5
+    Value* result = eval("- 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(GrammarTest, GPrimeNullCase_Rho) {
+    // "⍴ 1 2 3" at top level: monadic ⍴ gives shape
+    Value* result = eval("⍴ 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 1);  // Shape of 3-element vector is [3]
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);
+}
+
+// ---------------------------------------------------------------------------
+// Case 2: bas(y) - Dyadic application when second arg is basic value
+// ---------------------------------------------------------------------------
+
+TEST_F(GrammarTest, GPrimeBasicCase_Plus) {
+    // "2 + 3" → +(2) creates G_PRIME, sees 3 (basic) → dyadic + → 5
     Value* result = eval("2 + 3");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 }
 
-TEST_F(GrammarTest, GPrimeFunctionCase) {
-    // When y is function, compose: y(g₁(x))
-    // This is function composition
-    // Example: "3 + -" should create +(3) then compose with -
-    // Result is function that does: -(+(3)) = -(3) = -3
-    // But at top level with null arg... complex
-
-    // Let me test with explicit application:
-    // "(3 +) - 5" → (curried +₃) - 5
-    // +₃ sees - (function), so composes: -(+3(5)) = -(8) = -8
-    // Wait no, the grammar is: fb-term fbn-term
-    // "3 + - 5" parses left-to-right as ((3 +) -) 5
-    // 3 is basic, +(3) creates +₃
-    // +₃ is curried, - is function... does +₃ apply to -?
-
-    // This is getting complex. Let me just test that it doesn't crash
-    Value* result = eval("3 + - 5");
+TEST_F(GrammarTest, GPrimeBasicCase_Iota) {
+    // "1 2 3 ⍳ 2" → dyadic ⍳ (index-of): find 2 in vector 1 2 3 → index 1
+    Value* result = eval("1 2 3 ⍳ 2");
     ASSERT_NE(result, nullptr);
-    // Should get some result
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(GrammarTest, GPrimeBasicCase_IotaVector) {
+    // "1 2 3 ⍳ 3 1 5" → find indices of 3,1,5 in 1 2 3 → 2 0 3(not found)
+    Value* result = eval("1 2 3 ⍳ 3 1 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 3 is at index 2
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);  // 1 is at index 0
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);  // 5 not found, returns length
+}
+
+TEST_F(GrammarTest, GPrimeBasicCase_Minus) {
+    // "10 - 3" → dyadic - (subtract) → 7
+    Value* result = eval("10 - 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(GrammarTest, GPrimeBasicCase_Rho) {
+    // "2 3 ⍴ 1 2 3 4 5 6" → dyadic ⍴ (reshape) → 2x3 matrix
+    Value* result = eval("2 3 ⍴ 1 2 3 4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+}
+
+// ---------------------------------------------------------------------------
+// Case 3: y is function - Composition: y(g₁(x))
+// This is the critical case that was buggy before the fix!
+// When the curried function sees another function, it should:
+//   1. Apply its function monadically to its captured argument
+//   2. Pass the result to the incoming function
+// ---------------------------------------------------------------------------
+
+TEST_F(GrammarTest, GPrimeFunctionCase_IotaLessThan) {
+    // "(⍳5) < 3" is the canonical test case
+    // Parse: ((⍳ 5) <) 3
+    // 1. ⍳ sees 5 (basic) → creates G_PRIME(⍳, 5)
+    // 2. G_PRIME sees < (function) → apply ⍳ monadically: ⍳5 = 0 1 2 3 4
+    //    Then < sees 0 1 2 3 4 (basic) → creates G_PRIME(<, 0 1 2 3 4)
+    // 3. G_PRIME(<, 0 1 2 3 4) sees 3 (basic) → dyadic <: (0 1 2 3 4) < 3
+    // Result: 1 1 1 0 0
+    Value* result = eval("(⍳5) < 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 5);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // 0 < 3 = true
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 1 < 3 = true
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 2 < 3 = true
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);  // 3 < 3 = false
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 4 < 3 = false
+}
+
+TEST_F(GrammarTest, GPrimeFunctionCase_IotaEquals) {
+    // "(⍳5) = 2" → ⍳5 = 0 1 2 3 4, then (0 1 2 3 4) = 2 → 0 0 1 0 0
+    Value* result = eval("(⍳5) = 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 5);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);  // 0 = 2 → 0
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);  // 1 = 2 → 0
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 2 = 2 → 1
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);  // 3 = 2 → 0
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 4 = 2 → 0
+}
+
+TEST_F(GrammarTest, GPrimeFunctionCase_NegateAdd) {
+    // "(- 5) + 3" → negate 5 first, then add 3
+    // - sees 5 (basic) → G_PRIME(-, 5)
+    // G_PRIME sees + (function) → apply - monadically: -5
+    // + sees -5 (basic) → G_PRIME(+, -5)
+    // G_PRIME sees 3 (basic) → dyadic +: -5 + 3 = -2
+    Value* result = eval("(- 5) + 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -2.0);
+}
+
+TEST_F(GrammarTest, GPrimeFunctionCase_IotaTimes) {
+    // "(⍳4) × 2" → (0 1 2 3) × 2 → 0 2 4 6
+    Value* result = eval("(⍳4) × 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 6.0);
+}
+
+TEST_F(GrammarTest, GPrimeFunctionCase_ChainedComposition) {
+    // "(- 5) + - 3" → complex case with multiple function compositions
+    // Parse: (((- 5) +) -) 3
+    // - 5 → G_PRIME(-, 5), sees + → monadic -5, + creates G_PRIME(+, -5)
+    // G_PRIME(+, -5) sees - → apply monadic +(-5)=-5, - creates G_PRIME(-, -5)
+    // G_PRIME(-, -5) sees 3 → dyadic -: -5 - 3 = -8
+    Value* result = eval("(- 5) + - 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -8.0);
+}
+
+TEST_F(GrammarTest, GPrimeFunctionCase_IotaWithOperator) {
+    // "(⍳5) +/ 1 2 3 4 5" - tests that iota resolves before operator expression
+    // ⍳5 → 0 1 2 3 4, then... wait this is complex
+    // Let's test simpler: "+/ ⍳5" should sum 0+1+2+3+4 = 10
+    Value* result = eval("+/ ⍳5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(GrammarTest, GPrimeFunctionCase_IotaPlusIota) {
+    // "(⍳3) + ⍳3" → (0 1 2) + (0 1 2) → 0 2 4
+    // First ⍳3 creates G_PRIME, sees + (function), applies monadically
+    // + creates G_PRIME(+, 0 1 2), sees ⍳ (function), applies monadically
+    // But ⍳ 3 creates G_PRIME(⍳, 3), which at end resolves to 0 1 2
+    // Then dyadic +: (0 1 2) + (0 1 2) = 0 2 4
+    Value* result = eval("(⍳3) + ⍳3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 4.0);
+}
+
+TEST_F(GrammarTest, GPrimeFunctionCase_Member) {
+    // "⍳5 ∊ 2 3 7" → first ⍳5 = 0 1 2 3 4, then membership test
+    // (0 1 2 3 4) ∊ (2 3 7) → 0 0 1 1 0
+    Value* result = eval("(⍳5) ∊ 2 3 7");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 5);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);  // 0 not in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);  // 1 not in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 2 in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 1.0);  // 3 in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 4 not in {2,3,7}
+}
+
+// ---------------------------------------------------------------------------
+// Combined/stress tests for g' transformation
+// ---------------------------------------------------------------------------
+
+TEST_F(GrammarTest, GPrimeMixedExpression) {
+    // "1 + (⍳3) × 2" → APL right-to-left: 1 + ((⍳3) × 2)
+    // (⍳3) × 2 → (0 1 2) × 2 → 0 2 4
+    // 1 + (0 2 4) → 1 3 5
+    Value* result = eval("1 + (⍳3) × 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 5.0);
+}
+
+TEST_F(GrammarTest, GPrimeWithReduce) {
+    // "+/ (⍳4) × 2" → ⍳4 = 0 1 2 3, × 2 → 0 2 4 6, +/ → 12
+    Value* result = eval("+/ (⍳4) × 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+TEST_F(GrammarTest, GPrimeComparisonInExpression) {
+    // Test the original failing case more thoroughly
+    // "1 + (⍳5) < 3" → (⍳5) < 3 = 1 1 1 0 0, then 1 + that = 2 2 2 1 1
+    Value* result = eval("1 + (⍳5) < 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 5);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 1.0);
+}
+
+TEST_F(GrammarTest, GPrimeLogicalExpression) {
+    // "(⍳5) > 2 ∧ (⍳5) < 4" - should find 3 (indices where 2 < x < 4)
+    // ⍳5 = 0 1 2 3 4
+    // (⍳5) > 2 = 0 0 0 1 1
+    // (⍳5) < 4 = 1 1 1 1 0
+    // Result: 0 0 0 1 0 (only index 3 satisfies both)
+    Value* result = eval("((⍳5) > 2) ∧ (⍳5) < 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 5);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);
 }
 
 // ============================================================================

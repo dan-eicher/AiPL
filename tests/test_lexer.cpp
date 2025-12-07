@@ -633,6 +633,14 @@ TEST_F(LexerTest, ReverseRotateTally) {
     EXPECT_EQ(tokens[2].type, TOK_TALLY);
 }
 
+// Test member of token (∊)
+TEST_F(LexerTest, MemberOf) {
+    auto tokens = tokenize("∊");
+
+    ASSERT_EQ(tokens.size(), 2);  // 1 token + EOF
+    EXPECT_EQ(tokens[0].type, TOK_MEMBER);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

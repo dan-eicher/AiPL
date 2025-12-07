@@ -975,24 +975,48 @@ void DispatchFunctionK::invoke(Machine* machine) {
             }
             return;
         } else {
-            // G_PRIME transformation: more complex logic for composition
-            // For now, just apply like dyadic
-            // TODO: Implement full g' semantics (check if right_val is bas or function)
+            // G_PRIME transformation per Georgeff et al. "Parsing and Evaluation of APL with Operators"
+            // g' = λx . λy . if null(y) then g1(x)
+            //                else if bas(y) then g2(x,y)
+            //                else y(g1(x))
             if (right_val == nullptr) {
-                // No second argument - apply monadically to first_arg
+                // null(y): No second argument - apply monadically to first_arg
                 fn_val = inner_fn;
                 left_val = nullptr;
                 right_val = first_arg;
-                // Fall through
-            } else {
-                // Has second argument - apply dyadically
+                // Fall through to apply monadic
+            } else if (right_val->is_basic_value()) {
+                // bas(y): Second argument is a basic value - apply dyadically
                 // In G2 juxtaposition, first_arg is the RIGHT operand (captured)
                 // and right_val is the LEFT operand (newly applied)
-                // So: left=right_val, right=first_arg
                 fn_val = inner_fn;
-                left_val = right_val;  // New argument is LEFT
-                right_val = first_arg; // Captured argument is RIGHT
-                // Fall through
+                left_val = right_val;  // New argument is LEFT (alpha)
+                right_val = first_arg; // Captured argument is RIGHT (omega)
+                // Fall through to apply dyadic
+            } else {
+                // y is a function: apply y(g1(x))
+                // First, apply monadic form g1 to captured argument x
+                if (inner_fn->is_primitive()) {
+                    PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
+                    if (prim_fn->monadic) {
+                        prim_fn->monadic(machine, first_arg);
+                        // Now apply the function y to g1(x)
+                        // right_val is the function y, machine->result is g1(x)
+                        fn_val = right_val;
+                        left_val = nullptr;
+                        right_val = machine->result;
+                        // Fall through to apply y to the result
+                    } else {
+                        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: G_PRIME requires monadic form"));
+                        return;
+                    }
+                } else {
+                    // For closures, need to evaluate g1(x) first then apply y
+                    // Push continuation to apply y after g1(x) evaluates
+                    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(right_val, nullptr, nullptr));
+                    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(inner_fn, nullptr, first_arg));
+                    return;
+                }
             }
         }
         if (fn_val->tag == ValueType::CURRIED_FN) {
