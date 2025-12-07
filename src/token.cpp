@@ -61,6 +61,7 @@ const char* token_type_name(TokenType type) {
         case TOK_ENCODE: return "⊤";
         case TOK_DOMINO: return "⌹";
         case TOK_EXECUTE: return "⍎";
+        case TOK_TABLE: return "⍸";
         case TOK_ENCLOSE: return "⊂";
         case TOK_DISCLOSE: return "⊃";
         case TOK_MATCH: return "≡";

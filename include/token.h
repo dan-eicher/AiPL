@@ -90,6 +90,9 @@ enum TokenType {
     TOK_DECODE,         // ⊥ (decode / base value)
     TOK_ENCODE,         // ⊤ (encode / representation)
 
+    // Table
+    TOK_TABLE,          // ⍸ (table - convert to matrix)
+
     // Matrix operations
     TOK_DOMINO,         // ⌹ (matrix inverse / divide)
 

@@ -34,6 +34,7 @@ void fn_unique(Machine* m, Value* omega);        // ∪ monadic (unique)
 void fn_pi_times(Machine* m, Value* omega);      // ○ monadic (pi times)
 void fn_roll(Machine* m, Value* omega);          // ? monadic (random)
 void fn_execute(Machine* m, Value* omega);       // ⍎ monadic (execute string as APL)
+void fn_table(Machine* m, Value* omega);         // ⍸ monadic (table - convert to matrix)
 
 // Dyadic built-in functions
 void fn_add(Machine* m, Value* lhs, Value* rhs);       // + dyadic (addition)
@@ -103,6 +104,7 @@ extern PrimitiveFn prim_question;  // ? symbol (roll/deal)
 extern PrimitiveFn prim_decode;    // ⊥ symbol (decode/base value)
 extern PrimitiveFn prim_encode;    // ⊤ symbol (encode/representation)
 extern PrimitiveFn prim_execute;   // ⍎ symbol (execute)
+extern PrimitiveFn prim_table;     // ⍸ symbol (table)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

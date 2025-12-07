@@ -141,6 +141,7 @@ Lexer::Lexer(const char* input)
     encode = "⊤";        // U+22A4 (encode / representation)
     domino = "⌹";        // U+2339 (matrix inverse / divide)
     execute = "⍎";       // U+234E (execute)
+    table = "⍸";         // U+2378 (table)
     enclose = "⊂";       // U+2282 (enclose - reserved)
     disclose = "⊃";      // U+2283 (disclose - reserved)
     match = "≡";         // U+2261 (depth/match - reserved)
@@ -330,6 +331,7 @@ Token Lexer::next_token() {
         encode { column_++; return Token(TOK_ENCODE, token_line, token_column); }
         domino { column_++; return Token(TOK_DOMINO, token_line, token_column); }
         execute { column_++; return Token(TOK_EXECUTE, token_line, token_column); }
+        table { column_++; return Token(TOK_TABLE, token_line, token_column); }
         enclose { column_++; return Token(TOK_ENCLOSE, token_line, token_column); }
         disclose { column_++; return Token(TOK_DISCLOSE, token_line, token_column); }
         match { column_++; return Token(TOK_MATCH, token_line, token_column); }

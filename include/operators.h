@@ -50,4 +50,11 @@ extern PrimitiveOp op_rank_op;       // ⍤ operator (rank)
 void op_rank_monadic(Machine* m, Value* f, Value* omega);
 void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs);
 
+// Catenate/Laminate with axis (,[k])
+// When k is near-integer: catenate along axis k
+// When k is fractional: laminate (create new axis at ⌊k)
+void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega);
+void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused, Value* rhs);
+extern PrimitiveOp op_catenate_axis;  // ,[k] operator
+
 } // namespace apl

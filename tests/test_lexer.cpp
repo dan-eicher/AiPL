@@ -742,6 +742,13 @@ TEST_F(LexerTest, ExecuteToken) {
     EXPECT_EQ(tokens[0].type, TOK_EXECUTE);
 }
 
+// Test table token (⍸)
+TEST_F(LexerTest, TableToken) {
+    auto tokens = tokenize("⍸");
+    ASSERT_EQ(tokens.size(), 2);  // ⍸ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_TABLE);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

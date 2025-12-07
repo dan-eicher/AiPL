@@ -66,6 +66,7 @@ void Machine::init_globals() {
     env->define("⌹", heap->allocate_primitive(&prim_domino));
     env->define("⍎", heap->allocate_primitive(&prim_execute));
     env->define("⌷", heap->allocate_primitive(&prim_squad));
+    env->define("⍸", heap->allocate_primitive(&prim_table));
 
     // Operators (higher-order functions)
     env->define(".", heap->allocate_operator(&op_dot));
@@ -77,6 +78,7 @@ void Machine::init_globals() {
     env->define("\\", heap->allocate_operator(&op_scan));
     env->define("⍀", heap->allocate_operator(&op_scan_first));
     env->define("⍤", heap->allocate_operator(&op_rank_op));
+    env->define(",⌷", heap->allocate_operator(&op_catenate_axis));
 }
 
 // Destructor

@@ -54,6 +54,8 @@ PrimitiveFn prim_question  = { "?", fn_roll, fn_deal };
 PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode };
 PrimitiveFn prim_encode    = { "⊤", nullptr, fn_encode };
 PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr };
+PrimitiveFn prim_table     = { "⍸", fn_table, nullptr };
+PrimitiveFn prim_squad     = { "⌷", nullptr, fn_squad };
 
 // ============================================================================
 // Execute Function (⍎)
@@ -3204,6 +3206,44 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
-PrimitiveFn prim_squad = { "⌷", nullptr, fn_squad };
+// ============================================================================
+// Table Function (⍸)
+// ============================================================================
+
+// Table (⍸) - monadic: convert array to matrix
+// ISO 13751: Z is a matrix containing the elements of B
+// - If B is a scalar, Z has shape 1 1
+// - If B is a vector (length n), Z has shape n 1
+// - If B has shape s1 s2 ... sk, Z has shape s1 (s2×s3×...×sk)
+void fn_table(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        // Scalar → 1×1 matrix
+        Eigen::MatrixXd result(1, 1);
+        result(0, 0) = omega->as_scalar();
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
+    // String → char vector conversion
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (omega->is_vector()) {
+        // Vector → n×1 matrix
+        Eigen::MatrixXd result(rows, 1);
+        for (int i = 0; i < rows; ++i) {
+            result(i, 0) = (*mat)(i, 0);
+        }
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
+    // Matrix → same matrix (already 2D, so shape s1 × s2 is unchanged)
+    // For higher-dimensional arrays (not yet supported), would be s1 × (product of rest)
+    m->result = m->heap->allocate_matrix(*mat);
+}
 
 } // namespace apl

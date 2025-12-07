@@ -3917,3 +3917,57 @@ TEST_F(PrimitivesTest, BracketIndexChained) {
     EXPECT_DOUBLE_EQ((*result->data.matrix)(1, 0), 2.0);
     EXPECT_DOUBLE_EQ((*result->data.matrix)(2, 0), 3.0);
 }
+
+// ============================================================================
+// Table Function (⍸) Tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, TableScalar) {
+    // ⍸ 5 → 1×1 matrix containing 5
+    Value* scalar = machine->heap->allocate_scalar(5.0);
+    fn_table(machine, scalar);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_FALSE(result->is_vector());  // Must be matrix, not vector
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 1);
+    EXPECT_EQ(mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, TableVector) {
+    // ⍸ 1 2 3 4 → 4×1 matrix
+    Eigen::VectorXd v(4);
+    v << 1.0, 2.0, 3.0, 4.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_table(machine, vec);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_FALSE(result->is_vector());  // Must be matrix, not vector
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 4);
+    EXPECT_EQ(mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 4.0);
+}
+
+TEST_F(PrimitivesTest, TableMatrix) {
+    // ⍸ (2 3⍴⍳6) → same 2×3 matrix (unchanged for 2D)
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat_val = machine->heap->allocate_matrix(m);
+    fn_table(machine, mat_val);
+
+    Value* result = machine->result;
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 6.0);
+}

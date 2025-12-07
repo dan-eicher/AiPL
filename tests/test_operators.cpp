@@ -506,6 +506,81 @@ TEST_F(OperatorsTest, ReduceAxisWithDifferentFunction) {
     EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 18.0);
 }
 
+// ========================================================================
+// Catenate/Laminate with Axis: ,[k]
+// ========================================================================
+
+TEST_F(OperatorsTest, CatenateAxisVectors) {
+    // 1 2 3 ,[1] 4 5 6 - catenate vectors along axis 1
+    Value* result = eval(machine, "1 2 3 ,[1] 4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 6);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(4, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(5, 0), 6.0);
+}
+
+TEST_F(OperatorsTest, LaminateVectorsAxis05) {
+    // 1 2 3 ,[0.5] 4 5 6 - laminate creates 2×3 matrix
+    Value* result = eval(machine, "1 2 3 ,[0.5] 4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    auto* mat = result->as_matrix();
+    // Row 0: 1 2 3
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 3.0);
+    // Row 1: 4 5 6
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 6.0);
+}
+
+TEST_F(OperatorsTest, LaminateVectorsAxis15) {
+    // 1 2 3 ,[1.5] 4 5 6 - laminate creates 3×2 matrix
+    Value* result = eval(machine, "1 2 3 ,[1.5] 4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 2);
+    auto* mat = result->as_matrix();
+    // Col 0: 1 2 3
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+    // Col 1: 4 5 6
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 1), 6.0);
+}
+
+TEST_F(OperatorsTest, CatenateMatrixAxis1) {
+    // Vertical catenation: stack matrices along axis 1
+    // (2 2⍴1 2 3 4) ,[1] (2 2⍴5 6 7 8)
+    Value* result = eval(machine, "(2 2⍴1 2 3 4) ,[1] (2 2⍴5 6 7 8)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 4);
+    EXPECT_EQ(result->cols(), 2);
+}
+
+TEST_F(OperatorsTest, CatenateMatrixAxis2) {
+    // Horizontal catenation: stack matrices along axis 2
+    // (2 2⍴1 2 3 4) ,[2] (2 2⍴5 6 7 8)
+    Value* result = eval(machine, "(2 2⍴1 2 3 4) ,[2] (2 2⍴5 6 7 8)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 4);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

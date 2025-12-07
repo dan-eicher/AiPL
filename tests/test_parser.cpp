@@ -4148,6 +4148,55 @@ TEST_F(ParserTest, IndexedAssignChained) {
     EXPECT_DOUBLE_EQ((*vec)(4, 0), 50.0);
 }
 
+// ============================================================================
+// Table Function (⍸) Tests
+// ============================================================================
+
+TEST_F(ParserTest, TableScalar) {
+    // ⍸ 5 → 1×1 matrix
+    Value* result = eval(parser->parse("⍸ 5"));
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_FALSE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 1);
+    EXPECT_EQ(mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
+}
+
+TEST_F(ParserTest, TableVector) {
+    // ⍸ ⍳4 → 4×1 matrix
+    Value* result = eval(parser->parse("⍸ ⍳4"));
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_FALSE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 4);
+    EXPECT_EQ(mat->cols(), 1);
+}
+
+TEST_F(ParserTest, TableShapeScalar) {
+    // ⍴⍸5 → 1 1
+    Value* result = eval(parser->parse("⍴⍸5"));
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* shape = result->as_matrix();
+    EXPECT_EQ(shape->size(), 2);
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 1.0);
+}
+
+TEST_F(ParserTest, TableShapeVector) {
+    // ⍴⍸⍳5 → 5 1
+    Value* result = eval(parser->parse("⍴⍸⍳5"));
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* shape = result->as_matrix();
+    EXPECT_EQ(shape->size(), 2);
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 1.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

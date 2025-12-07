@@ -205,6 +205,7 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_ENCODE:
                 case TOK_DOMINO:
                 case TOK_EXECUTE:
+                case TOK_TABLE:
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -284,13 +285,38 @@ Continuation* Parser::nud(const Token& token) {
             return inner;
         }
 
+        case TOK_RAVEL: {
+            // Special handling for ,[k] (catenate/laminate with axis)
+            if (current_token_.type == TOK_LBRACKET) {
+                advance();  // consume [
+                Continuation* axis_cont = parse_expression(0);
+                if (!axis_cont) {
+                    error_message_ = "Expected axis expression after [";
+                    return nullptr;
+                }
+                if (current_token_.type != TOK_RBRACKET) {
+                    error_message_ = "Expected ] after axis expression";
+                    return nullptr;
+                }
+                advance();  // consume ]
+                // Create DerivedOperatorK with op_catenate_axis
+                // axis_cont is the first (and only) operand
+                const char* interned_name = machine->string_pool.intern(",⌷");
+                DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(axis_cont, interned_name);
+                return derived;
+            }
+            // No axis - fall through to normal comma handling
+            const char* interned_name = machine->string_pool.intern(",");
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            return lookup;
+        }
+
         case TOK_MINUS:
         case TOK_PLUS:
         case TOK_TIMES:
         case TOK_POWER:
         case TOK_DIVIDE:
         case TOK_RESHAPE:
-        case TOK_RAVEL:
         case TOK_IOTA:
         case TOK_EQUAL:
         case TOK_NOT_EQUAL:
@@ -323,7 +349,8 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_DECODE:
         case TOK_ENCODE:
         case TOK_DOMINO:
-        case TOK_EXECUTE: {
+        case TOK_EXECUTE:
+        case TOK_TABLE: {
             // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
             // They are NOT special monadic operators in the grammar
             // Monadic behavior emerges from juxtaposition + runtime semantics
@@ -337,7 +364,6 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_POWER:         op_name = "*"; break;
                 case TOK_DIVIDE:        op_name = "÷"; break;
                 case TOK_RESHAPE:       op_name = "⍴"; break;
-                case TOK_RAVEL:         op_name = ","; break;
                 case TOK_IOTA:          op_name = "⍳"; break;
                 case TOK_EQUAL:         op_name = "="; break;
                 case TOK_NOT_EQUAL:     op_name = "≠"; break;
@@ -371,6 +397,7 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_ENCODE:        op_name = "⊤"; break;
                 case TOK_DOMINO:        op_name = "⌹"; break;
                 case TOK_EXECUTE:       op_name = "⍎"; break;
+                case TOK_TABLE:         op_name = "⍸"; break;
                 default: break;
             }
 

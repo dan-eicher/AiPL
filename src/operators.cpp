@@ -931,6 +931,12 @@ PrimitiveOp op_scan_first = {
     fn_scan_first_axis         // Dyadic: f⍀[k]B (default axis 1)
 };
 
+PrimitiveOp op_catenate_axis = {
+    ",⌷",
+    fn_catenate_axis_monadic,  // Monadic: ,[k]B (ravel along axis)
+    fn_catenate_axis_dyadic    // Dyadic: A ,[k] B (catenate/laminate)
+};
+
 // ========================================================================
 // Rank Operator: f⍤k (ISO 13751 §9)
 // ========================================================================
@@ -1141,5 +1147,181 @@ PrimitiveOp op_rank_op = {
     nullptr,              // No monadic form - rank requires rank specification
     op_rank               // Dyadic: A f⍤k B
 };
+
+// ========================================================================
+// Catenate/Laminate with Axis: ,[k] (ISO 13751 §10.2.1)
+// ========================================================================
+
+static bool is_near_integer(double x) {
+    return std::abs(x - std::round(x)) < 1e-10;
+}
+
+void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
+    if (!axis->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis must be scalar"));
+        return;
+    }
+
+    double k = axis->as_scalar();
+    int axis_idx = static_cast<int>(std::round(k)) - 1;
+
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd::Constant(1, omega->as_scalar()));
+        return;
+    }
+
+    if (omega->is_vector()) {
+        if (axis_idx != 0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: axis out of range for vector"));
+            return;
+        }
+        m->result = m->heap->allocate_vector(omega->as_matrix()->col(0), omega->is_char_data());
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (axis_idx < 0 || axis_idx > 1) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: axis out of range for matrix"));
+        return;
+    }
+
+    if (axis_idx == 0) {
+        Eigen::VectorXd result(rows * cols);
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                result(i * cols + j) = (*mat)(i, j);
+            }
+        }
+        m->result = m->heap->allocate_vector(result, omega->is_char_data());
+    } else {
+        Eigen::VectorXd result(rows * cols);
+        for (int j = 0; j < cols; ++j) {
+            for (int i = 0; i < rows; ++i) {
+                result(j * rows + i) = (*mat)(i, j);
+            }
+        }
+        m->result = m->heap->allocate_vector(result, omega->is_char_data());
+    }
+}
+
+void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused, Value* rhs) {
+    (void)unused;
+
+    if (!axis->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis must be scalar"));
+        return;
+    }
+
+    double k = axis->as_scalar();
+    bool laminate = !is_near_integer(k);
+    int axis_idx = static_cast<int>(std::floor(k)) - 1;
+
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    const Eigen::MatrixXd* rmat = rhs->as_matrix();
+    int lrows = lmat->rows();
+    int lcols = lmat->cols();
+    int rrows = rmat->rows();
+    int rcols = rmat->cols();
+
+    if (laminate) {
+        if (lhs->is_vector() && rhs->is_vector()) {
+            if (lrows != rrows) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: vectors must have same length for laminate"));
+                return;
+            }
+            if (axis_idx < 0) {
+                Eigen::MatrixXd result(2, lrows);
+                result.row(0) = lmat->col(0).transpose();
+                result.row(1) = rmat->col(0).transpose();
+                m->result = m->heap->allocate_matrix(result);
+            } else {
+                Eigen::MatrixXd result(lrows, 2);
+                result.col(0) = lmat->col(0);
+                result.col(1) = rmat->col(0);
+                m->result = m->heap->allocate_matrix(result);
+            }
+            return;
+        }
+
+        if (lhs->is_scalar() && rhs->is_scalar()) {
+            Eigen::VectorXd result(2);
+            result(0) = lhs->as_scalar();
+            result(1) = rhs->as_scalar();
+            m->result = m->heap->allocate_vector(result);
+            return;
+        }
+
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: laminate for matrices not yet implemented"));
+        return;
+    }
+
+    int cat_axis = static_cast<int>(std::round(k)) - 1;
+
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        Eigen::VectorXd result(2);
+        result(0) = lhs->as_scalar();
+        result(1) = rhs->as_scalar();
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    if (lhs->is_scalar() && rhs->is_vector()) {
+        Eigen::VectorXd result(1 + rrows);
+        result(0) = lhs->as_scalar();
+        result.tail(rrows) = rmat->col(0);
+        m->result = m->heap->allocate_vector(result, rhs->is_char_data());
+        return;
+    }
+
+    if (lhs->is_vector() && rhs->is_scalar()) {
+        Eigen::VectorXd result(lrows + 1);
+        result.head(lrows) = lmat->col(0);
+        result(lrows) = rhs->as_scalar();
+        m->result = m->heap->allocate_vector(result, lhs->is_char_data());
+        return;
+    }
+
+    if (lhs->is_vector() && rhs->is_vector()) {
+        if (cat_axis != 0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: vectors only have axis 1"));
+            return;
+        }
+        Eigen::VectorXd result(lrows + rrows);
+        result.head(lrows) = lmat->col(0);
+        result.tail(rrows) = rmat->col(0);
+        m->result = m->heap->allocate_vector(result, lhs->is_char_data() || rhs->is_char_data());
+        return;
+    }
+
+    if (cat_axis == 0) {
+        if (lcols != rcols) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: column counts must match for vertical catenation"));
+            return;
+        }
+        Eigen::MatrixXd result(lrows + rrows, lcols);
+        result.topRows(lrows) = *lmat;
+        result.bottomRows(rrows) = *rmat;
+        m->result = m->heap->allocate_matrix(result);
+    } else if (cat_axis == 1) {
+        if (lrows != rrows) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: row counts must match for horizontal catenation"));
+            return;
+        }
+        Eigen::MatrixXd result(lrows, lcols + rcols);
+        result.leftCols(lcols) = *lmat;
+        result.rightCols(rcols) = *rmat;
+        m->result = m->heap->allocate_matrix(result);
+    } else {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: axis out of range"));
+    }
+}
 
 } // namespace apl
