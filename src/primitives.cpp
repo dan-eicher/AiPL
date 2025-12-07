@@ -58,37 +58,6 @@ PrimitiveFn prim_table     = { "⍸", fn_table, nullptr };
 PrimitiveFn prim_squad     = { "⌷", nullptr, fn_squad };
 
 // ============================================================================
-// Execute Function (⍎)
-// ============================================================================
-
-// Execute (⍎) - parse and evaluate a string as APL code
-void fn_execute(Machine* m, Value* omega) {
-    // Convert to STRING if needed (handles both STRING and char vectors)
-    Value* str_val;
-    if (omega->is_string()) {
-        str_val = omega;
-    } else if (omega->is_array() && omega->is_char_data()) {
-        str_val = omega->to_string_value(m->heap);
-    } else {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: execute requires a string"));
-        return;
-    }
-
-    const char* code = str_val->as_string();
-    Continuation* k = m->parser->parse(code);
-
-    if (!k) {
-        // Parse error
-        const char* msg = m->string_pool.intern(m->parser->get_error().c_str());
-        m->push_kont(m->heap->allocate<ThrowErrorK>(msg));
-        return;
-    }
-
-    // Push the parsed continuation to execute
-    m->push_kont(k);
-}
-
-// ============================================================================
 // Dyadic Arithmetic Functions
 // ============================================================================
 
@@ -3250,6 +3219,37 @@ void fn_table(Machine* m, Value* omega) {
     // Matrix → same matrix (already 2D, so shape s1 × s2 is unchanged)
     // For higher-dimensional arrays (not yet supported), would be s1 × (product of rest)
     m->result = m->heap->allocate_matrix(*mat);
+}
+
+// ============================================================================
+// Execute Function (⍎)
+// ============================================================================
+
+// Execute (⍎) - parse and evaluate a string as APL code
+void fn_execute(Machine* m, Value* omega) {
+    // Convert to STRING if needed (handles both STRING and char vectors)
+    Value* str_val;
+    if (omega->is_string()) {
+        str_val = omega;
+    } else if (omega->is_array() && omega->is_char_data()) {
+        str_val = omega->to_string_value(m->heap);
+    } else {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: execute requires a string"));
+        return;
+    }
+
+    const char* code = str_val->as_string();
+    Continuation* k = m->parser->parse(code);
+
+    if (!k) {
+        // Parse error
+        const char* msg = m->string_pool.intern(m->parser->get_error().c_str());
+        m->push_kont(m->heap->allocate<ThrowErrorK>(msg));
+        return;
+    }
+
+    // Push the parsed continuation to execute
+    m->push_kont(k);
 }
 
 } // namespace apl

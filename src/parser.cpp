@@ -8,6 +8,10 @@
 
 namespace apl {
 
+// ============================================================================
+// Binding Powers
+// ============================================================================
+
 // Binding powers for operators (higher = tighter binding)
 // APL has uniform precedence, so all operators have the same binding power
 // This gives us right-to-left evaluation
@@ -18,7 +22,10 @@ const int BP_JUXTAPOSE = 20;     // Function application (juxtaposition)
 const int BP_INNER_PRODUCT = 30; // Inner product has high BP (grabs function operands first)
 const int BP_POSTFIX_OP = 50;    // Postfix operators (⍨, ¨, /, \) bind tightest
 
-// Parse entry point - unified for both single expressions and multi-statement programs
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
 Continuation* Parser::parse(const std::string& input) {
     error_message_.clear();
 
@@ -240,7 +247,10 @@ Continuation* Parser::parse_expression(int min_bp) {
     return left;
 }
 
-// Null denotation: handles prefix position (literals, unary operators, etc.)
+// ============================================================================
+// Null Denotation (Prefix Handling)
+// ============================================================================
+
 Continuation* Parser::nud(const Token& token) {
     switch (token.type) {
         case TOK_NUMBER: {
@@ -461,7 +471,10 @@ Continuation* Parser::nud(const Token& token) {
     }
 }
 
-// Left denotation: handles infix position (binary operators)
+// ============================================================================
+// Left Denotation (Infix Handling)
+// ============================================================================
+
 Continuation* Parser::led(Continuation* left, const Token& token) {
     switch (token.type) {
         case TOK_ASSIGN: {
@@ -635,10 +648,10 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
     }
 }
 
-// Parse dfn body: parses statements from current position until }
-// Assumes { has already been consumed
-// Consumes the closing }
-// Returns the body continuation (wrapped in SeqK if multiple statements)
+// ============================================================================
+// Dfn and Statement Parsing
+// ============================================================================
+
 Continuation* Parser::parse_dfn_body() {
     skip_separators();
 
@@ -695,7 +708,10 @@ std::vector<Continuation*> Parser::parse_block_until(TokenType terminator) {
     return statements;
 }
 
-// Parse :If statement
+// ============================================================================
+// Control Flow Parsing
+// ============================================================================
+
 Continuation* Parser::parse_if_statement() {
     // :If has already been consumed by parse_statement()
     skip_separators();
@@ -903,7 +919,10 @@ Continuation* Parser::parse_statement() {
     }
 }
 
-// Get binding power for a token
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
 int Parser::get_binding_power(const Token& token) {
     // G2 Grammar: Primitive functions are identifiers, not operators
     // Operators (/, \, ¨, ⍨, ., ∘.) are distinct tokens with binding power

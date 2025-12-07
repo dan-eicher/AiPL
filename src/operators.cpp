@@ -938,6 +938,12 @@ PrimitiveOp op_catenate_axis = {
     fn_catenate_axis_dyadic    // Dyadic: A ,[k] B (catenate/laminate)
 };
 
+PrimitiveOp op_rank_op = {
+    "⍤",
+    nullptr,              // No monadic form - rank requires rank specification
+    op_rank               // Dyadic: A f⍤k B
+};
+
 // ========================================================================
 // Rank Operator: f⍤k (ISO 13751 §9)
 // ========================================================================
@@ -1142,12 +1148,6 @@ void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs) {
             CellIterMode::COLLECT, rows, cols, rhs->is_vector()));
     }
 }
-
-PrimitiveOp op_rank_op = {
-    "⍤",
-    nullptr,              // No monadic form - rank requires rank specification
-    op_rank               // Dyadic: A f⍤k B
-};
 
 // ========================================================================
 // Catenate/Laminate with Axis: ,[k] (ISO 13751 §10.2.1)

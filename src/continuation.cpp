@@ -12,7 +12,10 @@ namespace apl {
 // Will be implemented in Phase 1.6
 class Heap;
 
-// HaltK implementation
+// ============================================================================
+// Terminal and Completion Continuations
+// ============================================================================
+
 void HaltK::invoke(Machine* machine) {
     // Phase 3.2: Terminal continuation - clear the stack to signal termination
     // The value is already in result
@@ -209,7 +212,10 @@ void ThrowErrorK::mark(Heap* heap) {
     (void)heap;
 }
 
-// LiteralK implementation
+// ============================================================================
+// Value Continuations (Literals, Lookup, Assignment)
+// ============================================================================
+
 void LiteralK::invoke(Machine* machine) {
     // Convert the literal double to a Value* at runtime
     Value* val = machine->heap->allocate_scalar(literal_value);
@@ -331,6 +337,10 @@ void StrandK::mark(Heap* heap) {
         heap->mark_value(vector_value);
     }
 }
+
+// ============================================================================
+// Juxtaposition and Application Continuations
+// ============================================================================
 
 // JuxtaposeK implementation
 // G2 Grammar: fbn-term ::= fb-term fbn-term
@@ -604,7 +614,10 @@ void ApplyDyadicK::mark(Heap* heap) {
     }
 }
 
-// EvalStrandElementK implementation
+// ============================================================================
+// Strand Building Continuations
+// ============================================================================
+
 void EvalStrandElementK::invoke(Machine* machine) {
     // An element has just been evaluated - its value is in result
     // Add it to the FRONT of evaluated_values (we're going right-to-left)
@@ -784,7 +797,10 @@ void BuildStrandK::mark(Heap* heap) {
     }
 }
 
-// FrameK implementation
+// ============================================================================
+// Function Application and Dispatch Continuations
+// ============================================================================
+
 void FrameK::invoke(Machine* machine) {
     // Function frame - push return continuation onto stack
     // Phase 2.2: Also push CatchReturnK to establish function boundary
@@ -1305,7 +1321,10 @@ void DeferredDispatchK::mark(Heap* heap) {
     }
 }
 
-// SeqK implementation - execute statements in sequence
+// ============================================================================
+// Statement Sequencing Continuations
+// ============================================================================
+
 void SeqK::invoke(Machine* machine) {
     if (statements.empty()) {
         // Empty sequence returns null/unit value (scalar 0)
