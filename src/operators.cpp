@@ -479,9 +479,14 @@ void fn_scan_first(Machine* m, Value* func, Value* omega) {
 // where lhs is nullptr for monadic use.
 
 // Helper: validate axis specification and return 1-based axis number
+// Returns 0 if axis is nullptr (caller should use default)
 // Returns -1 on error (after pushing ThrowErrorK)
 static int validate_axis(Machine* m, Value* axis, int max_rank) {
-    if (!axis || !axis->is_scalar()) {
+    if (!axis) {
+        return 0;  // Use default axis
+    }
+
+    if (!axis->is_scalar()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis must be a scalar"));
         return -1;
     }
@@ -497,14 +502,45 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
     return k;
 }
 
-// Reduce with axis specification: f/[k]B
-// Dyadic operator form where second operand is axis
-void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) {
-    (void)lhs;  // Always nullptr for monadic use
+// Helper: validate N for N-wise reduction
+// Returns validated N (positive), or 0 on error
+static int validate_nwise(Machine* m, Value* n_val, int axis_len) {
+    if (!n_val->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: N must be a scalar"));
+        return 0;
+    }
 
-    // Handle replicate: if "func" is actually an array, this is invalid
+    double n_double = n_val->as_scalar();
+    int n = static_cast<int>(n_double);
+
+    if (n_double != static_cast<double>(n)) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N must be an integer"));
+        return 0;
+    }
+
+    // Handle negative N (reverse before reduce) - take absolute value
+    int abs_n = n < 0 ? -n : n;
+
+    if (abs_n > axis_len + 1) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for array"));
+        return 0;
+    }
+
+    return n;  // Return original (possibly negative) for reverse handling
+}
+
+// Implementation: Reduce with axis and optional N-wise
+// default_axis: 1 for first axis (like ⌿), 2 for last axis (like /)
+static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* axis,
+                                 Value* rhs, int default_axis) {
+    // Handle replicate: if "func" is actually an array, this is invalid with axis/N-wise
     if (func->is_array() || func->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: replicate does not support axis specification"));
+        if (n_val || axis) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: replicate does not support axis or N-wise"));
+            return;
+        }
+        // Plain replicate without axis - delegate to fn_replicate
+        fn_replicate(m, func, rhs);
         return;
     }
 
@@ -514,22 +550,82 @@ void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs
     }
 
     if (rhs->is_scalar()) {
+        // Scalar handling for N-wise
+        if (n_val) {
+            int n = validate_nwise(m, n_val, 1);
+            if (n == 0) return;
+            int abs_n = n < 0 ? -n : n;
+            if (abs_n > 2) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for scalar"));
+                return;
+            }
+            if (abs_n == 0) {
+                // 0 f/ scalar → 2-element result with identity
+                double identity = get_identity_for_function(func);
+                if (std::isnan(identity)) {
+                    m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element"));
+                    return;
+                }
+                Eigen::VectorXd result(2);
+                result << identity, identity;
+                m->result = m->heap->allocate_vector(result);
+                return;
+            }
+            // abs_n == 1 or 2: reshape scalar
+            Eigen::VectorXd result(2 - abs_n);
+            if (result.rows() > 0) result(0) = rhs->as_scalar();
+            m->result = m->heap->allocate_vector(result);
+            return;
+        }
         m->result = m->heap->allocate_scalar(rhs->as_scalar());
         return;
     }
 
-    // String → char vector conversion
+    // String to char vector conversion
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     int max_rank = rhs->is_vector() ? 1 : 2;
     int k = validate_axis(m, axis, max_rank);
     if (k < 0) return;
+    if (k == 0) k = default_axis;  // Use default if axis not specified
 
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
-        // Vector only has axis 1 - same as regular reduce
         int len = mat->rows();
+
+        // N-wise reduction on vector
+        if (n_val) {
+            int n = validate_nwise(m, n_val, len);
+            if (n == 0) return;
+            int abs_n = n < 0 ? -n : n;
+            bool reverse = n < 0;
+
+            if (abs_n == 0) {
+                // 0 f/ vec → (1+len) copies of identity
+                double identity = get_identity_for_function(func);
+                if (std::isnan(identity)) {
+                    m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element"));
+                    return;
+                }
+                Eigen::VectorXd result = Eigen::VectorXd::Constant(len + 1, identity);
+                m->result = m->heap->allocate_vector(result);
+                return;
+            }
+
+            // Result length = len - abs_n + 1
+            int result_len = len - abs_n + 1;
+            if (result_len <= 0) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for vector"));
+                return;
+            }
+
+            // Use NwiseReduceK continuation for N-wise reduction
+            m->push_kont(m->heap->allocate<NwiseReduceK>(func, rhs, abs_n, reverse));
+            return;
+        }
+
+        // Regular reduce (no N-wise)
         if (len == 0) {
             double identity = get_identity_for_function(func);
             if (std::isnan(identity)) {
@@ -552,7 +648,38 @@ void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs
     // Matrix: k=1 is first axis (rows), k=2 is last axis (columns)
     int rows = mat->rows();
     int cols = mat->cols();
+    int axis_len = (k == 1) ? rows : cols;
 
+    // N-wise reduction on matrix
+    if (n_val) {
+        int n = validate_nwise(m, n_val, axis_len);
+        if (n == 0) return;
+        int abs_n = n < 0 ? -n : n;
+        bool reverse = n < 0;
+
+        if (abs_n == 0) {
+            // 0 f/[k] matrix → expand axis by 1, fill with identity
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element"));
+                return;
+            }
+            if (k == 1) {
+                Eigen::MatrixXd result = Eigen::MatrixXd::Constant(rows + 1, cols, identity);
+                m->result = m->heap->allocate_matrix(result);
+            } else {
+                Eigen::MatrixXd result = Eigen::MatrixXd::Constant(rows, cols + 1, identity);
+                m->result = m->heap->allocate_matrix(result);
+            }
+            return;
+        }
+
+        // N-wise on matrix along axis k
+        m->push_kont(m->heap->allocate<NwiseMatrixReduceK>(func, rhs, abs_n, k == 1, reverse));
+        return;
+    }
+
+    // Regular reduce (no N-wise)
     if (k == 1) {
         // Reduce along first axis (like ⌿)
         if (rows == 0) {
@@ -590,6 +717,16 @@ void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs
     }
 }
 
+// Reduce with axis: f/[k]B or N f/[k]B - default axis is last (2)
+void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) {
+    fn_reduce_axis_impl(m, lhs, func, axis, rhs, 2);
+}
+
+// Reduce-first with axis: f⌿[k]B or N f⌿[k]B - default axis is first (1)
+void fn_reduce_first_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) {
+    fn_reduce_axis_impl(m, lhs, func, axis, rhs, 1);
+}
+
 // Scan with axis specification: f\[k]B
 // Dyadic operator form where second operand is axis
 void fn_scan_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) {
@@ -617,6 +754,81 @@ void fn_scan_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) 
     int max_rank = rhs->is_vector() ? 1 : 2;
     int k = validate_axis(m, axis, max_rank);
     if (k < 0) return;
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+
+    if (rhs->is_vector()) {
+        // Vector only has axis 1 - same as regular scan
+        int len = mat->rows();
+        if (len == 0) {
+            m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+            return;
+        }
+        if (len == 1) {
+            m->result = m->heap->allocate_scalar((*mat)(0, 0));
+            return;
+        }
+        m->push_kont(m->heap->allocate<PrefixScanK>(func, rhs, len));
+        return;
+    }
+
+    // Matrix: k=1 is first axis (rows), k=2 is last axis (columns)
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (k == 1) {
+        // Scan along first axis (like ⍀)
+        if (rows == 0) {
+            m->result = m->heap->allocate_matrix(Eigen::MatrixXd(0, cols));
+            return;
+        }
+        if (rows == 1) {
+            m->result = rhs;
+            return;
+        }
+        m->push_kont(m->heap->allocate<RowScanK>(func, rhs, cols, rows, true));
+    } else {
+        // k == 2: Scan along last axis (like \)
+        if (cols == 0) {
+            m->result = m->heap->allocate_matrix(Eigen::MatrixXd(rows, 0));
+            return;
+        }
+        if (cols == 1) {
+            m->result = rhs;
+            return;
+        }
+        m->push_kont(m->heap->allocate<RowScanK>(func, rhs, rows, cols, false));
+    }
+}
+
+// Scan-first with axis specification: f⍀[k]B
+// Default axis is first (1) instead of last (2)
+void fn_scan_first_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) {
+    (void)lhs;  // Always nullptr for monadic use
+
+    // Handle expand: if "func" is actually an array, this is invalid
+    if (func->is_array() || func->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: expand does not support axis specification"));
+        return;
+    }
+
+    if (!func->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
+    // String → char vector conversion
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    int max_rank = rhs->is_vector() ? 1 : 2;
+    int k = validate_axis(m, axis, max_rank);
+    if (k < 0) return;
+    if (k == 0) k = 1;  // Default to first axis for ⍀
 
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
@@ -703,8 +915,8 @@ PrimitiveOp op_reduce = {
 
 PrimitiveOp op_reduce_first = {
     "⌿",
-    fn_reduce_first,      // Monadic: f⌿B (reduce along first axis)
-    fn_reduce_axis        // Dyadic: f⌿[k]B (reduce along axis k)
+    fn_reduce_first,           // Monadic: f⌿B (reduce along first axis)
+    fn_reduce_first_axis       // Dyadic: f⌿[k]B or N f⌿[k]B (default axis 1)
 };
 
 PrimitiveOp op_scan = {
@@ -715,8 +927,8 @@ PrimitiveOp op_scan = {
 
 PrimitiveOp op_scan_first = {
     "⍀",
-    fn_scan_first,        // Monadic: f⍀B (scan along first axis)
-    fn_scan_axis          // Dyadic: f⍀[k]B (scan along axis k)
+    fn_scan_first,             // Monadic: f⍀B (scan along first axis)
+    fn_scan_first_axis         // Dyadic: f⍀[k]B (default axis 1)
 };
 
 // ========================================================================

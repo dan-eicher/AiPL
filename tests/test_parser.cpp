@@ -1310,6 +1310,48 @@ TEST_F(ParserTest, ReduceFirstWithAxisHasAxisCont) {
     ASSERT_NE(derived->axis_cont, nullptr);
 }
 
+// Test: N-wise reduction parsing "2 +/ 1 2 3 4 5"
+// This should create a JuxtaposeK with derived operator in the middle
+TEST_F(ParserTest, NwiseReductionParsesSuccessfully) {
+    Continuation* k = parser->parse("2 +/ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    // Should parse as a juxtaposition
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr) << "2 +/ 1 2 3 4 5 should create JuxtaposeK";
+
+    // The left should be 2
+    LiteralK* left_lit = dynamic_cast<LiteralK*>(jux->left);
+    ASSERT_NE(left_lit, nullptr) << "Left should be LiteralK(2)";
+    EXPECT_DOUBLE_EQ(left_lit->literal_value, 2.0);
+
+    // The right should be a JuxtaposeK for "+/ 1 2 3 4 5"
+    JuxtaposeK* inner_jux = dynamic_cast<JuxtaposeK*>(jux->right);
+    ASSERT_NE(inner_jux, nullptr) << "Right should be inner JuxtaposeK";
+
+    // The inner left should be the derived operator +/
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(inner_jux->left);
+    ASSERT_NE(derived, nullptr) << "Inner left should be DerivedOperatorK";
+    EXPECT_STREQ(derived->op_name, "/");
+}
+
+// Test: N-wise reduction actually evaluates correctly
+TEST_F(ParserTest, NwiseReductionEvaluates) {
+    Continuation* k = parser->parse("2 +/ 1 2 3 4 5");
+    ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
+
+    Value* result = eval(k);
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);  // 5 - 2 + 1 = 4 windows
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);   // 2+3
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 7.0);   // 3+4
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 9.0);   // 4+5
+}
+
 // Test: Derived operator followed by primitive function (juxtaposition)
 TEST_F(ParserTest, DerivedOperatorWithPrimitiveFunctionJuxtaposition) {
     Continuation* k = parser->parse("+/ ×");

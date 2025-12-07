@@ -140,15 +140,32 @@ Value* Machine::execute() {
                 }
             }
         } else if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
-            // Check if this is an operator-derived curry (f⍤k B) at top level
+            // Check if this is an operator-derived curry at top level
             // In that case, apply monadically since no left argument
             Value* inner_fn = curried_data->fn;
             Value* right_arr = curried_data->first_arg;
 
-            if (inner_fn->tag == ValueType::CURRIED_FN) {
+            if (inner_fn->tag == ValueType::DERIVED_OPERATOR) {
+                // Direct DERIVED_OPERATOR curry: (+⌿ matrix) at top level
+                Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
+                PrimitiveOp* op = derived_data->op;
+                Value* first_operand = derived_data->first_operand;
+
+                if (op->monadic) {
+                    // Apply monadically: no lhs, no axis
+                    op->monadic(this, first_operand, right_arr);
+                    // Continue running to get the result
+                    while (!kont_stack.empty()) {
+                        Continuation* k = kont_stack.back();
+                        kont_stack.pop_back();
+                        k->invoke(this);
+                        maybe_gc();
+                    }
+                }
+            } else if (inner_fn->tag == ValueType::CURRIED_FN) {
                 Value::CurriedFnData* inner_curried = inner_fn->data.curried_fn;
                 if (inner_curried->curry_type == Value::CurryType::OPERATOR_CURRY) {
-                    // This is (f⍤k) B at top level - apply monadically
+                    // This is (f⍤k) B or (f/[axis]) B at top level - apply monadically
                     Value* derived_op = inner_curried->fn;
                     Value* second_operand = inner_curried->first_arg;
 

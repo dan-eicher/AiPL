@@ -595,6 +595,26 @@ protected:
     void invoke(Machine* machine) override;
 };
 
+// DeferredDispatchK - Continues dispatch after a subcomputation completes
+// Used when a curried function argument needs to be finalized before dispatch
+// Reads machine->result as the new right_val
+class DeferredDispatchK : public Continuation {
+public:
+    Value* fn_val;              // The function to dispatch
+    Value* left_val;            // Left argument (nullptr for monadic)
+    bool force_monadic;         // Force monadic application
+
+    DeferredDispatchK(Value* fn, Value* left, bool force_mon = false)
+        : fn_val(fn), left_val(left), force_monadic(force_mon) {}
+
+    ~DeferredDispatchK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
 // SeqK - Sequence continuation for executing multiple statements
 // Executes statements in order, left-to-right
 // The result of the last statement becomes the final result
@@ -1038,6 +1058,99 @@ public:
     explicit RowReduceCollectK(RowReduceK* i) : iter(i) {}
 
     ~RowReduceCollectK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// NwiseReduceK - N-wise reduction on vectors
+// ============================================================================
+// ISO-13751 §9.2.3: N f/ B applies f between successive N-element windows
+// Example: 2 +/ 1 2 3 4 5 → (1+2) (2+3) (3+4) (4+5) = 3 5 7 9
+
+class NwiseReduceK : public Continuation {
+public:
+    Value* fn;              // Function to reduce with
+    Value* vec;             // Vector to reduce
+    int window_size;        // Size of each window (N)
+    bool reverse;           // True if N was negative (reverse windows)
+    int current_window;     // Current window being processed
+    int total_windows;      // Total number of windows
+    std::vector<Value*> results;  // Collected window reduction results
+
+    NwiseReduceK(Value* f, Value* v, int n, bool rev)
+        : fn(f), vec(v), window_size(n), reverse(rev), current_window(0) {
+        int len = v->as_matrix()->rows();
+        total_windows = len - n + 1;
+        results.reserve(total_windows);
+    }
+
+    ~NwiseReduceK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// NwiseCollectK - Collects N-wise reduction result and continues
+class NwiseCollectK : public Continuation {
+public:
+    NwiseReduceK* iter;
+
+    explicit NwiseCollectK(NwiseReduceK* i) : iter(i) {}
+
+    ~NwiseCollectK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// NwiseMatrixReduceK - N-wise reduction on matrices along an axis
+// ============================================================================
+
+class NwiseMatrixReduceK : public Continuation {
+public:
+    Value* fn;              // Function to reduce with
+    Value* matrix;          // Matrix to reduce
+    int window_size;        // Size of each window (N)
+    bool first_axis;        // True for axis 1, false for axis 2
+    bool reverse;           // True if N was negative
+    int current_slice;      // Current row/column being processed
+    int total_slices;       // Total number of rows/columns
+    std::vector<Value*> results;  // Collected slice results (each is a vector)
+
+    NwiseMatrixReduceK(Value* f, Value* m, int n, bool first, bool rev)
+        : fn(f), matrix(m), window_size(n), first_axis(first), reverse(rev),
+          current_slice(0) {
+        const Eigen::MatrixXd* mat = m->as_matrix();
+        // We iterate over the non-reduced axis
+        total_slices = first_axis ? mat->cols() : mat->rows();
+        results.reserve(total_slices);
+    }
+
+    ~NwiseMatrixReduceK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// NwiseMatrixCollectK - Collects N-wise matrix reduction result
+class NwiseMatrixCollectK : public Continuation {
+public:
+    NwiseMatrixReduceK* iter;
+
+    explicit NwiseMatrixCollectK(NwiseMatrixReduceK* i) : iter(i) {}
+
+    ~NwiseMatrixCollectK() override {}
 
     void mark(Heap* heap) override;
 

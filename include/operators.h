@@ -29,6 +29,12 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega);   // ⌿ reduce alo
 void fn_scan(Machine* m, Value* func, Value* omega);           // \ scan along last axis
 void fn_scan_first(Machine* m, Value* func, Value* omega);     // ⍀ scan along first axis
 
+// Axis-specified reduction and scan (dyadic operator forms)
+void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);        // f/[k]B or N f/[k]B
+void fn_reduce_first_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);  // f⌿[k]B or N f⌿[k]B
+void fn_scan_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);          // f\[k]B
+void fn_scan_first_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);    // f⍀[k]B
+
 // PrimitiveOp structs that combine monadic and dyadic forms
 extern PrimitiveOp op_dot;           // . operator (inner product dyadic)
 extern PrimitiveOp op_outer_dot;     // ∘. operator (outer product)

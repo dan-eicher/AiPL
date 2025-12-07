@@ -390,6 +390,108 @@ TEST_F(OperatorsTest, ReduceAxisExpression) {
     EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 12.0);
 }
 
+// ============================================================================
+// N-wise Reduction Tests (ISO 13751 §9.2.3)
+// ============================================================================
+
+TEST_F(OperatorsTest, NwiseReduceVectorPairwise) {
+    // 2 +/ 1 2 3 4 5 -> pairwise sums: 3 5 7 9
+    Value* result = eval(machine, "2 +/ 1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);   // 2+3
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 7.0);   // 3+4
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 9.0);   // 4+5
+}
+
+TEST_F(OperatorsTest, NwiseReduceVectorTriplets) {
+    // 3 +/ 1 2 3 4 5 -> sums of 3: 6 9 12
+    Value* result = eval(machine, "3 +/ 1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 9.0);   // 2+3+4
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 12.0);  // 3+4+5
+}
+
+TEST_F(OperatorsTest, NwiseReduceFullVector) {
+    // N = length of vector -> single result (full reduce)
+    Value* result = eval(machine, "5 +/ 1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 15.0);
+}
+
+TEST_F(OperatorsTest, NwiseReduceNonCommutative) {
+    // Test with non-commutative function: subtraction
+    // 2 -/ 10 3 2 1 -> (10-3) (3-2) (2-1) = 7 1 1
+    Value* result = eval(machine, "2 -/ 10 3 2 1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 7.0);   // 10-3
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);   // 3-2
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);   // 2-1
+}
+
+TEST_F(OperatorsTest, NwiseReduceMatrixAxis2) {
+    // 2 +/ on 2x4 matrix (default axis 2)
+    // 2 4⍴⍳8 = [[0,1,2,3],[4,5,6,7]]
+    // 2 +/ gives pairwise sums: [[1,3,5],[9,11,13]]
+    Value* result = eval(machine, "2 +/ 2 4⍴⍳8");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);  // 4 - 2 + 1 = 3
+    auto* mat = result->as_matrix();
+    // Row 0: 0+1=1, 1+2=3, 2+3=5
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 5.0);
+    // Row 1: 4+5=9, 5+6=11, 6+7=13
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 11.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 13.0);
+}
+
+TEST_F(OperatorsTest, NwiseReduceMatrixAxis1) {
+    // 2 +/[1] on 3x2 matrix
+    // 3 2⍴⍳6 = [[0,1],[2,3],[4,5]]
+    // 2 +/[1] gives pairwise sums along first axis: [[2,4],[6,8]]
+    Value* result = eval(machine, "2 +/[1] 3 2⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);  // 3 - 2 + 1 = 2
+    EXPECT_EQ(result->cols(), 2);
+    auto* mat = result->as_matrix();
+    // Col 0: 0+2=2, 2+4=6
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);
+    // Col 1: 1+3=4, 3+5=8
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 8.0);
+}
+
+TEST_F(OperatorsTest, NwiseReduceFirstOperator) {
+    // ⌿ with N-wise: 2 +⌿ on 3x2 matrix (default axis 1)
+    // Same as 2 +/[1]
+    Value* result = eval(machine, "2 +⌿ 3 2⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);
+}
+
 TEST_F(OperatorsTest, ReduceAxisWithDifferentFunction) {
     // ×/[1] - product along first axis
     // ⍳6 = 0 1 2 3 4 5 (0-origin)

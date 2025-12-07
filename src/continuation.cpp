@@ -3,6 +3,7 @@
 #include "continuation.h"
 #include "machine.h"
 #include "completion.h"
+#include "operators.h"
 #include <algorithm>
 
 namespace apl {
@@ -922,6 +923,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
         return;  // Early exit for closure case
     }
 
+
     // G2 Grammar: Handle CURRIED_FN values
     if (fn_val->tag == ValueType::CURRIED_FN) {
         // A curried function was applied
@@ -964,21 +966,13 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
             if (left_val && right_val) {
                 // Have both array arguments - call dyadic operator
+                // For reduce/scan: left_val is N, second_operand is axis
                 op->dyadic(machine, left_val, first_operand, second_operand, right_val);
             } else if (right_val) {
-                // Only have right array argument
-                // Reduce/scan with axis: call dyadic with nullptr left (monadic axis form)
-                // Other operators (inner product): curry to wait for left array
-                const char* op_name = op->name;
-                if (strcmp(op_name, "/") == 0 || strcmp(op_name, "\\") == 0 ||
-                    strcmp(op_name, "⌿") == 0 || strcmp(op_name, "⍀") == 0) {
-                    // Reduce/scan: dyadic form handles nullptr left_val
-                    op->dyadic(machine, nullptr, first_operand, second_operand, right_val);
-                } else {
-                    // Other operators: need both arrays, curry to wait for left
-                    Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
-                    machine->result = curried;
-                }
+                // Only have right array argument - curry to wait for potential left
+                // This enables N-wise reduction with axis: "2 +/[1] matrix"
+                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                machine->result = curried;
             } else {
                 machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator curry expects array argument"));
             }
@@ -1127,6 +1121,24 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     right_val = machine->result;  // Use the finalized value
                 }
             }
+        } else if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
+            // Finalize DYADIC_CURRY from reduce/scan when used as argument
+            // This handles nested reductions like "+/×/1 2 3 4"
+            Value* inner_fn = curried_data->fn;
+            Value* arg = curried_data->first_arg;
+            if (inner_fn->tag == ValueType::DERIVED_OPERATOR) {
+                Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
+                PrimitiveOp* op = derived_data->op;
+                Value* first_operand = derived_data->first_operand;
+                if (op->monadic) {
+                    // Push DeferredDispatchK to continue after inner reduction completes
+                    // It will read machine->result as the new right_val
+                    machine->push_kont(machine->heap->allocate<DeferredDispatchK>(fn_val, left_val, force_monadic));
+                    // Evaluate inner reduction - result will become new right_val
+                    op->monadic(machine, first_operand, arg);
+                    return;
+                }
+            }
         }
     }
 
@@ -1144,13 +1156,20 @@ void DispatchFunctionK::invoke(Machine* machine) {
         // For operators with BOTH monadic and dyadic forms (like commute ⍨),
         // curry with G_PRIME when given one argument. This allows `2 +⍨ 3` to work correctly
         // by deferring until we know if there's a left argument.
-        // Exception: reduce/scan operators should apply monadic immediately - their dyadic
-        // form is only used with axis specification (f/[k]), which creates OPERATOR_CURRY
+        // Exception: reduce/scan with array operand (replicate) should apply immediately
         if (op->monadic && op->dyadic && !left_val && right_val) {
-            // Reduce/scan operators apply monadic immediately (dyadic form is for axis only)
+            // Reduce/scan operators: check if operand is a function or array
             if (strcmp(op->name, "/") == 0 || strcmp(op->name, "\\") == 0 ||
                 strcmp(op->name, "⌿") == 0 || strcmp(op->name, "⍀") == 0) {
-                op->monadic(machine, first_operand, right_val);
+                // If operand is array (not function), this is replicate - apply immediately
+                if (!first_operand->is_function()) {
+                    op->monadic(machine, first_operand, right_val);
+                    return;
+                }
+                // Function operand: curry with DYADIC_CURRY to wait for potential N (N-wise reduction)
+                // The curry will be finalized at top level if no N is provided
+                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                machine->result = curried;
                 return;
             }
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
@@ -1245,6 +1264,24 @@ void DispatchFunctionK::mark(Heap* heap) {
     }
     if (right_val) {
         heap->mark_value(right_val);
+    }
+}
+
+// DeferredDispatchK implementation - continues dispatch with result as right_val
+void DeferredDispatchK::invoke(Machine* machine) {
+    // The subcomputation completed, result is now the new right_val
+    Value* right_val = machine->result;
+
+    // Create and push DispatchFunctionK to continue the dispatch
+    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn_val, left_val, right_val, force_monadic));
+}
+
+void DeferredDispatchK::mark(Heap* heap) {
+    if (fn_val) {
+        heap->mark_value(fn_val);
+    }
+    if (left_val) {
+        heap->mark_value(left_val);
     }
 }
 
@@ -2458,6 +2495,140 @@ void InnerProductCollectK::invoke(Machine* machine) {
 }
 
 void InnerProductCollectK::mark(Heap* heap) {
+    (void)heap;
+}
+
+// ============================================================================
+// NwiseReduceK - Implementation
+// ============================================================================
+
+void NwiseReduceK::invoke(Machine* machine) {
+    if (current_window >= total_windows) {
+        // Done - assemble results into vector
+        Eigen::VectorXd result_vec(results.size());
+        for (size_t i = 0; i < results.size(); i++) {
+            result_vec(i) = results[i]->as_scalar();
+        }
+        machine->result = machine->heap->allocate_vector(result_vec);
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = vec->as_matrix();
+
+    // Extract window of size window_size starting at current_window
+    Eigen::VectorXd window(window_size);
+    if (reverse) {
+        // Negative N: reverse the window elements
+        for (int i = 0; i < window_size; i++) {
+            window(i) = (*mat)(current_window + window_size - 1 - i, 0);
+        }
+    } else {
+        for (int i = 0; i < window_size; i++) {
+            window(i) = (*mat)(current_window + i, 0);
+        }
+    }
+    Value* window_vec = machine->heap->allocate_vector(window);
+
+    // Push collector, then CellIterK FOLD_RIGHT to reduce this window
+    machine->push_kont(machine->heap->allocate<NwiseCollectK>(this));
+    machine->push_kont(machine->heap->allocate<CellIterK>(
+        fn, nullptr, window_vec, 0, 0, window_size,
+        CellIterMode::FOLD_RIGHT, window_size, 1, true));
+}
+
+void NwiseReduceK::mark(Heap* heap) {
+    if (fn) heap->mark_value(fn);
+    if (vec) heap->mark_value(vec);
+    for (Value* v : results) {
+        if (v) heap->mark_value(v);
+    }
+}
+
+void NwiseCollectK::invoke(Machine* machine) {
+    Value* result = machine->result;
+    iter->results.push_back(result);
+    iter->current_window++;
+    machine->push_kont(iter);
+}
+
+void NwiseCollectK::mark(Heap* heap) {
+    (void)heap;
+}
+
+// ============================================================================
+// NwiseMatrixReduceK - Implementation
+// ============================================================================
+
+void NwiseMatrixReduceK::invoke(Machine* machine) {
+    const Eigen::MatrixXd* mat = matrix->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (current_slice >= total_slices) {
+        // Done - assemble results into matrix
+        // Each result is a vector from N-wise reduction
+        // Result shape depends on axis:
+        //   axis 1 (first_axis): (rows - N + 1) x cols
+        //   axis 2 (!first_axis): rows x (cols - N + 1)
+        int axis_len = first_axis ? rows : cols;
+        int result_axis_len = axis_len - window_size + 1;
+
+        if (first_axis) {
+            // Results are column vectors, stack horizontally
+            Eigen::MatrixXd result_mat(result_axis_len, cols);
+            for (int j = 0; j < cols; j++) {
+                const Eigen::MatrixXd* col_result = results[j]->as_matrix();
+                for (int i = 0; i < result_axis_len; i++) {
+                    result_mat(i, j) = (*col_result)(i, 0);
+                }
+            }
+            machine->result = machine->heap->allocate_matrix(result_mat);
+        } else {
+            // Results are row vectors, stack vertically
+            Eigen::MatrixXd result_mat(rows, result_axis_len);
+            for (int i = 0; i < rows; i++) {
+                const Eigen::MatrixXd* row_result = results[i]->as_matrix();
+                for (int j = 0; j < result_axis_len; j++) {
+                    result_mat(i, j) = (*row_result)(j, 0);
+                }
+            }
+            machine->result = machine->heap->allocate_matrix(result_mat);
+        }
+        return;
+    }
+
+    // Extract current slice (row or column) and apply N-wise reduction
+    Eigen::VectorXd slice;
+    if (first_axis) {
+        // Axis 1: extract column, apply N-wise along rows
+        slice = mat->col(current_slice);
+    } else {
+        // Axis 2: extract row, apply N-wise along columns
+        slice = mat->row(current_slice).transpose();
+    }
+    Value* slice_vec = machine->heap->allocate_vector(slice);
+
+    // Push collector, then NwiseReduceK for this slice
+    machine->push_kont(machine->heap->allocate<NwiseMatrixCollectK>(this));
+    machine->push_kont(machine->heap->allocate<NwiseReduceK>(fn, slice_vec, window_size, reverse));
+}
+
+void NwiseMatrixReduceK::mark(Heap* heap) {
+    if (fn) heap->mark_value(fn);
+    if (matrix) heap->mark_value(matrix);
+    for (Value* v : results) {
+        if (v) heap->mark_value(v);
+    }
+}
+
+void NwiseMatrixCollectK::invoke(Machine* machine) {
+    Value* result = machine->result;
+    iter->results.push_back(result);
+    iter->current_slice++;
+    machine->push_kont(iter);
+}
+
+void NwiseMatrixCollectK::mark(Heap* heap) {
     (void)heap;
 }
 

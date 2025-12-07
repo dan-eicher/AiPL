@@ -582,6 +582,67 @@ TEST_F(ContinuationTest, DispatchFunctionKNullFnUsesCtrl) {
 }
 
 // ============================================================================
+// DeferredDispatchK Tests - Deferred dispatch after subcomputation
+// ============================================================================
+
+TEST_F(ContinuationTest, DeferredDispatchKBasic) {
+    // Test DeferredDispatchK: it should read machine->result as right_val
+    // and dispatch the function with that value
+    // Simulates nested reductions: when inner reduction completes,
+    // DeferredDispatchK continues with the result
+
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);  // negate
+
+    // Set up: machine->result will be 5.0 (simulating completed subcomputation)
+    machine->result = machine->heap->allocate_scalar(5.0);
+
+    // DeferredDispatchK should use result as right_val, apply fn monadically
+    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(fn, nullptr, false);
+    machine->push_kont(deferred);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);  // negate(5) = -5
+}
+
+TEST_F(ContinuationTest, DeferredDispatchKWithNestedReduce) {
+    // Test the actual use case: nested reductions
+    // +/ ×/ 1 2 3 = +/ 6 = 6
+    // This test simulates what happens when ×/ 1 2 3 completes with result 6
+    // and +/ needs to be applied to it
+
+    // Create +/ derived operator
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* reduce_op = machine->heap->allocate_derived_operator(&op_reduce, plus_fn);
+
+    // Simulate inner reduction completing with result 6
+    machine->result = machine->heap->allocate_scalar(6.0);
+
+    // DeferredDispatchK should dispatch +/ to 6, giving +/ 6 = 6
+    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(reduce_op, nullptr, false);
+    machine->push_kont(deferred);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);  // +/ 6 = 6
+}
+
+TEST_F(ContinuationTest, DeferredDispatchKMarking) {
+    // Test that DeferredDispatchK properly marks its values for GC
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* left = machine->heap->allocate_scalar(3.0);
+
+    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(fn, left, true);
+
+    // Mark should not crash and should mark the values
+    deferred->mark(heap);
+    EXPECT_TRUE(fn->marked);
+    EXPECT_TRUE(left->marked);
+}
+
+// ============================================================================
 // CellIterK Tests - General-purpose cell iterator for operators
 // ============================================================================
 
@@ -981,6 +1042,189 @@ TEST_F(ContinuationTest, RowScanKFirstAxis) {
     // Col 2: 3, 3+6=9
     EXPECT_DOUBLE_EQ((*m)(0, 2), 3.0);
     EXPECT_DOUBLE_EQ((*m)(1, 2), 9.0);
+}
+
+// ============================================================================
+// NwiseReduceK Tests - N-wise reduction on vectors
+// ============================================================================
+
+TEST_F(ContinuationTest, NwiseReduceKBasicPairwise) {
+    // 2 +/ 1 2 3 4 5 -> pairwise sums: 3 5 7 9
+    Eigen::VectorXd vec(5);
+    vec << 1, 2, 3, 4, 5;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 2, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);  // 5 - 2 + 1 = 4 windows
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);   // 2+3
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 7.0);   // 3+4
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 9.0);   // 4+5
+}
+
+TEST_F(ContinuationTest, NwiseReduceKTriplets) {
+    // 3 +/ 1 2 3 4 5 -> sums of 3: 6 9 12
+    Eigen::VectorXd vec(5);
+    vec << 1, 2, 3, 4, 5;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 3, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 3);  // 5 - 3 + 1 = 3 windows
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 9.0);   // 2+3+4
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 12.0);  // 3+4+5
+}
+
+TEST_F(ContinuationTest, NwiseReduceKReversed) {
+    // Negative N reverses windows before reducing
+    // For subtraction: ¯2 -/ 1 2 3 4 5
+    // Windows (reversed): [2,1] [3,2] [4,3] [5,4]
+    // Reduces to: 2-1=1, 3-2=1, 4-3=1, 5-4=1
+    Eigen::VectorXd vec(5);
+    vec << 1, 2, 3, 4, 5;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* minus_fn = machine->heap->allocate_primitive(&prim_minus);
+
+    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(minus_fn, rhs, 2, true);  // reverse=true
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    // Each reversed window reduces to 1
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);   // 2-1
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);   // 3-2
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);   // 4-3
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 1.0);   // 5-4
+}
+
+TEST_F(ContinuationTest, NwiseReduceKFullWindow) {
+    // N equals vector length - single result
+    // 4 +/ 1 2 3 4 -> 10
+    Eigen::VectorXd vec(4);
+    vec << 1, 2, 3, 4;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 4, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 1);  // 4 - 4 + 1 = 1 window
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);  // 1+2+3+4
+}
+
+TEST_F(ContinuationTest, NwiseReduceKMarking) {
+    // Test GC marking
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* rhs = machine->heap->allocate_vector(vec);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 2, false);
+
+    machine->heap->clear_marks();
+    iter->mark(machine->heap);
+
+    EXPECT_TRUE(plus_fn->marked);
+    EXPECT_TRUE(rhs->marked);
+}
+
+// ============================================================================
+// NwiseMatrixReduceK Tests - N-wise reduction on matrices
+// ============================================================================
+
+TEST_F(ContinuationTest, NwiseMatrixReduceKAxis2) {
+    // 2 +/[2] on 2x4 matrix - pairwise sums along columns (axis 2)
+    // [[1,2,3,4],[5,6,7,8]] -> [[3,5,7],[11,13,15]]
+    Eigen::MatrixXd mat(2, 4);
+    mat << 1, 2, 3, 4,
+           5, 6, 7, 8;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    // first_axis=false means axis 2 (columns)
+    NwiseMatrixReduceK* iter = heap->allocate<NwiseMatrixReduceK>(plus_fn, rhs, 2, false, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);  // 4 - 2 + 1 = 3 columns
+    // Row 0: 1+2=3, 2+3=5, 3+4=7
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 7.0);
+    // Row 1: 5+6=11, 6+7=13, 7+8=15
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 13.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 15.0);
+}
+
+TEST_F(ContinuationTest, NwiseMatrixReduceKAxis1) {
+    // 2 +/[1] on 3x2 matrix - pairwise sums along rows (axis 1)
+    // [[1,2],[3,4],[5,6]] -> [[4,6],[8,10]]
+    Eigen::MatrixXd mat(3, 2);
+    mat << 1, 2,
+           3, 4,
+           5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    // first_axis=true means axis 1 (rows)
+    NwiseMatrixReduceK* iter = heap->allocate<NwiseMatrixReduceK>(plus_fn, rhs, 2, true, false);
+    machine->push_kont(iter);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);  // 3 - 2 + 1 = 2 rows
+    EXPECT_EQ(m->cols(), 2);
+    // Col 0: 1+3=4, 3+5=8
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 8.0);
+    // Col 1: 2+4=6, 4+6=10
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 6.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 10.0);
+}
+
+TEST_F(ContinuationTest, NwiseMatrixReduceKMarking) {
+    // Test GC marking
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3,
+           4, 5, 6;
+    Value* rhs = machine->heap->allocate_matrix(mat);
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+
+    NwiseMatrixReduceK* iter = heap->allocate<NwiseMatrixReduceK>(plus_fn, rhs, 2, false, false);
+
+    machine->heap->clear_marks();
+    iter->mark(machine->heap);
+
+    EXPECT_TRUE(plus_fn->marked);
+    EXPECT_TRUE(rhs->marked);
 }
 
 // ============================================================================
