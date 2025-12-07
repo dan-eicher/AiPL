@@ -269,6 +269,115 @@ TEST_F(StringTest, EachOverString) {
     EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), -66.0);
 }
 
+// ============================================================================
+// String Indexing Tests (using char vector form)
+// ============================================================================
+
+TEST_F(StringTest, IndexStringScalar) {
+    // S←,'ABC' ⋄ S[2] → 66 (character 'B')
+    eval("S←,'ABC'");
+    Value* result = eval("S[2]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 66.0);  // 'B' = 66
+}
+
+TEST_F(StringTest, IndexStringFirst) {
+    // S←,'hello' ⋄ S[1] → 104 (character 'h')
+    eval("S←,'hello'");
+    Value* result = eval("S[1]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 104.0);  // 'h' = 104
+}
+
+TEST_F(StringTest, IndexStringLast) {
+    // S←,'hello' ⋄ S[5] → 111 (character 'o')
+    eval("S←,'hello'");
+    Value* result = eval("S[5]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 111.0);  // 'o' = 111
+}
+
+TEST_F(StringTest, IndexStringVector) {
+    // S←,'ABCDE' ⋄ S[2 4] → 66 68 (characters 'B' 'D')
+    eval("S←,'ABCDE'");
+    Value* result = eval("S[2 4]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 66.0);  // 'B'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 68.0);  // 'D'
+}
+
+// ============================================================================
+// String Indexed Assignment Tests (using char vector form)
+// ============================================================================
+
+TEST_F(StringTest, IndexedAssignStringScalar) {
+    // S←,'ABC' ⋄ S[2]←90 ⋄ S[2] → 90 (replace 'B' with 'Z')
+    eval("S←,'ABC'");
+    eval("S[2]←90");  // 'Z' = 90
+
+    Value* result = eval("S[2]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 90.0);
+}
+
+TEST_F(StringTest, IndexedAssignStringFirst) {
+    // S←,'abc' ⋄ S[1]←65 ⋄ S → 65 98 99 (replace 'a' with 'A')
+    eval("S←,'abc'");
+    eval("S[1]←65");  // 'A' = 65
+
+    Value* result = eval("S");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 65.0);   // 'A'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 98.0);   // 'b'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 99.0);   // 'c'
+}
+
+TEST_F(StringTest, IndexedAssignStringLast) {
+    // S←,'xyz' ⋄ S[3]←33 ⋄ S → 120 121 33 (replace 'z' with '!')
+    eval("S←,'xyz'");
+    eval("S[3]←33");  // '!' = 33
+
+    Value* result = eval("S");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 120.0);  // 'x'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 121.0);  // 'y'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 33.0);   // '!'
+}
+
+TEST_F(StringTest, IndexedAssignStringReturnsValue) {
+    // The return value of S[I]←V is V
+    eval("S←,'test'");
+    Value* result = eval("S[2]←88");  // 'X' = 88
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 88.0);
+}
+
+TEST_F(StringTest, IndexedAssignStringChained) {
+    // Multiple indexed assignments to build a different string
+    eval("S←,'----'");
+    eval("S[1]←65");   // 'A'
+    eval("S[2]←66");   // 'B'
+    eval("S[3]←67");   // 'C'
+    eval("S[4]←68");   // 'D'
+
+    Value* result = eval("S");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 65.0);  // 'A'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 66.0);  // 'B'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 67.0);  // 'C'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(3, 0), 68.0);  // 'D'
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

@@ -2018,7 +2018,7 @@ void fn_iota(Machine* m, Value* omega) {
 
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
-        result(i) = i;
+        result(i) = i + 1;  // 1-based per ISO 13751 (⎕IO=1)
     }
     m->result = m->heap->allocate_vector(result);
 }
@@ -2803,7 +2803,7 @@ void fn_roll(Machine* m, Value* omega) {
             m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
             return;
         }
-        std::uniform_int_distribution<int> dist(0, n - 1);
+        std::uniform_int_distribution<int> dist(1, n);  // 1-based per ISO 13751 (⎕IO=1)
         m->result = m->heap->allocate_scalar(static_cast<double>(dist(rng)));
         return;
     }
@@ -2817,7 +2817,7 @@ void fn_roll(Machine* m, Value* omega) {
             m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
             return;
         }
-        std::uniform_int_distribution<int> dist(0, n - 1);
+        std::uniform_int_distribution<int> dist(1, n);  // 1-based per ISO 13751 (⎕IO=1)
         result(i) = static_cast<double>(dist(rng));
     }
 
@@ -2828,8 +2828,8 @@ void fn_roll(Machine* m, Value* omega) {
     }
 }
 
-// Deal (? dyadic) - A unique random values from 0 to B-1
-// A?B returns A unique random integers from [0, B)
+// Deal (? dyadic) - A unique random values from 1 to B
+// A?B returns A unique random integers from [1, B] (1-based per ISO 13751)
 void fn_deal(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar() || !rhs->is_scalar()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: deal arguments must be scalars"));
@@ -2855,10 +2855,10 @@ void fn_deal(Machine* m, Value* lhs, Value* rhs) {
     }
 
     // Fisher-Yates shuffle approach for unique selection
-    // Create array 0..b-1, shuffle first 'a' elements
+    // Create array 1..b (1-based per ISO 13751), shuffle first 'a' elements
     Eigen::VectorXd pool(b);
     for (int i = 0; i < b; ++i) {
-        pool(i) = static_cast<double>(i);
+        pool(i) = static_cast<double>(i + 1);  // 1-based per ISO 13751 (⎕IO=1)
     }
 
     // Partial Fisher-Yates: only shuffle first 'a' positions
@@ -3070,5 +3070,140 @@ void fn_encode(Machine* m, Value* lhs, Value* rhs) {
 
     m->result = m->heap->allocate_vector(result);
 }
+
+// ============================================================================
+// Squad (Index): A[I] via ⌷
+// ============================================================================
+// APL uses 1-based indexing (⎕IO=1)
+
+void fn_squad(Machine* m, Value* lhs, Value* rhs) {
+    // lhs = array, rhs = index
+
+    // Finalize G_PRIME curried functions (e.g., from ⍳5)
+    // Per Georgeff et al: g' with null(y) → apply g1(x)
+    if (lhs->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = lhs->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            Value* inner_fn = curried_data->fn;
+            Value* first_arg = curried_data->first_arg;
+            if (inner_fn->is_primitive()) {
+                PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(m, first_arg);
+                    lhs = m->result;  // Use the finalized result
+                }
+            }
+        }
+    }
+    if (rhs->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = rhs->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            Value* inner_fn = curried_data->fn;
+            Value* first_arg = curried_data->first_arg;
+            if (inner_fn->is_primitive()) {
+                PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(m, first_arg);
+                    rhs = m->result;  // Use the finalized result
+                }
+            }
+        }
+    }
+
+    // Handle STRING indexing
+    if (lhs->tag == ValueType::STRING) {
+        const char* str = lhs->data.string;
+        int str_len = strlen(str);
+
+        if (rhs->is_scalar()) {
+            int idx = static_cast<int>(rhs->as_scalar()) - 1;  // 1-based to 0-based
+            if (idx < 0 || idx >= str_len) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                return;
+            }
+            char result[2] = {str[idx], '\0'};
+            m->result = m->heap->allocate_string(m->string_pool.intern(result));
+            return;
+        } else if (rhs->is_array()) {
+            const Eigen::MatrixXd* idx_mat = rhs->as_matrix();
+            int n = idx_mat->rows();
+            std::string result;
+            result.reserve(n);
+            for (int i = 0; i < n; i++) {
+                int idx = static_cast<int>((*idx_mat)(i, 0)) - 1;
+                if (idx < 0 || idx >= str_len) {
+                    m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                    return;
+                }
+                result += str[idx];
+            }
+            m->result = m->heap->allocate_string(m->string_pool.intern(result.c_str()));
+            return;
+        }
+    }
+
+    // Handle numeric array indexing
+    if (!lhs->is_array() && !lhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot index non-array value"));
+        return;
+    }
+
+    const Eigen::MatrixXd* arr = lhs->as_matrix();
+    int rows = arr->rows();
+    int cols = arr->cols();
+    bool is_vec = (cols == 1);
+
+    if (rhs->is_scalar()) {
+        int idx = static_cast<int>(rhs->as_scalar()) - 1;
+        if (is_vec) {
+            if (idx < 0 || idx >= rows) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                return;
+            }
+            m->result = m->heap->allocate_scalar((*arr)(idx, 0));
+        } else {
+            // Linear indexing into matrix (row-major order)
+            int size = rows * cols;
+            if (idx < 0 || idx >= size) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                return;
+            }
+            int row = idx / cols;
+            int col = idx % cols;
+            m->result = m->heap->allocate_scalar((*arr)(row, col));
+        }
+    } else if (rhs->is_array()) {
+        const Eigen::MatrixXd* idx_mat = rhs->as_matrix();
+        int n = idx_mat->rows();
+
+        if (is_vec) {
+            Eigen::VectorXd result(n);
+            for (int i = 0; i < n; i++) {
+                int idx = static_cast<int>((*idx_mat)(i, 0)) - 1;
+                if (idx < 0 || idx >= rows) {
+                    m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                    return;
+                }
+                result(i) = (*arr)(idx, 0);
+            }
+            m->result = m->heap->allocate_vector(result);
+        } else {
+            Eigen::MatrixXd result(n, cols);
+            for (int i = 0; i < n; i++) {
+                int idx = static_cast<int>((*idx_mat)(i, 0)) - 1;
+                if (idx < 0 || idx >= rows) {
+                    m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                    return;
+                }
+                result.row(i) = arr->row(idx);
+            }
+            m->result = m->heap->allocate_matrix(result);
+        }
+    } else {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: index must be numeric"));
+    }
+}
+
+PrimitiveFn prim_squad = { "⌷", nullptr, fn_squad };
 
 } // namespace apl

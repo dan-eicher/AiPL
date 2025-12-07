@@ -117,6 +117,7 @@ void fn_iota(Machine* m, Value* omega);                     // ⍳ monadic (inde
 void fn_first(Machine* m, Value* omega);                    // ↑ monadic (first element)
 void fn_take(Machine* m, Value* lhs, Value* rhs);           // ↑ dyadic (take)
 void fn_drop(Machine* m, Value* lhs, Value* rhs);           // ↓ dyadic (drop)
+void fn_squad(Machine* m, Value* lhs, Value* rhs);          // ⌷ dyadic (squad/index)
 
 // Array operation PrimitiveFn structs
 extern PrimitiveFn prim_rho;       // ⍴ symbol (shape/reshape)
@@ -126,5 +127,6 @@ extern PrimitiveFn prim_domino;    // ⌹ symbol (matrix inverse/divide)
 extern PrimitiveFn prim_iota;      // ⍳ symbol (index generator)
 extern PrimitiveFn prim_uptack;    // ↑ symbol (first/take)
 extern PrimitiveFn prim_downtack;  // ↓ symbol (drop)
+extern PrimitiveFn prim_squad;     // ⌷ symbol (index/squad) - used by A[I] syntax
 
 } // namespace apl

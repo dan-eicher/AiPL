@@ -1286,6 +1286,129 @@ TEST_F(ContinuationTest, ApplyAxisKWithScanOperator) {
     EXPECT_DOUBLE_EQ(result->data.curried_fn->first_arg->as_scalar(), 2.0);
 }
 
+// ============================================================================
+// IndexedAssignK Tests - Indexed assignment continuations
+// ============================================================================
+
+TEST_F(ContinuationTest, IndexedAssignKBasic) {
+    // Test basic indexed assignment: A←1 2 3, A[2]←99
+    // First set up the variable in environment
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* arr = machine->heap->allocate_vector(vec);
+    const char* var_name = machine->string_pool.intern("TestVar");
+    machine->env->define(var_name, arr);
+
+    // Create continuations: index=2, value=99
+    LiteralK* index_cont = heap->allocate<LiteralK>(2.0);
+    LiteralK* value_cont = heap->allocate<LiteralK>(99.0);
+    IndexedAssignK* assign_k = heap->allocate<IndexedAssignK>(var_name, index_cont, value_cont);
+
+    machine->push_kont(assign_k);
+    Value* result = machine->execute();
+
+    // Should return the assigned value
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
+
+    // Verify the variable was updated
+    Value* updated = machine->env->lookup(var_name);
+    ASSERT_NE(updated, nullptr);
+    EXPECT_TRUE(updated->is_vector());
+    const Eigen::MatrixXd* m = updated->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 99.0);  // index 2 (1-based) = offset 1
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+TEST_F(ContinuationTest, IndexedAssignKFirstElement) {
+    // Test assigning to first element: A[1]←100
+    Eigen::VectorXd vec(4);
+    vec << 10, 20, 30, 40;
+    Value* arr = machine->heap->allocate_vector(vec);
+    const char* var_name = machine->string_pool.intern("First");
+    machine->env->define(var_name, arr);
+
+    LiteralK* index_cont = heap->allocate<LiteralK>(1.0);
+    LiteralK* value_cont = heap->allocate<LiteralK>(100.0);
+    IndexedAssignK* assign_k = heap->allocate<IndexedAssignK>(var_name, index_cont, value_cont);
+
+    machine->push_kont(assign_k);
+    machine->execute();
+
+    Value* updated = machine->env->lookup(var_name);
+    const Eigen::MatrixXd* m = updated->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 100.0);  // First element updated
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 20.0);
+}
+
+TEST_F(ContinuationTest, IndexedAssignKLastElement) {
+    // Test assigning to last element: A[4]←999
+    Eigen::VectorXd vec(4);
+    vec << 10, 20, 30, 40;
+    Value* arr = machine->heap->allocate_vector(vec);
+    const char* var_name = machine->string_pool.intern("Last");
+    machine->env->define(var_name, arr);
+
+    LiteralK* index_cont = heap->allocate<LiteralK>(4.0);
+    LiteralK* value_cont = heap->allocate<LiteralK>(999.0);
+    IndexedAssignK* assign_k = heap->allocate<IndexedAssignK>(var_name, index_cont, value_cont);
+
+    machine->push_kont(assign_k);
+    machine->execute();
+
+    Value* updated = machine->env->lookup(var_name);
+    const Eigen::MatrixXd* m = updated->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 999.0);  // Last element updated
+}
+
+TEST_F(ContinuationTest, IndexedAssignKMarking) {
+    // Test that IndexedAssignK properly marks continuations for GC
+    LiteralK* index_cont = heap->allocate<LiteralK>(1.0);
+    LiteralK* value_cont = heap->allocate<LiteralK>(42.0);
+    const char* var_name = machine->string_pool.intern("MarkTest");
+
+    IndexedAssignK* assign_k = heap->allocate<IndexedAssignK>(var_name, index_cont, value_cont);
+
+    machine->heap->clear_marks();
+    assign_k->mark(machine->heap);
+
+    // Both continuations should be marked
+    EXPECT_TRUE(index_cont->marked);
+    EXPECT_TRUE(value_cont->marked);
+}
+
+TEST_F(ContinuationTest, IndexedAssignIndexKMarking) {
+    // Test IndexedAssignIndexK marking
+    Value* val = machine->heap->allocate_scalar(42.0);
+    LiteralK* index_cont = heap->allocate<LiteralK>(1.0);
+    const char* var_name = machine->string_pool.intern("IdxMarkTest");
+
+    IndexedAssignIndexK* idx_k = heap->allocate<IndexedAssignIndexK>(var_name, val, index_cont);
+
+    machine->heap->clear_marks();
+    idx_k->mark(machine->heap);
+
+    EXPECT_TRUE(val->marked);
+    EXPECT_TRUE(index_cont->marked);
+}
+
+TEST_F(ContinuationTest, PerformIndexedAssignKMarking) {
+    // Test PerformIndexedAssignK marking
+    Value* val = machine->heap->allocate_scalar(42.0);
+    Value* idx = machine->heap->allocate_scalar(1.0);
+    const char* var_name = machine->string_pool.intern("PerfMarkTest");
+
+    PerformIndexedAssignK* perf_k = heap->allocate<PerformIndexedAssignK>(var_name, val, idx);
+
+    machine->heap->clear_marks();
+    perf_k->mark(machine->heap);
+
+    EXPECT_TRUE(val->marked);
+    EXPECT_TRUE(idx->marked);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

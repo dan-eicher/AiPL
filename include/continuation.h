@@ -1314,4 +1314,63 @@ protected:
     void invoke(Machine* machine) override;
 };
 
+// ============================================================================
+// Indexed Assignment Continuations (ISO 13751 §10.3.3)
+// ============================================================================
+// A[I]←V - evaluates right-to-left: value first, then index, then assign
+
+// IndexedAssignK - Start indexed assignment: evaluate value first
+class IndexedAssignK : public Continuation {
+public:
+    const char* var_name;         // Variable name (interned string)
+    Continuation* index_cont;     // Index expression
+    Continuation* value_cont;     // Value expression
+
+    IndexedAssignK(const char* var, Continuation* idx, Continuation* val)
+        : var_name(var), index_cont(idx), value_cont(val) {}
+
+    ~IndexedAssignK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// IndexedAssignIndexK - Value evaluated, now evaluate index
+class IndexedAssignIndexK : public Continuation {
+public:
+    const char* var_name;         // Variable name (interned string)
+    Value* value_val;             // Already-evaluated value
+    Continuation* index_cont;     // Index expression to evaluate
+
+    IndexedAssignIndexK(const char* var, Value* val, Continuation* idx)
+        : var_name(var), value_val(val), index_cont(idx) {}
+
+    ~IndexedAssignIndexK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// PerformIndexedAssignK - Value and index evaluated, perform the assignment
+class PerformIndexedAssignK : public Continuation {
+public:
+    const char* var_name;         // Variable name (interned string)
+    Value* value_val;             // Value to assign
+    Value* index_val;             // Index value(s)
+
+    PerformIndexedAssignK(const char* var, Value* val, Value* idx)
+        : var_name(var), value_val(val), index_val(idx) {}
+
+    ~PerformIndexedAssignK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
 } // namespace apl

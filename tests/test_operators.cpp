@@ -273,29 +273,29 @@ static Value* eval(Machine* m, const char* expr) {
 
 TEST_F(OperatorsTest, ReduceAxisLastOnMatrix) {
     // +/[2] is same as +/ (reduce along last axis)
-    // ⍳6 = 0 1 2 3 4 5 (0-origin)
-    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    // ⍳6 = 1 2 3 4 5 6 (1-origin)
+    // 2 3⍴⍳6 = [[1,2,3], [4,5,6]]
     Value* result = eval(machine, "+/[2] 2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 2);
-    // Row sums: 0+1+2=3, 3+4+5=12
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 12.0);
+    // Row sums: 1+2+3=6, 4+5+6=15
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 6.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 15.0);
 }
 
 TEST_F(OperatorsTest, ReduceAxisFirstOnMatrix) {
     // +/[1] is same as +⌿ (reduce along first axis)
-    // ⍳6 = 0 1 2 3 4 5 (0-origin)
-    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    // ⍳6 = 1 2 3 4 5 6 (1-origin)
+    // 2 3⍴⍳6 = [[1,2,3], [4,5,6]]
     Value* result = eval(machine, "+/[1] 2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 3);
-    // Column sums: 0+3=3, 1+4=5, 2+5=7
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 5.0);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 7.0);
+    // Column sums: 1+4=5, 2+5=7, 3+6=9
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 9.0);
 }
 
 TEST_F(OperatorsTest, ReduceFirstAxisEquivalent) {
@@ -315,44 +315,44 @@ TEST_F(OperatorsTest, ReduceFirstAxisEquivalent) {
 
 TEST_F(OperatorsTest, ScanAxisLastOnMatrix) {
     // Scan with axis [2] is same as scan along last axis
-    // ⍳6 = 0 1 2 3 4 5 (0-origin)
-    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    // ⍳6 = 1 2 3 4 5 6 (1-origin)
+    // 2 3⍴⍳6 = [[1,2,3], [4,5,6]]
     Value* result = eval(machine, "+\\[2] 2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_matrix());
     EXPECT_EQ(result->rows(), 2);
     EXPECT_EQ(result->cols(), 3);
     // Running row sums:
-    // Row 0: 0, 0+1=1, 0+1+2=3
-    // Row 1: 3, 3+4=7, 3+4+5=12
+    // Row 0: 1, 1+2=3, 1+2+3=6
+    // Row 1: 4, 4+5=9, 4+5+6=15
     auto* mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 2), 3.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 1), 7.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 2), 12.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 9.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 15.0);
 }
 
 TEST_F(OperatorsTest, ScanAxisFirstOnMatrix) {
     // Scan with axis [1] is same as scan-first (along first axis)
-    // ⍳6 = 0 1 2 3 4 5 (0-origin)
-    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    // ⍳6 = 1 2 3 4 5 6 (1-origin)
+    // 2 3⍴⍳6 = [[1,2,3], [4,5,6]]
     Value* result = eval(machine, "+\\[1] 2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_matrix());
     EXPECT_EQ(result->rows(), 2);
     EXPECT_EQ(result->cols(), 3);
     // Running column sums:
-    // Row 0: 0, 1, 2 (first row unchanged)
-    // Row 1: 0+3=3, 1+4=5, 2+5=7
+    // Row 0: 1, 2, 3 (first row unchanged)
+    // Row 1: 1+4=5, 2+5=7, 3+6=9
     auto* mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 2), 2.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 2), 7.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 7.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 9.0);
 }
 
 TEST_F(OperatorsTest, ReduceAxisOnVector) {
@@ -379,15 +379,15 @@ TEST_F(OperatorsTest, ScanAxisOnVector) {
 
 TEST_F(OperatorsTest, ReduceAxisExpression) {
     // Axis can be an expression
-    // ⍳6 = 0 1 2 3 4 5 (0-origin)
-    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    // ⍳6 = 1 2 3 4 5 6 (1-origin)
+    // 2 3⍴⍳6 = [[1,2,3], [4,5,6]]
     Value* result = eval(machine, "+/[1+1] 2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 2);
-    // Same as +/[2] = row sums: 0+1+2=3, 3+4+5=12
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 12.0);
+    // Same as +/[2] = row sums: 1+2+3=6, 4+5+6=15
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 6.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 15.0);
 }
 
 // ============================================================================
@@ -443,40 +443,40 @@ TEST_F(OperatorsTest, NwiseReduceNonCommutative) {
 
 TEST_F(OperatorsTest, NwiseReduceMatrixAxis2) {
     // 2 +/ on 2x4 matrix (default axis 2)
-    // 2 4⍴⍳8 = [[0,1,2,3],[4,5,6,7]]
-    // 2 +/ gives pairwise sums: [[1,3,5],[9,11,13]]
+    // 2 4⍴⍳8 = [[1,2,3,4],[5,6,7,8]]
+    // 2 +/ gives pairwise sums: [[3,5,7],[11,13,15]]
     Value* result = eval(machine, "2 +/ 2 4⍴⍳8");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_matrix());
     EXPECT_EQ(result->rows(), 2);
     EXPECT_EQ(result->cols(), 3);  // 4 - 2 + 1 = 3
     auto* mat = result->as_matrix();
-    // Row 0: 0+1=1, 1+2=3, 2+3=5
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 1), 3.0);
-    EXPECT_DOUBLE_EQ((*mat)(0, 2), 5.0);
-    // Row 1: 4+5=9, 5+6=11, 6+7=13
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 9.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 1), 11.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 2), 13.0);
+    // Row 0: 1+2=3, 2+3=5, 3+4=7
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 7.0);
+    // Row 1: 5+6=11, 6+7=13, 7+8=15
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 13.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 15.0);
 }
 
 TEST_F(OperatorsTest, NwiseReduceMatrixAxis1) {
     // 2 +/[1] on 3x2 matrix
-    // 3 2⍴⍳6 = [[0,1],[2,3],[4,5]]
-    // 2 +/[1] gives pairwise sums along first axis: [[2,4],[6,8]]
+    // 3 2⍴⍳6 = [[1,2],[3,4],[5,6]]
+    // 2 +/[1] gives pairwise sums along first axis: [[4,6],[8,10]]
     Value* result = eval(machine, "2 +/[1] 3 2⍴⍳6");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_matrix());
     EXPECT_EQ(result->rows(), 2);  // 3 - 2 + 1 = 2
     EXPECT_EQ(result->cols(), 2);
     auto* mat = result->as_matrix();
-    // Col 0: 0+2=2, 2+4=6
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);
-    // Col 1: 1+3=4, 3+5=8
-    EXPECT_DOUBLE_EQ((*mat)(0, 1), 4.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 1), 8.0);
+    // Col 0: 1+3=4, 3+5=8
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 8.0);
+    // Col 1: 2+4=6, 4+6=10
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 10.0);
 }
 
 TEST_F(OperatorsTest, NwiseReduceFirstOperator) {
@@ -488,22 +488,22 @@ TEST_F(OperatorsTest, NwiseReduceFirstOperator) {
     EXPECT_EQ(result->rows(), 2);
     EXPECT_EQ(result->cols(), 2);
     auto* mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 8.0);
 }
 
 TEST_F(OperatorsTest, ReduceAxisWithDifferentFunction) {
     // ×/[1] - product along first axis
-    // ⍳6 = 0 1 2 3 4 5 (0-origin)
-    // 2 3⍴⍳6 = [[0,1,2], [3,4,5]]
+    // ⍳6 = 1 2 3 4 5 6 (1-origin)
+    // 2 3⍴⍳6 = [[1,2,3], [4,5,6]]
     Value* result = eval(machine, "×/[1] 2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 3);
-    // Column products: 0×3=0, 1×4=4, 2×5=10
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 4.0);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 10.0);
+    // Column products: 1×4=4, 2×5=10, 3×6=18
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 10.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 18.0);
 }
 
 int main(int argc, char** argv) {

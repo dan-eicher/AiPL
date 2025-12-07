@@ -286,6 +286,26 @@ void PerformAssignK::invoke(Machine* machine) {
     // Bind it to the variable name
     Value* val = machine->result;
 
+    // Finalize G_PRIME curried functions before assignment
+    // This handles cases like A←⍳5 where ⍳5 produces a curried function
+    // that needs to be resolved to its monadic result before storing
+    if (val && val->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* curried_data = val->data.curried_fn;
+        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
+            // Apply monadically: g1(x) where x is first_arg
+            Value* fn = curried_data->fn;
+            Value* arg = curried_data->first_arg;
+
+            if (fn->is_primitive()) {
+                PrimitiveFn* prim_fn = fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(machine, arg);
+                    val = machine->result;  // Get the finalized result
+                }
+            }
+        }
+    }
+
     machine->env->define(var_name, val);
 
     // Assignment expression returns the assigned value
@@ -2630,6 +2650,95 @@ void NwiseMatrixCollectK::invoke(Machine* machine) {
 
 void NwiseMatrixCollectK::mark(Heap* heap) {
     (void)heap;
+}
+
+// ============================================================================
+// Indexed Assignment Continuations
+// ============================================================================
+
+void IndexedAssignK::invoke(Machine* machine) {
+    // Evaluate value first (APL right-to-left), then index
+    machine->push_kont(machine->heap->allocate<IndexedAssignIndexK>(var_name, nullptr, index_cont));
+    machine->push_kont(value_cont);
+}
+
+void IndexedAssignK::mark(Heap* heap) {
+    if (index_cont) heap->mark_continuation(index_cont);
+    if (value_cont) heap->mark_continuation(value_cont);
+}
+
+void IndexedAssignIndexK::invoke(Machine* machine) {
+    // Value just evaluated, save it and evaluate index
+    value_val = machine->result;
+    machine->push_kont(machine->heap->allocate<PerformIndexedAssignK>(var_name, value_val, nullptr));
+    machine->push_kont(index_cont);
+}
+
+void IndexedAssignIndexK::mark(Heap* heap) {
+    if (value_val) heap->mark_value(value_val);
+    if (index_cont) heap->mark_continuation(index_cont);
+}
+
+void PerformIndexedAssignK::invoke(Machine* machine) {
+    // Index just evaluated
+    index_val = machine->result;
+
+    // Lookup the array variable
+    Value* arr = machine->env->lookup(var_name);
+    if (!arr) {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: undefined variable in indexed assignment"));
+        return;
+    }
+
+    // Handle scalar index for now
+    if (!index_val->is_scalar()) {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: only scalar index supported for assignment"));
+        return;
+    }
+
+    int idx = static_cast<int>(index_val->as_scalar()) - 1;  // 1-based to 0-based
+
+    // Numeric array indexed assignment
+    if (!arr->is_array()) {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: cannot index non-array value"));
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+    int size = static_cast<int>(mat->size());
+
+    if (idx < 0 || idx >= size) {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+        return;
+    }
+
+    // Get new value as scalar
+    if (!value_val->is_scalar()) {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: indexed assignment requires scalar value"));
+        return;
+    }
+    double new_val = value_val->as_scalar();
+
+    // Create modified copy
+    Eigen::MatrixXd new_mat = *mat;
+    // Use row-major linear indexing
+    int row = idx / new_mat.cols();
+    int col = idx % new_mat.cols();
+    new_mat(row, col) = new_val;
+
+    Value* result;
+    if (arr->is_vector()) {
+        result = machine->heap->allocate_vector(new_mat.col(0));
+    } else {
+        result = machine->heap->allocate_matrix(new_mat);
+    }
+    machine->env->define(var_name, result);
+    machine->result = value_val;
+}
+
+void PerformIndexedAssignK::mark(Heap* heap) {
+    if (value_val) heap->mark_value(value_val);
+    if (index_val) heap->mark_value(index_val);
 }
 
 } // namespace apl

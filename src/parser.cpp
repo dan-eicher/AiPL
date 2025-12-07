@@ -438,18 +438,34 @@ Continuation* Parser::nud(const Token& token) {
 Continuation* Parser::led(Continuation* left, const Token& token) {
     switch (token.type) {
         case TOK_ASSIGN: {
-            // Left side must be a LookupK (variable name)
-            LookupK* lookup = dynamic_cast<LookupK*>(left);
-            if (!lookup) {
-                error_message_ = "Left side of assignment must be a variable name";
-                return nullptr;
-            }
-
             // Parse the right side (the value to assign)
             int bp = get_binding_power(token);
             Continuation* right = parse_expression(bp);
 
             if (!right) {
+                return nullptr;
+            }
+
+            // Check for indexed assignment: A[I]←V
+            // A[I] is parsed as DyadicK("⌷", array_cont, index_cont)
+            DyadicK* dyadic = dynamic_cast<DyadicK*>(left);
+            if (dyadic && strcmp(dyadic->op_name, "⌷") == 0) {
+                // Extract variable name - must be a LookupK
+                LookupK* lookup = dynamic_cast<LookupK*>(dyadic->left);
+                if (!lookup) {
+                    error_message_ = "Left side of indexed assignment must be a variable";
+                    return nullptr;
+                }
+                // Pass var_name (interned string) and index_cont through
+                IndexedAssignK* indexed_assign = machine->heap->allocate<IndexedAssignK>(
+                    lookup->var_name, dyadic->right, right);
+                return indexed_assign;
+            }
+
+            // Regular assignment: left side must be a LookupK (variable name)
+            LookupK* lookup = dynamic_cast<LookupK*>(left);
+            if (!lookup) {
+                error_message_ = "Left side of assignment must be a variable name";
                 return nullptr;
             }
 
@@ -563,6 +579,26 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             const char* interned_name = machine->string_pool.intern("⍤");
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             return derived;
+        }
+
+        case TOK_LBRACKET: {
+            // Bracket indexing: A[I]
+            // Parse index expression, create DyadicK with ⌷ (squad)
+            // Note: [ already consumed by parse_expression before calling led()
+            Continuation* index_cont = parse_expression(0);
+            if (!index_cont) {
+                error_message_ = "Expected index expression after [";
+                return nullptr;
+            }
+            if (current_token_.type != TOK_RBRACKET) {
+                error_message_ = "Expected ] after index expression";
+                return nullptr;
+            }
+            advance();  // consume ]
+
+            const char* squad_name = machine->string_pool.intern("⌷");
+            DyadicK* dyadic = machine->heap->allocate<DyadicK>(squad_name, left, index_cont);
+            return dyadic;
         }
 
         default:
@@ -872,6 +908,7 @@ int Parser::get_binding_power(const Token& token) {
         case TOK_SCAN:
         case TOK_REDUCE_FIRST:
         case TOK_SCAN_FIRST:
+        case TOK_LBRACKET:  // Bracket indexing: A[I]
             return BP_POSTFIX_OP;
 
         // Infix dyadic operators (different binding powers)

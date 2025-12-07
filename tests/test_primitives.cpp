@@ -590,9 +590,9 @@ TEST_F(PrimitivesTest, Iota) {
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
     EXPECT_EQ(vec->rows(), 5);
-    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*vec)(1, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);  // 1-based per ISO 13751
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 5.0);
 
 }
 
@@ -1159,7 +1159,7 @@ TEST_F(PrimitivesTest, BroadcastEmptyVector) {
 // ============================================================================
 
 TEST_F(PrimitivesTest, CompositionIotaReshape) {
-    // ⍳12 → 0 1 2 3 4 5 6 7 8 9 10 11 (0-indexed)
+    // ⍳12 → 1 2 3 4 5 6 7 8 9 10 11 12 (1-based per ISO 13751)
     Value* n = machine->heap->allocate_scalar(12.0);
     fn_iota(machine, n);
 
@@ -1177,8 +1177,8 @@ TEST_F(PrimitivesTest, CompositionIotaReshape) {
     const Eigen::MatrixXd* mat = reshaped->as_matrix();
     EXPECT_EQ(mat->rows(), 3);
     EXPECT_EQ(mat->cols(), 4);
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*mat)(2, 3), 11.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 3), 12.0);
 
 }
 
@@ -3089,19 +3089,19 @@ TEST_F(PrimitivesTest, CircularRegistered) {
 // ========================================================================
 
 TEST_F(PrimitivesTest, RollScalar) {
-    // ?6 returns random integer in [0,6)
+    // ?6 returns random integer in [1,6] (1-based per ISO 13751)
     Value* arg = machine->heap->allocate_scalar(6.0);
     fn_roll(machine, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     double result = machine->result->as_scalar();
-    EXPECT_GE(result, 0.0);
-    EXPECT_LT(result, 6.0);
+    EXPECT_GE(result, 1.0);  // 1-based per ISO 13751 (⎕IO=1)
+    EXPECT_LE(result, 6.0);
     EXPECT_EQ(result, std::floor(result));  // Should be integer
 }
 
 TEST_F(PrimitivesTest, RollVector) {
-    // ?3 3 3 returns vector of random integers in [0,3)
+    // ?3 3 3 returns vector of random integers in [1,3] (1-based per ISO 13751)
     Eigen::VectorXd v(3);
     v << 3.0, 3.0, 3.0;
     Value* arg = machine->heap->allocate_vector(v);
@@ -3112,8 +3112,8 @@ TEST_F(PrimitivesTest, RollVector) {
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 3);
     for (int i = 0; i < 3; ++i) {
-        EXPECT_GE((*res)(i, 0), 0.0);
-        EXPECT_LT((*res)(i, 0), 3.0);
+        EXPECT_GE((*res)(i, 0), 1.0);  // 1-based per ISO 13751 (⎕IO=1)
+        EXPECT_LE((*res)(i, 0), 3.0);
         EXPECT_EQ((*res)(i, 0), std::floor((*res)(i, 0)));
     }
 }
@@ -3140,7 +3140,7 @@ TEST_F(PrimitivesTest, RollErrorNegative) {
 // ========================================================================
 
 TEST_F(PrimitivesTest, DealBasic) {
-    // 3?10 returns 3 unique random integers from [0,10)
+    // 3?10 returns 3 unique random integers from [1,10] (1-based per ISO 13751)
     Value* count = machine->heap->allocate_scalar(3.0);
     Value* range = machine->heap->allocate_scalar(10.0);
 
@@ -3150,10 +3150,10 @@ TEST_F(PrimitivesTest, DealBasic) {
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 3);
 
-    // All values should be in range [0,10)
+    // All values should be in range [1,10] (1-based per ISO 13751)
     for (int i = 0; i < 3; ++i) {
-        EXPECT_GE((*res)(i, 0), 0.0);
-        EXPECT_LT((*res)(i, 0), 10.0);
+        EXPECT_GE((*res)(i, 0), 1.0);  // 1-based per ISO 13751 (⎕IO=1)
+        EXPECT_LE((*res)(i, 0), 10.0);
     }
 
     // All values should be unique
@@ -3178,7 +3178,7 @@ TEST_F(PrimitivesTest, DealEmpty) {
 }
 
 TEST_F(PrimitivesTest, DealAll) {
-    // 5?5 returns all 5 values (permutation)
+    // 5?5 returns all 5 values (permutation of 1-5 per ISO 13751)
     Value* count = machine->heap->allocate_scalar(5.0);
     Value* range = machine->heap->allocate_scalar(5.0);
 
@@ -3188,13 +3188,13 @@ TEST_F(PrimitivesTest, DealAll) {
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 5);
 
-    // All values 0-4 should appear exactly once
+    // All values 1-5 should appear exactly once (1-based per ISO 13751)
     Eigen::VectorXd counts = Eigen::VectorXd::Zero(5);
     for (int i = 0; i < 5; ++i) {
         int val = static_cast<int>((*res)(i, 0));
-        EXPECT_GE(val, 0);
-        EXPECT_LT(val, 5);
-        counts(val) += 1.0;
+        EXPECT_GE(val, 1);  // 1-based per ISO 13751 (⎕IO=1)
+        EXPECT_LE(val, 5);
+        counts(val - 1) += 1.0;  // Adjust for 1-based
     }
     for (int i = 0; i < 5; ++i) {
         EXPECT_EQ(counts(i), 1.0);
@@ -3691,4 +3691,229 @@ TEST_F(PrimitivesTest, ExecutePushesContination) {
 
 TEST_F(PrimitivesTest, ExecuteRegistered) {
     ASSERT_NE(machine->env->lookup("⍎"), nullptr);
+}
+
+// ============================================================================
+// Squad (Indexing) Tests - ⌷
+// ============================================================================
+
+TEST_F(PrimitivesTest, SquadRegistered) {
+    // ⌷ should be registered in the environment
+    ASSERT_NE(machine->env->lookup("⌷"), nullptr);
+}
+
+TEST_F(PrimitivesTest, SquadVectorScalarIndex) {
+    // (1 2 3 4 5)[3] → 3  (1-based indexing)
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* arr = machine->heap->allocate_vector(v);
+    Value* idx = machine->heap->allocate_scalar(3.0);
+
+    fn_squad(machine, arr, idx);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, SquadVectorVectorIndex) {
+    // (10 20 30 40 50)[2 4] → 20 40
+    Eigen::VectorXd v(5);
+    v << 10.0, 20.0, 30.0, 40.0, 50.0;
+    Value* arr = machine->heap->allocate_vector(v);
+
+    Eigen::VectorXd idx_v(2);
+    idx_v << 2.0, 4.0;
+    Value* idx = machine->heap->allocate_vector(idx_v);
+
+    fn_squad(machine, arr, idx);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->data.matrix->size(), 2);
+    EXPECT_DOUBLE_EQ((*machine->result->data.matrix)(0, 0), 20.0);
+    EXPECT_DOUBLE_EQ((*machine->result->data.matrix)(1, 0), 40.0);
+}
+
+TEST_F(PrimitivesTest, SquadVectorFirstElement) {
+    // (5 6 7)[1] → 5  (first element, 1-based)
+    Eigen::VectorXd v(3);
+    v << 5.0, 6.0, 7.0;
+    Value* arr = machine->heap->allocate_vector(v);
+    Value* idx = machine->heap->allocate_scalar(1.0);
+
+    fn_squad(machine, arr, idx);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, SquadVectorLastElement) {
+    // (5 6 7)[3] → 7  (last element)
+    Eigen::VectorXd v(3);
+    v << 5.0, 6.0, 7.0;
+    Value* arr = machine->heap->allocate_vector(v);
+    Value* idx = machine->heap->allocate_scalar(3.0);
+
+    fn_squad(machine, arr, idx);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 7.0);
+}
+
+TEST_F(PrimitivesTest, SquadOutOfBoundsError) {
+    // (1 2 3)[5] → INDEX ERROR
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* arr = machine->heap->allocate_vector(v);
+    Value* idx = machine->heap->allocate_scalar(5.0);
+
+    fn_squad(machine, arr, idx);
+
+    // Should push ThrowErrorK
+    ASSERT_FALSE(machine->kont_stack.empty());
+    auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(k, nullptr);
+}
+
+TEST_F(PrimitivesTest, SquadZeroIndexError) {
+    // (1 2 3)[0] → INDEX ERROR (APL is 1-based)
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* arr = machine->heap->allocate_vector(v);
+    Value* idx = machine->heap->allocate_scalar(0.0);
+
+    fn_squad(machine, arr, idx);
+
+    // Should push ThrowErrorK
+    ASSERT_FALSE(machine->kont_stack.empty());
+    auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(k, nullptr);
+}
+
+// ============================================================================
+// Squad String Indexing Tests
+// ============================================================================
+
+TEST_F(PrimitivesTest, SquadStringScalarIndex) {
+    // 'hello'[2] → 'e'
+    Value* str = machine->heap->allocate_string("hello");
+    Value* idx = machine->heap->allocate_scalar(2.0);
+
+    fn_squad(machine, str, idx);
+
+    ASSERT_EQ(machine->result->tag, ValueType::STRING);
+    EXPECT_STREQ(machine->result->data.string, "e");
+}
+
+TEST_F(PrimitivesTest, SquadStringFirstChar) {
+    // 'hello'[1] → 'h'
+    Value* str = machine->heap->allocate_string("hello");
+    Value* idx = machine->heap->allocate_scalar(1.0);
+
+    fn_squad(machine, str, idx);
+
+    ASSERT_EQ(machine->result->tag, ValueType::STRING);
+    EXPECT_STREQ(machine->result->data.string, "h");
+}
+
+TEST_F(PrimitivesTest, SquadStringLastChar) {
+    // 'hello'[5] → 'o'
+    Value* str = machine->heap->allocate_string("hello");
+    Value* idx = machine->heap->allocate_scalar(5.0);
+
+    fn_squad(machine, str, idx);
+
+    ASSERT_EQ(machine->result->tag, ValueType::STRING);
+    EXPECT_STREQ(machine->result->data.string, "o");
+}
+
+TEST_F(PrimitivesTest, SquadStringVectorIndex) {
+    // 'hello'[1 3 5] → 'hlo'
+    Value* str = machine->heap->allocate_string("hello");
+    Eigen::VectorXd idx_v(3);
+    idx_v << 1.0, 3.0, 5.0;
+    Value* idx = machine->heap->allocate_vector(idx_v);
+
+    fn_squad(machine, str, idx);
+
+    ASSERT_EQ(machine->result->tag, ValueType::STRING);
+    EXPECT_STREQ(machine->result->data.string, "hlo");
+}
+
+TEST_F(PrimitivesTest, SquadStringOutOfBoundsError) {
+    // 'hi'[5] → INDEX ERROR
+    Value* str = machine->heap->allocate_string("hi");
+    Value* idx = machine->heap->allocate_scalar(5.0);
+
+    fn_squad(machine, str, idx);
+
+    ASSERT_FALSE(machine->kont_stack.empty());
+    auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(k, nullptr);
+}
+
+// ============================================================================
+// Bracket Indexing Syntax Tests (via parser)
+// ============================================================================
+
+TEST_F(PrimitivesTest, BracketIndexVectorScalar) {
+    // (1 2 3 4 5)[3] → 3
+    Value* result = machine->eval("(1 2 3 4 5)[3]");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, BracketIndexVectorVector) {
+    // (10 20 30)[1 3] → 10 30
+    Value* result = machine->eval("(10 20 30)[1 3]");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->data.matrix->size(), 2);
+    EXPECT_DOUBLE_EQ((*result->data.matrix)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*result->data.matrix)(1, 0), 30.0);
+}
+
+TEST_F(PrimitivesTest, BracketIndexIota) {
+    // (⍳5)[3] → 3
+    Value* result = machine->eval("(⍳5)[3]");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, BracketIndexVariable) {
+    // x←1 2 3 4 5 ⋄ x[2]
+    machine->eval("x←1 2 3 4 5");
+    Value* result = machine->eval("x[2]");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+TEST_F(PrimitivesTest, BracketIndexString) {
+    // 'hello'[2] → 'e'
+    Value* result = machine->eval("'hello'[2]");
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->tag, ValueType::STRING);
+    EXPECT_STREQ(result->data.string, "e");
+}
+
+TEST_F(PrimitivesTest, BracketIndexStringMultiple) {
+    // 'abcde'[5 4 3 2 1] → 'edcba'
+    Value* result = machine->eval("'abcde'[5 4 3 2 1]");
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->tag, ValueType::STRING);
+    EXPECT_STREQ(result->data.string, "edcba");
+}
+
+TEST_F(PrimitivesTest, BracketIndexChained) {
+    // ((1 2 3)(4 5 6))[2] - would need nested arrays, skip for now
+    // Instead test: (⍳10)[⍳3] → 1 2 3
+    Value* result = machine->eval("(⍳10)[⍳3]");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->data.matrix->size(), 3);
+    EXPECT_DOUBLE_EQ((*result->data.matrix)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*result->data.matrix)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*result->data.matrix)(2, 0), 3.0);
 }

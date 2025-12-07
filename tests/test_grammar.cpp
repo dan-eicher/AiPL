@@ -294,14 +294,14 @@ TEST_F(GrammarTest, GPrimeNullCase_Plus) {
 
 TEST_F(GrammarTest, GPrimeNullCase_Iota) {
     // "⍳5" at top level: ⍳ has both forms, creates G_PRIME(⍳, 5)
-    // y is null → apply monadic ⍳ → 0 1 2 3 4
+    // y is null → apply monadic ⍳ → 1 2 3 4 5
     Value* result = eval("⍳5");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 5);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*m)(4, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 5.0);
 }
 
 TEST_F(GrammarTest, GPrimeNullCase_Minus) {
@@ -385,34 +385,34 @@ TEST_F(GrammarTest, GPrimeFunctionCase_IotaLessThan) {
     // "(⍳5) < 3" is the canonical test case
     // Parse: ((⍳ 5) <) 3
     // 1. ⍳ sees 5 (basic) → creates G_PRIME(⍳, 5)
-    // 2. G_PRIME sees < (function) → apply ⍳ monadically: ⍳5 = 0 1 2 3 4
-    //    Then < sees 0 1 2 3 4 (basic) → creates G_PRIME(<, 0 1 2 3 4)
-    // 3. G_PRIME(<, 0 1 2 3 4) sees 3 (basic) → dyadic <: (0 1 2 3 4) < 3
-    // Result: 1 1 1 0 0
+    // 2. G_PRIME sees < (function) → apply ⍳ monadically: ⍳5 = 1 2 3 4 5
+    //    Then < sees 1 2 3 4 5 (basic) → creates G_PRIME(<, 1 2 3 4 5)
+    // 3. G_PRIME(<, 1 2 3 4 5) sees 3 (basic) → dyadic <: (1 2 3 4 5) < 3
+    // Result: 1 1 0 0 0
     Value* result = eval("(⍳5) < 3");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 5);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // 0 < 3 = true
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 1 < 3 = true
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 2 < 3 = true
-    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);  // 3 < 3 = false
-    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 4 < 3 = false
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // 1 < 3 = true
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 2 < 3 = true
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 0.0);  // 3 < 3 = false
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);  // 4 < 3 = false
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 5 < 3 = false
 }
 
 TEST_F(GrammarTest, GPrimeFunctionCase_IotaEquals) {
-    // "(⍳5) = 2" → ⍳5 = 0 1 2 3 4, then (0 1 2 3 4) = 2 → 0 0 1 0 0
+    // "(⍳5) = 2" → ⍳5 = 1 2 3 4 5, then (1 2 3 4 5) = 2 → 0 1 0 0 0
     Value* result = eval("(⍳5) = 2");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 5);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);  // 0 = 2 → 0
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);  // 1 = 2 → 0
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 2 = 2 → 1
-    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);  // 3 = 2 → 0
-    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 4 = 2 → 0
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);  // 1 = 2 → 0
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 2 = 2 → 1
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 0.0);  // 3 = 2 → 0
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);  // 4 = 2 → 0
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 5 = 2 → 0
 }
 
 TEST_F(GrammarTest, GPrimeFunctionCase_NegateAdd) {
@@ -428,16 +428,16 @@ TEST_F(GrammarTest, GPrimeFunctionCase_NegateAdd) {
 }
 
 TEST_F(GrammarTest, GPrimeFunctionCase_IotaTimes) {
-    // "(⍳4) × 2" → (0 1 2 3) × 2 → 0 2 4 6
+    // "(⍳4) × 2" → (1 2 3 4) × 2 → 2 4 6 8
     Value* result = eval("(⍳4) × 2");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 4);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 4.0);
-    EXPECT_DOUBLE_EQ((*m)(3, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 8.0);
 }
 
 TEST_F(GrammarTest, GPrimeFunctionCase_ChainedComposition) {
@@ -454,43 +454,43 @@ TEST_F(GrammarTest, GPrimeFunctionCase_ChainedComposition) {
 
 TEST_F(GrammarTest, GPrimeFunctionCase_IotaWithOperator) {
     // "(⍳5) +/ 1 2 3 4 5" - tests that iota resolves before operator expression
-    // ⍳5 → 0 1 2 3 4, then... wait this is complex
-    // Let's test simpler: "+/ ⍳5" should sum 0+1+2+3+4 = 10
+    // ⍳5 → 1 2 3 4 5, then... wait this is complex
+    // Let's test simpler: "+/ ⍳5" should sum 1+2+3+4+5 = 15
     Value* result = eval("+/ ⍳5");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
 }
 
 TEST_F(GrammarTest, GPrimeFunctionCase_IotaPlusIota) {
-    // "(⍳3) + ⍳3" → (0 1 2) + (0 1 2) → 0 2 4
+    // "(⍳3) + ⍳3" → (1 2 3) + (1 2 3) → 2 4 6
     // First ⍳3 creates G_PRIME, sees + (function), applies monadically
-    // + creates G_PRIME(+, 0 1 2), sees ⍳ (function), applies monadically
-    // But ⍳ 3 creates G_PRIME(⍳, 3), which at end resolves to 0 1 2
-    // Then dyadic +: (0 1 2) + (0 1 2) = 0 2 4
+    // + creates G_PRIME(+, 1 2 3), sees ⍳ (function), applies monadically
+    // But ⍳ 3 creates G_PRIME(⍳, 3), which at end resolves to 1 2 3
+    // Then dyadic +: (1 2 3) + (1 2 3) = 2 4 6
     Value* result = eval("(⍳3) + ⍳3");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 3);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);
 }
 
 TEST_F(GrammarTest, GPrimeFunctionCase_Member) {
-    // "⍳5 ∊ 2 3 7" → first ⍳5 = 0 1 2 3 4, then membership test
-    // (0 1 2 3 4) ∊ (2 3 7) → 0 0 1 1 0
+    // "⍳5 ∊ 2 3 7" → first ⍳5 = 1 2 3 4 5, then membership test
+    // (1 2 3 4 5) ∊ (2 3 7) → 0 1 1 0 0
     Value* result = eval("(⍳5) ∊ 2 3 7");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 5);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);  // 0 not in {2,3,7}
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);  // 1 not in {2,3,7}
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 2 in {2,3,7}
-    EXPECT_DOUBLE_EQ((*m)(3, 0), 1.0);  // 3 in {2,3,7}
-    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 4 not in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);  // 1 not in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 2 in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 3 in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);  // 4 not in {2,3,7}
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);  // 5 not in {2,3,7}
 }
 
 // ---------------------------------------------------------------------------
@@ -499,29 +499,29 @@ TEST_F(GrammarTest, GPrimeFunctionCase_Member) {
 
 TEST_F(GrammarTest, GPrimeMixedExpression) {
     // "1 + (⍳3) × 2" → APL right-to-left: 1 + ((⍳3) × 2)
-    // (⍳3) × 2 → (0 1 2) × 2 → 0 2 4
-    // 1 + (0 2 4) → 1 3 5
+    // (⍳3) × 2 → (1 2 3) × 2 → 2 4 6
+    // 1 + (2 4 6) → 3 5 7
     Value* result = eval("1 + (⍳3) × 2");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 3);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
-    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 7.0);
 }
 
 TEST_F(GrammarTest, GPrimeWithReduce) {
-    // "+/ (⍳4) × 2" → ⍳4 = 0 1 2 3, × 2 → 0 2 4 6, +/ → 12
+    // "+/ (⍳4) × 2" → ⍳4 = 1 2 3 4, × 2 → 2 4 6 8, +/ → 20
     Value* result = eval("+/ (⍳4) × 2");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
 }
 
 TEST_F(GrammarTest, GPrimeComparisonInExpression) {
     // Test the original failing case more thoroughly
-    // "1 + (⍳5) < 3" → (⍳5) < 3 = 1 1 1 0 0, then 1 + that = 2 2 2 1 1
+    // "1 + (⍳5) < 3" → (⍳5) < 3 = 1 1 0 0 0, then 1 + that = 2 2 1 1 1
     Value* result = eval("1 + (⍳5) < 3");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
@@ -529,17 +529,17 @@ TEST_F(GrammarTest, GPrimeComparisonInExpression) {
     EXPECT_EQ(m->rows(), 5);
     EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);
     EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);
     EXPECT_DOUBLE_EQ((*m)(3, 0), 1.0);
     EXPECT_DOUBLE_EQ((*m)(4, 0), 1.0);
 }
 
 TEST_F(GrammarTest, GPrimeLogicalExpression) {
-    // "(⍳5) > 2 ∧ (⍳5) < 4" - should find 3 (indices where 2 < x < 4)
-    // ⍳5 = 0 1 2 3 4
-    // (⍳5) > 2 = 0 0 0 1 1
-    // (⍳5) < 4 = 1 1 1 1 0
-    // Result: 0 0 0 1 0 (only index 3 satisfies both)
+    // "(⍳5) > 2 ∧ (⍳5) < 4" - should find 3 (values where 2 < x < 4)
+    // ⍳5 = 1 2 3 4 5
+    // (⍳5) > 2 = 0 0 1 1 1
+    // (⍳5) < 4 = 1 1 1 0 0
+    // Result: 0 0 1 0 0 (only value 3 satisfies both)
     Value* result = eval("((⍳5) > 2) ∧ (⍳5) < 4");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
@@ -547,8 +547,8 @@ TEST_F(GrammarTest, GPrimeLogicalExpression) {
     EXPECT_EQ(m->rows(), 5);
     EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
     EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*m)(2, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*m)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 0.0);
     EXPECT_DOUBLE_EQ((*m)(4, 0), 0.0);
 }
 
@@ -675,9 +675,9 @@ TEST_F(GrammarTest, RankMonadicFullRank) {
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 2);
     EXPECT_EQ(m->cols(), 3);
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);   // -0
-    EXPECT_DOUBLE_EQ((*m)(0, 1), -1.0);  // -1
-    EXPECT_DOUBLE_EQ((*m)(1, 2), -5.0);  // -5
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);  // -1
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -2.0);  // -2
+    EXPECT_DOUBLE_EQ((*m)(1, 2), -6.0);  // -6
 }
 
 TEST_F(GrammarTest, RankMonadicRank0Vector) {
@@ -1171,11 +1171,11 @@ TEST_F(GrammarTest, ExecuteVector) {
 }
 
 TEST_F(GrammarTest, ExecuteWithReduce) {
-    // ⍎'+/⍳5' → 10 (sum of 0 1 2 3 4)
+    // ⍎'+/⍳5' → 15 (sum of 1 2 3 4 5)
     Value* result = eval("⍎'+/⍳5'");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
 }
 
 TEST_F(GrammarTest, ExecuteComplex) {
