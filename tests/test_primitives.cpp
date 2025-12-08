@@ -4316,3 +4316,108 @@ TEST_F(PrimitivesTest, DropFromEmpty) {
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 0);
 }
+
+// ============================================================================
+// Phase 4: Scalar Extension Systematic Tests (ISO 13751)
+// ============================================================================
+
+// Test all 9 argument combinations for all dyadic scalar functions:
+// 1. scalar OP scalar     - valid
+// 2. scalar OP vector     - valid (scalar extension)
+// 3. scalar OP matrix     - valid (scalar extension)
+// 4. vector OP scalar     - valid (scalar extension)
+// 5. vector OP vector     - valid (same length)
+// 6. vector OP matrix     - ERROR (shape mismatch)
+// 7. matrix OP scalar     - valid (scalar extension)
+// 8. matrix OP vector     - ERROR (shape mismatch)
+// 9. matrix OP matrix     - valid (same shape)
+
+TEST_F(PrimitivesTest, ScalarExtensionAllCombinations) {
+    // All dyadic scalar functions to test
+    std::vector<std::string> ops = {
+        "+", "-", "×", "÷", "*", "⌈", "⌊", "|",
+        "=", "≠", "<", ">", "≤", "≥",
+        "∧", "∨", "⍲", "⍱"
+    };
+
+    // Argument templates: {left, right, should_succeed}
+    struct TestCase {
+        std::string left;
+        std::string right;
+        bool should_succeed;
+        std::string description;
+    };
+
+    std::vector<TestCase> cases = {
+        {"5",           "3",           true,  "scalar-scalar"},
+        {"5",           "1 2 3",       true,  "scalar-vector"},
+        {"5",           "2 2⍴1 2 3 4", true,  "scalar-matrix"},
+        {"1 2 3",       "5",           true,  "vector-scalar"},
+        {"1 2 3",       "4 5 6",       true,  "vector-vector"},
+        {"1 2 3",       "2 2⍴1 2 3 4", false, "vector-matrix"},
+        {"2 2⍴1 2 3 4", "5",           true,  "matrix-scalar"},
+        {"2 2⍴1 2 3 4", "1 2 3",       false, "matrix-vector"},
+        {"2 2⍴1 2 3 4", "2 2⍴5 6 7 8", true,  "matrix-matrix"},
+    };
+
+    int total_tests = 0;
+    int passed_tests = 0;
+
+    for (const auto& op : ops) {
+        for (const auto& tc : cases) {
+            total_tests++;
+            std::string expr = "(" + tc.left + ")" + op + "(" + tc.right + ")";
+
+            if (tc.should_succeed) {
+                try {
+                    Value* result = machine->eval(expr);
+                    if (result != nullptr) {
+                        passed_tests++;
+                    } else {
+                        ADD_FAILURE() << "NULL result for " << op << " " << tc.description
+                                      << ": " << expr;
+                    }
+                } catch (const std::exception& e) {
+                    ADD_FAILURE() << "Unexpected error for " << op << " " << tc.description
+                                  << ": " << expr << " - " << e.what();
+                }
+            } else {
+                try {
+                    machine->eval(expr);
+                    ADD_FAILURE() << "Expected error for " << op << " " << tc.description
+                                  << ": " << expr;
+                } catch (const std::runtime_error&) {
+                    passed_tests++;  // Expected error occurred
+                }
+            }
+        }
+    }
+
+    // Summary: 18 ops × 9 combinations = 162 sub-tests
+    EXPECT_EQ(passed_tests, total_tests)
+        << "Failed " << (total_tests - passed_tests) << " of " << total_tests << " tests";
+}
+
+// Additional test for vector length mismatch
+TEST_F(PrimitivesTest, VectorLengthMismatch) {
+    std::vector<std::string> ops = {"+", "-", "×", "÷", "*", "⌈", "⌊", "|",
+                                     "=", "≠", "<", ">", "≤", "≥", "∧", "∨"};
+
+    for (const auto& op : ops) {
+        std::string expr = "1 2 3" + op + "1 2";
+        EXPECT_THROW(machine->eval(expr), std::runtime_error)
+            << "Expected LENGTH ERROR for mismatched vectors with " << op;
+    }
+}
+
+// Additional test for matrix shape mismatch
+TEST_F(PrimitivesTest, MatrixShapeMismatch) {
+    std::vector<std::string> ops = {"+", "-", "×", "÷", "*", "⌈", "⌊", "|",
+                                     "=", "≠", "<", ">", "≤", "≥", "∧", "∨"};
+
+    for (const auto& op : ops) {
+        std::string expr = "(2 3⍴⍳6)" + op + "(3 2⍴⍳6)";
+        EXPECT_THROW(machine->eval(expr), std::runtime_error)
+            << "Expected LENGTH ERROR for mismatched matrices with " << op;
+    }
+}
