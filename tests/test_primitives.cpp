@@ -4421,3 +4421,116 @@ TEST_F(PrimitivesTest, MatrixShapeMismatch) {
             << "Expected LENGTH ERROR for mismatched matrices with " << op;
     }
 }
+
+// ============================================================================
+// Phase 5: Index Origin (⎕IO) Tests via C++ API
+// ============================================================================
+
+TEST_F(PrimitivesTest, IotaIO1) {
+    // Default ⎕IO=1: ⍳3 → 1 2 3
+    EXPECT_EQ(machine->io, 1);  // Verify default
+    Value* result = machine->eval("⍳3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, IotaIO0) {
+    // ⎕IO=0: ⍳3 → 0 1 2
+    machine->io = 0;
+    Value* result = machine->eval("⍳3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 2.0);
+}
+
+TEST_F(PrimitivesTest, GradeUpIO1) {
+    // Default ⎕IO=1: ⍋3 1 2 → 2 3 1
+    EXPECT_EQ(machine->io, 1);
+    Value* result = machine->eval("⍋3 1 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, GradeUpIO0) {
+    // ⎕IO=0: ⍋3 1 2 → 1 2 0
+    machine->io = 0;
+    Value* result = machine->eval("⍋3 1 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);
+}
+
+TEST_F(PrimitivesTest, GradeDownIO0) {
+    // ⎕IO=0: ⍒3 1 2 → 0 2 1
+    machine->io = 0;
+    Value* result = machine->eval("⍒3 1 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, IndexingIO1) {
+    // Default ⎕IO=1: (1 2 3)[2] → 2
+    EXPECT_EQ(machine->io, 1);
+    Value* result = machine->eval("(1 2 3)[2]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+TEST_F(PrimitivesTest, IndexingIO0) {
+    // ⎕IO=0: (1 2 3)[0] → 1
+    machine->io = 0;
+    Value* result = machine->eval("(1 2 3)[0]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, RollIO0) {
+    // ⎕IO=0: ?5 should return values in 0..4
+    machine->io = 0;
+    for (int i = 0; i < 20; i++) {
+        Value* result = machine->eval("?5");
+        ASSERT_NE(result, nullptr);
+        EXPECT_TRUE(result->is_scalar());
+        double val = result->as_scalar();
+        EXPECT_GE(val, 0.0);
+        EXPECT_LE(val, 4.0);
+    }
+}
+
+TEST_F(PrimitivesTest, RollIO1) {
+    // ⎕IO=1: ?5 should return values in 1..5
+    EXPECT_EQ(machine->io, 1);
+    for (int i = 0; i < 20; i++) {
+        Value* result = machine->eval("?5");
+        ASSERT_NE(result, nullptr);
+        EXPECT_TRUE(result->is_scalar());
+        double val = result->as_scalar();
+        EXPECT_GE(val, 1.0);
+        EXPECT_LE(val, 5.0);
+    }
+}
