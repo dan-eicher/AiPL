@@ -94,9 +94,15 @@ Lexer::Lexer(const char* input)
     ws_inline = [ \t]+;  // Inline whitespace (not newline)
     number_vector = number (ws_inline number)+;
 
-    // Names (identifiers)
-    alpha = [a-zA-Z_];
-    alnum = [a-zA-Z0-9_];
+    // Names (identifiers) - Unicode-aware
+    // Basic Latin: A-Z, a-z
+    // Latin-1 Supplement: À-Ö, Ø-ö, ø-ÿ (excluding × at D7 and ÷ at F7)
+    // Greek: Α-Ω, α-ω (traditional APL used Greek letters)
+    latin_letter = [A-Za-z];
+    latin1_letter = [\xC0-\xD6\xD8-\xF6\xF8-\xFF];
+    greek_letter = [\u0391-\u03A9\u03B1-\u03C9];
+    alpha = latin_letter | latin1_letter | greek_letter | [_];
+    alnum = alpha | [0-9];
     name = alpha alnum*;
 
     // String literals (APL uses single quotes, '' for escaped quote)
