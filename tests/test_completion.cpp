@@ -35,7 +35,7 @@ TEST_F(CompletionTest, ErrorPropagationUncaught) {
     machine->push_kont(machine->heap->allocate<ThrowErrorK>("Test error"));
 
     // Execute - should throw C++ exception since no CatchErrorK
-    EXPECT_THROW(machine->execute(), std::runtime_error);
+    EXPECT_THROW(machine->execute(), APLError);
 }
 
 // Test error propagation with catch
@@ -69,7 +69,7 @@ TEST_F(CompletionTest, ErrorMessagePreserved) {
     try {
         machine->execute();
         FAIL() << "Expected exception to be thrown";
-    } catch (const std::runtime_error& e) {
+    } catch (const APLError& e) {
         std::string msg(e.what());
         EXPECT_TRUE(msg.find("Custom error message") != std::string::npos);
     }
@@ -104,7 +104,7 @@ TEST_F(CompletionTest, ErrorRespectsLoopBoundaries) {
     machine->push_kont(machine->heap->allocate<ThrowErrorK>("Error in loop"));
 
     // Should throw because CatchBreakK doesn't catch THROW
-    EXPECT_THROW(machine->execute(), std::runtime_error);
+    EXPECT_THROW(machine->execute(), APLError);
 }
 
 // ============================================================================
@@ -127,7 +127,7 @@ protected:
 
 // Test that parse errors are routed through ThrowErrorK (not nullptr return)
 TEST_F(UnifiedErrorTest, ParseErrorFlowsThroughThrowErrorK) {
-    EXPECT_THROW(machine->eval("@invalid@"), std::runtime_error);
+    EXPECT_THROW(machine->eval("@invalid@"), APLError);
 }
 
 // Test that parse error messages are preserved through ThrowErrorK
@@ -135,7 +135,7 @@ TEST_F(UnifiedErrorTest, ParseErrorMessagePreserved) {
     try {
         machine->eval("(2 + 3");
         FAIL() << "Expected exception for parse error";
-    } catch (const std::runtime_error& e) {
+    } catch (const APLError& e) {
         std::string msg(e.what());
         EXPECT_TRUE(msg.find("Expected") != std::string::npos ||
                     msg.find("')") != std::string::npos ||
@@ -173,7 +173,7 @@ TEST_F(UnifiedErrorTest, ParseAndRuntimeErrorsUnified) {
     bool parse_threw = false;
     try {
         machine->eval("@invalid@");
-    } catch (const std::runtime_error&) {
+    } catch (const APLError&) {
         parse_threw = true;
     }
 
@@ -181,7 +181,7 @@ TEST_F(UnifiedErrorTest, ParseAndRuntimeErrorsUnified) {
     bool runtime_threw = false;
     try {
         machine2.eval("undefined_var_xyz");
-    } catch (const std::runtime_error&) {
+    } catch (const APLError&) {
         runtime_threw = true;
     }
 
@@ -192,20 +192,20 @@ TEST_F(UnifiedErrorTest, ParseAndRuntimeErrorsUnified) {
 
 // Test that empty parentheses parse error flows through ThrowErrorK
 TEST_F(UnifiedErrorTest, EmptyParensErrorThroughThrowErrorK) {
-    EXPECT_THROW(machine->eval("()"), std::runtime_error);
+    EXPECT_THROW(machine->eval("()"), APLError);
 }
 
 // Test that unmatched closing paren error flows through ThrowErrorK
 TEST_F(UnifiedErrorTest, UnmatchedClosingParenErrorThroughThrowErrorK) {
-    EXPECT_THROW(machine->eval("2 + 3)"), std::runtime_error);
+    EXPECT_THROW(machine->eval("2 + 3)"), APLError);
 }
 
 // Test that multiple parse errors in sequence all throw properly
 TEST_F(UnifiedErrorTest, MultipleParseErrorsInSequence) {
     // Each should throw, and machine should be reusable
-    EXPECT_THROW(machine->eval("@"), std::runtime_error);
-    EXPECT_THROW(machine->eval("("), std::runtime_error);
-    EXPECT_THROW(machine->eval(")"), std::runtime_error);
+    EXPECT_THROW(machine->eval("@"), APLError);
+    EXPECT_THROW(machine->eval("("), APLError);
+    EXPECT_THROW(machine->eval(")"), APLError);
 
     // Valid expression should still work after errors
     Value* result = nullptr;

@@ -9,8 +9,20 @@
 #include <vector>
 #include <unordered_map>
 #include <string>
+#include <exception>
 
 namespace apl {
+
+// APLError - Exception for APL runtime errors (DOMAIN ERROR, etc.)
+// These are user-visible errors that should be caught and displayed.
+// Distinct from std::runtime_error which indicates VM bugs.
+class APLError : public std::exception {
+    std::string message;
+public:
+    explicit APLError(const char* msg) : message(msg) {}
+    explicit APLError(const std::string& msg) : message(msg) {}
+    const char* what() const noexcept override { return message.c_str(); }
+};
 
 // Forward declaration
 class Parser;

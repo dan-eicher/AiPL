@@ -3,6 +3,8 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <string>
+#include <ostream>
 
 namespace apl {
 
@@ -160,5 +162,13 @@ private:
 
     void cleanup();  // Internal cleanup helper
 };
+
+// Value formatting for display
+// Returns APL-style representation: "1 2 3" for vectors, multi-line for matrices
+std::string format_value(const Value* v);
+
+// Stream output operators
+std::ostream& operator<<(std::ostream& os, const Value* v);
+std::ostream& operator<<(std::ostream& os, const Value& v);
 
 } // namespace apl

@@ -559,7 +559,7 @@ TEST_F(OperatorsTest, NwiseNegativeTriplets) {
 
 TEST_F(OperatorsTest, NwiseTooLarge) {
     // 5+/1 2 3 → DOMAIN ERROR (window size > array length)
-    EXPECT_THROW(eval(machine, "5+/1 2 3"), std::runtime_error);
+    EXPECT_THROW(eval(machine, "5+/1 2 3"), APLError);
 }
 
 TEST_F(OperatorsTest, NwiseOnScalar) {
@@ -801,22 +801,22 @@ TEST_F(OperatorsTest, ReduceEmptyPower) {
 
 TEST_F(OperatorsTest, ReduceEmptyLog) {
     // ⍟/⍳0 → DOMAIN ERROR (no identity element)
-    EXPECT_THROW(eval(machine, "⍟/⍳0"), std::runtime_error);
+    EXPECT_THROW(eval(machine, "⍟/⍳0"), APLError);
 }
 
 TEST_F(OperatorsTest, ReduceEmptyCircle) {
     // ○/⍳0 → DOMAIN ERROR (no identity element)
-    EXPECT_THROW(eval(machine, "○/⍳0"), std::runtime_error);
+    EXPECT_THROW(eval(machine, "○/⍳0"), APLError);
 }
 
 TEST_F(OperatorsTest, ReduceEmptyNand) {
     // ⍲/⍳0 → DOMAIN ERROR (no identity element)
-    EXPECT_THROW(eval(machine, "⍲/⍳0"), std::runtime_error);
+    EXPECT_THROW(eval(machine, "⍲/⍳0"), APLError);
 }
 
 TEST_F(OperatorsTest, ReduceEmptyNor) {
     // ⍱/⍳0 → DOMAIN ERROR (no identity element)
-    EXPECT_THROW(eval(machine, "⍱/⍳0"), std::runtime_error);
+    EXPECT_THROW(eval(machine, "⍱/⍳0"), APLError);
 }
 
 int main(int argc, char** argv) {

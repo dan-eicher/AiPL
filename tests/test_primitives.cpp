@@ -3994,46 +3994,46 @@ TEST_F(PrimitivesTest, TableMatrix) {
 
 TEST_F(PrimitivesTest, DomainErrorReciprocalZero) {
     // ÷0 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("÷0"), std::runtime_error);
+    EXPECT_THROW(machine->eval("÷0"), APLError);
 }
 
 TEST_F(PrimitivesTest, DomainErrorDivideByZero) {
     // 5÷0 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("5÷0"), std::runtime_error);
+    EXPECT_THROW(machine->eval("5÷0"), APLError);
 }
 
 TEST_F(PrimitivesTest, DomainErrorZeroDivZero) {
     // 0÷0 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("0÷0"), std::runtime_error);
+    EXPECT_THROW(machine->eval("0÷0"), APLError);
 }
 
 // --- Logarithm Domain Errors ---
 
 TEST_F(PrimitivesTest, DomainErrorLogZero) {
     // ⍟0 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("⍟0"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍟0"), APLError);
 }
 
 TEST_F(PrimitivesTest, DomainErrorLogBaseOne) {
     // 1⍟5 → DOMAIN ERROR (log base 1 undefined)
-    EXPECT_THROW(machine->eval("1⍟5"), std::runtime_error);
+    EXPECT_THROW(machine->eval("1⍟5"), APLError);
 }
 
 TEST_F(PrimitivesTest, DomainErrorLogNegative) {
     // ⍟¯1 → DOMAIN ERROR (complex result)
-    EXPECT_THROW(machine->eval("⍟¯1"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍟¯1"), APLError);
 }
 
 // --- Factorial Domain Errors ---
 
 TEST_F(PrimitivesTest, DomainErrorFactorialNegInt) {
     // !¯1 → DOMAIN ERROR (negative integer)
-    EXPECT_THROW(machine->eval("!¯1"), std::runtime_error);
+    EXPECT_THROW(machine->eval("!¯1"), APLError);
 }
 
 TEST_F(PrimitivesTest, DomainErrorFactorialNegInt2) {
     // !¯2 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("!¯2"), std::runtime_error);
+    EXPECT_THROW(machine->eval("!¯2"), APLError);
 }
 
 TEST_F(PrimitivesTest, FactorialNegHalfValid) {
@@ -4049,12 +4049,12 @@ TEST_F(PrimitivesTest, FactorialNegHalfValid) {
 
 TEST_F(PrimitivesTest, DomainErrorIotaNegative) {
     // ⍳¯1 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("⍳¯1"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍳¯1"), APLError);
 }
 
 TEST_F(PrimitivesTest, DomainErrorIotaNonInteger) {
     // ⍳1.5 → DOMAIN ERROR (non-integer)
-    EXPECT_THROW(machine->eval("⍳1.5"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍳1.5"), APLError);
 }
 
 TEST_F(PrimitivesTest, IotaZeroValid) {
@@ -4069,24 +4069,24 @@ TEST_F(PrimitivesTest, IotaZeroValid) {
 
 TEST_F(PrimitivesTest, DomainErrorRollZero) {
     // ?0 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("?0"), std::runtime_error);
+    EXPECT_THROW(machine->eval("?0"), APLError);
 }
 
 TEST_F(PrimitivesTest, DomainErrorRollNegative) {
     // ?¯1 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("?¯1"), std::runtime_error);
+    EXPECT_THROW(machine->eval("?¯1"), APLError);
 }
 
 // --- Grade Rank Errors ---
 
 TEST_F(PrimitivesTest, RankErrorGradeUpScalar) {
     // ⍋5 → RANK ERROR (scalar)
-    EXPECT_THROW(machine->eval("⍋5"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍋5"), APLError);
 }
 
 TEST_F(PrimitivesTest, RankErrorGradeDownScalar) {
     // ⍒5 → RANK ERROR (scalar)
-    EXPECT_THROW(machine->eval("⍒5"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍒5"), APLError);
 }
 
 // ============================================================================
@@ -4386,7 +4386,7 @@ TEST_F(PrimitivesTest, ScalarExtensionAllCombinations) {
                     machine->eval(expr);
                     ADD_FAILURE() << "Expected error for " << op << " " << tc.description
                                   << ": " << expr;
-                } catch (const std::runtime_error&) {
+                } catch (const APLError&) {
                     passed_tests++;  // Expected error occurred
                 }
             }
@@ -4405,7 +4405,7 @@ TEST_F(PrimitivesTest, VectorLengthMismatch) {
 
     for (const auto& op : ops) {
         std::string expr = "1 2 3" + op + "1 2";
-        EXPECT_THROW(machine->eval(expr), std::runtime_error)
+        EXPECT_THROW(machine->eval(expr), APLError)
             << "Expected LENGTH ERROR for mismatched vectors with " << op;
     }
 }
@@ -4417,7 +4417,7 @@ TEST_F(PrimitivesTest, MatrixShapeMismatch) {
 
     for (const auto& op : ops) {
         std::string expr = "(2 3⍴⍳6)" + op + "(3 2⍴⍳6)";
-        EXPECT_THROW(machine->eval(expr), std::runtime_error)
+        EXPECT_THROW(machine->eval(expr), APLError)
             << "Expected LENGTH ERROR for mismatched matrices with " << op;
     }
 }

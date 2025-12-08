@@ -82,11 +82,12 @@ void PropagateCompletionK::invoke(Machine* machine) {
     }
 
     // No boundary found - this is an error (unhandled completion)
-    // For THROW completions, convert to C++ exception as last resort
+    // For THROW completions, throw APLError (user-visible error)
     if (completion->is_throw()) {
         const char* msg = completion->target ? completion->target : "Unknown error";
-        throw std::runtime_error(std::string("Uncaught APL error: ") + msg);
+        throw APLError(msg);
     }
+    // Other unhandled completions are VM bugs
     throw std::runtime_error("Unhandled completion: no matching boundary found");
 }
 

@@ -5,6 +5,9 @@
 #include "continuation.h"
 #include <cassert>
 #include <stdexcept>
+#include <sstream>
+#include <iomanip>
+#include <cmath>
 
 namespace apl {
 
@@ -231,6 +234,162 @@ Value* Value::to_string_value(Heap* heap) {
     }
 
     return heap->allocate_string(result.c_str());
+}
+
+// Helper: format a single number
+static std::string format_number(double d) {
+    // Check for special values
+    if (std::isinf(d)) {
+        return d > 0 ? "∞" : "¯∞";
+    }
+    if (std::isnan(d)) {
+        return "NaN";
+    }
+
+    // Check if it's an integer
+    if (d == std::floor(d) && std::abs(d) < 1e15) {
+        std::ostringstream oss;
+        if (d < 0) {
+            oss << "¯" << static_cast<long long>(-d);
+        } else {
+            oss << static_cast<long long>(d);
+        }
+        return oss.str();
+    }
+
+    // Format as floating point
+    std::ostringstream oss;
+    oss << std::setprecision(10);
+    if (d < 0) {
+        oss << "¯" << -d;
+    } else {
+        oss << d;
+    }
+    std::string s = oss.str();
+
+    // Remove trailing zeros after decimal point
+    if (s.find('.') != std::string::npos) {
+        size_t last = s.find_last_not_of('0');
+        if (last != std::string::npos && s[last] == '.') {
+            last--;  // Also remove the decimal point if nothing after
+        }
+        s = s.substr(0, last + 1);
+    }
+
+    return s;
+}
+
+// Helper: format a codepoint as a character (UTF-8)
+static std::string codepoint_to_utf8(uint32_t cp) {
+    std::string result;
+    if (cp < 0x80) {
+        result += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+        result += static_cast<char>(0xC0 | (cp >> 6));
+        result += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+        result += static_cast<char>(0xE0 | (cp >> 12));
+        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        result += static_cast<char>(0xF0 | (cp >> 18));
+        result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+    return result;
+}
+
+// Format a Value for display
+std::string format_value(const Value* v) {
+    if (!v) return "null";
+
+    switch (v->tag) {
+        case ValueType::SCALAR:
+            return format_number(v->data.scalar);
+
+        case ValueType::STRING:
+            // Return quoted string
+            return std::string("'") + v->data.string + "'";
+
+        case ValueType::VECTOR: {
+            const Eigen::MatrixXd* mat = v->as_matrix();
+            int n = mat->rows();
+
+            if (n == 0) return "⍬";  // Empty vector
+
+            std::ostringstream oss;
+            if (v->is_char_data()) {
+                // Character vector - display as string
+                oss << "'";
+                for (int i = 0; i < n; i++) {
+                    uint32_t cp = static_cast<uint32_t>((*mat)(i, 0));
+                    oss << codepoint_to_utf8(cp);
+                }
+                oss << "'";
+            } else {
+                // Numeric vector - space-separated
+                for (int i = 0; i < n; i++) {
+                    if (i > 0) oss << " ";
+                    oss << format_number((*mat)(i, 0));
+                }
+            }
+            return oss.str();
+        }
+
+        case ValueType::MATRIX: {
+            const Eigen::MatrixXd* mat = v->as_matrix();
+            int rows = mat->rows();
+            int cols = mat->cols();
+
+            if (rows == 0 || cols == 0) return "⍬";  // Empty matrix
+
+            std::ostringstream oss;
+            for (int i = 0; i < rows; i++) {
+                if (i > 0) oss << "\n";
+                for (int j = 0; j < cols; j++) {
+                    if (j > 0) oss << " ";
+                    if (v->is_char_data()) {
+                        uint32_t cp = static_cast<uint32_t>((*mat)(i, j));
+                        oss << codepoint_to_utf8(cp);
+                    } else {
+                        oss << format_number((*mat)(i, j));
+                    }
+                }
+            }
+            return oss.str();
+        }
+
+        case ValueType::PRIMITIVE:
+            return std::string("<primitive:") + (v->data.primitive_fn->name ? v->data.primitive_fn->name : "?") + ">";
+
+        case ValueType::CLOSURE:
+            return "<function>";
+
+        case ValueType::OPERATOR:
+            return std::string("<operator:") + (v->data.op->name ? v->data.op->name : "?") + ">";
+
+        case ValueType::DERIVED_OPERATOR:
+            return "<derived-operator>";
+
+        case ValueType::CURRIED_FN:
+            return "<curried-function>";
+
+        default:
+            return "<unknown>";
+    }
+}
+
+// Stream output for Value pointer
+std::ostream& operator<<(std::ostream& os, const Value* v) {
+    os << format_value(v);
+    return os;
+}
+
+// Stream output for Value reference
+std::ostream& operator<<(std::ostream& os, const Value& v) {
+    os << format_value(&v);
+    return os;
 }
 
 } // namespace apl

@@ -2454,12 +2454,12 @@ TEST_F(EvalTest, GradeDownVector) {
 
 TEST_F(EvalTest, GradeUpScalar) {
     // ⍋ 5 → RANK ERROR (grade requires array per ISO 13751)
-    EXPECT_THROW(machine->eval("⍋ 5"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍋ 5"), APLError);
 }
 
 TEST_F(EvalTest, GradeDownScalar) {
     // ⍒ 5 → RANK ERROR (grade requires array per ISO 13751)
-    EXPECT_THROW(machine->eval("⍒ 5"), std::runtime_error);
+    EXPECT_THROW(machine->eval("⍒ 5"), APLError);
 }
 
 TEST_F(EvalTest, GradeUpWithIota) {
@@ -3422,31 +3422,31 @@ TEST_F(EvalTest, IndexedAssignChained) {
 TEST_F(EvalTest, IndexedAssignOutOfBounds) {
     // A←1 2 3 ⋄ A[10]←5 → INDEX ERROR
     eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[10]←5")), std::runtime_error);
+    EXPECT_THROW(eval(parser->parse("A[10]←5")), APLError);
 }
 
 TEST_F(EvalTest, IndexedAssignZeroIndex) {
     // A←1 2 3 ⋄ A[0]←5 → INDEX ERROR (⎕IO=1)
     eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[0]←5")), std::runtime_error);
+    EXPECT_THROW(eval(parser->parse("A[0]←5")), APLError);
 }
 
 TEST_F(EvalTest, IndexedAssignNegativeIndex) {
     // A←1 2 3 ⋄ A[¯1]←5 → INDEX ERROR
     eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[¯1]←5")), std::runtime_error);
+    EXPECT_THROW(eval(parser->parse("A[¯1]←5")), APLError);
 }
 
 TEST_F(EvalTest, IndexRefOutOfBounds) {
     // A←1 2 3 ⋄ A[10] → INDEX ERROR
     eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[10]")), std::runtime_error);
+    EXPECT_THROW(eval(parser->parse("A[10]")), APLError);
 }
 
 TEST_F(EvalTest, IndexRefZeroIndex) {
     // A←1 2 3 ⋄ A[0] → INDEX ERROR (⎕IO=1)
     eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[0]")), std::runtime_error);
+    EXPECT_THROW(eval(parser->parse("A[0]")), APLError);
 }
 
 TEST_F(EvalTest, IndexedAssignVectorIndices) {

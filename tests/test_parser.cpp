@@ -491,7 +491,7 @@ TEST_F(ParserTest, ParseUndefinedVariable) {
     ASSERT_NE(k, nullptr);
 
     // Phase 1: Now throws exception instead of returning nullptr
-    EXPECT_THROW(eval(k), std::runtime_error);
+    EXPECT_THROW(eval(k), APLError);
 }
 
 // Comprehensive Juxtaposition Tests
