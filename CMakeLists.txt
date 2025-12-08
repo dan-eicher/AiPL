@@ -14,6 +14,9 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
 find_package(Eigen3 REQUIRED)
 find_package(GTest REQUIRED)
 
+# replxx for REPL (git submodule in extern/replxx)
+add_subdirectory(extern/replxx)
+
 # Find re2c for lexer generation
 find_program(RE2C_EXECUTABLE re2c)
 if(NOT RE2C_EXECUTABLE)
@@ -52,9 +55,9 @@ add_library(apl_vm STATIC ${APL_SOURCES})
 target_link_libraries(apl_vm PUBLIC Eigen3::Eigen)
 target_include_directories(apl_vm PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
-# Main executable (for REPL)
-# add_executable(apl-repl src/main.cpp)
-# target_link_libraries(apl-repl apl_vm)
+# Main executable (REPL with replxx)
+add_executable(apl src/main.cpp)
+target_link_libraries(apl apl_vm replxx)
 
 # Enable testing
 enable_testing()
