@@ -139,7 +139,13 @@ Value* Machine::execute() {
                 PrimitiveFn* prim_fn = fn->data.primitive_fn;
                 if (prim_fn->monadic) {
                     prim_fn->monadic(this, arg);
-                    // Result is now in result
+                    // Continue running if continuations were pushed (e.g., errors)
+                    while (!kont_stack.empty()) {
+                        Continuation* k = kont_stack.back();
+                        kont_stack.pop_back();
+                        k->invoke(this);
+                        maybe_gc();
+                    }
                 }
             }
         } else if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {

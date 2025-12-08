@@ -1248,7 +1248,12 @@ void fn_residue(Machine* m, Value* lhs, Value* rhs) {
 // Natural Logarithm (⍟) - monadic
 void fn_natural_log(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        m->result = m->heap->allocate_scalar(std::log(omega->data.scalar));
+        double val = omega->data.scalar;
+        if (val <= 0.0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: logarithm of non-positive number"));
+            return;
+        }
+        m->result = m->heap->allocate_scalar(std::log(val));
         return;
     }
 
@@ -1256,6 +1261,11 @@ void fn_natural_log(Machine* m, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
+    // Check for non-positive values
+    if ((mat->array() <= 0.0).any()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: logarithm of non-positive number"));
+        return;
+    }
     Eigen::MatrixXd result = mat->array().log();
 
     if (omega->is_vector()) {
@@ -1268,11 +1278,25 @@ void fn_natural_log(Machine* m, Value* omega) {
 // Logarithm (⍟) - dyadic (lhs ⍟ rhs = log base lhs of rhs)
 void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
     // log_a(b) = ln(b) / ln(a)
+    // Domain errors: base <= 0, base == 1, value <= 0
+    auto check_domain = [m](double base, double val) -> bool {
+        if (base <= 0.0 || base == 1.0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid logarithm base"));
+            return false;
+        }
+        if (val <= 0.0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: logarithm of non-positive number"));
+            return false;
+        }
+        return true;
+    };
+
     auto log_base = [](double base, double val) -> double {
         return std::log(val) / std::log(base);
     };
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
+        if (!check_domain(lhs->data.scalar, rhs->data.scalar)) return;
         m->result = m->heap->allocate_scalar(log_base(lhs->data.scalar, rhs->data.scalar));
         return;
     }
@@ -1330,9 +1354,20 @@ void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
 
 // Factorial (!) - monadic
 // Uses gamma function: n! = gamma(n+1)
+// DOMAIN ERROR for negative integers (gamma has poles at non-positive integers)
 void fn_factorial(Machine* m, Value* omega) {
+    // Check if value is a negative integer (gamma undefined there)
+    auto is_negative_int = [](double x) -> bool {
+        return x < 0 && x == std::floor(x);
+    };
+
     if (omega->is_scalar()) {
-        m->result = m->heap->allocate_scalar(std::tgamma(omega->data.scalar + 1.0));
+        double val = omega->data.scalar;
+        if (is_negative_int(val)) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: factorial of negative integer"));
+            return;
+        }
+        m->result = m->heap->allocate_scalar(std::tgamma(val + 1.0));
         return;
     }
 
@@ -1340,6 +1375,14 @@ void fn_factorial(Machine* m, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
+    // Check for negative integers
+    for (int i = 0; i < mat->size(); ++i) {
+        if (is_negative_int(mat->data()[i])) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: factorial of negative integer"));
+            return;
+        }
+    }
+
     Eigen::MatrixXd result(mat->rows(), mat->cols());
     for (int i = 0; i < mat->size(); ++i) {
         result(i) = std::tgamma(mat->data()[i] + 1.0);
@@ -2465,8 +2508,8 @@ void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
 // ⍋ 3 1 4 1 5 → 2 4 1 3 5 (with ⎕IO=1)
 void fn_grade_up(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        // Grade of scalar is ⎕IO (index of single element)
-        m->result = m->heap->allocate_scalar(static_cast<double>(m->io));
+        // RANK ERROR: grade requires array, not scalar
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: grade requires array"));
         return;
     }
 
@@ -2498,8 +2541,8 @@ void fn_grade_up(Machine* m, Value* omega) {
 // ⍒ 3 1 4 1 5 → 5 3 1 2 4 (with ⎕IO=1)
 void fn_grade_down(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        // Grade of scalar is ⎕IO (index of single element)
-        m->result = m->heap->allocate_scalar(static_cast<double>(m->io));
+        // RANK ERROR: grade requires array, not scalar
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: grade requires array"));
         return;
     }
 

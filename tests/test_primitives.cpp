@@ -5,7 +5,9 @@
 #include "operators.h"
 #include "value.h"
 #include "machine.h"
+#include "continuation.h"
 #include <cmath>
+#include <stdexcept>
 
 using namespace apl;
 
@@ -2572,24 +2574,26 @@ TEST_F(PrimitivesTest, GradeDownVector) {
     EXPECT_DOUBLE_EQ((*res)(4, 0), 4.0);  // index 4 (value 1)
 }
 
-TEST_F(PrimitivesTest, GradeUpScalar) {
-    // ⍋ 5 → 1 (single element, 1-origin)
+TEST_F(PrimitivesTest, GradeUpScalarError) {
+    // ⍋ 5 → RANK ERROR (grade requires array per ISO 13751)
     Value* scalar = machine->heap->allocate_scalar(5.0);
 
     fn_grade_up(machine, scalar);
 
-    ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+    // Should have pushed ThrowErrorK
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
-TEST_F(PrimitivesTest, GradeDownScalar) {
-    // ⍒ 5 → 1 (single element, 1-origin)
+TEST_F(PrimitivesTest, GradeDownScalarError) {
+    // ⍒ 5 → RANK ERROR (grade requires array per ISO 13751)
     Value* scalar = machine->heap->allocate_scalar(5.0);
 
     fn_grade_down(machine, scalar);
 
-    ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+    // Should have pushed ThrowErrorK
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
 TEST_F(PrimitivesTest, GradeUpAlreadySorted) {
@@ -3980,4 +3984,107 @@ TEST_F(PrimitivesTest, TableMatrix) {
     EXPECT_EQ(mat->cols(), 3);
     EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
     EXPECT_DOUBLE_EQ((*mat)(1, 2), 6.0);
+}
+
+// ============================================================================
+// Domain Error Tests (ISO 13751 Compliance)
+// ============================================================================
+
+// --- Division/Reciprocal Domain Errors ---
+
+TEST_F(PrimitivesTest, DomainErrorReciprocalZero) {
+    // ÷0 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("÷0"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, DomainErrorDivideByZero) {
+    // 5÷0 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("5÷0"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, DomainErrorZeroDivZero) {
+    // 0÷0 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("0÷0"), std::runtime_error);
+}
+
+// --- Logarithm Domain Errors ---
+
+TEST_F(PrimitivesTest, DomainErrorLogZero) {
+    // ⍟0 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("⍟0"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, DomainErrorLogBaseOne) {
+    // 1⍟5 → DOMAIN ERROR (log base 1 undefined)
+    EXPECT_THROW(machine->eval("1⍟5"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, DomainErrorLogNegative) {
+    // ⍟¯1 → DOMAIN ERROR (complex result)
+    EXPECT_THROW(machine->eval("⍟¯1"), std::runtime_error);
+}
+
+// --- Factorial Domain Errors ---
+
+TEST_F(PrimitivesTest, DomainErrorFactorialNegInt) {
+    // !¯1 → DOMAIN ERROR (negative integer)
+    EXPECT_THROW(machine->eval("!¯1"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, DomainErrorFactorialNegInt2) {
+    // !¯2 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("!¯2"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, FactorialNegHalfValid) {
+    // !¯0.5 → valid (Gamma function: Γ(0.5) = √π)
+    Value* result = machine->eval("!¯0.5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    // Γ(0.5) = √π ≈ 1.7724538509
+    EXPECT_NEAR(result->as_scalar(), 1.7724538509, 0.0001);
+}
+
+// --- Iota Domain Errors ---
+
+TEST_F(PrimitivesTest, DomainErrorIotaNegative) {
+    // ⍳¯1 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("⍳¯1"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, DomainErrorIotaNonInteger) {
+    // ⍳1.5 → DOMAIN ERROR (non-integer)
+    EXPECT_THROW(machine->eval("⍳1.5"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, IotaZeroValid) {
+    // ⍳0 → empty vector (valid)
+    Value* result = machine->eval("⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+// --- Roll Domain Errors ---
+
+TEST_F(PrimitivesTest, DomainErrorRollZero) {
+    // ?0 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("?0"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, DomainErrorRollNegative) {
+    // ?¯1 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("?¯1"), std::runtime_error);
+}
+
+// --- Grade Rank Errors ---
+
+TEST_F(PrimitivesTest, RankErrorGradeUpScalar) {
+    // ⍋5 → RANK ERROR (scalar)
+    EXPECT_THROW(machine->eval("⍋5"), std::runtime_error);
+}
+
+TEST_F(PrimitivesTest, RankErrorGradeDownScalar) {
+    // ⍒5 → RANK ERROR (scalar)
+    EXPECT_THROW(machine->eval("⍒5"), std::runtime_error);
 }

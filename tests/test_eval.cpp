@@ -2453,25 +2453,13 @@ TEST_F(EvalTest, GradeDownVector) {
 }
 
 TEST_F(EvalTest, GradeUpScalar) {
-    // ⍋ 5 → 1 (single element, 1-origin)
-    Continuation* k = parser->parse("⍋ 5");
-    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
-
-    Value* result = eval(k);
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+    // ⍋ 5 → RANK ERROR (grade requires array per ISO 13751)
+    EXPECT_THROW(machine->eval("⍋ 5"), std::runtime_error);
 }
 
 TEST_F(EvalTest, GradeDownScalar) {
-    // ⍒ 5 → 1 (single element, 1-origin)
-    Continuation* k = parser->parse("⍒ 5");
-    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
-
-    Value* result = eval(k);
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+    // ⍒ 5 → RANK ERROR (grade requires array per ISO 13751)
+    EXPECT_THROW(machine->eval("⍒ 5"), std::runtime_error);
 }
 
 TEST_F(EvalTest, GradeUpWithIota) {
