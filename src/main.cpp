@@ -4,8 +4,10 @@
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <sstream>
 #include <vector>
 #include <unordered_map>
+#include <cmath>
 #include <unistd.h>
 
 #include "replxx.hxx"
@@ -184,16 +186,35 @@ Replxx::completions_t hook_completion(const std::string& context, int& contextLe
     return completions;
 }
 
+// Format a single number with APL conventions
+static std::string format_number(double val) {
+    if (std::isinf(val)) {
+        return val > 0 ? "∞" : "¯∞";
+    }
+    if (std::isnan(val)) {
+        return "NaN";
+    }
+    if (val == std::floor(val) && std::abs(val) < 1e15) {
+        if (val < 0) {
+            return "¯" + std::to_string(static_cast<long long>(-val));
+        }
+        return std::to_string(static_cast<long long>(val));
+    }
+    std::ostringstream oss;
+    if (val < 0) {
+        oss << "¯" << -val;
+    } else {
+        oss << val;
+    }
+    return oss.str();
+}
+
 // Format value for display
 std::string format_value(apl::Value* v, apl::Machine* m) {
     if (!v) return "nil";
 
     if (v->tag == apl::ValueType::SCALAR) {
-        double val = v->as_scalar();
-        if (val == std::floor(val) && std::abs(val) < 1e15) {
-            return std::to_string(static_cast<long long>(val));
-        }
-        return std::to_string(val);
+        return format_number(v->as_scalar());
     }
 
     if (v->tag == apl::ValueType::STRING) {
@@ -206,24 +227,14 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
         if (v->is_vector()) {
             for (int i = 0; i < mat->rows(); ++i) {
                 if (i > 0) oss << " ";
-                double val = (*mat)(i, 0);
-                if (val == std::floor(val) && std::abs(val) < 1e15) {
-                    oss << static_cast<long long>(val);
-                } else {
-                    oss << val;
-                }
+                oss << format_number((*mat)(i, 0));
             }
         } else {
             for (int i = 0; i < mat->rows(); ++i) {
                 if (i > 0) oss << "\n";
                 for (int j = 0; j < mat->cols(); ++j) {
                     if (j > 0) oss << " ";
-                    double val = (*mat)(i, j);
-                    if (val == std::floor(val) && std::abs(val) < 1e15) {
-                        oss << static_cast<long long>(val);
-                    } else {
-                        oss << val;
-                    }
+                    oss << format_number((*mat)(i, j));
                 }
             }
         }

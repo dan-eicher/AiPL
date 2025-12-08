@@ -3590,6 +3590,91 @@ TEST_F(EvalTest, ZildeFormatRoundTrip) {
     EXPECT_EQ(formatted, "⍬");
 }
 
+// ============================================================================
+// ISO 13751 Section 6: Syntax & Evaluation Compliance Tests
+// ============================================================================
+
+// Section 6.3.9: Assignment returns committed-value (the assigned value)
+TEST_F(EvalTest, AssignmentReturnsValue) {
+    // X←5 returns 5, so 1+X←5 should equal 6
+    Value* result = eval(parser->parse("1+X←5"));
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+TEST_F(EvalTest, AssignmentChaining) {
+    // Y←X←5 should set both X and Y to 5
+    eval(parser->parse("Y←X←5"));
+
+    Value* x = eval(parser->parse("X"));
+    ASSERT_NE(x, nullptr);
+    EXPECT_DOUBLE_EQ(x->as_scalar(), 5.0);
+
+    Value* y = eval(parser->parse("Y"));
+    ASSERT_NE(y, nullptr);
+    EXPECT_DOUBLE_EQ(y->as_scalar(), 5.0);
+}
+
+TEST_F(EvalTest, AssignmentChainingThreeVars) {
+    // Z←Y←X←42 should set all three to 42
+    eval(parser->parse("Z←Y←X←42"));
+
+    Value* x = eval(parser->parse("X"));
+    Value* y = eval(parser->parse("Y"));
+    Value* z = eval(parser->parse("Z"));
+
+    EXPECT_DOUBLE_EQ(x->as_scalar(), 42.0);
+    EXPECT_DOUBLE_EQ(y->as_scalar(), 42.0);
+    EXPECT_DOUBLE_EQ(z->as_scalar(), 42.0);
+}
+
+TEST_F(EvalTest, AssignmentInExpression) {
+    // (X←3)×(Y←4) should set X=3, Y=4, return 12
+    Value* result = eval(parser->parse("(X←3)×(Y←4)"));
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+
+    Value* x = eval(parser->parse("X"));
+    Value* y = eval(parser->parse("Y"));
+    EXPECT_DOUBLE_EQ(x->as_scalar(), 3.0);
+    EXPECT_DOUBLE_EQ(y->as_scalar(), 4.0);
+}
+
+// Section 6.3.10: Indexed assignment to undefined variable signals VALUE ERROR
+TEST_F(EvalTest, IndexedAssignUndefinedVariable) {
+    // UNDEFINED_VAR[1]←5 should signal VALUE ERROR
+    EXPECT_THROW(eval(parser->parse("UNDEFINED_VAR_XYZ[1]←5")), APLError);
+}
+
+// Section 6.3.11: Referencing undefined variable signals VALUE ERROR
+TEST_F(EvalTest, UndefinedVariableError) {
+    // Referencing an undefined variable should signal VALUE ERROR
+    EXPECT_THROW(eval(parser->parse("NEVER_DEFINED_VAR")), APLError);
+}
+
+// Section 6.1: Statement separator (⋄) allows multiple statements
+TEST_F(EvalTest, StatementSeparatorBasic) {
+    // X←1 ⋄ X+1 → 2
+    Value* result = eval(parser->parse("X←1 ⋄ X+1"));
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+TEST_F(EvalTest, StatementSeparatorMultiple) {
+    // X←1 ⋄ Y←2 ⋄ X+Y → 3
+    Value* result = eval(parser->parse("X←1 ⋄ Y←2 ⋄ X+Y"));
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(EvalTest, StatementSeparatorReturnsLast) {
+    // 1 ⋄ 2 ⋄ 3 → 3 (returns last statement's value)
+    Value* result = eval(parser->parse("1 ⋄ 2 ⋄ 3"));
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
 // Main function
 
 int main(int argc, char** argv) {

@@ -421,9 +421,24 @@ Continuation* Parser::nud(const Token& token) {
         }
 
         case TOK_NAME: {
-            // Variable reference - create LookupK
+            // Variable reference or assignment
             // Intern the name in the string pool
             const char* interned_name = machine->string_pool.intern(token.name);
+
+            // Check for assignment: NAME ← VALUE
+            // Assignment binds only the immediate name, not larger expressions
+            // So "1+X←5" parses as "1+(X←5)", not "(1+X)←5"
+            if (current_token_.type == TOK_ASSIGN) {
+                advance();  // consume ←
+                Continuation* value = parse_expression(BP_ASSIGN);
+                if (!value) {
+                    return nullptr;
+                }
+                AssignK* assign = machine->heap->allocate<AssignK>(interned_name, value);
+                return assign;
+            }
+
+            // Just a variable reference
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
