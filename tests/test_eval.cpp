@@ -22,12 +22,6 @@ protected:
     void TearDown() override {
         delete machine;
     }
-
-    // Helper: evaluate parsed continuation using the CEK machine
-    Value* eval(Continuation* k) {
-        machine->push_kont(k);
-        return machine->execute();
-    }
 };
 
 // ============================================================================
@@ -39,7 +33,8 @@ TEST_F(EvalTest, ParseMonadicNegate) {
     Continuation* k = parser->parse("-5");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
@@ -50,7 +45,8 @@ TEST_F(EvalTest, ParseMonadicNegateExpression) {
     Continuation* k = parser->parse("-(2 + 3)");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
@@ -61,7 +57,8 @@ TEST_F(EvalTest, ParseMonadicReciprocal) {
     Continuation* k = parser->parse("÷4");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.25);
@@ -72,7 +69,8 @@ TEST_F(EvalTest, ParseMonadicExponential) {
     Continuation* k = parser->parse("*0");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -83,7 +81,8 @@ TEST_F(EvalTest, ParseMonadicExponentialE) {
     Continuation* k = parser->parse("*1");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), 2.71828, 0.0001);
@@ -94,7 +93,8 @@ TEST_F(EvalTest, ParseMonadicIdentity) {
     Continuation* k = parser->parse("+5");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -104,17 +104,20 @@ TEST_F(EvalTest, ParseMonadicIdentity) {
 TEST_F(EvalTest, ParseMonadicSignum) {
     Continuation* k1 = parser->parse("×5");
     ASSERT_NE(k1, nullptr);
-    Value* r1 = eval(k1);
+    machine->push_kont(k1);
+    Value* r1 = machine->execute();
     EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
 
     Continuation* k2 = parser->parse("×(-5)");
     ASSERT_NE(k2, nullptr);
-    Value* r2 = eval(k2);
+    machine->push_kont(k2);
+    Value* r2 = machine->execute();
     EXPECT_DOUBLE_EQ(r2->as_scalar(), -1.0);
 
     Continuation* k3 = parser->parse("×0");
     ASSERT_NE(k3, nullptr);
-    Value* r3 = eval(k3);
+    machine->push_kont(k3);
+    Value* r3 = machine->execute();
     EXPECT_DOUBLE_EQ(r3->as_scalar(), 0.0);
 }
 
@@ -123,7 +126,8 @@ TEST_F(EvalTest, ParseMonadicInDyadicContext) {
     Continuation* k = parser->parse("3 - -5");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
@@ -134,7 +138,8 @@ TEST_F(EvalTest, ParseDoubleNegation) {
     Continuation* k = parser->parse("--5");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -147,7 +152,8 @@ TEST_F(EvalTest, ParseBasicAssignment) {
     Continuation* k = parser->parse("x ← 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -164,7 +170,8 @@ TEST_F(EvalTest, ParseAssignmentWithExpression) {
     Continuation* k = parser->parse("y ← 3 + 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
@@ -180,13 +187,15 @@ TEST_F(EvalTest, AssignmentThenLookup) {
     // First assign
     Continuation* k1 = parser->parse("z ← 10");
     ASSERT_NE(k1, nullptr);
-    eval(k1);
+    machine->push_kont(k1);
+    machine->execute();
 
     // Then use the variable
     Continuation* k2 = parser->parse("z");
     ASSERT_NE(k2, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k2);
+    machine->push_kont(k2);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
@@ -197,13 +206,15 @@ TEST_F(EvalTest, AssignmentThenUseInExpression) {
     // Assign z ← 10
     Continuation* k1 = parser->parse("z ← 10");
     ASSERT_NE(k1, nullptr);
-    eval(k1);
+    machine->push_kont(k1);
+    machine->execute();
 
     // Use z in expression
     Continuation* k2 = parser->parse("z + 5");
     ASSERT_NE(k2, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k2);
+    machine->push_kont(k2);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
@@ -222,7 +233,8 @@ TEST_F(EvalTest, FunctionAssignmentMonadic) {
     Continuation* k = parser->parse("f 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -240,7 +252,8 @@ TEST_F(EvalTest, FunctionAssignmentDyadic) {
     Continuation* k = parser->parse("2 f 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -252,7 +265,8 @@ TEST_F(EvalTest, IotaMonadic) {
     Continuation* k = parser->parse("⍳ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -270,7 +284,8 @@ TEST_F(EvalTest, RavelMonadic) {
     Continuation* k = parser->parse(", 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -286,7 +301,8 @@ TEST_F(EvalTest, ShapeMonadic) {
     Continuation* k = parser->parse("⍴ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -303,7 +319,8 @@ TEST_F(EvalTest, ReshapeDyadic) {
     Continuation* k = parser->parse("2 3 ⍴ ⍳ 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_FALSE(result->is_vector());  // Should be a 2D matrix
     EXPECT_FALSE(result->is_scalar());
@@ -326,7 +343,8 @@ TEST_F(EvalTest, CatenateDyadic) {
     Continuation* k = parser->parse("1 2 , 3 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -343,7 +361,8 @@ TEST_F(EvalTest, EqualDyadicTrue) {
     Continuation* k = parser->parse("5 = 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 1 = true
@@ -354,7 +373,8 @@ TEST_F(EvalTest, EqualDyadicFalse) {
     Continuation* k = parser->parse("5 = 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 0 = false
@@ -365,7 +385,8 @@ TEST_F(EvalTest, EqualDyadicVector) {
     Continuation* k = parser->parse("1 2 3 = 1 5 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -388,7 +409,8 @@ TEST_F(EvalTest, ParseMonadicDfn) {
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::CLOSURE);
@@ -415,7 +437,8 @@ TEST_F(EvalTest, ParseDyadicDfn) {
     ASSERT_NE(k, nullptr);
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::CLOSURE);
@@ -429,7 +452,8 @@ TEST_F(EvalTest, DfnJustOmega) {
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR);
@@ -444,7 +468,8 @@ TEST_F(EvalTest, ApplyDyadicDfn) {
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR) << "Result should be SCALAR, got tag=" << static_cast<int>(result->tag);
@@ -463,7 +488,8 @@ TEST_F(EvalTest, AssignDfn) {
     ASSERT_NE(k, nullptr);
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Check that the variable was assigned
     Value* square = machine->env->lookup("square");
@@ -479,7 +505,8 @@ TEST_F(EvalTest, DfnNestedExpression) {
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::CLOSURE);
@@ -493,7 +520,8 @@ TEST_F(EvalTest, ApplyNestedDfn) {
     ASSERT_NE(k, nullptr);
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR);
@@ -519,7 +547,8 @@ TEST_F(EvalTest, GCDuringParsing) {
     machine->heap->collect(machine);
 
     // Execute the parsed continuation
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 51.0);  // (3×7)+30 = 21+30 = 51
 
@@ -542,7 +571,8 @@ TEST_F(EvalTest, LargeExpressionGC) {
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     // Execute it
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1275.0);  // Sum 1 to 50 = 50×51/2 = 1275
 
@@ -552,7 +582,8 @@ TEST_F(EvalTest, LargeExpressionGC) {
     // Verify heap is still functional after GC
     Continuation* k2 = parser->parse("1+2+3");
     ASSERT_NE(k2, nullptr);
-    Value* result2 = eval(k2);
+    machine->push_kont(k2);
+    Value* result2 = machine->execute();
     EXPECT_DOUBLE_EQ(result2->as_scalar(), 6.0);
 }
 
@@ -563,7 +594,8 @@ TEST_F(EvalTest, ParserNoLeakAcrossParses) {
         Continuation* k = parser->parse("1+2+3+4+5");
         ASSERT_NE(k, nullptr);
 
-        Value* result = eval(k);
+        machine->push_kont(k);
+    Value* result = machine->execute();
         ASSERT_NE(result, nullptr);
         EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
 
@@ -579,7 +611,8 @@ TEST_F(EvalTest, ParserNoLeakAcrossParses) {
     size_t before_last = machine->heap->total_size();
     Continuation* k = parser->parse("1+2+3+4+5");
     ASSERT_NE(k, nullptr);
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
 
@@ -599,7 +632,8 @@ TEST_F(EvalTest, GCWithNestedExpressions) {
     // Force GC while continuation graph exists
     machine->heap->collect(machine);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 21.0);
 
@@ -609,7 +643,8 @@ TEST_F(EvalTest, GCWithNestedExpressions) {
     // Verify heap is still functional
     Continuation* k2 = parser->parse("10+20");
     ASSERT_NE(k2, nullptr);
-    Value* result2 = eval(k2);
+    machine->push_kont(k2);
+    Value* result2 = machine->execute();
     EXPECT_DOUBLE_EQ(result2->as_scalar(), 30.0);
 }
 
@@ -765,7 +800,8 @@ TEST_F(EvalTest, OuterProductEvaluatesToMatrix) {
         }
     }
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::MATRIX) << "Result should be MATRIX, got tag " << static_cast<int>(result->tag);
 }
@@ -829,7 +865,8 @@ TEST_F(EvalTest, NotEqualDyadicTrue) {
     Continuation* k = parser->parse("5 ≠ 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≠3 is true
@@ -839,7 +876,8 @@ TEST_F(EvalTest, NotEqualDyadicFalse) {
     Continuation* k = parser->parse("5 ≠ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5≠5 is false
@@ -849,7 +887,8 @@ TEST_F(EvalTest, NotEqualDyadicVector) {
     Continuation* k = parser->parse("1 2 3 ≠ 1 5 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -864,7 +903,8 @@ TEST_F(EvalTest, LessThanDyadicTrue) {
     Continuation* k = parser->parse("3 < 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 3<5 is true
@@ -874,7 +914,8 @@ TEST_F(EvalTest, LessThanDyadicFalse) {
     Continuation* k = parser->parse("5 < 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 5<3 is false
@@ -884,7 +925,8 @@ TEST_F(EvalTest, LessThanDyadicVector) {
     Continuation* k = parser->parse("1 5 3 < 2 3 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -899,7 +941,8 @@ TEST_F(EvalTest, GreaterThanDyadicTrue) {
     Continuation* k = parser->parse("5 > 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5>3 is true
@@ -909,7 +952,8 @@ TEST_F(EvalTest, GreaterThanDyadicFalse) {
     Continuation* k = parser->parse("3 > 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 3>5 is false
@@ -919,7 +963,8 @@ TEST_F(EvalTest, GreaterThanDyadicVector) {
     Continuation* k = parser->parse("5 2 3 > 3 4 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -934,7 +979,8 @@ TEST_F(EvalTest, LessOrEqualDyadicLess) {
     Continuation* k = parser->parse("3 ≤ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 3≤5 is true
@@ -944,7 +990,8 @@ TEST_F(EvalTest, LessOrEqualDyadicEqual) {
     Continuation* k = parser->parse("5 ≤ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≤5 is true
@@ -954,7 +1001,8 @@ TEST_F(EvalTest, LessOrEqualDyadicFalse) {
     Continuation* k = parser->parse("7 ≤ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 7≤5 is false
@@ -964,7 +1012,8 @@ TEST_F(EvalTest, LessOrEqualDyadicVector) {
     Continuation* k = parser->parse("1 5 3 ≤ 2 3 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -979,7 +1028,8 @@ TEST_F(EvalTest, GreaterOrEqualDyadicGreater) {
     Continuation* k = parser->parse("7 ≥ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 7≥5 is true
@@ -989,7 +1039,8 @@ TEST_F(EvalTest, GreaterOrEqualDyadicEqual) {
     Continuation* k = parser->parse("5 ≥ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 5≥5 is true
@@ -999,7 +1050,8 @@ TEST_F(EvalTest, GreaterOrEqualDyadicFalse) {
     Continuation* k = parser->parse("3 ≥ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // 3≥5 is false
@@ -1009,7 +1061,8 @@ TEST_F(EvalTest, GreaterOrEqualDyadicVector) {
     Continuation* k = parser->parse("5 2 3 ≥ 3 4 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -1029,7 +1082,8 @@ TEST_F(EvalTest, ComparisonInExpression) {
     Continuation* k = parser->parse("+/ (⍳5) < 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
@@ -1043,7 +1097,8 @@ TEST_F(EvalTest, CeilingMonadic) {
     Continuation* k = parser->parse("⌈ 3.2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
@@ -1053,7 +1108,8 @@ TEST_F(EvalTest, CeilingMonadicNegative) {
     Continuation* k = parser->parse("⌈ ¯3.2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -3.0);
@@ -1063,7 +1119,8 @@ TEST_F(EvalTest, FloorMonadic) {
     Continuation* k = parser->parse("⌊ 3.7");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -1073,7 +1130,8 @@ TEST_F(EvalTest, FloorMonadicNegative) {
     Continuation* k = parser->parse("⌊ ¯3.2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), -4.0);
@@ -1083,7 +1141,8 @@ TEST_F(EvalTest, MaximumDyadic) {
     Continuation* k = parser->parse("3 ⌈ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -1093,7 +1152,8 @@ TEST_F(EvalTest, MinimumDyadic) {
     Continuation* k = parser->parse("3 ⌊ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -1103,7 +1163,8 @@ TEST_F(EvalTest, MaximumDyadicVector) {
     Continuation* k = parser->parse("1 5 3 ⌈ 4 2 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -1118,7 +1179,8 @@ TEST_F(EvalTest, MinimumDyadicVector) {
     Continuation* k = parser->parse("1 5 3 ⌊ 4 2 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -1137,7 +1199,8 @@ TEST_F(EvalTest, AndDyadicTrue) {
     Continuation* k = parser->parse("1 ∧ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -1147,7 +1210,8 @@ TEST_F(EvalTest, AndDyadicFalse) {
     Continuation* k = parser->parse("1 ∧ 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -1157,7 +1221,8 @@ TEST_F(EvalTest, OrDyadicTrue) {
     Continuation* k = parser->parse("0 ∨ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -1167,7 +1232,8 @@ TEST_F(EvalTest, OrDyadicFalse) {
     Continuation* k = parser->parse("0 ∨ 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -1177,7 +1243,8 @@ TEST_F(EvalTest, NotMonadicTrue) {
     Continuation* k = parser->parse("~ 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -1187,7 +1254,8 @@ TEST_F(EvalTest, NotMonadicFalse) {
     Continuation* k = parser->parse("~ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -1197,7 +1265,8 @@ TEST_F(EvalTest, NotMonadicVector) {
     Continuation* k = parser->parse("~ 1 0 1 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -1214,7 +1283,8 @@ TEST_F(EvalTest, NandDyadic) {
     Continuation* k = parser->parse("1 ⍲ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -1225,7 +1295,8 @@ TEST_F(EvalTest, NandDyadicTrue) {
     Continuation* k = parser->parse("1 ⍲ 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -1236,7 +1307,8 @@ TEST_F(EvalTest, NorDyadic) {
     Continuation* k = parser->parse("0 ⍱ 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -1247,7 +1319,8 @@ TEST_F(EvalTest, NorDyadicFalse) {
     Continuation* k = parser->parse("0 ⍱ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -1257,7 +1330,8 @@ TEST_F(EvalTest, LogicalVectorAnd) {
     Continuation* k = parser->parse("1 0 1 1 ∧ 1 1 0 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -1273,7 +1347,8 @@ TEST_F(EvalTest, LogicalVectorOr) {
     Continuation* k = parser->parse("1 0 0 1 ∨ 0 0 1 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
 
@@ -1296,7 +1371,8 @@ TEST_F(EvalTest, LogicalExpression) {
     Continuation* k = parser->parse("+/ ((⍳5) > 1) ∧ ((⍳5) < 4)");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
@@ -1311,7 +1387,8 @@ TEST_F(EvalTest, AdditionDyadicVectors) {
     Continuation* k = parser->parse("1 2 3 + 4 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1325,7 +1402,8 @@ TEST_F(EvalTest, AdditionScalarExtensionLeft) {
     Continuation* k = parser->parse("10 + 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1339,7 +1417,8 @@ TEST_F(EvalTest, AdditionScalarExtensionRight) {
     Continuation* k = parser->parse("1 2 3 + 10");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1354,7 +1433,8 @@ TEST_F(EvalTest, IdentityMonadicVector) {
     Continuation* k = parser->parse("+ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1369,7 +1449,8 @@ TEST_F(EvalTest, SubtractionDyadicVectors) {
     Continuation* k = parser->parse("10 20 30 - 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1383,7 +1464,8 @@ TEST_F(EvalTest, SubtractionScalarExtension) {
     Continuation* k = parser->parse("100 - 10 20 30");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1397,7 +1479,8 @@ TEST_F(EvalTest, NegationMonadicVector) {
     Continuation* k = parser->parse("- 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1412,7 +1495,8 @@ TEST_F(EvalTest, MultiplicationDyadicVectors) {
     Continuation* k = parser->parse("2 3 4 × 5 6 7");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1426,7 +1510,8 @@ TEST_F(EvalTest, MultiplicationScalarExtension) {
     Continuation* k = parser->parse("10 × 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1441,7 +1526,8 @@ TEST_F(EvalTest, SignumMonadicVector) {
     Continuation* k = parser->parse("× ¯5 0 7");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1456,7 +1542,8 @@ TEST_F(EvalTest, DivisionDyadicVectors) {
     Continuation* k = parser->parse("10 20 30 ÷ 2 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1470,7 +1557,8 @@ TEST_F(EvalTest, DivisionScalarExtension) {
     Continuation* k = parser->parse("100 ÷ 2 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1485,7 +1573,8 @@ TEST_F(EvalTest, ReciprocalMonadicVector) {
     Continuation* k = parser->parse("÷ 2 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1500,7 +1589,8 @@ TEST_F(EvalTest, PowerDyadicVectors) {
     Continuation* k = parser->parse("2 3 4 * 2 2 2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1514,7 +1604,8 @@ TEST_F(EvalTest, PowerScalarExtension) {
     Continuation* k = parser->parse("2 * 1 2 3 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1530,7 +1621,8 @@ TEST_F(EvalTest, ExponentialMonadicVector) {
     Continuation* k = parser->parse("* 0 1 2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1550,7 +1642,8 @@ TEST_F(EvalTest, TransposeMatrix) {
     Continuation* k = parser->parse("⍉ 2 3 ⍴ 1 2 3 4 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_EQ(mat->rows(), 3);
@@ -1573,7 +1666,8 @@ TEST_F(EvalTest, TransposeVector) {
     Continuation* k = parser->parse("⍉ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1589,7 +1683,8 @@ TEST_F(EvalTest, TakePositive) {
     Continuation* k = parser->parse("3 ↑ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1604,7 +1699,8 @@ TEST_F(EvalTest, TakeNegative) {
     Continuation* k = parser->parse("¯3 ↑ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1619,7 +1715,8 @@ TEST_F(EvalTest, TakeOverextend) {
     Continuation* k = parser->parse("5 ↑ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1637,7 +1734,8 @@ TEST_F(EvalTest, DropPositive) {
     Continuation* k = parser->parse("2 ↓ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1652,7 +1750,8 @@ TEST_F(EvalTest, DropNegative) {
     Continuation* k = parser->parse("¯2 ↓ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1667,7 +1766,8 @@ TEST_F(EvalTest, DropAll) {
     Continuation* k = parser->parse("10 ↓ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1680,7 +1780,8 @@ TEST_F(EvalTest, IotaZero) {
     Continuation* k = parser->parse("⍳ 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1692,7 +1793,8 @@ TEST_F(EvalTest, IotaOne) {
     Continuation* k = parser->parse("⍳ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1706,7 +1808,8 @@ TEST_F(EvalTest, ShapeScalar) {
     Continuation* k = parser->parse("⍴ 42");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1718,7 +1821,8 @@ TEST_F(EvalTest, ShapeMatrix) {
     Continuation* k = parser->parse("⍴ 2 3 ⍴ ⍳ 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1733,7 +1837,8 @@ TEST_F(EvalTest, ReshapeWithCycling) {
     Continuation* k = parser->parse("2 3 ⍴ 1 2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     const Eigen::MatrixXd* mat = result->as_matrix();
     EXPECT_EQ(mat->rows(), 2);
@@ -1751,7 +1856,8 @@ TEST_F(EvalTest, ReshapeToVector) {
     Continuation* k = parser->parse("6 ⍴ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1770,7 +1876,8 @@ TEST_F(EvalTest, CatenateScalars) {
     Continuation* k = parser->parse("1 , 2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1784,7 +1891,8 @@ TEST_F(EvalTest, CatenateVectorScalar) {
     Continuation* k = parser->parse("1 2 3 , 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1801,7 +1909,8 @@ TEST_F(EvalTest, RavelMatrix) {
     Continuation* k = parser->parse(", 2 3 ⍴ ⍳ 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1819,7 +1928,8 @@ TEST_F(EvalTest, RavelScalar) {
     Continuation* k = parser->parse(", 42");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1836,7 +1946,8 @@ TEST_F(EvalTest, MagnitudeMonadic) {
     Continuation* k = parser->parse("| ¯5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -1846,7 +1957,8 @@ TEST_F(EvalTest, MagnitudePositive) {
     Continuation* k = parser->parse("| 3.5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.5);
@@ -1856,7 +1968,8 @@ TEST_F(EvalTest, MagnitudeVector) {
     Continuation* k = parser->parse("| ¯1 2 ¯3 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1873,7 +1986,8 @@ TEST_F(EvalTest, ResidueDyadic) {
     Continuation* k = parser->parse("3 | 7");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -1884,7 +1998,8 @@ TEST_F(EvalTest, ResidueZeroDivisor) {
     Continuation* k = parser->parse("0 | 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -1895,7 +2010,8 @@ TEST_F(EvalTest, ResidueVector) {
     Continuation* k = parser->parse("3 | 0 1 2 3 4 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -1915,7 +2031,8 @@ TEST_F(EvalTest, NaturalLogMonadic) {
     Continuation* k = parser->parse("⍟ 2.718281828");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), 1.0, 1e-6);
@@ -1926,7 +2043,8 @@ TEST_F(EvalTest, NaturalLogOne) {
     Continuation* k = parser->parse("⍟ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -1938,7 +2056,8 @@ TEST_F(EvalTest, LogarithmDyadic) {
     Continuation* k = parser->parse("10 ⍟ 100");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), 2.0, 1e-10);
@@ -1949,7 +2068,8 @@ TEST_F(EvalTest, LogarithmBase2) {
     Continuation* k = parser->parse("2 ⍟ 8");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), 3.0, 1e-10);
@@ -1961,7 +2081,8 @@ TEST_F(EvalTest, FactorialMonadic) {
     Continuation* k = parser->parse("! 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 120.0);
@@ -1972,7 +2093,8 @@ TEST_F(EvalTest, FactorialZero) {
     Continuation* k = parser->parse("! 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -1983,7 +2105,8 @@ TEST_F(EvalTest, FactorialVector) {
     Continuation* k = parser->parse("! 0 1 2 3 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2001,7 +2124,8 @@ TEST_F(EvalTest, BinomialDyadic) {
     Continuation* k = parser->parse("2 ! 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
@@ -2012,7 +2136,8 @@ TEST_F(EvalTest, BinomialZero) {
     Continuation* k = parser->parse("0 ! 7");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -2023,7 +2148,8 @@ TEST_F(EvalTest, BinomialSame) {
     Continuation* k = parser->parse("5 ! 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -2034,7 +2160,8 @@ TEST_F(EvalTest, BinomialPascalsRow) {
     Continuation* k = parser->parse("(0 1 2 3 4) ! 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2055,7 +2182,8 @@ TEST_F(EvalTest, ReverseVector) {
     Continuation* k = parser->parse("⌽ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2071,7 +2199,8 @@ TEST_F(EvalTest, ReverseScalar) {
     Continuation* k = parser->parse("⌽ 42");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -2082,7 +2211,8 @@ TEST_F(EvalTest, ReverseMatrix) {
     Continuation* k = parser->parse("⌽ 2 3 ⍴ 1 2 3 4 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -2104,7 +2234,8 @@ TEST_F(EvalTest, RotateVectorLeft) {
     Continuation* k = parser->parse("2 ⌽ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2121,7 +2252,8 @@ TEST_F(EvalTest, RotateVectorRight) {
     Continuation* k = parser->parse("¯2 ⌽ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2138,7 +2270,8 @@ TEST_F(EvalTest, RotateZero) {
     Continuation* k = parser->parse("0 ⌽ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2154,7 +2287,8 @@ TEST_F(EvalTest, ReverseFirstVector) {
     Continuation* k = parser->parse("⊖ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2171,7 +2305,8 @@ TEST_F(EvalTest, ReverseFirstMatrix) {
     Continuation* k = parser->parse("⊖ 2 3 ⍴ 1 2 3 4 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -2193,7 +2328,8 @@ TEST_F(EvalTest, RotateFirstMatrix) {
     Continuation* k = parser->parse("1 ⊖ 3 2 ⍴ 1 2 3 4 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_matrix());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -2213,7 +2349,8 @@ TEST_F(EvalTest, TallyVector) {
     Continuation* k = parser->parse("≢ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -2224,7 +2361,8 @@ TEST_F(EvalTest, TallyScalar) {
     Continuation* k = parser->parse("≢ 42");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -2235,7 +2373,8 @@ TEST_F(EvalTest, TallyMatrix) {
     Continuation* k = parser->parse("≢ 3 4 ⍴ ⍳12");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -2246,7 +2385,8 @@ TEST_F(EvalTest, TallyEmpty) {
     Continuation* k = parser->parse("≢ 0 ↑ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -2261,7 +2401,8 @@ TEST_F(EvalTest, IndexOfScalar) {
     Continuation* k = parser->parse("1 2 3 4 5 ⍳ 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -2272,7 +2413,8 @@ TEST_F(EvalTest, IndexOfNotFound) {
     Continuation* k = parser->parse("1 2 3 ⍳ 7");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
@@ -2283,7 +2425,8 @@ TEST_F(EvalTest, IndexOfVector) {
     Continuation* k = parser->parse("10 20 30 40 ⍳ 30 10 99");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2299,7 +2442,8 @@ TEST_F(EvalTest, IndexOfDuplicates) {
     Continuation* k = parser->parse("5 3 5 7 3 ⍳ 3 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2312,7 +2456,8 @@ TEST_F(EvalTest, MemberOfScalarFound) {
     Continuation* k = parser->parse("3 ∊ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -2323,7 +2468,8 @@ TEST_F(EvalTest, MemberOfScalarNotFound) {
     Continuation* k = parser->parse("7 ∊ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -2334,7 +2480,8 @@ TEST_F(EvalTest, MemberOfVector) {
     Continuation* k = parser->parse("1 5 3 7 ∊ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2350,7 +2497,8 @@ TEST_F(EvalTest, MemberOfWithIota) {
     Continuation* k = parser->parse("5 7 2 ∊ ⍳10");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2364,7 +2512,8 @@ TEST_F(EvalTest, EnlistVector) {
     Continuation* k = parser->parse("∊ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2379,7 +2528,8 @@ TEST_F(EvalTest, EnlistScalar) {
     Continuation* k = parser->parse("∊ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2392,7 +2542,8 @@ TEST_F(EvalTest, EnlistMatrix) {
     Continuation* k = parser->parse("∊ 2 3 ⍴ ⍳6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2402,13 +2553,22 @@ TEST_F(EvalTest, EnlistMatrix) {
     }
 }
 
+TEST_F(EvalTest, EnlistEmpty) {
+    // ∊ ⍬ → ⍬ (empty vector stays empty)
+    Value* result = machine->eval("∊ ⍬");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
 TEST_F(EvalTest, IndexOfWithArithmetic) {
     // Combined with arithmetic
     // (⍳5) ⍳ 2+1 → 3 (find 3 in 1 2 3 4 5, returns 1-based index per ISO 13751)
     Continuation* k = parser->parse("(⍳5) ⍳ 2+1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -2423,7 +2583,8 @@ TEST_F(EvalTest, GradeUpVector) {
     Continuation* k = parser->parse("⍋ 3 1 4 1 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2440,7 +2601,8 @@ TEST_F(EvalTest, GradeDownVector) {
     Continuation* k = parser->parse("⍒ 3 1 4 1 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2467,7 +2629,8 @@ TEST_F(EvalTest, GradeUpWithIota) {
     Continuation* k = parser->parse("⍋ ⍳5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2482,7 +2645,8 @@ TEST_F(EvalTest, GradeDownWithIota) {
     Continuation* k = parser->parse("⍒ ⍳5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2497,7 +2661,8 @@ TEST_F(EvalTest, GradeNegativeValues) {
     Continuation* k = parser->parse("⍋ ¯3 1 ¯2 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2517,7 +2682,8 @@ TEST_F(EvalTest, ReplicateBasic) {
     Continuation* k = parser->parse("2 0 3 / 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2534,7 +2700,8 @@ TEST_F(EvalTest, ReplicateCompress) {
     Continuation* k = parser->parse("1 0 1 / 4 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2548,7 +2715,8 @@ TEST_F(EvalTest, ReplicateAllZero) {
     Continuation* k = parser->parse("0 0 0 / 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2560,7 +2728,8 @@ TEST_F(EvalTest, ReplicateScalar) {
     Continuation* k = parser->parse("3 / 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2575,7 +2744,8 @@ TEST_F(EvalTest, ReplicateWithIota) {
     Continuation* k = parser->parse("1 2 3 / ⍳3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2594,7 +2764,8 @@ TEST_F(EvalTest, ReduceStillWorks) {
     Continuation* k = parser->parse("+/ 1 2 3 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
@@ -2606,12 +2777,14 @@ TEST_F(EvalTest, ReplicateVsReduceDistinction) {
     // Test both in sequence
     Continuation* k1 = parser->parse("×/ 1 2 3 4");  // reduce: 24
     ASSERT_NE(k1, nullptr);
-    Value* result1 = eval(k1);
+    machine->push_kont(k1);
+    Value* result1 = machine->execute();
     EXPECT_DOUBLE_EQ(result1->as_scalar(), 24.0);
 
     Continuation* k2 = parser->parse("2 2 2 2 / 1 2 3 4");  // replicate: 1 1 2 2 3 3 4 4
     ASSERT_NE(k2, nullptr);
-    Value* result2 = eval(k2);
+    machine->push_kont(k2);
+    Value* result2 = machine->execute();
     const Eigen::MatrixXd* vec = result2->as_matrix();
     EXPECT_EQ(vec->rows(), 8);
 }
@@ -2625,7 +2798,8 @@ TEST_F(EvalTest, UniqueVector) {
     Continuation* k = parser->parse("∪ 1 2 2 3 1 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2641,7 +2815,8 @@ TEST_F(EvalTest, UniqueScalar) {
     Continuation* k = parser->parse("∪ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -2652,7 +2827,8 @@ TEST_F(EvalTest, UniqueWithIota) {
     Continuation* k = parser->parse("∪ 1 0 2 0 3 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2668,7 +2844,8 @@ TEST_F(EvalTest, UnionBasic) {
     Continuation* k = parser->parse("1 2 3 ∪ 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2685,7 +2862,8 @@ TEST_F(EvalTest, UnionNoOverlap) {
     Continuation* k = parser->parse("1 2 ∪ 3 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2697,7 +2875,8 @@ TEST_F(EvalTest, WithoutBasic) {
     Continuation* k = parser->parse("1 2 3 4 5 ~ 2 4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2712,7 +2891,8 @@ TEST_F(EvalTest, WithoutNoMatch) {
     Continuation* k = parser->parse("1 2 3 ~ 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2724,7 +2904,8 @@ TEST_F(EvalTest, WithoutAllMatch) {
     Continuation* k = parser->parse("1 2 3 ~ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2737,7 +2918,8 @@ TEST_F(EvalTest, MonadicNotStillWorks) {
     Continuation* k = parser->parse("~ 0 1 0 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2753,7 +2935,8 @@ TEST_F(EvalTest, SetFunctionsWithArithmetic) {
     Continuation* k = parser->parse("∪ (⍳5) + 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2769,7 +2952,8 @@ TEST_F(EvalTest, FirstOfVector) {
     Continuation* k = parser->parse("↑ 10 20 30");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
@@ -2780,7 +2964,8 @@ TEST_F(EvalTest, FirstOfScalar) {
     Continuation* k = parser->parse("↑ 42");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -2791,7 +2976,8 @@ TEST_F(EvalTest, FirstOfIota) {
     Continuation* k = parser->parse("↑ ⍳5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -2802,7 +2988,8 @@ TEST_F(EvalTest, FirstOfMatrix) {
     Continuation* k = parser->parse("↑ 2 3 ⍴ ⍳6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2817,7 +3004,8 @@ TEST_F(EvalTest, DyadicTakeStillWorks) {
     Continuation* k = parser->parse("3 ↑ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2836,7 +3024,8 @@ TEST_F(EvalTest, PiTimesScalar) {
     Continuation* k = parser->parse("○ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), M_PI, 1e-10);
@@ -2847,7 +3036,8 @@ TEST_F(EvalTest, PiTimesHalf) {
     Continuation* k = parser->parse("○ 0.5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), M_PI / 2.0, 1e-10);
@@ -2858,7 +3048,8 @@ TEST_F(EvalTest, CircularSin) {
     Continuation* k = parser->parse("1 ○ (○ 0.5)");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), 1.0, 1e-10);
@@ -2869,7 +3060,8 @@ TEST_F(EvalTest, CircularCos) {
     Continuation* k = parser->parse("2 ○ 0");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), 1.0, 1e-10);
@@ -2880,7 +3072,8 @@ TEST_F(EvalTest, CircularSqrt) {
     Continuation* k = parser->parse("0 ○ 0.6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), 0.8, 1e-10);
@@ -2891,7 +3084,8 @@ TEST_F(EvalTest, CircularAtan) {
     Continuation* k = parser->parse("¯3 ○ 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_NEAR(result->as_scalar(), M_PI / 4.0, 1e-10);
@@ -2902,7 +3096,8 @@ TEST_F(EvalTest, PiTimesVector) {
     Continuation* k = parser->parse("○ 0 0.5 1 2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2922,7 +3117,8 @@ TEST_F(EvalTest, RollBasic) {
     Continuation* k = parser->parse("?6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     double r = result->as_scalar();
@@ -2935,7 +3131,8 @@ TEST_F(EvalTest, RollVector) {
     Continuation* k = parser->parse("?3 3 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2951,7 +3148,8 @@ TEST_F(EvalTest, DealBasic) {
     Continuation* k = parser->parse("3?10");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2971,7 +3169,8 @@ TEST_F(EvalTest, DealPermutation) {
     Continuation* k = parser->parse("5?5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -2994,7 +3193,8 @@ TEST_F(EvalTest, ExpandBasic) {
     Continuation* k = parser->parse("1 0 1 1 \\ 1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3010,7 +3210,8 @@ TEST_F(EvalTest, ExpandLeadingZeros) {
     Continuation* k = parser->parse("0 0 1 1 \\ 5 6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3026,7 +3227,8 @@ TEST_F(EvalTest, ScanVsExpand) {
     Continuation* k = parser->parse("+\\1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3045,7 +3247,8 @@ TEST_F(EvalTest, DecodeBinary) {
     Continuation* k = parser->parse("2⊥1 0 1 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 11.0);
@@ -3056,7 +3259,8 @@ TEST_F(EvalTest, DecodeDecimal) {
     Continuation* k = parser->parse("10⊥1 2 3");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 123.0);
@@ -3067,7 +3271,8 @@ TEST_F(EvalTest, DecodeMixedRadix) {
     Continuation* k = parser->parse("24 60 60⊥1 30 45");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5445.0);
@@ -3078,7 +3283,8 @@ TEST_F(EvalTest, EncodeBinary) {
     Continuation* k = parser->parse("2 2 2 2⊤11");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3094,7 +3300,8 @@ TEST_F(EvalTest, EncodeDecimal) {
     Continuation* k = parser->parse("10 10 10⊤345");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3109,7 +3316,8 @@ TEST_F(EvalTest, EncodeMixedRadix) {
     Continuation* k = parser->parse("24 60 60⊤5445");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3124,7 +3332,8 @@ TEST_F(EvalTest, DecodeEncodeRoundtrip) {
     Continuation* k = parser->parse("2⊥2 2 2 2⊤13");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 13.0);
@@ -3139,7 +3348,8 @@ TEST_F(EvalTest, MatrixInverseScalar) {
     Continuation* k = parser->parse("⌹4");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.25);
@@ -3150,7 +3360,8 @@ TEST_F(EvalTest, MatrixInverseMatrix) {
     Continuation* k = parser->parse("⌹2 2⍴1 0 0 1");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_FALSE(result->is_scalar());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -3169,7 +3380,8 @@ TEST_F(EvalTest, MatrixDivideScalars) {
     Continuation* k = parser->parse("6⌹2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -3180,7 +3392,8 @@ TEST_F(EvalTest, MatrixDivideVectorByScalar) {
     Continuation* k = parser->parse("(2 4 6)⌹2");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3198,7 +3411,8 @@ TEST_F(EvalTest, DyadicTransposeIdentity) {
     Continuation* k = parser->parse("0 1⍉2 3⍴⍳6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_FALSE(result->is_scalar());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -3211,7 +3425,8 @@ TEST_F(EvalTest, DyadicTransposeSwap) {
     Continuation* k = parser->parse("1 0⍉2 3⍴⍳6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_FALSE(result->is_scalar());
     const Eigen::MatrixXd* mat = result->as_matrix();
@@ -3229,11 +3444,13 @@ TEST_F(EvalTest, DyadicTransposeEqualsMonadic) {
     // Both should give same result
     Continuation* k1 = parser->parse("1 0⍉2 3⍴⍳6");
     ASSERT_NE(k1, nullptr) << "Parse error: " << parser->get_error();
-    Value* result1 = eval(k1);
+    machine->push_kont(k1);
+    Value* result1 = machine->execute();
 
     Continuation* k2 = parser->parse("⍉2 3⍴⍳6");
     ASSERT_NE(k2, nullptr) << "Parse error: " << parser->get_error();
-    Value* result2 = eval(k2);
+    machine->push_kont(k2);
+    Value* result2 = machine->execute();
 
     const Eigen::MatrixXd* mat1 = result1->as_matrix();
     const Eigen::MatrixXd* mat2 = result2->as_matrix();
@@ -3248,11 +3465,12 @@ TEST_F(EvalTest, DyadicTransposeEqualsMonadic) {
 
 TEST_F(EvalTest, IndexedRefScalar) {
     // A←10 20 30 ⋄ A[2] → 20 (1-based indexing)
-    eval(parser->parse("A←10 20 30"));
+    machine->eval("A←10 20 30");
     Continuation* k = parser->parse("A[2]");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
@@ -3260,11 +3478,12 @@ TEST_F(EvalTest, IndexedRefScalar) {
 
 TEST_F(EvalTest, IndexedRefVector) {
     // A←10 20 30 40 50 ⋄ A[2 4] → 20 40
-    eval(parser->parse("A←10 20 30 40 50"));
+    machine->eval("A←10 20 30 40 50");
     Continuation* k = parser->parse("A[2 4]");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* vec = result->as_matrix();
@@ -3275,11 +3494,12 @@ TEST_F(EvalTest, IndexedRefVector) {
 
 TEST_F(EvalTest, IndexedRefWithExpression) {
     // A←⍳10 ⋄ A[1+2] → 3 (index 3, value 3)
-    eval(parser->parse("A←⍳10"));
+    machine->eval("A←⍳10");
     Continuation* k = parser->parse("A[1+2]");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
@@ -3291,18 +3511,19 @@ TEST_F(EvalTest, IndexedRefWithExpression) {
 
 TEST_F(EvalTest, IndexedAssignScalar) {
     // A←1 2 3 ⋄ A[2]←99 ⋄ A → 1 99 3
-    eval(parser->parse("A←1 2 3"));
+    machine->eval("A←1 2 3");
     Continuation* k = parser->parse("A[2]←99");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     // Indexed assignment returns the assigned value
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
 
     // Verify A was modified
-    Value* a_val = eval(parser->parse("A"));
+    Value* a_val = machine->eval("A");
     ASSERT_NE(a_val, nullptr);
     EXPECT_TRUE(a_val->is_vector());
     const Eigen::MatrixXd* vec = a_val->as_matrix();
@@ -3314,10 +3535,10 @@ TEST_F(EvalTest, IndexedAssignScalar) {
 
 TEST_F(EvalTest, IndexedAssignFirst) {
     // A←10 20 30 ⋄ A[1]←5 ⋄ A → 5 20 30
-    eval(parser->parse("A←10 20 30"));
-    eval(parser->parse("A[1]←5"));
+    machine->eval("A←10 20 30");
+    machine->eval("A[1]←5");
 
-    Value* a_val = eval(parser->parse("A"));
+    Value* a_val = machine->eval("A");
     ASSERT_NE(a_val, nullptr);
     const Eigen::MatrixXd* vec = a_val->as_matrix();
     EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
@@ -3327,10 +3548,10 @@ TEST_F(EvalTest, IndexedAssignFirst) {
 
 TEST_F(EvalTest, IndexedAssignLast) {
     // A←10 20 30 ⋄ A[3]←99 ⋄ A → 10 20 99
-    eval(parser->parse("A←10 20 30"));
-    eval(parser->parse("A[3]←99"));
+    machine->eval("A←10 20 30");
+    machine->eval("A[3]←99");
 
-    Value* a_val = eval(parser->parse("A"));
+    Value* a_val = machine->eval("A");
     ASSERT_NE(a_val, nullptr);
     const Eigen::MatrixXd* vec = a_val->as_matrix();
     EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
@@ -3340,47 +3561,48 @@ TEST_F(EvalTest, IndexedAssignLast) {
 
 TEST_F(EvalTest, IndexedAssignWithIota) {
     // A←⍳5 ⋄ A[2]←100 (iota + simple index)
-    eval(parser->parse("A←⍳5"));
+    machine->eval("A←⍳5");
 
     // Debug: Check what type is stored
     Value* stored = machine->env->lookup("A");
     ASSERT_NE(stored, nullptr) << "A should be defined after A←⍳5";
     EXPECT_TRUE(stored->is_array()) << "A should be array, got tag=" << static_cast<int>(stored->tag);
 
-    eval(parser->parse("A[2]←100"));
+    machine->eval("A[2]←100");
 
-    Value* result = eval(parser->parse("A[2]"));
+    Value* result = machine->eval("A[2]");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
 }
 
 TEST_F(EvalTest, IndexedAssignWithExpressionIndex) {
     // A←⍳5 ⋄ A[2+1]←100 ⋄ A[3] → 100
-    eval(parser->parse("A←⍳5"));
-    eval(parser->parse("A[2+1]←100"));
+    machine->eval("A←⍳5");
+    machine->eval("A[2+1]←100");
 
-    Value* result = eval(parser->parse("A[3]"));
+    Value* result = machine->eval("A[3]");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
 }
 
 TEST_F(EvalTest, IndexedAssignWithExpressionValue) {
     // A←1 2 3 ⋄ A[2]←10×5 ⋄ A[2] → 50
-    eval(parser->parse("A←1 2 3"));
-    eval(parser->parse("A[2]←10×5"));
+    machine->eval("A←1 2 3");
+    machine->eval("A[2]←10×5");
 
-    Value* result = eval(parser->parse("A[2]"));
+    Value* result = machine->eval("A[2]");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 50.0);
 }
 
 TEST_F(EvalTest, IndexedAssignReturnsValue) {
     // The return value of A[I]←V is V
-    eval(parser->parse("A←1 2 3"));
+    machine->eval("A←1 2 3");
     Continuation* k = parser->parse("A[1]←42");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -3388,27 +3610,27 @@ TEST_F(EvalTest, IndexedAssignReturnsValue) {
 
 TEST_F(EvalTest, IndexedAssignMatrix) {
     // A←2 3⍴⍳6 ⋄ A[4]←99 ⋄ A[4] → 99 (linear index into matrix)
-    eval(parser->parse("A←2 3⍴⍳6"));
+    machine->eval("A←2 3⍴⍳6");
 
     Value* stored = machine->env->lookup("A");
     ASSERT_NE(stored, nullptr) << "A should be defined";
     EXPECT_TRUE(stored->is_matrix()) << "A should be matrix, got tag=" << static_cast<int>(stored->tag);
 
-    eval(parser->parse("A[4]←99"));
+    machine->eval("A[4]←99");
 
-    Value* result = eval(parser->parse("A[4]"));
+    Value* result = machine->eval("A[4]");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
 }
 
 TEST_F(EvalTest, IndexedAssignChained) {
     // Multiple indexed assignments in sequence
-    eval(parser->parse("A←1 2 3 4 5"));
-    eval(parser->parse("A[1]←10"));
-    eval(parser->parse("A[3]←30"));
-    eval(parser->parse("A[5]←50"));
+    machine->eval("A←1 2 3 4 5");
+    machine->eval("A[1]←10");
+    machine->eval("A[3]←30");
+    machine->eval("A[5]←50");
 
-    Value* a_val = eval(parser->parse("A"));
+    Value* a_val = machine->eval("A");
     const Eigen::MatrixXd* vec = a_val->as_matrix();
     EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
     EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
@@ -3421,40 +3643,40 @@ TEST_F(EvalTest, IndexedAssignChained) {
 
 TEST_F(EvalTest, IndexedAssignOutOfBounds) {
     // A←1 2 3 ⋄ A[10]←5 → INDEX ERROR
-    eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[10]←5")), APLError);
+    machine->eval("A←1 2 3");
+    EXPECT_THROW(machine->eval("A[10]←5"), APLError);
 }
 
 TEST_F(EvalTest, IndexedAssignZeroIndex) {
     // A←1 2 3 ⋄ A[0]←5 → INDEX ERROR (⎕IO=1)
-    eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[0]←5")), APLError);
+    machine->eval("A←1 2 3");
+    EXPECT_THROW(machine->eval("A[0]←5"), APLError);
 }
 
 TEST_F(EvalTest, IndexedAssignNegativeIndex) {
     // A←1 2 3 ⋄ A[¯1]←5 → INDEX ERROR
-    eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[¯1]←5")), APLError);
+    machine->eval("A←1 2 3");
+    EXPECT_THROW(machine->eval("A[¯1]←5"), APLError);
 }
 
 TEST_F(EvalTest, IndexRefOutOfBounds) {
     // A←1 2 3 ⋄ A[10] → INDEX ERROR
-    eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[10]")), APLError);
+    machine->eval("A←1 2 3");
+    EXPECT_THROW(machine->eval("A[10]"), APLError);
 }
 
 TEST_F(EvalTest, IndexRefZeroIndex) {
     // A←1 2 3 ⋄ A[0] → INDEX ERROR (⎕IO=1)
-    eval(parser->parse("A←1 2 3"));
-    EXPECT_THROW(eval(parser->parse("A[0]")), APLError);
+    machine->eval("A←1 2 3");
+    EXPECT_THROW(machine->eval("A[0]"), APLError);
 }
 
 TEST_F(EvalTest, IndexedAssignVectorIndices) {
     // A←10 20 30 40 50 ⋄ A[2 4]←99 88 ⋄ A → 10 99 30 88 50
-    eval(parser->parse("A←10 20 30 40 50"));
-    eval(parser->parse("A[2 4]←99 88"));
+    machine->eval("A←10 20 30 40 50");
+    machine->eval("A[2 4]←99 88");
 
-    Value* a_val = eval(parser->parse("A"));
+    Value* a_val = machine->eval("A");
     ASSERT_NE(a_val, nullptr);
     const Eigen::MatrixXd* vec = a_val->as_matrix();
     EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
@@ -3466,10 +3688,10 @@ TEST_F(EvalTest, IndexedAssignVectorIndices) {
 
 TEST_F(EvalTest, IndexedAssignScalarToMultiple) {
     // A←10 20 30 40 50 ⋄ A[2 4]←0 ⋄ A → 10 0 30 0 50 (scalar extends)
-    eval(parser->parse("A←10 20 30 40 50"));
-    eval(parser->parse("A[2 4]←0"));
+    machine->eval("A←10 20 30 40 50");
+    machine->eval("A[2 4]←0");
 
-    Value* a_val = eval(parser->parse("A"));
+    Value* a_val = machine->eval("A");
     ASSERT_NE(a_val, nullptr);
     const Eigen::MatrixXd* vec = a_val->as_matrix();
     EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
@@ -3480,12 +3702,12 @@ TEST_F(EvalTest, IndexedAssignScalarToMultiple) {
 }
 
 // ============================================================================
-// Table Function (⍸) Tests
+// Table Function (⍪) Tests
 // ============================================================================
 
 TEST_F(EvalTest, TableScalar) {
-    // ⍸ 5 → 1×1 matrix
-    Value* result = eval(parser->parse("⍸ 5"));
+    // ⍪ 5 → 1×1 matrix
+    Value* result = machine->eval("⍪ 5");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_matrix());
     EXPECT_FALSE(result->is_vector());
@@ -3496,8 +3718,8 @@ TEST_F(EvalTest, TableScalar) {
 }
 
 TEST_F(EvalTest, TableVector) {
-    // ⍸ ⍳4 → 4×1 matrix
-    Value* result = eval(parser->parse("⍸ ⍳4"));
+    // ⍪ ⍳4 → 4×1 matrix
+    Value* result = machine->eval("⍪ ⍳4");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_matrix());
     EXPECT_FALSE(result->is_vector());
@@ -3507,8 +3729,8 @@ TEST_F(EvalTest, TableVector) {
 }
 
 TEST_F(EvalTest, TableShapeScalar) {
-    // ⍴⍸5 → 1 1
-    Value* result = eval(parser->parse("⍴⍸5"));
+    // ⍴⍪5 → 1 1
+    Value* result = machine->eval("⍴⍪5");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* shape = result->as_matrix();
@@ -3518,8 +3740,8 @@ TEST_F(EvalTest, TableShapeScalar) {
 }
 
 TEST_F(EvalTest, TableShapeVector) {
-    // ⍴⍸⍳5 → 5 1
-    Value* result = eval(parser->parse("⍴⍸⍳5"));
+    // ⍴⍪⍳5 → 5 1
+    Value* result = machine->eval("⍴⍪⍳5");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_vector());
     const Eigen::MatrixXd* shape = result->as_matrix();
@@ -3529,12 +3751,110 @@ TEST_F(EvalTest, TableShapeVector) {
 }
 
 // ============================================================================
+// Catenate First (dyadic ⍪) Tests - ISO 13751 Section 8.3.2
+// ============================================================================
+
+TEST_F(EvalTest, CatenateFirstVectors) {
+    // (1 2 3)⍪(4 5 6) → 2×3 matrix
+    Value* result = machine->eval("(1 2 3)⍪(4 5 6)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 6.0);
+}
+
+TEST_F(EvalTest, CatenateFirstScalars) {
+    // 1⍪2 → 2-element column vector
+    Value* result = machine->eval("1⍪2");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+}
+
+TEST_F(EvalTest, CatenateFirstMatrices) {
+    // Stack two 2×3 matrices → 4×3 matrix
+    Value* result = machine->eval("(2 3⍴⍳6)⍪(2 3⍴7 8 9 10 11 12)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 4);
+    EXPECT_EQ(mat->cols(), 3);
+    // First matrix: 1 2 3 / 4 5 6
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 6.0);
+    // Second matrix: 7 8 9 / 10 11 12
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 2), 12.0);
+}
+
+TEST_F(EvalTest, CatenateFirstShape) {
+    // ⍴(1 2 3)⍪(4 5 6) → 2 3
+    Value* result = machine->eval("⍴(1 2 3)⍪(4 5 6)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* shape = result->as_matrix();
+    EXPECT_EQ(shape->size(), 2);
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+}
+
+// ============================================================================
+// Depth (≡) Tests - ISO 13751 Section 8.2.5
+// ============================================================================
+
+TEST_F(EvalTest, DepthScalar) {
+    // ≡ 5 → 0 (scalar has depth 0)
+    Value* result = machine->eval("≡ 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(EvalTest, DepthVector) {
+    // ≡ 1 2 3 → 1 (simple array has depth 1)
+    Value* result = machine->eval("≡ 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, DepthMatrix) {
+    // ≡ 2 3⍴⍳6 → 1 (simple array has depth 1)
+    Value* result = machine->eval("≡ 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, DepthEmptyVector) {
+    // ≡ ⍬ → 1 (empty vector has depth 1)
+    Value* result = machine->eval("≡ ⍬");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, DepthDyadicReserved) {
+    // Dyadic ≡ (match) requires nested arrays - should error
+    EXPECT_THROW(machine->eval("1 2 3 ≡ 1 2 3"), APLError);
+}
+
+// ============================================================================
 // Zilde (⍬) Tests - Empty Vector Literal
 // ============================================================================
 
 TEST_F(EvalTest, ZildeIsEmptyVector) {
     // ⍬ should be an empty vector
-    Value* result = eval(parser->parse("⍬"));
+    Value* result = machine->eval("⍬");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 0);
@@ -3542,7 +3862,7 @@ TEST_F(EvalTest, ZildeIsEmptyVector) {
 
 TEST_F(EvalTest, ZildeShape) {
     // ⍴⍬ → 0 (shape of empty vector is a 1-element vector containing 0)
-    Value* result = eval(parser->parse("⍴⍬"));
+    Value* result = machine->eval("⍴⍬");
     ASSERT_NE(result, nullptr);
     // Shape returns a vector; for empty vector the shape is [0]
     ASSERT_TRUE(result->is_vector());
@@ -3552,8 +3872,8 @@ TEST_F(EvalTest, ZildeShape) {
 
 TEST_F(EvalTest, ZildeAssignment) {
     // x←⍬ then ⍴x → 0
-    eval(parser->parse("x←⍬"));
-    Value* result = eval(parser->parse("⍴x"));
+    machine->eval("x←⍬");
+    Value* result = machine->eval("⍴x");
     ASSERT_NE(result, nullptr);
     // Shape returns a vector; for empty vector the shape is [0]
     ASSERT_TRUE(result->is_vector());
@@ -3563,7 +3883,7 @@ TEST_F(EvalTest, ZildeAssignment) {
 
 TEST_F(EvalTest, ZildeCatenate) {
     // 1 2 3,⍬ → 1 2 3 (catenate with empty)
-    Value* result = eval(parser->parse("1 2 3,⍬"));
+    Value* result = machine->eval("1 2 3,⍬");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 3);
@@ -3575,7 +3895,7 @@ TEST_F(EvalTest, ZildeCatenate) {
 
 TEST_F(EvalTest, ZildeCatenateReverse) {
     // ⍬,1 2 3 → 1 2 3 (catenate empty with vector)
-    Value* result = eval(parser->parse("⍬,1 2 3"));
+    Value* result = machine->eval("⍬,1 2 3");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 3);
@@ -3584,7 +3904,7 @@ TEST_F(EvalTest, ZildeCatenateReverse) {
 TEST_F(EvalTest, ZildeFormatRoundTrip) {
     // format_value outputs ⍬ for empty vectors
     // This test verifies the round-trip: ⍬ → parse → eval → format → ⍬
-    Value* result = eval(parser->parse("⍬"));
+    Value* result = machine->eval("⍬");
     ASSERT_NE(result, nullptr);
     std::string formatted = format_value(result);
     EXPECT_EQ(formatted, "⍬");
@@ -3597,7 +3917,7 @@ TEST_F(EvalTest, ZildeFormatRoundTrip) {
 // Section 6.3.9: Assignment returns committed-value (the assigned value)
 TEST_F(EvalTest, AssignmentReturnsValue) {
     // X←5 returns 5, so 1+X←5 should equal 6
-    Value* result = eval(parser->parse("1+X←5"));
+    Value* result = machine->eval("1+X←5");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
@@ -3605,24 +3925,24 @@ TEST_F(EvalTest, AssignmentReturnsValue) {
 
 TEST_F(EvalTest, AssignmentChaining) {
     // Y←X←5 should set both X and Y to 5
-    eval(parser->parse("Y←X←5"));
+    machine->eval("Y←X←5");
 
-    Value* x = eval(parser->parse("X"));
+    Value* x = machine->eval("X");
     ASSERT_NE(x, nullptr);
     EXPECT_DOUBLE_EQ(x->as_scalar(), 5.0);
 
-    Value* y = eval(parser->parse("Y"));
+    Value* y = machine->eval("Y");
     ASSERT_NE(y, nullptr);
     EXPECT_DOUBLE_EQ(y->as_scalar(), 5.0);
 }
 
 TEST_F(EvalTest, AssignmentChainingThreeVars) {
     // Z←Y←X←42 should set all three to 42
-    eval(parser->parse("Z←Y←X←42"));
+    machine->eval("Z←Y←X←42");
 
-    Value* x = eval(parser->parse("X"));
-    Value* y = eval(parser->parse("Y"));
-    Value* z = eval(parser->parse("Z"));
+    Value* x = machine->eval("X");
+    Value* y = machine->eval("Y");
+    Value* z = machine->eval("Z");
 
     EXPECT_DOUBLE_EQ(x->as_scalar(), 42.0);
     EXPECT_DOUBLE_EQ(y->as_scalar(), 42.0);
@@ -3631,12 +3951,12 @@ TEST_F(EvalTest, AssignmentChainingThreeVars) {
 
 TEST_F(EvalTest, AssignmentInExpression) {
     // (X←3)×(Y←4) should set X=3, Y=4, return 12
-    Value* result = eval(parser->parse("(X←3)×(Y←4)"));
+    Value* result = machine->eval("(X←3)×(Y←4)");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
 
-    Value* x = eval(parser->parse("X"));
-    Value* y = eval(parser->parse("Y"));
+    Value* x = machine->eval("X");
+    Value* y = machine->eval("Y");
     EXPECT_DOUBLE_EQ(x->as_scalar(), 3.0);
     EXPECT_DOUBLE_EQ(y->as_scalar(), 4.0);
 }
@@ -3644,33 +3964,33 @@ TEST_F(EvalTest, AssignmentInExpression) {
 // Section 6.3.10: Indexed assignment to undefined variable signals VALUE ERROR
 TEST_F(EvalTest, IndexedAssignUndefinedVariable) {
     // UNDEFINED_VAR[1]←5 should signal VALUE ERROR
-    EXPECT_THROW(eval(parser->parse("UNDEFINED_VAR_XYZ[1]←5")), APLError);
+    EXPECT_THROW(machine->eval("UNDEFINED_VAR_XYZ[1]←5"), APLError);
 }
 
 // Section 6.3.11: Referencing undefined variable signals VALUE ERROR
 TEST_F(EvalTest, UndefinedVariableError) {
     // Referencing an undefined variable should signal VALUE ERROR
-    EXPECT_THROW(eval(parser->parse("NEVER_DEFINED_VAR")), APLError);
+    EXPECT_THROW(machine->eval("NEVER_DEFINED_VAR"), APLError);
 }
 
 // Section 6.1: Statement separator (⋄) allows multiple statements
 TEST_F(EvalTest, StatementSeparatorBasic) {
     // X←1 ⋄ X+1 → 2
-    Value* result = eval(parser->parse("X←1 ⋄ X+1"));
+    Value* result = machine->eval("X←1 ⋄ X+1");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
 }
 
 TEST_F(EvalTest, StatementSeparatorMultiple) {
     // X←1 ⋄ Y←2 ⋄ X+Y → 3
-    Value* result = eval(parser->parse("X←1 ⋄ Y←2 ⋄ X+Y"));
+    Value* result = machine->eval("X←1 ⋄ Y←2 ⋄ X+Y");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
 TEST_F(EvalTest, StatementSeparatorReturnsLast) {
     // 1 ⋄ 2 ⋄ 3 → 3 (returns last statement's value)
-    Value* result = eval(parser->parse("1 ⋄ 2 ⋄ 3"));
+    Value* result = machine->eval("1 ⋄ 2 ⋄ 3");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }

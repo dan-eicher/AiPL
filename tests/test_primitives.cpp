@@ -886,6 +886,12 @@ TEST_F(PrimitivesTest, ErrorReshapeNegativeShape) {
 
 }
 
+// ISO 13751 8.3.1: If rank of A > 1, signal rank-error
+TEST_F(PrimitivesTest, RankErrorReshapeMatrixShape) {
+    // (2 2⍴1 2 3 4)⍴⍳6 → RANK ERROR (shape is a matrix, not vector)
+    EXPECT_THROW(machine->eval("(2 2⍴1 2 3 4)⍴⍳6"), APLError);
+}
+
 TEST_F(PrimitivesTest, ErrorIotaNonScalar) {
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
@@ -4019,11 +4025,11 @@ TEST_F(PrimitivesTest, BracketIndexChained) {
 }
 
 // ============================================================================
-// Table Function (⍸) Tests
+// Table Function (⍪) Tests
 // ============================================================================
 
 TEST_F(PrimitivesTest, TableScalar) {
-    // ⍸ 5 → 1×1 matrix containing 5
+    // ⍪ 5 → 1×1 matrix containing 5
     Value* scalar = machine->heap->allocate_scalar(5.0);
     fn_table(machine, scalar);
 
@@ -4152,6 +4158,18 @@ TEST_F(PrimitivesTest, DomainErrorIotaNegative) {
 TEST_F(PrimitivesTest, DomainErrorIotaNonInteger) {
     // ⍳1.5 → DOMAIN ERROR (non-integer)
     EXPECT_THROW(machine->eval("⍳1.5"), APLError);
+}
+
+// ISO 13751 8.2.3: If rank of B > 1, signal rank-error
+TEST_F(PrimitivesTest, RankErrorIotaMatrix) {
+    // ⍳(2 2⍴1) → RANK ERROR (matrix argument)
+    EXPECT_THROW(machine->eval("⍳2 2⍴1"), APLError);
+}
+
+// ISO 13751 8.2.3: If count of B ≠ 1, signal length-error
+TEST_F(PrimitivesTest, LengthErrorIotaVector) {
+    // ⍳1 2 3 → LENGTH ERROR (vector argument)
+    EXPECT_THROW(machine->eval("⍳1 2 3"), APLError);
 }
 
 TEST_F(PrimitivesTest, IotaZeroValid) {
@@ -4566,6 +4584,77 @@ TEST_F(PrimitivesTest, MatrixShapeMismatch) {
         EXPECT_THROW(machine->eval(expr), APLError)
             << "Expected LENGTH ERROR for mismatched matrices with " << op;
     }
+}
+
+// ============================================================================
+// Structural Function Combinations: Catenate First (⍪)
+// ============================================================================
+
+TEST_F(PrimitivesTest, CatenateFirstAllCombinations) {
+    // Test all 9 argument combinations for ⍪ (catenate first axis)
+    // Per ISO 13751 Section 8.3.2: A⍪B is A,[1]B
+    // Scalar extension applies: scalar extends to match other arg's trailing dims
+    struct TestCase {
+        std::string left;
+        std::string right;
+        bool should_succeed;
+        int expected_rows;
+        int expected_cols;
+        std::string description;
+    };
+
+    std::vector<TestCase> cases = {
+        // Scalar combinations
+        {"5",           "3",           true,  2, 1, "scalar-scalar"},
+        {"5",           "1 2 3",       true,  2, 3, "scalar-vector (extension)"},
+        {"5",           "2 3⍴⍳6",      true,  3, 3, "scalar-matrix (extension)"},
+        // Vector combinations
+        {"1 2 3",       "4",           true,  2, 3, "vector-scalar (extension)"},
+        {"1 2 3",       "4 5 6",       true,  2, 3, "vector-vector (same len)"},
+        {"1 2 3",       "4 5",         false, 0, 0, "vector-vector (diff len)"},
+        {"1 2 3",       "2 3⍴⍳6",      true,  3, 3, "vector-matrix (matching cols)"},
+        {"1 2 3",       "2 4⍴⍳8",      false, 0, 0, "vector-matrix (diff cols)"},
+        // Matrix combinations
+        {"2 3⍴⍳6",      "7",           true,  3, 3, "matrix-scalar (extension)"},
+        {"2 3⍴⍳6",      "7 8 9",       true,  3, 3, "matrix-vector (matching cols)"},
+        {"2 3⍴⍳6",      "7 8",         false, 0, 0, "matrix-vector (diff cols)"},
+        {"2 3⍴⍳6",      "2 3⍴7 8 9 10 11 12", true, 4, 3, "matrix-matrix (same cols)"},
+        {"2 3⍴⍳6",      "2 4⍴⍳8",      false, 0, 0, "matrix-matrix (diff cols)"},
+    };
+
+    int total = 0, passed = 0;
+    for (const auto& tc : cases) {
+        total++;
+        std::string expr = "(" + tc.left + ")⍪(" + tc.right + ")";
+
+        if (tc.should_succeed) {
+            try {
+                Value* result = machine->eval(expr);
+                if (result && result->is_matrix()) {
+                    const Eigen::MatrixXd* mat = result->as_matrix();
+                    if (mat->rows() == tc.expected_rows && mat->cols() == tc.expected_cols) {
+                        passed++;
+                    } else {
+                        ADD_FAILURE() << "Wrong shape for ⍪ " << tc.description
+                                      << ": got " << mat->rows() << "×" << mat->cols()
+                                      << ", expected " << tc.expected_rows << "×" << tc.expected_cols;
+                    }
+                } else {
+                    ADD_FAILURE() << "Non-matrix result for ⍪ " << tc.description << ": " << expr;
+                }
+            } catch (const std::exception& e) {
+                ADD_FAILURE() << "Unexpected error for ⍪ " << tc.description << ": " << e.what();
+            }
+        } else {
+            try {
+                machine->eval(expr);
+                ADD_FAILURE() << "Expected error for ⍪ " << tc.description << ": " << expr;
+            } catch (const APLError&) {
+                passed++;
+            }
+        }
+    }
+    EXPECT_EQ(passed, total) << "Failed " << (total - passed) << " of " << total << " ⍪ tests";
 }
 
 // ============================================================================

@@ -55,6 +55,7 @@ void Machine::init_globals() {
     env->define("⌽", heap->allocate_primitive(&prim_reverse));
     env->define("⊖", heap->allocate_primitive(&prim_reverse_first));
     env->define("≢", heap->allocate_primitive(&prim_tally));
+    env->define("≡", heap->allocate_primitive(&prim_depth));
     env->define("∊", heap->allocate_primitive(&prim_member));
     env->define("⍋", heap->allocate_primitive(&prim_grade_up));
     env->define("⍒", heap->allocate_primitive(&prim_grade_down));
@@ -67,7 +68,7 @@ void Machine::init_globals() {
     env->define("⍎", heap->allocate_primitive(&prim_execute));
     env->define("⍕", heap->allocate_primitive(&prim_format));
     env->define("⌷", heap->allocate_primitive(&prim_squad));
-    env->define("⍸", heap->allocate_primitive(&prim_table));
+    env->define("⍪", heap->allocate_primitive(&prim_table));
 
     // Operators (higher-order functions)
     env->define(".", heap->allocate_operator(&op_dot));
@@ -117,6 +118,11 @@ Value* Machine::execute() {
         // Pop next continuation from stack
         Continuation* k = kont_stack.back();
         kont_stack.pop_back();
+
+        // Defense in depth: reject null continuations (VM bug if this happens)
+        if (!k) {
+            throw std::runtime_error("VM BUG: null continuation on stack");
+        }
 
         // Phase 3.1: invoke() now returns void
         k->invoke(this);

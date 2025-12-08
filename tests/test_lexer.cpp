@@ -696,14 +696,14 @@ TEST_F(LexerTest, MatrixExecute) {
     EXPECT_EQ(tokens[1].type, TOK_EXECUTE);
 }
 
-// Test reserved nested array tokens (⊂ ⊃ ≡)
-TEST_F(LexerTest, ReservedNestedArrayTokens) {
+// Test reserved nested array tokens (⊂ ⊃) and depth (≡)
+TEST_F(LexerTest, NestedArrayAndDepthTokens) {
     auto tokens = tokenize("⊂ ⊃ ≡");
 
     ASSERT_EQ(tokens.size(), 4);  // 3 tokens + EOF
-    EXPECT_EQ(tokens[0].type, TOK_ENCLOSE);
-    EXPECT_EQ(tokens[1].type, TOK_DISCLOSE);
-    EXPECT_EQ(tokens[2].type, TOK_MATCH);
+    EXPECT_EQ(tokens[0].type, TOK_ENCLOSE);   // Reserved (nested arrays)
+    EXPECT_EQ(tokens[1].type, TOK_DISCLOSE);  // Reserved (nested arrays)
+    EXPECT_EQ(tokens[2].type, TOK_MATCH);     // Implemented: depth
 }
 
 // String literal tests
@@ -742,10 +742,10 @@ TEST_F(LexerTest, ExecuteToken) {
     EXPECT_EQ(tokens[0].type, TOK_EXECUTE);
 }
 
-// Test table token (⍸)
+// Test table token (⍪)
 TEST_F(LexerTest, TableToken) {
-    auto tokens = tokenize("⍸");
-    ASSERT_EQ(tokens.size(), 2);  // ⍸ + EOF
+    auto tokens = tokenize("⍪");
+    ASSERT_EQ(tokens.size(), 2);  // ⍪ + EOF
     EXPECT_EQ(tokens[0].type, TOK_TABLE);
 }
 

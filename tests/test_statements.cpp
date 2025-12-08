@@ -20,13 +20,6 @@ protected:
     void TearDown() override {
         delete machine;
     }
-
-    // Helper: evaluate parsed continuation using the CEK machine
-    Value* eval(Continuation* k) {
-        machine->push_kont(k);
-        Value* result = machine->execute();
-        return result;
-    }
 };
 
 // ============================================================================
@@ -40,7 +33,8 @@ TEST_F(StatementTest, EmptyProgram) {
     ASSERT_NE(k, nullptr);
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Empty program returns 0
     ASSERT_NE(result, nullptr);
@@ -54,7 +48,8 @@ TEST_F(StatementTest, SingleStatement) {
 
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
@@ -67,7 +62,8 @@ TEST_F(StatementTest, TwoStatementsNewline) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Result should be the last statement (x)
     ASSERT_NE(result, nullptr);
@@ -86,7 +82,8 @@ TEST_F(StatementTest, TwoStatementsDiamond) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Result should be the last statement (x + 3 = 8)
     ASSERT_NE(result, nullptr);
@@ -100,7 +97,8 @@ TEST_F(StatementTest, MultipleStatementsMixed) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Result should be 1 + 2 + 3 = 6
     ASSERT_NE(result, nullptr);
@@ -114,7 +112,8 @@ TEST_F(StatementTest, LeadingTrailingSeparators) {
 
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -126,7 +125,8 @@ TEST_F(StatementTest, MultipleAssignments) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
@@ -143,7 +143,8 @@ TEST_F(StatementTest, ExpressionSequence) {
 
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Result should be the last expression (5 - 1 = 4)
     ASSERT_NE(result, nullptr);
@@ -156,7 +157,8 @@ TEST_F(StatementTest, SequenceWithArrays) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Result should be shape of vec: [3]
     ASSERT_NE(result, nullptr);
@@ -177,7 +179,8 @@ TEST_F(StatementTest, IfTrue) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -189,7 +192,8 @@ TEST_F(StatementTest, IfFalse) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // x should remain 10 since condition was false
     ASSERT_NE(result, nullptr);
@@ -202,7 +206,8 @@ TEST_F(StatementTest, IfElseTrue) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
@@ -214,7 +219,8 @@ TEST_F(StatementTest, IfElseFalse) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 200.0);
@@ -226,7 +232,8 @@ TEST_F(StatementTest, IfExpressionCondition) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // x - 3 = 2, which is non-zero (true), so y = 10
     ASSERT_NE(result, nullptr);
@@ -251,7 +258,8 @@ TEST_F(StatementTest, NestedIf) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // x is 5 (true), x - 3 is 2 (true), so y = 100
     ASSERT_NE(result, nullptr);
@@ -264,7 +272,8 @@ TEST_F(StatementTest, IfWithoutElseFalse) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // x should remain 5
     ASSERT_NE(result, nullptr);
@@ -284,7 +293,8 @@ TEST_F(StatementTest, IfMultipleStatements) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
@@ -308,7 +318,8 @@ TEST_F(StatementTest, WhileSimple) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // When i=1: sum=1, i=2
     // When i=2: sum=3, i=3
@@ -331,7 +342,8 @@ TEST_F(StatementTest, WhileNeverExecutes) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // x should remain 5
     ASSERT_NE(result, nullptr);
@@ -350,7 +362,8 @@ TEST_F(StatementTest, WhileExpressionCondition) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // n counts down to 0
     ASSERT_NE(result, nullptr);
@@ -375,7 +388,8 @@ TEST_F(StatementTest, WhileNested) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // 3 outer iterations × 2 inner iterations = 6
     ASSERT_NE(result, nullptr);
@@ -399,7 +413,8 @@ TEST_F(StatementTest, WhileMultipleVariables) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Fibonacci: 1,1,2,3,5,8,13 - after 5 iterations, b = 13
     ASSERT_NE(result, nullptr);
@@ -422,7 +437,8 @@ TEST_F(StatementTest, ForSimple) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // sum = 1+2+3+4+5 = 15
     ASSERT_NE(result, nullptr);
@@ -441,7 +457,8 @@ TEST_F(StatementTest, ForScalar) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -460,7 +477,8 @@ TEST_F(StatementTest, ForExpression) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // sum = 10+20+30 = 60
     ASSERT_NE(result, nullptr);
@@ -481,7 +499,8 @@ TEST_F(StatementTest, ForNested) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // i=1: j=10 (11), j=20 (21) -> 32
     // i=2: j=10 (12), j=20 (22) -> 34
@@ -505,7 +524,8 @@ TEST_F(StatementTest, ForMultipleStatements) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // sum = 2+3+4 = 9
     // product = 2*3*4 = 24
@@ -533,7 +553,8 @@ TEST_F(StatementTest, LeaveFromWhile) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // Loop exits when i becomes 0 after decrement, leaving i at 0
     // Wait no - we decrement first, then check. So: i=5, dec to 4 (truthy, Leave)
@@ -557,7 +578,8 @@ TEST_F(StatementTest, LeaveFromFor) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // sum progression: 10, 30, 60
     // When sum=60: sum=60 is 1 (truthy), Leave
@@ -582,7 +604,8 @@ TEST_F(StatementTest, LeaveFromNested) {
 
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     // First inner loop: count=1 (1-2=-1, truthy, Leave), exits with count=1
     // Wait, we want to test nested loop exit, so let's do it differently

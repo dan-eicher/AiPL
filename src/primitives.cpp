@@ -46,6 +46,7 @@ PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
 PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate };
 PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
 PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
+PrimitiveFn prim_depth     = { "≡", fn_depth, nullptr };  // No dyadic match without nested arrays
 PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
 PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, nullptr };
 PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
@@ -56,7 +57,7 @@ PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode };
 PrimitiveFn prim_encode    = { "⊤", nullptr, fn_encode };
 PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr };
 PrimitiveFn prim_format    = { "⍕", fn_format_monadic, fn_format_dyadic };
-PrimitiveFn prim_table     = { "⍸", fn_table, nullptr };
+PrimitiveFn prim_table     = { "⍪", fn_table, fn_catenate_first };
 PrimitiveFn prim_squad     = { "⌷", nullptr, fn_squad };
 
 // ============================================================================
@@ -3421,6 +3422,91 @@ void fn_table(Machine* m, Value* omega) {
     // Matrix → same matrix (already 2D, so shape s1 × s2 is unchanged)
     // For higher-dimensional arrays (not yet supported), would be s1 × (product of rest)
     m->result = m->heap->allocate_matrix(*mat);
+}
+
+// Depth (≡ monadic) - nesting level of array
+// ISO 13751 Section 8.2.5: simple-scalar → 0, array → 1 + max depth of elements
+// Since we don't support nested arrays, depth is always 0 for scalars, 1 for arrays
+void fn_depth(Machine* m, Value* omega) {
+    if (omega->is_scalar()) {
+        m->result = m->heap->allocate_scalar(0.0);
+    } else {
+        // All our arrays are simple (non-nested), so depth is 1
+        m->result = m->heap->allocate_scalar(1.0);
+    }
+}
+
+// Catenate First (⍪ dyadic) - join along first axis
+// ISO 13751 Section 8.3.2: A⍪B is A,[1]B
+void fn_catenate_first(Machine* m, Value* alpha, Value* omega) {
+    // String → char vector conversion
+    if (alpha->is_string()) alpha = alpha->to_char_vector(m->heap);
+    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // Handle scalars: treat as 1×1 matrices
+    if (alpha->is_scalar() && omega->is_scalar()) {
+        Eigen::MatrixXd result(2, 1);
+        result(0, 0) = alpha->as_scalar();
+        result(1, 0) = omega->as_scalar();
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
+    // Determine target column count for scalar extension
+    int target_cols = 1;
+    if (!alpha->is_scalar()) {
+        target_cols = alpha->is_vector() ? alpha->size() : alpha->cols();
+    }
+    if (!omega->is_scalar()) {
+        int omega_cols = omega->is_vector() ? omega->size() : omega->cols();
+        if (target_cols == 1) {
+            target_cols = omega_cols;
+        }
+    }
+
+    // Convert scalars/vectors to matrix form for consistent handling
+    Eigen::MatrixXd mat_a, mat_b;
+
+    if (alpha->is_scalar()) {
+        // Scalar extension: replicate to match target columns
+        mat_a = Eigen::MatrixXd::Constant(1, target_cols, alpha->as_scalar());
+    } else if (alpha->is_vector()) {
+        // Vector becomes 1×n row (for first-axis catenation)
+        const Eigen::MatrixXd* v = alpha->as_matrix();
+        mat_a = Eigen::MatrixXd(1, v->rows());
+        for (int i = 0; i < v->rows(); ++i) {
+            mat_a(0, i) = (*v)(i, 0);
+        }
+    } else {
+        mat_a = *alpha->as_matrix();
+    }
+
+    if (omega->is_scalar()) {
+        // Scalar extension: replicate to match target columns
+        mat_b = Eigen::MatrixXd::Constant(1, target_cols, omega->as_scalar());
+    } else if (omega->is_vector()) {
+        // Vector becomes 1×n row (for first-axis catenation)
+        const Eigen::MatrixXd* v = omega->as_matrix();
+        mat_b = Eigen::MatrixXd(1, v->rows());
+        for (int i = 0; i < v->rows(); ++i) {
+            mat_b(0, i) = (*v)(i, 0);
+        }
+    } else {
+        mat_b = *omega->as_matrix();
+    }
+
+    // Check column compatibility (must match for first-axis catenation)
+    if (mat_a.cols() != mat_b.cols()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: incompatible shapes for ⍪"));
+        return;
+    }
+
+    // Concatenate along first axis (vertically stack rows)
+    Eigen::MatrixXd result(mat_a.rows() + mat_b.rows(), mat_a.cols());
+    result.topRows(mat_a.rows()) = mat_a;
+    result.bottomRows(mat_b.rows()) = mat_b;
+
+    m->result = m->heap->allocate_matrix(result);
 }
 
 // ============================================================================

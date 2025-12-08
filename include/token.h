@@ -90,8 +90,9 @@ enum TokenType {
     TOK_DECODE,         // ⊥ (decode / base value)
     TOK_ENCODE,         // ⊤ (encode / representation)
 
-    // Table
-    TOK_TABLE,          // ⍸ (table - convert to matrix)
+    // Table / Depth
+    TOK_TABLE,          // ⍪ (table / catenate first)
+    TOK_MATCH,          // ≡ (depth)
 
     // Matrix operations
     TOK_DOMINO,         // ⌹ (matrix inverse / divide)
@@ -103,7 +104,6 @@ enum TokenType {
     // Reserved (nested arrays - not yet implemented)
     TOK_ENCLOSE,        // ⊂ (enclose)
     TOK_DISCLOSE,       // ⊃ (disclose / pick)
-    TOK_MATCH,          // ≡ (depth / match)
 
     // Structural
     TOK_ASSIGN,         // ←

@@ -21,17 +21,6 @@ protected:
     void TearDown() override {
         delete machine;  // Machine will delete its parser
     }
-
-    // Helper: evaluate parsed continuation using the CEK machine
-    Value* eval(Continuation* k) {
-        // The parsed continuation graph needs to be evaluated
-        // Push continuation onto stack and execute via trampoline
-        machine->push_kont(k);
-        Value* result = machine->execute();
-
-        return result;
-    }
-
 };
 
 // Test parsing a simple literal
@@ -41,7 +30,8 @@ TEST_F(ParserTest, ParseLiteral) {
     ASSERT_NE(k, nullptr);
     EXPECT_EQ(parser->get_error(), "");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::SCALAR);
@@ -54,7 +44,8 @@ TEST_F(ParserTest, ParseNegativeLiteral) {
 
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), -3.14);
@@ -66,7 +57,8 @@ TEST_F(ParserTest, ParseZero) {
 
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
@@ -93,7 +85,8 @@ TEST_F(ParserTest, ParseTimeSafety) {
     EXPECT_EQ(values_before, values_after);
 
     // Values are only created when we EVALUATE
-    eval(k);
+    machine->push_kont(k);
+    machine->execute();
 
     size_t values_after_invoke = machine->heap->total_size();
     EXPECT_GT(values_after_invoke, values_before);
@@ -104,7 +97,8 @@ TEST_F(ParserTest, ParseAddition) {
     Continuation* k = parser->parse("2 + 3");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -136,7 +130,8 @@ TEST_F(ParserTest, ParseRightToLeft) {
     Continuation* k = parser->parse("2 + 3 * 4");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 83.0);  // 2 + (3^4) = 2 + 81 = 83
@@ -147,7 +142,8 @@ TEST_F(ParserTest, ParseAPLSymbols) {
     Continuation* k = parser->parse("2 + 3 × 4");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
@@ -158,7 +154,8 @@ TEST_F(ParserTest, ParseDivision) {
     Continuation* k = parser->parse("10 ÷ 2");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -169,7 +166,8 @@ TEST_F(ParserTest, ParseSubtraction) {
     Continuation* k = parser->parse("10 - 3");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
@@ -180,7 +178,8 @@ TEST_F(ParserTest, ParseLongChain) {
     Continuation* k = parser->parse("1 + 2 + 3 + 4");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
@@ -191,7 +190,8 @@ TEST_F(ParserTest, ParseMixedOperators) {
     Continuation* k = parser->parse("10 - 2 × 3");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
@@ -206,7 +206,8 @@ TEST_F(ParserTest, ParseParenthesizedLiteral) {
     Continuation* k = parser->parse("(42)");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -217,7 +218,8 @@ TEST_F(ParserTest, ParseParenthesizedExpression) {
     Continuation* k = parser->parse("(2 + 3)");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
@@ -228,7 +230,8 @@ TEST_F(ParserTest, ParseParenthesesPrecedence) {
     Continuation* k = parser->parse("2 × (3 + 4)");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
@@ -239,7 +242,8 @@ TEST_F(ParserTest, ParseWithoutParentheses) {
     Continuation* k = parser->parse("2 × 3 + 4");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);  // 2 * (3 + 4) right-to-left
@@ -250,7 +254,8 @@ TEST_F(ParserTest, ParseNestedParentheses) {
     Continuation* k = parser->parse("((2 + 3) × 4)");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
@@ -261,7 +266,8 @@ TEST_F(ParserTest, ParseComplexNested) {
     Continuation* k = parser->parse("(10 - (2 + 3)) × 2");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
@@ -272,7 +278,8 @@ TEST_F(ParserTest, ParseMultipleParentheses) {
     Continuation* k = parser->parse("(1 + 2) + (3 + 4)");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
@@ -283,7 +290,8 @@ TEST_F(ParserTest, ParseParenthesesDivision) {
     Continuation* k = parser->parse("(12 ÷ 2) ÷ 3");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
@@ -322,7 +330,8 @@ TEST_F(ParserTest, ParseSimpleStrand) {
     Continuation* k = parser->parse("1 2");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -337,7 +346,8 @@ TEST_F(ParserTest, ParseThreeElementStrand) {
     Continuation* k = parser->parse("1 2 3");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -353,7 +363,8 @@ TEST_F(ParserTest, ParseLongerStrand) {
     Continuation* k = parser->parse("10 20 30 40 50");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -372,7 +383,8 @@ TEST_F(ParserTest, ParseStrandWithDecimals) {
     Continuation* k = parser->parse("1.5 2.25 3.75");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -388,7 +400,8 @@ TEST_F(ParserTest, ParseStrandAsLeftOperand) {
     Continuation* k = parser->parse("1 2 3 + 10");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -404,7 +417,8 @@ TEST_F(ParserTest, ParseStrandAsRightOperand) {
     Continuation* k = parser->parse("10 + 1 2 3");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -420,7 +434,8 @@ TEST_F(ParserTest, ParseTwoStrands) {
     Continuation* k = parser->parse("1 2 + 3 4");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -435,7 +450,8 @@ TEST_F(ParserTest, ParseParenthesizedStrand) {
     Continuation* k = parser->parse("(1 2 3)");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::VECTOR);
@@ -464,7 +480,8 @@ TEST_F(ParserTest, ParseSimpleVariable) {
     ASSERT_NE(lookup, nullptr);
     EXPECT_STREQ(lookup->var_name, "x");
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
@@ -479,7 +496,8 @@ TEST_F(ParserTest, ParseVariableInExpression) {
     Continuation* k = parser->parse("a + b");
     ASSERT_NE(k, nullptr);
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
@@ -491,7 +509,10 @@ TEST_F(ParserTest, ParseUndefinedVariable) {
     ASSERT_NE(k, nullptr);
 
     // Phase 1: Now throws exception instead of returning nullptr
-    EXPECT_THROW(eval(k), APLError);
+    EXPECT_THROW({
+        machine->push_kont(k);
+        machine->execute();
+    }, APLError);
 }
 
 // Comprehensive Juxtaposition Tests
@@ -601,7 +622,8 @@ TEST_F(ParserTest, NwiseReductionEvaluates) {
     Continuation* k = parser->parse("2 +/ 1 2 3 4 5");
     ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 4);  // 5 - 2 + 1 = 4 windows
@@ -697,7 +719,8 @@ TEST_F(ParserTest, PrimitiveFunctionJuxtaposedWithNumbers) {
     ASSERT_NE(top_jux, nullptr) << "2 + 3 should create JuxtaposeK at top level";
 
     // Can also evaluate to verify it works
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 }
@@ -713,7 +736,8 @@ TEST_F(ParserTest, MultiplePrimitiveFunctionsJuxtaposition) {
     ASSERT_NE(top_jux, nullptr) << "2 + 3 × 4 should create JuxtaposeK at top level";
 
     // Evaluate to verify right-to-left application: 2 + (3 × 4) = 2 + 12 = 14
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
 }
@@ -725,7 +749,8 @@ TEST_F(ParserTest, StringLiteralParses) {
     Continuation* k = parser->parse("'hello'");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
     EXPECT_STREQ(result->as_string(), "hello");
@@ -735,7 +760,8 @@ TEST_F(ParserTest, EmptyStringParses) {
     Continuation* k = parser->parse("''");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
-    Value* result = eval(k);
+    machine->push_kont(k);
+    Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
     EXPECT_STREQ(result->as_string(), "");
