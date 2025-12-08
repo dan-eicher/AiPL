@@ -494,6 +494,96 @@ TEST_F(OperatorsTest, NwiseReduceFirstOperator) {
     EXPECT_DOUBLE_EQ((*mat)(1, 0), 8.0);
 }
 
+// --- Phase 7: N-wise Reduction Edge Cases (ISO 13751) ---
+
+TEST_F(OperatorsTest, NwiseZeroPlus) {
+    // 0+/1 2 3 → 0 0 0 0 (identity for +, repeated N+1 times)
+    Value* result = eval(machine, "0+/1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);  // Length + 1 windows
+    auto* mat = result->as_matrix();
+    for (int i = 0; i < 4; i++) {
+        EXPECT_DOUBLE_EQ((*mat)(i, 0), 0.0);
+    }
+}
+
+TEST_F(OperatorsTest, NwiseZeroTimes) {
+    // 0×/1 2 3 → 1 1 1 1 (identity for ×)
+    Value* result = eval(machine, "0×/1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    auto* mat = result->as_matrix();
+    for (int i = 0; i < 4; i++) {
+        EXPECT_DOUBLE_EQ((*mat)(i, 0), 1.0);
+    }
+}
+
+TEST_F(OperatorsTest, NwiseZeroMax) {
+    // 0⌈/1 2 3 → -∞ -∞ -∞ -∞ (identity for ⌈)
+    Value* result = eval(machine, "0⌈/1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    auto* mat = result->as_matrix();
+    for (int i = 0; i < 4; i++) {
+        EXPECT_TRUE(std::isinf((*mat)(i, 0)) && (*mat)(i, 0) < 0);
+    }
+}
+
+TEST_F(OperatorsTest, NwiseNegative) {
+    // ¯2+/1 2 3 → 5 3 (reverse, then reduce pairwise)
+    // Reversed: 3 2 1, then pairwise sums: 3+2=5, 2+1=3
+    Value* result = eval(machine, "¯2+/1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+}
+
+TEST_F(OperatorsTest, NwiseNegativeTriplets) {
+    // ¯3-/1 2 3 4 → result order reversed from positive N
+    // 3-/1 2 3 4 gives: -/1 2 3 = 1-(2-3) = 2, -/2 3 4 = 2-(3-4) = 3 → 2 3
+    // Negative N reverses: 3 2
+    Value* result = eval(machine, "¯3-/1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+}
+
+TEST_F(OperatorsTest, NwiseTooLarge) {
+    // 5+/1 2 3 → DOMAIN ERROR (window size > array length)
+    EXPECT_THROW(eval(machine, "5+/1 2 3"), std::runtime_error);
+}
+
+TEST_F(OperatorsTest, NwiseOnScalar) {
+    // 2+/5 → works: single scalar, window of 2 doesn't make sense
+    // Per ISO 13751, this should work if we treat scalar as 1-element vector
+    // 2+/ on length-1 → result length = 1-2+1 = 0 (empty)
+    Value* result = eval(machine, "2+/,5");  // ,5 makes it a 1-element vector
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);  // Empty result
+}
+
+TEST_F(OperatorsTest, NwiseWindowEqualsLength) {
+    // 3+/1 2 3 → single element: 1+2+3 = 6
+    Value* result = eval(machine, "3+/1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar() || (result->is_vector() && result->size() == 1));
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+    } else {
+        EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 6.0);
+    }
+}
+
 TEST_F(OperatorsTest, ReduceAxisWithDifferentFunction) {
     // ×/[1] - product along first axis
     // ⍳6 = 1 2 3 4 5 6 (1-origin)

@@ -2545,8 +2545,15 @@ void NwiseReduceK::invoke(Machine* machine) {
     if (current_window >= total_windows) {
         // Done - assemble results into vector
         Eigen::VectorXd result_vec(results.size());
-        for (size_t i = 0; i < results.size(); i++) {
-            result_vec(i) = results[i]->as_scalar();
+        if (reverse) {
+            // Negative N: reverse the order of results
+            for (size_t i = 0; i < results.size(); i++) {
+                result_vec(i) = results[results.size() - 1 - i]->as_scalar();
+            }
+        } else {
+            for (size_t i = 0; i < results.size(); i++) {
+                result_vec(i) = results[i]->as_scalar();
+            }
         }
         machine->result = machine->heap->allocate_vector(result_vec);
         return;
@@ -2556,15 +2563,8 @@ void NwiseReduceK::invoke(Machine* machine) {
 
     // Extract window of size window_size starting at current_window
     Eigen::VectorXd window(window_size);
-    if (reverse) {
-        // Negative N: reverse the window elements
-        for (int i = 0; i < window_size; i++) {
-            window(i) = (*mat)(current_window + window_size - 1 - i, 0);
-        }
-    } else {
-        for (int i = 0; i < window_size; i++) {
-            window(i) = (*mat)(current_window + i, 0);
-        }
+    for (int i = 0; i < window_size; i++) {
+        window(i) = (*mat)(current_window + i, 0);
     }
     Value* window_vec = machine->heap->allocate_vector(window);
 

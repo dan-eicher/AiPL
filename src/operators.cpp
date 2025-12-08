@@ -6,6 +6,7 @@
 #include "primitives.h"
 #include "continuation.h"
 #include <Eigen/Dense>
+#include <climits>
 
 namespace apl {
 
@@ -521,11 +522,11 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
 }
 
 // Helper: validate N for N-wise reduction
-// Returns validated N (positive), or 0 on error
+// Returns validated N, or INT_MIN on error (since 0 is a valid N value)
 static int validate_nwise(Machine* m, Value* n_val, int axis_len) {
     if (!n_val->is_scalar()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: N must be a scalar"));
-        return 0;
+        return INT_MIN;
     }
 
     double n_double = n_val->as_scalar();
@@ -533,7 +534,7 @@ static int validate_nwise(Machine* m, Value* n_val, int axis_len) {
 
     if (n_double != static_cast<double>(n)) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N must be an integer"));
-        return 0;
+        return INT_MIN;
     }
 
     // Handle negative N (reverse before reduce) - take absolute value
@@ -541,7 +542,7 @@ static int validate_nwise(Machine* m, Value* n_val, int axis_len) {
 
     if (abs_n > axis_len + 1) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for array"));
-        return 0;
+        return INT_MIN;
     }
 
     return n;  // Return original (possibly negative) for reverse handling
@@ -571,7 +572,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
         // Scalar handling for N-wise
         if (n_val) {
             int n = validate_nwise(m, n_val, 1);
-            if (n == 0) return;
+            if (n == INT_MIN) return;
             int abs_n = n < 0 ? -n : n;
             if (abs_n > 2) {
                 m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for scalar"));
@@ -615,7 +616,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
         // N-wise reduction on vector
         if (n_val) {
             int n = validate_nwise(m, n_val, len);
-            if (n == 0) return;
+            if (n == INT_MIN) return;
             int abs_n = n < 0 ? -n : n;
             bool reverse = n < 0;
 
@@ -633,8 +634,14 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
 
             // Result length = len - abs_n + 1
             int result_len = len - abs_n + 1;
-            if (result_len <= 0) {
+            if (result_len < 0) {
                 m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for vector"));
+                return;
+            }
+            if (result_len == 0) {
+                // Empty result (N > len)
+                Eigen::VectorXd empty(0);
+                m->result = m->heap->allocate_vector(empty);
                 return;
             }
 
@@ -671,7 +678,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
     // N-wise reduction on matrix
     if (n_val) {
         int n = validate_nwise(m, n_val, axis_len);
-        if (n == 0) return;
+        if (n == INT_MIN) return;
         int abs_n = n < 0 ? -n : n;
         bool reverse = n < 0;
 
