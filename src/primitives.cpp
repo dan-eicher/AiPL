@@ -229,15 +229,30 @@ void fn_multiply(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
+// Helper for ISO 13751 division: 0÷0=1, else A÷0 is domain error
+static bool safe_divide(double a, double b, double& result) {
+    if (b == 0.0) {
+        if (a == 0.0) {
+            result = 1.0;  // ISO 13751 7.2.4: 0÷0 returns 1
+            return true;
+        }
+        return false;  // domain error
+    }
+    result = a / b;
+    return true;
+}
+
 // Division (÷)
+// ISO 13751 7.2.4: If B is zero and A is zero, return one; else if B is zero, domain-error
 void fn_divide(Machine* m, Value* lhs, Value* rhs) {
     // Fast path: scalar ÷ scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        if (rhs->data.scalar == 0.0) {
+        double result;
+        if (!safe_divide(lhs->data.scalar, rhs->data.scalar, result)) {
             m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
             return;
         }
-        m->result = m->heap->allocate_scalar(lhs->data.scalar / rhs->data.scalar);
+        m->result = m->heap->allocate_scalar(result);
         return;
     }
 
@@ -245,16 +260,17 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
-    // Scalar extension
+    // Scalar extension: scalar ÷ array
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        // Check for zeros in divisor
-        if ((rmat->array() == 0.0).any()) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
-            return;
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        double lval = lhs->data.scalar;
+        for (int i = 0; i < rmat->size(); ++i) {
+            if (!safe_divide(lval, rmat->data()[i], result(i))) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+                return;
+            }
         }
-        Eigen::MatrixXd result =
-            lhs->data.scalar / rmat->array();
         // Preserve vector/matrix distinction
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -264,13 +280,17 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
+    // Scalar extension: array ÷ scalar
     if (rhs->is_scalar()) {
-        if (rhs->data.scalar == 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
-            return;
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        double rval = rhs->data.scalar;
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            if (!safe_divide(lmat->data()[i], rval, result(i))) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+                return;
+            }
         }
-        Eigen::MatrixXd result =
-            lhs->as_matrix()->array() / rhs->data.scalar;
         // Preserve vector/matrix distinction
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -289,13 +309,13 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Check for zeros in divisor
-    if ((rmat->array() == 0.0).any()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
-        return;
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        if (!safe_divide(lmat->data()[i], rmat->data()[i], result(i))) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            return;
+        }
     }
-
-    Eigen::MatrixXd result = lmat->array() / rmat->array();
     // Preserve vector/matrix distinction
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -884,14 +904,54 @@ void fn_floor(Machine* m, Value* omega) {
 // Logical Functions (∧ ∨ ~ ⍲ ⍱)
 // ============================================================================
 
-// And (∧) - dyadic
-// For booleans: logical AND
-// For integers: LCM (Least Common Multiple) - not implemented yet
+// Helper: check if value is near-boolean (tolerantly close to 0 or 1)
+static bool is_near_boolean(double d) {
+    const double tol = 1E-10;
+    return (std::abs(d) < tol) || (std::abs(d - 1.0) < tol);
+}
+
+// GCD helper for real numbers using Euclidean algorithm
+// ISO 13751 uses an implementation-algorithm for GCD
+static double gcd_real(double a, double b) {
+    a = std::abs(a);
+    b = std::abs(b);
+    if (a == 0.0) return b;
+    if (b == 0.0) return a;
+    // Euclidean algorithm with tolerance for floating point
+    const double tol = 1E-10;
+    while (b > tol) {
+        double t = std::fmod(a, b);
+        a = b;
+        b = t;
+    }
+    return a;
+}
+
+// LCM helper: LCM(a,b) = |a*b| / GCD(a,b)
+static double lcm_real(double a, double b) {
+    if (a == 0.0 || b == 0.0) return 0.0;
+    double g = gcd_real(a, b);
+    return std::abs(a * b) / g;
+}
+
+// And/LCM (∧) helper - returns result for scalar pair
+// ISO 13751 7.2.12: For near-boolean, AND; otherwise LCM
+static double and_lcm(double a, double b) {
+    if (is_near_boolean(a) && is_near_boolean(b)) {
+        // Boolean AND
+        int a1 = (std::abs(a - 1.0) < std::abs(a)) ? 1 : 0;
+        int b1 = (std::abs(b - 1.0) < std::abs(b)) ? 1 : 0;
+        return (a1 && b1) ? 1.0 : 0.0;
+    }
+    // LCM for non-boolean
+    return lcm_real(a, b);
+}
+
+// And/LCM (∧) - dyadic
+// ISO 13751 7.2.12: For near-boolean it's AND, otherwise LCM
 void fn_and(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        // Boolean interpretation: both non-zero
-        double result = (lhs->data.scalar != 0.0 && rhs->data.scalar != 0.0) ? 1.0 : 0.0;
-        m->result = m->heap->allocate_scalar(result);
+        m->result = m->heap->allocate_scalar(and_lcm(lhs->data.scalar, rhs->data.scalar));
         return;
     }
 
@@ -902,8 +962,9 @@ void fn_and(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        double lval = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar != 0.0 && rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+            result(i) = and_lcm(lval, rmat->data()[i]);
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -916,8 +977,9 @@ void fn_and(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        double rval = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] != 0.0 && rhs->data.scalar != 0.0) ? 1.0 : 0.0;
+            result(i) = and_lcm(lmat->data()[i], rval);
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -937,7 +999,7 @@ void fn_and(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] != 0.0 && rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+        result(i) = and_lcm(lmat->data()[i], rmat->data()[i]);
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -947,13 +1009,24 @@ void fn_and(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
-// Or (∨) - dyadic
-// For booleans: logical OR
-// For integers: GCD (Greatest Common Divisor) - not implemented yet
+// Or/GCD (∨) helper - returns result for scalar pair
+// ISO 13751 7.2.13: For near-boolean, OR; otherwise GCD
+static double or_gcd(double a, double b) {
+    if (is_near_boolean(a) && is_near_boolean(b)) {
+        // Boolean OR
+        int a1 = (std::abs(a - 1.0) < std::abs(a)) ? 1 : 0;
+        int b1 = (std::abs(b - 1.0) < std::abs(b)) ? 1 : 0;
+        return (a1 || b1) ? 1.0 : 0.0;
+    }
+    // GCD for non-boolean
+    return gcd_real(a, b);
+}
+
+// Or/GCD (∨) - dyadic
+// ISO 13751 7.2.13: For near-boolean it's OR, otherwise GCD
 void fn_or(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        double result = (lhs->data.scalar != 0.0 || rhs->data.scalar != 0.0) ? 1.0 : 0.0;
-        m->result = m->heap->allocate_scalar(result);
+        m->result = m->heap->allocate_scalar(or_gcd(lhs->data.scalar, rhs->data.scalar));
         return;
     }
 
@@ -964,8 +1037,9 @@ void fn_or(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        double lval = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar != 0.0 || rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+            result(i) = or_gcd(lval, rmat->data()[i]);
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -978,8 +1052,9 @@ void fn_or(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        double rval = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] != 0.0 || rhs->data.scalar != 0.0) ? 1.0 : 0.0;
+            result(i) = or_gcd(lmat->data()[i], rval);
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -999,7 +1074,7 @@ void fn_or(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] != 0.0 || rmat->data()[i] != 0.0) ? 1.0 : 0.0;
+        result(i) = or_gcd(lmat->data()[i], rmat->data()[i]);
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -1010,9 +1085,17 @@ void fn_or(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Not (~) - monadic
+// ISO 13751 7.1.12: If B is not near-Boolean, signal domain-error
 void fn_not(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
-        m->result = m->heap->allocate_scalar(omega->data.scalar == 0.0 ? 1.0 : 0.0);
+        double d = omega->data.scalar;
+        if (!is_near_boolean(d)) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ~ requires boolean argument"));
+            return;
+        }
+        // Round to nearest integer (0 or 1) then complement
+        int b = (std::abs(d - 1.0) < std::abs(d)) ? 1 : 0;
+        m->result = m->heap->allocate_scalar(b == 1 ? 0.0 : 1.0);
         return;
     }
 
@@ -1020,9 +1103,20 @@ void fn_not(Machine* m, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    // Check all elements are near-boolean
+    for (int i = 0; i < mat->size(); ++i) {
+        if (!is_near_boolean(mat->data()[i])) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ~ requires boolean argument"));
+            return;
+        }
+    }
+
     Eigen::MatrixXd result(mat->rows(), mat->cols());
     for (int i = 0; i < mat->size(); ++i) {
-        result(i) = (mat->data()[i] == 0.0) ? 1.0 : 0.0;
+        double d = mat->data()[i];
+        int b = (std::abs(d - 1.0) < std::abs(d)) ? 1 : 0;
+        result(i) = (b == 1) ? 0.0 : 1.0;
     }
 
     if (omega->is_vector()) {
@@ -1032,10 +1126,30 @@ void fn_not(Machine* m, Value* omega) {
     }
 }
 
+// Nand (⍲) helper - validates boolean domain and computes ~(A∧B)
+// Returns -1 on domain error, otherwise result
+static double nand_bool(double a, double b, bool& error) {
+    error = false;
+    if (!is_near_boolean(a) || !is_near_boolean(b)) {
+        error = true;
+        return 0.0;
+    }
+    int a1 = (std::abs(a - 1.0) < std::abs(a)) ? 1 : 0;
+    int b1 = (std::abs(b - 1.0) < std::abs(b)) ? 1 : 0;
+    return (a1 && b1) ? 0.0 : 1.0;
+}
+
 // Nand (⍲) - dyadic
+// ISO 13751 7.2.14: If either A or B is not near-Boolean, signal domain-error
 void fn_nand(Machine* m, Value* lhs, Value* rhs) {
+    bool error = false;
+
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        double result = (lhs->data.scalar != 0.0 && rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+        double result = nand_bool(lhs->data.scalar, rhs->data.scalar, error);
+        if (error) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+            return;
+        }
         m->result = m->heap->allocate_scalar(result);
         return;
     }
@@ -1048,7 +1162,11 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar != 0.0 && rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+            result(i) = nand_bool(lhs->data.scalar, rmat->data()[i], error);
+            if (error) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+                return;
+            }
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1062,7 +1180,11 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] != 0.0 && rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+            result(i) = nand_bool(lmat->data()[i], rhs->data.scalar, error);
+            if (error) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+                return;
+            }
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1082,7 +1204,11 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] != 0.0 && rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+        result(i) = nand_bool(lmat->data()[i], rmat->data()[i], error);
+        if (error) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+            return;
+        }
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -1092,10 +1218,29 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
+// Nor (⍱) helper - validates boolean domain and computes ~(A∨B)
+static double nor_bool(double a, double b, bool& error) {
+    error = false;
+    if (!is_near_boolean(a) || !is_near_boolean(b)) {
+        error = true;
+        return 0.0;
+    }
+    int a1 = (std::abs(a - 1.0) < std::abs(a)) ? 1 : 0;
+    int b1 = (std::abs(b - 1.0) < std::abs(b)) ? 1 : 0;
+    return (a1 || b1) ? 0.0 : 1.0;
+}
+
 // Nor (⍱) - dyadic
+// ISO 13751 7.2.15: If either A or B is not near-Boolean, signal domain-error
 void fn_nor(Machine* m, Value* lhs, Value* rhs) {
+    bool error = false;
+
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        double result = (lhs->data.scalar != 0.0 || rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+        double result = nor_bool(lhs->data.scalar, rhs->data.scalar, error);
+        if (error) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+            return;
+        }
         m->result = m->heap->allocate_scalar(result);
         return;
     }
@@ -1108,7 +1253,11 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar != 0.0 || rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+            result(i) = nor_bool(lhs->data.scalar, rmat->data()[i], error);
+            if (error) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+                return;
+            }
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1122,7 +1271,11 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] != 0.0 || rhs->data.scalar != 0.0) ? 0.0 : 1.0;
+            result(i) = nor_bool(lmat->data()[i], rhs->data.scalar, error);
+            if (error) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+                return;
+            }
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1142,7 +1295,11 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] != 0.0 || rmat->data()[i] != 0.0) ? 0.0 : 1.0;
+        result(i) = nor_bool(lmat->data()[i], rmat->data()[i], error);
+        if (error) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+            return;
+        }
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {

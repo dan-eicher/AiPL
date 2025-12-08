@@ -1900,6 +1900,30 @@ TEST_F(PrimitivesTest, NotMonadicVector) {
     EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);
 }
 
+TEST_F(PrimitivesTest, NotDomainErrorNonBoolean) {
+    // ISO 13751 7.1.12: ~ requires near-boolean argument
+    // ~0.5 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("~0.5"), APLError);
+}
+
+TEST_F(PrimitivesTest, NotDomainErrorNonBooleanVector) {
+    // ~1 2 3 → DOMAIN ERROR (2 and 3 are not near-boolean)
+    EXPECT_THROW(machine->eval("~1 2 3"), APLError);
+}
+
+TEST_F(PrimitivesTest, NotNearBooleanAccepted) {
+    // ISO 13751 7.1.12: Near-boolean values should be accepted
+    // ~0.99999999999 → 0 (within 1E-11 of 1, tolerance is 1E-10)
+    Value* result = machine->eval("~0.99999999999");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+
+    // ~1E¯12 → 1 (within tolerance of 0)
+    result = machine->eval("~1E¯12");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
 TEST_F(PrimitivesTest, AndDyadicScalars) {
     Value* one = machine->heap->allocate_scalar(1.0);
     Value* zero = machine->heap->allocate_scalar(0.0);
@@ -1960,6 +1984,42 @@ TEST_F(PrimitivesTest, OrDyadicVectors) {
     EXPECT_DOUBLE_EQ((*mat)(3, 0), 0.0);  // 0∨0
 }
 
+// ISO 13751 7.2.12: ∧ is LCM for non-boolean values
+TEST_F(PrimitivesTest, AndLCM) {
+    // 30∧36 = 180 (LCM of 30 and 36)
+    Value* result = machine->eval("30∧36");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 180.0);
+
+    // 3∧3.6 = 18 (per spec example)
+    result = machine->eval("3∧3.6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_NEAR(result->as_scalar(), 18.0, 0.0001);
+
+    // LCM with zero returns zero
+    result = machine->eval("0∧5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// ISO 13751 7.2.13: ∨ is GCD for non-boolean values
+TEST_F(PrimitivesTest, OrGCD) {
+    // 30∨36 = 6 (GCD of 30 and 36)
+    Value* result = machine->eval("30∨36");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+
+    // 3∨3.6 = 0.6 (per spec example)
+    result = machine->eval("3∨3.6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_NEAR(result->as_scalar(), 0.6, 0.0001);
+
+    // GCD with zero returns the other number
+    result = machine->eval("0∨5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
 TEST_F(PrimitivesTest, NandDyadicScalars) {
     Value* one = machine->heap->allocate_scalar(1.0);
     Value* zero = machine->heap->allocate_scalar(0.0);
@@ -1986,6 +2046,32 @@ TEST_F(PrimitivesTest, NorDyadicScalars) {
 
     fn_nor(machine, zero, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // ~(0∨0)
+}
+
+// ISO 13751 7.2.14: Nand requires boolean arguments
+TEST_F(PrimitivesTest, NandDomainErrorNonBoolean) {
+    EXPECT_THROW(machine->eval("0.5⍲0.5"), APLError);
+    EXPECT_THROW(machine->eval("2⍲1"), APLError);
+    EXPECT_THROW(machine->eval("0⍲¯1"), APLError);
+}
+
+// ISO 13751 7.2.15: Nor requires boolean arguments
+TEST_F(PrimitivesTest, NorDomainErrorNonBoolean) {
+    EXPECT_THROW(machine->eval("0.5⍱0.5"), APLError);
+    EXPECT_THROW(machine->eval("2⍱1"), APLError);
+    EXPECT_THROW(machine->eval("0⍱¯1"), APLError);
+}
+
+// Nand/Nor accept near-boolean values (tolerantly close to 0 or 1)
+TEST_F(PrimitivesTest, NandNorNearBooleanAccepted) {
+    // Near-1 values should be accepted and treated as 1
+    Value* result = machine->eval("0.99999999999⍲0.99999999999");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // ~(1∧1) = 0
+
+    result = machine->eval("0.99999999999⍱0.99999999999");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // ~(1∨1) = 0
 }
 
 TEST_F(PrimitivesTest, LogicalPrimitivesRegistered) {
@@ -4002,9 +4088,20 @@ TEST_F(PrimitivesTest, DomainErrorDivideByZero) {
     EXPECT_THROW(machine->eval("5÷0"), APLError);
 }
 
-TEST_F(PrimitivesTest, DomainErrorZeroDivZero) {
-    // 0÷0 → DOMAIN ERROR
-    EXPECT_THROW(machine->eval("0÷0"), APLError);
+TEST_F(PrimitivesTest, ZeroDivZeroReturnsOne) {
+    // ISO 13751 7.2.4: 0÷0 returns 1 (the identity element)
+    Value* result = machine->eval("0÷0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, ZeroPowerZeroReturnsOne) {
+    // ISO 13751 7.2.7: 0*0 returns 1
+    Value* result = machine->eval("0*0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 }
 
 // --- Logarithm Domain Errors ---
@@ -4333,12 +4430,15 @@ TEST_F(PrimitivesTest, DropFromEmpty) {
 // 9. matrix OP matrix     - valid (same shape)
 
 TEST_F(PrimitivesTest, ScalarExtensionAllCombinations) {
-    // All dyadic scalar functions to test
+    // All dyadic scalar functions to test (excluding boolean-only ⍲ ⍱)
     std::vector<std::string> ops = {
         "+", "-", "×", "÷", "*", "⌈", "⌊", "|",
         "=", "≠", "<", ">", "≤", "≥",
-        "∧", "∨", "⍲", "⍱"
+        "∧", "∨"
     };
+
+    // Boolean-only operators (⍲ ⍱ require boolean domain per ISO 13751)
+    std::vector<std::string> bool_ops = {"⍲", "⍱"};
 
     // Argument templates: {left, right, should_succeed}
     struct TestCase {
@@ -4348,6 +4448,7 @@ TEST_F(PrimitivesTest, ScalarExtensionAllCombinations) {
         std::string description;
     };
 
+    // General numeric test cases
     std::vector<TestCase> cases = {
         {"5",           "3",           true,  "scalar-scalar"},
         {"5",           "1 2 3",       true,  "scalar-vector"},
@@ -4360,9 +4461,23 @@ TEST_F(PrimitivesTest, ScalarExtensionAllCombinations) {
         {"2 2⍴1 2 3 4", "2 2⍴5 6 7 8", true,  "matrix-matrix"},
     };
 
+    // Boolean test cases for ⍲ and ⍱
+    std::vector<TestCase> bool_cases = {
+        {"1",           "0",           true,  "scalar-scalar"},
+        {"1",           "0 1 0",       true,  "scalar-vector"},
+        {"1",           "2 2⍴1 0 0 1", true,  "scalar-matrix"},
+        {"1 0 1",       "0",           true,  "vector-scalar"},
+        {"1 0 1",       "0 1 0",       true,  "vector-vector"},
+        {"1 0 1",       "2 2⍴1 0 0 1", false, "vector-matrix"},
+        {"2 2⍴1 0 0 1", "1",           true,  "matrix-scalar"},
+        {"2 2⍴1 0 0 1", "1 0 1",       false, "matrix-vector"},
+        {"2 2⍴1 0 0 1", "2 2⍴0 1 1 0", true,  "matrix-matrix"},
+    };
+
     int total_tests = 0;
     int passed_tests = 0;
 
+    // Test non-boolean operators with general numeric values
     for (const auto& op : ops) {
         for (const auto& tc : cases) {
             total_tests++;
@@ -4393,7 +4508,38 @@ TEST_F(PrimitivesTest, ScalarExtensionAllCombinations) {
         }
     }
 
-    // Summary: 18 ops × 9 combinations = 162 sub-tests
+    // Test boolean operators with boolean values
+    for (const auto& op : bool_ops) {
+        for (const auto& tc : bool_cases) {
+            total_tests++;
+            std::string expr = "(" + tc.left + ")" + op + "(" + tc.right + ")";
+
+            if (tc.should_succeed) {
+                try {
+                    Value* result = machine->eval(expr);
+                    if (result != nullptr) {
+                        passed_tests++;
+                    } else {
+                        ADD_FAILURE() << "NULL result for " << op << " " << tc.description
+                                      << ": " << expr;
+                    }
+                } catch (const std::exception& e) {
+                    ADD_FAILURE() << "Unexpected error for " << op << " " << tc.description
+                                  << ": " << expr << " - " << e.what();
+                }
+            } else {
+                try {
+                    machine->eval(expr);
+                    ADD_FAILURE() << "Expected error for " << op << " " << tc.description
+                                  << ": " << expr;
+                } catch (const APLError&) {
+                    passed_tests++;  // Expected error occurred
+                }
+            }
+        }
+    }
+
+    // Summary: 16 ops × 9 combinations + 2 bool_ops × 9 combinations = 162 sub-tests
     EXPECT_EQ(passed_tests, total_tests)
         << "Failed " << (total_tests - passed_tests) << " of " << total_tests << " tests";
 }
