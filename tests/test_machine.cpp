@@ -304,6 +304,109 @@ TEST_F(MachineTest, NestedEnvironmentMark) {
 
 }
 
+// ============================================================================
+// Dynamic Scoping Tests (ISO 13751 Section 13.4.1)
+// ============================================================================
+// APL uses dynamic scoping: called functions see the caller's local bindings,
+// not the bindings from where the function was defined.
+
+// Test: Called function sees caller's shadowed variable
+TEST_F(MachineTest, DynamicScopingBasic) {
+    // Set up:
+    // X←10           (global X)
+    // G←{⍵+X}        (G uses X)
+    // F←{X←99 ⋄ G ⍵} (F shadows X, then calls G)
+    // F 1            (should return 1+99=100, not 1+10=11)
+
+    machine->eval("X←10");
+    machine->eval("G←{⍵+X}");
+    machine->eval("F←{X←99 ⋄ G ⍵}");
+
+    Value* result = machine->eval("F 1");
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    // Dynamic scoping: G sees F's local X (99), not global X (10)
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
+}
+
+// Test: Nested function calls maintain dynamic scope chain
+TEST_F(MachineTest, DynamicScopingNested) {
+    // X←1
+    // H←{X}           (H returns X)
+    // G←{X←3 ⋄ H 0}   (G shadows X=3, calls H)
+    // F←{X←2 ⋄ G 0}   (F shadows X=2, calls G)
+    // F 0             (should return 3 - H sees G's X)
+
+    machine->eval("X←1");
+    machine->eval("H←{X}");
+    machine->eval("G←{X←3 ⋄ H 0}");
+    machine->eval("F←{X←2 ⋄ G 0}");
+
+    Value* result = machine->eval("F 0");
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    // H sees G's local X (3), the most recent shadow in call chain
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+// Test: Global is restored after function returns
+TEST_F(MachineTest, DynamicScopingRestoresGlobal) {
+    // X←10
+    // F←{X←99 ⋄ X}  (F shadows X, returns it)
+    // F 0           (should return 99)
+    // X             (should return 10 - global is unchanged)
+
+    machine->eval("X←10");
+    machine->eval("F←{X←99 ⋄ X}");
+
+    Value* result1 = machine->eval("F 0");
+    ASSERT_NE(result1, nullptr);
+    EXPECT_DOUBLE_EQ(result1->as_scalar(), 99.0);
+
+    Value* result2 = machine->eval("X");
+    ASSERT_NE(result2, nullptr);
+    EXPECT_DOUBLE_EQ(result2->as_scalar(), 10.0);
+}
+
+// Test: Function without shadowing sees global
+TEST_F(MachineTest, DynamicScopingSeesGlobal) {
+    // X←42
+    // G←{X+⍵}       (G uses global X)
+    // G 8           (should return 42+8=50)
+
+    machine->eval("X←42");
+    machine->eval("G←{X+⍵}");
+
+    Value* result = machine->eval("G 8");
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 50.0);
+}
+
+// Test: Intermediate function without shadowing passes through
+TEST_F(MachineTest, DynamicScopingPassthrough) {
+    // X←10
+    // H←{X}           (H returns X)
+    // G←{H 0}         (G just calls H, doesn't shadow X)
+    // F←{X←99 ⋄ G 0}  (F shadows X, calls G)
+    // F 0             (should return 99 - H sees F's X through G)
+
+    machine->eval("X←10");
+    machine->eval("H←{X}");
+    machine->eval("G←{H 0}");
+    machine->eval("F←{X←99 ⋄ G 0}");
+
+    Value* result = machine->eval("F 0");
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    // H sees F's X (99) because G doesn't shadow it
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
