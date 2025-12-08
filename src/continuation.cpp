@@ -2709,13 +2709,11 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
         return;
     }
 
-    // Handle scalar index for now
-    if (!index_val->is_scalar()) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: only scalar index supported for assignment"));
-        return;
+    // Convert string to char vector if needed (strings become numeric on modification)
+    if (arr->is_string()) {
+        arr = arr->to_char_vector(machine->heap);
+        machine->env->define(var_name, arr);  // Update binding to converted array
     }
-
-    int idx = static_cast<int>(index_val->as_scalar()) - machine->io;  // ⎕IO
 
     // Numeric array indexed assignment
     if (!arr->is_array()) {
@@ -2726,24 +2724,67 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
     const Eigen::MatrixXd* mat = arr->as_matrix();
     int size = static_cast<int>(mat->size());
 
-    if (idx < 0 || idx >= size) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
-        return;
-    }
-
-    // Get new value as scalar
-    if (!value_val->is_scalar()) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: indexed assignment requires scalar value"));
-        return;
-    }
-    double new_val = value_val->as_scalar();
-
     // Create modified copy
     Eigen::MatrixXd new_mat = *mat;
-    // Use row-major linear indexing
-    int row = idx / new_mat.cols();
-    int col = idx % new_mat.cols();
-    new_mat(row, col) = new_val;
+
+    if (index_val->is_scalar()) {
+        // Single index assignment
+        int idx = static_cast<int>(index_val->as_scalar()) - machine->io;  // ⎕IO
+
+        if (idx < 0 || idx >= size) {
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+            return;
+        }
+
+        if (!value_val->is_scalar()) {
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("LENGTH ERROR: scalar index requires scalar value"));
+            return;
+        }
+        double new_val = value_val->as_scalar();
+
+        // Use row-major linear indexing
+        int row = idx / new_mat.cols();
+        int col = idx % new_mat.cols();
+        new_mat(row, col) = new_val;
+    } else if (index_val->is_vector()) {
+        // Vector index assignment: A[2 4]←99 88 or A[2 4]←0 (scalar extension)
+        const Eigen::MatrixXd* idx_mat = index_val->as_matrix();
+        int num_indices = static_cast<int>(idx_mat->size());
+
+        // Check value compatibility
+        bool scalar_value = value_val->is_scalar();
+        const Eigen::MatrixXd* val_mat = nullptr;
+        if (!scalar_value) {
+            if (!value_val->is_vector()) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("RANK ERROR: value must be scalar or vector for vector index"));
+                return;
+            }
+            val_mat = value_val->as_matrix();
+            if (static_cast<int>(val_mat->size()) != num_indices) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("LENGTH ERROR: index and value lengths must match"));
+                return;
+            }
+        }
+
+        // Assign each index
+        for (int i = 0; i < num_indices; i++) {
+            int idx = static_cast<int>((*idx_mat)(i, 0)) - machine->io;  // ⎕IO
+            if (idx < 0 || idx >= size) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                return;
+            }
+
+            double new_val = scalar_value ? value_val->as_scalar() : (*val_mat)(i, 0);
+
+            // Use row-major linear indexing
+            int row = idx / new_mat.cols();
+            int col = idx % new_mat.cols();
+            new_mat(row, col) = new_val;
+        }
+    } else {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("RANK ERROR: index must be scalar or vector"));
+        return;
+    }
 
     Value* result;
     if (arr->is_vector()) {

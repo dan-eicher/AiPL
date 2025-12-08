@@ -378,6 +378,37 @@ TEST_F(StringTest, IndexedAssignStringChained) {
     EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(3, 0), 68.0);  // 'D'
 }
 
+TEST_F(StringTest, IndexedAssignStringDirectNoRavel) {
+    // S←'ABC' ⋄ S[2]←90 → string converted to numeric, then modified
+    // Without ravel, string stays STRING type until indexed assignment
+    eval("S←'ABC'");
+    eval("S[2]←90");  // 'Z' = 90, should convert string to numeric
+
+    Value* result = eval("S");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());  // Should now be numeric vector
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 65.0);   // 'A'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 90.0);   // 'Z' (was 'B')
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 67.0);   // 'C'
+}
+
+TEST_F(StringTest, IndexedAssignStringVectorIndices) {
+    // S←'ABCDE' ⋄ S[2 4]←88 89 → modify positions 2 and 4
+    eval("S←'ABCDE'");
+    eval("S[2 4]←88 89");  // 'X'=88, 'Y'=89
+
+    Value* result = eval("S");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 65.0);   // 'A'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 88.0);   // 'X' (was 'B')
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 67.0);   // 'C'
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(3, 0), 89.0);   // 'Y' (was 'D')
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(4, 0), 69.0);   // 'E'
+}
+
 // ============================================================================
 // Character Grading (⍋ ⍒ on strings)
 // ============================================================================

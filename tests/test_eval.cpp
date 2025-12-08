@@ -3417,6 +3417,68 @@ TEST_F(EvalTest, IndexedAssignChained) {
     EXPECT_DOUBLE_EQ((*vec)(4, 0), 50.0);
 }
 
+// --- Phase 6: Assignment Edge Cases (ISO 13751) ---
+
+TEST_F(EvalTest, IndexedAssignOutOfBounds) {
+    // A←1 2 3 ⋄ A[10]←5 → INDEX ERROR
+    eval(parser->parse("A←1 2 3"));
+    EXPECT_THROW(eval(parser->parse("A[10]←5")), std::runtime_error);
+}
+
+TEST_F(EvalTest, IndexedAssignZeroIndex) {
+    // A←1 2 3 ⋄ A[0]←5 → INDEX ERROR (⎕IO=1)
+    eval(parser->parse("A←1 2 3"));
+    EXPECT_THROW(eval(parser->parse("A[0]←5")), std::runtime_error);
+}
+
+TEST_F(EvalTest, IndexedAssignNegativeIndex) {
+    // A←1 2 3 ⋄ A[¯1]←5 → INDEX ERROR
+    eval(parser->parse("A←1 2 3"));
+    EXPECT_THROW(eval(parser->parse("A[¯1]←5")), std::runtime_error);
+}
+
+TEST_F(EvalTest, IndexRefOutOfBounds) {
+    // A←1 2 3 ⋄ A[10] → INDEX ERROR
+    eval(parser->parse("A←1 2 3"));
+    EXPECT_THROW(eval(parser->parse("A[10]")), std::runtime_error);
+}
+
+TEST_F(EvalTest, IndexRefZeroIndex) {
+    // A←1 2 3 ⋄ A[0] → INDEX ERROR (⎕IO=1)
+    eval(parser->parse("A←1 2 3"));
+    EXPECT_THROW(eval(parser->parse("A[0]")), std::runtime_error);
+}
+
+TEST_F(EvalTest, IndexedAssignVectorIndices) {
+    // A←10 20 30 40 50 ⋄ A[2 4]←99 88 ⋄ A → 10 99 30 88 50
+    eval(parser->parse("A←10 20 30 40 50"));
+    eval(parser->parse("A[2 4]←99 88"));
+
+    Value* a_val = eval(parser->parse("A"));
+    ASSERT_NE(a_val, nullptr);
+    const Eigen::MatrixXd* vec = a_val->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 99.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 30.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 88.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 50.0);
+}
+
+TEST_F(EvalTest, IndexedAssignScalarToMultiple) {
+    // A←10 20 30 40 50 ⋄ A[2 4]←0 ⋄ A → 10 0 30 0 50 (scalar extends)
+    eval(parser->parse("A←10 20 30 40 50"));
+    eval(parser->parse("A[2 4]←0"));
+
+    Value* a_val = eval(parser->parse("A"));
+    ASSERT_NE(a_val, nullptr);
+    const Eigen::MatrixXd* vec = a_val->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 30.0);
+    EXPECT_DOUBLE_EQ((*vec)(3, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 50.0);
+}
+
 // ============================================================================
 // Table Function (⍸) Tests
 // ============================================================================
