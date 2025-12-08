@@ -96,8 +96,9 @@ enum TokenType {
     // Matrix operations
     TOK_DOMINO,         // ⌹ (matrix inverse / divide)
 
-    // Execute
+    // Execute and Format
     TOK_EXECUTE,        // ⍎ (execute string as APL)
+    TOK_FORMAT,         // ⍕ (format - convert to character)
 
     // Reserved (nested arrays - not yet implemented)
     TOK_ENCLOSE,        // ⊂ (enclose)
@@ -136,6 +137,7 @@ enum TokenType {
     TOK_DIAMOND,        // ⋄ (statement separator)
     TOK_NEWLINE,
     TOK_COMMENT,
+    TOK_ZILDE,          // ⍬ (empty vector)
 
     TOK_ERROR           // Lexer error
 };

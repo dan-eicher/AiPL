@@ -749,6 +749,49 @@ TEST_F(LexerTest, TableToken) {
     EXPECT_EQ(tokens[0].type, TOK_TABLE);
 }
 
+// Test zilde token (⍬) - empty vector
+TEST_F(LexerTest, ZildeToken) {
+    auto tokens = tokenize("⍬");
+    ASSERT_EQ(tokens.size(), 2);  // ⍬ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_ZILDE);
+}
+
+// Test zilde in expressions
+TEST_F(LexerTest, ZildeInExpression) {
+    auto tokens = tokenize("x←⍬");
+    ASSERT_EQ(tokens.size(), 4);  // x ← ⍬ EOF
+    EXPECT_EQ(tokens[0].type, TOK_NAME);
+    EXPECT_EQ(tokens[1].type, TOK_ASSIGN);
+    EXPECT_EQ(tokens[2].type, TOK_ZILDE);
+    EXPECT_EQ(tokens[3].type, TOK_EOF);
+}
+
+// Test format token (⍕)
+TEST_F(LexerTest, FormatToken) {
+    auto tokens = tokenize("⍕");
+    ASSERT_EQ(tokens.size(), 2);  // ⍕ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_FORMAT);
+}
+
+// Test format in expression
+TEST_F(LexerTest, FormatInExpression) {
+    auto tokens = tokenize("⍕42");
+    ASSERT_EQ(tokens.size(), 3);  // ⍕ 42 EOF
+    EXPECT_EQ(tokens[0].type, TOK_FORMAT);
+    EXPECT_EQ(tokens[1].type, TOK_NUMBER);
+    EXPECT_DOUBLE_EQ(tokens[1].number, 42.0);
+}
+
+// Test dyadic format expression
+TEST_F(LexerTest, DyadicFormatExpression) {
+    auto tokens = tokenize("5 2⍕3.14");
+    ASSERT_EQ(tokens.size(), 4);  // VECTOR ⍕ NUMBER EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER_VECTOR);
+    EXPECT_EQ(tokens[0].vector_size, 2);
+    EXPECT_EQ(tokens[1].type, TOK_FORMAT);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

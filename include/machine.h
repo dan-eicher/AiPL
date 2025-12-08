@@ -35,6 +35,7 @@ public:
     Environment* env;                       // Environment (variable bindings)
     std::vector<Continuation*> kont_stack;  // Continuation stack
     int io = 1;                             // Index origin (⎕IO): 0 or 1
+    int pp = 10;                            // Print precision (⎕PP): 1-17, default 10
 
     // Memory management
     Heap* heap;                          // Garbage-collected heap

@@ -61,6 +61,7 @@ const char* token_type_name(TokenType type) {
         case TOK_ENCODE: return "⊤";
         case TOK_DOMINO: return "⌹";
         case TOK_EXECUTE: return "⍎";
+        case TOK_FORMAT: return "⍕";
         case TOK_TABLE: return "⍸";
         case TOK_ENCLOSE: return "⊂";
         case TOK_DISCLOSE: return "⊃";
@@ -90,6 +91,7 @@ const char* token_type_name(TokenType type) {
         case TOK_DIAMOND: return "⋄";
         case TOK_NEWLINE: return "NEWLINE";
         case TOK_COMMENT: return "COMMENT";
+        case TOK_ZILDE: return "⍬";
         case TOK_ERROR: return "ERROR";
         default: return "UNKNOWN";
     }

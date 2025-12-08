@@ -212,7 +212,9 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_ENCODE:
                 case TOK_DOMINO:
                 case TOK_EXECUTE:
+                case TOK_FORMAT:
                 case TOK_TABLE:
+                case TOK_ZILDE:  // ⍬ (empty vector)
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -360,6 +362,7 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_ENCODE:
         case TOK_DOMINO:
         case TOK_EXECUTE:
+        case TOK_FORMAT:
         case TOK_TABLE: {
             // G2 Grammar: Primitive functions are identifiers (fb ::= identifier)
             // They are NOT special monadic operators in the grammar
@@ -407,6 +410,7 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_ENCODE:        op_name = "⊤"; break;
                 case TOK_DOMINO:        op_name = "⌹"; break;
                 case TOK_EXECUTE:       op_name = "⍎"; break;
+                case TOK_FORMAT:        op_name = "⍕"; break;
                 case TOK_TABLE:         op_name = "⍸"; break;
                 default: break;
             }
@@ -436,6 +440,14 @@ Continuation* Parser::nud(const Token& token) {
             const char* interned_name = machine->string_pool.intern("⍵");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             return lookup;
+        }
+
+        case TOK_ZILDE: {
+            // ⍬ (zilde) - empty numeric vector
+            Eigen::VectorXd empty_vec(0);
+            Value* empty_val = machine->heap->allocate_vector(empty_vec);
+            StrandK* strand = machine->heap->allocate<StrandK>(empty_val);
+            return strand;
         }
 
         case TOK_LBRACE: {

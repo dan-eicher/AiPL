@@ -449,6 +449,256 @@ TEST_F(StringTest, GradeUpSortString) {
     EXPECT_DOUBLE_EQ((*mat)(2, 0), 99.0);   // 'c'
 }
 
+// ============================================================================
+// Format (⍕) - ISO 13751 Section 15.4
+// ============================================================================
+
+// Monadic Format - Character Passthrough
+TEST_F(StringTest, FormatCharacterStringPassthrough) {
+    Value* result = eval("⍕'hello'");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "hello");
+}
+
+TEST_F(StringTest, FormatEmptyStringPassthrough) {
+    Value* result = eval("⍕''");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "");
+}
+
+// Monadic Format - Scalar Formatting
+TEST_F(StringTest, FormatIntegerScalar) {
+    Value* result = eval("⍕42");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "42");
+}
+
+TEST_F(StringTest, FormatNegativeInteger) {
+    Value* result = eval("⍕¯5");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "¯5");
+}
+
+TEST_F(StringTest, FormatZero) {
+    Value* result = eval("⍕0");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "0");
+}
+
+TEST_F(StringTest, FormatFloatScalar) {
+    Value* result = eval("⍕3.14");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("3.14") != std::string::npos);
+}
+
+TEST_F(StringTest, FormatNegativeFloat) {
+    Value* result = eval("⍕¯3.14");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
+}
+
+// Monadic Format - Vector Formatting
+TEST_F(StringTest, FormatIntegerVector) {
+    Value* result = eval("⍕1 2 3");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "1 2 3");
+}
+
+TEST_F(StringTest, FormatVectorWithNegatives) {
+    Value* result = eval("⍕¯1 2 ¯3");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "¯1 2 ¯3");
+}
+
+// Monadic Format - Empty Arrays
+TEST_F(StringTest, FormatEmptyVector) {
+    Value* result = eval("⍕⍬");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "");
+}
+
+// Monadic Format - Print Precision
+TEST_F(StringTest, FormatPrintPrecision3) {
+    machine->pp = 3;
+    Value* result = eval("⍕3.14159265");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // With pp=3, should have at most 3 significant digits
+    EXPECT_TRUE(s.length() <= 6);  // "3.14" or similar
+}
+
+TEST_F(StringTest, FormatPrintPrecision10) {
+    machine->pp = 10;
+    Value* result = eval("⍕3.14159265");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // With pp=10, should preserve more digits
+    EXPECT_TRUE(s.find("3.14159") != std::string::npos);
+}
+
+// Monadic Format - Exponential Form
+TEST_F(StringTest, FormatLargeNumber) {
+    Value* result = eval("⍕1e15");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Should use exponential form for large numbers
+    EXPECT_TRUE(s.find("E") != std::string::npos || s.find("e") != std::string::npos);
+}
+
+TEST_F(StringTest, FormatSmallNumber) {
+    Value* result = eval("⍕0.0000001");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Should use exponential form for very small numbers
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+}
+
+// Monadic Format - Matrix
+TEST_F(StringTest, FormatMatrix) {
+    Value* result = eval("⍕2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Should have newline between rows
+    EXPECT_TRUE(s.find("\n") != std::string::npos);
+}
+
+// Note: Infinity format tests are in test_primitives.cpp where we can directly
+// allocate INFINITY values. Per ISO 13751 Section 9.2.1.1, ÷0 throws a DOMAIN ERROR
+// ("domain-error is returned...such as one divided-by zero"), not infinity.
+
+// Dyadic Format - Fixed Decimal
+TEST_F(StringTest, DyadicFormatFixedBasic) {
+    Value* result = eval("5 2⍕3.14159");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Width 5, 2 decimal places: " 3.14"
+    EXPECT_EQ(s.length(), 5);
+    EXPECT_TRUE(s.find("3.14") != std::string::npos);
+}
+
+TEST_F(StringTest, DyadicFormatFixedZeroDecimals) {
+    Value* result = eval("5 0⍕42.7");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Width 5, 0 decimals, rounds: "   43"
+    EXPECT_EQ(s.length(), 5);
+    EXPECT_TRUE(s.find("43") != std::string::npos);
+}
+
+TEST_F(StringTest, DyadicFormatFixedNegative) {
+    Value* result = eval("6 2⍕¯3.14");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_EQ(s.length(), 6);
+    EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
+}
+
+// Dyadic Format - Exponential
+TEST_F(StringTest, DyadicFormatExponentialBasic) {
+    Value* result = eval("10 ¯3⍕3.14159");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Negative precision means exponential form
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+}
+
+TEST_F(StringTest, DyadicFormatExponentialLarge) {
+    Value* result = eval("10 ¯3⍕31415.9");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+    EXPECT_TRUE(s.find("4") != std::string::npos);  // exponent should be 4
+}
+
+TEST_F(StringTest, DyadicFormatExponentialSmall) {
+    Value* result = eval("12 ¯3⍕0.00314159");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+    EXPECT_TRUE(s.find("¯") != std::string::npos);  // negative exponent
+}
+
+// Dyadic Format - Vector with Single Spec
+TEST_F(StringTest, DyadicFormatVectorSingleSpec) {
+    Value* result = eval("6 2⍕1 2 3");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Each element formatted with width 6
+    EXPECT_EQ(s.length(), 18);  // 3 * 6
+}
+
+// Dyadic Format - Error Cases
+TEST_F(StringTest, DyadicFormatWidthTooNarrow) {
+    // Width too narrow for the number
+    EXPECT_THROW(eval("3 2⍕123.456"), APLError);
+}
+
+TEST_F(StringTest, DyadicFormatNonNumericRight) {
+    // Right argument must be numeric
+    EXPECT_THROW(eval("5 2⍕'abc'"), APLError);
+}
+
+TEST_F(StringTest, DyadicFormatOddLengthSpec) {
+    // Spec must have even length (pairs)
+    EXPECT_THROW(eval("5 2 3⍕1 2"), APLError);
+}
+
+TEST_F(StringTest, DyadicFormatZeroWidth) {
+    // Width must be positive
+    EXPECT_THROW(eval("0 2⍕42"), APLError);
+}
+
+// Round-trip tests (⍎⍕)
+TEST_F(StringTest, FormatExecuteRoundTripInteger) {
+    Value* result = eval("⍎⍕42");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(StringTest, FormatExecuteRoundTripNegative) {
+    Value* result = eval("⍎⍕¯17");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -17.0);
+}
+
+TEST_F(StringTest, FormatExecuteRoundTripFloat) {
+    machine->pp = 17;  // Full precision
+    Value* result = eval("⍎⍕3.14");
+    ASSERT_NE(result, nullptr);
+    EXPECT_NEAR(result->as_scalar(), 3.14, 1e-10);
+}
+
+TEST_F(StringTest, FormatExecuteRoundTripVector) {
+    Value* result = eval("⍎⍕1 2 3");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

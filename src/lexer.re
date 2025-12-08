@@ -147,6 +147,7 @@ Lexer::Lexer(const char* input)
     encode = "⊤";        // U+22A4 (encode / representation)
     domino = "⌹";        // U+2339 (matrix inverse / divide)
     execute = "⍎";       // U+234E (execute)
+    format = "⍕";        // U+2355 (format)
     table = "⍸";         // U+2378 (table)
     enclose = "⊂";       // U+2282 (enclose - reserved)
     disclose = "⊃";      // U+2283 (disclose - reserved)
@@ -154,6 +155,7 @@ Lexer::Lexer(const char* input)
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
+    zilde = "⍬";         // U+236C (empty vector)
 
     // Comments (⍝ to end of line)
     comment = "⍝" [^\n]*;  // U+235D
@@ -337,6 +339,7 @@ Token Lexer::next_token() {
         encode { column_++; return Token(TOK_ENCODE, token_line, token_column); }
         domino { column_++; return Token(TOK_DOMINO, token_line, token_column); }
         execute { column_++; return Token(TOK_EXECUTE, token_line, token_column); }
+        format { column_++; return Token(TOK_FORMAT, token_line, token_column); }
         table { column_++; return Token(TOK_TABLE, token_line, token_column); }
         enclose { column_++; return Token(TOK_ENCLOSE, token_line, token_column); }
         disclose { column_++; return Token(TOK_DISCLOSE, token_line, token_column); }
@@ -344,6 +347,7 @@ Token Lexer::next_token() {
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }
+        zilde { column_++; return Token(TOK_ZILDE, token_line, token_column); }
 
         // Outer product (special two-character sequence)
         compose "." { column_ += 2; return Token(TOK_OUTER_PRODUCT, token_line, token_column); }

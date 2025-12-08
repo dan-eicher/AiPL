@@ -3528,6 +3528,68 @@ TEST_F(EvalTest, TableShapeVector) {
     EXPECT_DOUBLE_EQ((*shape)(1, 0), 1.0);
 }
 
+// ============================================================================
+// Zilde (⍬) Tests - Empty Vector Literal
+// ============================================================================
+
+TEST_F(EvalTest, ZildeIsEmptyVector) {
+    // ⍬ should be an empty vector
+    Value* result = eval(parser->parse("⍬"));
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(EvalTest, ZildeShape) {
+    // ⍴⍬ → 0 (shape of empty vector is a 1-element vector containing 0)
+    Value* result = eval(parser->parse("⍴⍬"));
+    ASSERT_NE(result, nullptr);
+    // Shape returns a vector; for empty vector the shape is [0]
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 0.0);
+}
+
+TEST_F(EvalTest, ZildeAssignment) {
+    // x←⍬ then ⍴x → 0
+    eval(parser->parse("x←⍬"));
+    Value* result = eval(parser->parse("⍴x"));
+    ASSERT_NE(result, nullptr);
+    // Shape returns a vector; for empty vector the shape is [0]
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 0.0);
+}
+
+TEST_F(EvalTest, ZildeCatenate) {
+    // 1 2 3,⍬ → 1 2 3 (catenate with empty)
+    Value* result = eval(parser->parse("1 2 3,⍬"));
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+TEST_F(EvalTest, ZildeCatenateReverse) {
+    // ⍬,1 2 3 → 1 2 3 (catenate empty with vector)
+    Value* result = eval(parser->parse("⍬,1 2 3"));
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+TEST_F(EvalTest, ZildeFormatRoundTrip) {
+    // format_value outputs ⍬ for empty vectors
+    // This test verifies the round-trip: ⍬ → parse → eval → format → ⍬
+    Value* result = eval(parser->parse("⍬"));
+    ASSERT_NE(result, nullptr);
+    std::string formatted = format_value(result);
+    EXPECT_EQ(formatted, "⍬");
+}
+
 // Main function
 
 int main(int argc, char** argv) {

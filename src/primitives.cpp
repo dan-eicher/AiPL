@@ -8,6 +8,7 @@
 #include <cmath>
 #include <stdexcept>
 #include <random>
+#include <iomanip>
 
 namespace apl {
 
@@ -54,6 +55,7 @@ PrimitiveFn prim_question  = { "?", fn_roll, fn_deal };
 PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode };
 PrimitiveFn prim_encode    = { "⊤", nullptr, fn_encode };
 PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr };
+PrimitiveFn prim_format    = { "⍕", fn_format_monadic, fn_format_dyadic };
 PrimitiveFn prim_table     = { "⍸", fn_table, nullptr };
 PrimitiveFn prim_squad     = { "⌷", nullptr, fn_squad };
 
@@ -3293,6 +3295,345 @@ void fn_execute(Machine* m, Value* omega) {
 
     // Push the parsed continuation to execute
     m->push_kont(k);
+}
+
+// ============================================================================
+// Format (⍕) - ISO 13751 Section 15.4
+// ============================================================================
+
+// Helper: format a single number according to print precision
+// Returns string with appropriate format (decimal or exponential)
+static std::string format_number_pp(double val, int pp) {
+    // Handle special values
+    if (std::isinf(val)) {
+        return val > 0 ? "∞" : "¯∞";
+    }
+    if (std::isnan(val)) {
+        return "NaN";
+    }
+
+    // Handle zero specially
+    if (val == 0.0) {
+        return "0";
+    }
+
+    bool negative = val < 0;
+    double abs_val = std::abs(val);
+
+    // Determine if exponential form is needed:
+    // - Value >= 10^pp (too many digits left of decimal)
+    // - Value < 10^-5 (more than 5 leading zeros)
+    double upper_limit = std::pow(10.0, pp);
+    double lower_limit = 1e-5;
+
+    bool use_exponential = (abs_val >= upper_limit) || (abs_val < lower_limit && abs_val > 0);
+
+    std::ostringstream oss;
+    oss << std::setprecision(pp);
+
+    if (use_exponential) {
+        // Exponential form: d.dddE±nn
+        oss << std::scientific << abs_val;
+        std::string s = oss.str();
+
+        // Convert 'e' to 'E' and handle exponent sign
+        size_t e_pos = s.find('e');
+        if (e_pos != std::string::npos) {
+            s[e_pos] = 'E';
+            // Check for negative exponent
+            if (e_pos + 1 < s.length() && s[e_pos + 1] == '-') {
+                s.replace(e_pos + 1, 1, "¯");
+            } else if (e_pos + 1 < s.length() && s[e_pos + 1] == '+') {
+                // Remove the + sign
+                s.erase(e_pos + 1, 1);
+            }
+            // Remove leading zeros from exponent
+            size_t exp_start = e_pos + 1;
+            if (s[exp_start] == '\xC2') exp_start += 2; // Skip ¯ if present
+            while (exp_start < s.length() - 1 && s[exp_start] == '0') {
+                s.erase(exp_start, 1);
+            }
+        }
+
+        return (negative ? "¯" : "") + s;
+    } else {
+        // Decimal form
+        // Check if it's an integer
+        if (abs_val == std::floor(abs_val) && abs_val < 1e15) {
+            oss.str("");
+            oss << std::fixed << std::setprecision(0) << abs_val;
+        } else {
+            oss << std::defaultfloat << abs_val;
+            std::string s = oss.str();
+            // Remove trailing zeros after decimal point
+            if (s.find('.') != std::string::npos) {
+                size_t last = s.find_last_not_of('0');
+                if (last != std::string::npos && s[last] == '.') {
+                    last--;  // Also remove the decimal point if nothing after
+                }
+                s = s.substr(0, last + 1);
+            }
+            return (negative ? "¯" : "") + s;
+        }
+
+        return (negative ? "¯" : "") + oss.str();
+    }
+}
+
+// Helper: format a number with fixed decimal places
+static std::string format_number_fixed(double val, int width, int decimals) {
+    bool negative = val < 0;
+    double abs_val = std::abs(val);
+
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(decimals) << abs_val;
+    std::string num_str = oss.str();
+
+    // Add high minus for negative
+    std::string result = (negative ? "¯" : "") + num_str;
+
+    // Right-justify in field
+    if ((int)result.length() < width) {
+        result = std::string(width - result.length(), ' ') + result;
+    }
+
+    return result;
+}
+
+// Helper: format a number in exponential form with specified mantissa digits
+static std::string format_number_exponential(double val, int width, int mantissa_digits) {
+    bool negative = val < 0;
+    double abs_val = std::abs(val);
+
+    std::ostringstream oss;
+    // mantissa_digits is the total significant digits (including the one before decimal)
+    oss << std::scientific << std::setprecision(mantissa_digits - 1) << abs_val;
+    std::string s = oss.str();
+
+    // Convert 'e' to 'E' and fix exponent
+    size_t e_pos = s.find('e');
+    if (e_pos != std::string::npos) {
+        s[e_pos] = 'E';
+        if (e_pos + 1 < s.length() && s[e_pos + 1] == '-') {
+            s.replace(e_pos + 1, 1, "¯");
+        } else if (e_pos + 1 < s.length() && s[e_pos + 1] == '+') {
+            s.erase(e_pos + 1, 1);
+        }
+        // Remove leading zeros from exponent
+        size_t exp_start = e_pos + 1;
+        if (exp_start < s.length() && s[exp_start] == '\xC2') exp_start += 2; // Skip ¯
+        while (exp_start < s.length() - 1 && s[exp_start] == '0') {
+            s.erase(exp_start, 1);
+        }
+    }
+
+    std::string result = (negative ? "¯" : "") + s;
+
+    // Right-justify in field
+    if ((int)result.length() < width) {
+        result = std::string(width - result.length(), ' ') + result;
+    }
+
+    return result;
+}
+
+// Monadic format: ⍕ B
+void fn_format_monadic(Machine* m, Value* omega) {
+    // Character input: return unchanged
+    if (omega->is_string()) {
+        m->result = omega;
+        return;
+    }
+    if (omega->is_array() && omega->is_char_data()) {
+        // Convert char vector back to string for consistency
+        m->result = omega->to_string_value(m->heap);
+        return;
+    }
+
+    // Empty array: return empty string
+    if (omega->is_array() && omega->size() == 0) {
+        m->result = m->heap->allocate_string("");
+        return;
+    }
+
+    // Scalar
+    if (omega->is_scalar()) {
+        std::string formatted = format_number_pp(omega->as_scalar(), m->pp);
+        m->result = m->heap->allocate_string(formatted.c_str());
+        return;
+    }
+
+    // Vector or Matrix: format as space-separated values
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (omega->is_vector()) {
+        // Vector: single row, space-separated
+        std::ostringstream oss;
+        for (int i = 0; i < rows; i++) {
+            if (i > 0) oss << " ";
+            oss << format_number_pp((*mat)(i, 0), m->pp);
+        }
+        m->result = m->heap->allocate_string(oss.str().c_str());
+        return;
+    }
+
+    // Matrix: newline-separated rows
+    std::ostringstream oss;
+    for (int i = 0; i < rows; i++) {
+        if (i > 0) oss << "\n";
+        for (int j = 0; j < cols; j++) {
+            if (j > 0) oss << " ";
+            oss << format_number_pp((*mat)(i, j), m->pp);
+        }
+    }
+    m->result = m->heap->allocate_string(oss.str().c_str());
+}
+
+// Dyadic format: A ⍕ B
+void fn_format_dyadic(Machine* m, Value* alpha, Value* omega) {
+    // A must be numeric
+    if (alpha->is_string() || (alpha->is_array() && alpha->is_char_data())) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format left argument must be numeric"));
+        return;
+    }
+
+    // B must be numeric
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format right argument must be numeric"));
+        return;
+    }
+
+    // A must be a vector (rank <= 1)
+    if (alpha->is_matrix()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: format left argument must be a vector"));
+        return;
+    }
+
+    // Get format specifications from A
+    std::vector<std::pair<int, int>> specs;  // (width, precision) pairs
+
+    if (alpha->is_scalar()) {
+        // Single scalar - interpret as width with 0 decimals
+        int w = (int)std::round(alpha->as_scalar());
+        specs.push_back({w, 0});
+    } else {
+        const Eigen::MatrixXd* a_mat = alpha->as_matrix();
+        int a_size = a_mat->rows();
+
+        if (a_size % 2 != 0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: format left argument must have even length"));
+            return;
+        }
+
+        for (int i = 0; i < a_size; i += 2) {
+            int w = (int)std::round((*a_mat)(i, 0));
+            int p = (int)std::round((*a_mat)(i + 1, 0));
+            specs.push_back({w, p});
+        }
+    }
+
+    // Validate width is positive
+    for (const auto& spec : specs) {
+        if (spec.first <= 0) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format width must be positive"));
+            return;
+        }
+    }
+
+    // Handle empty B
+    if (omega->is_array() && omega->size() == 0) {
+        int total_width = 0;
+        for (const auto& spec : specs) {
+            total_width += spec.first;
+        }
+        m->result = m->heap->allocate_string("");
+        return;
+    }
+
+    // Format scalar B
+    if (omega->is_scalar()) {
+        double val = omega->as_scalar();
+        int width = specs[0].first;
+        int precision = specs[0].second;
+
+        std::string formatted;
+        if (precision >= 0) {
+            formatted = format_number_fixed(val, width, precision);
+        } else {
+            formatted = format_number_exponential(val, width, -precision);
+        }
+
+        // Check if it fits
+        // Note: We count UTF-8 characters, not bytes
+        int char_count = 0;
+        for (size_t i = 0; i < formatted.length(); ) {
+            unsigned char c = formatted[i];
+            if ((c & 0x80) == 0) { i += 1; }
+            else if ((c & 0xE0) == 0xC0) { i += 2; }
+            else if ((c & 0xF0) == 0xE0) { i += 3; }
+            else { i += 4; }
+            char_count++;
+        }
+
+        if (char_count > width) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format width too narrow"));
+            return;
+        }
+
+        m->result = m->heap->allocate_string(formatted.c_str());
+        return;
+    }
+
+    // Format vector or matrix
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    // For vectors, treat as single row with N elements
+    // For matrices, use actual rows/cols
+    int rows, cols;
+    if (omega->is_vector()) {
+        rows = 1;
+        cols = mat->rows();  // Vector elements become columns
+    } else {
+        rows = mat->rows();
+        cols = mat->cols();
+    }
+
+    // If single spec, apply to all columns
+    if (specs.size() == 1) {
+        std::vector<std::pair<int, int>> expanded(cols, specs[0]);
+        specs = expanded;
+    }
+
+    // Check we have right number of specs
+    if ((int)specs.size() != cols) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: format specs must match number of columns"));
+        return;
+    }
+
+    std::ostringstream oss;
+
+    for (int i = 0; i < rows; i++) {
+        if (i > 0) oss << "\n";
+
+        for (int j = 0; j < cols; j++) {
+            double val = omega->is_vector() ? (*mat)(j, 0) : (*mat)(i, j);
+            int width = specs[j].first;
+            int precision = specs[j].second;
+
+            std::string formatted;
+            if (precision >= 0) {
+                formatted = format_number_fixed(val, width, precision);
+            } else {
+                formatted = format_number_exponential(val, width, -precision);
+            }
+
+            oss << formatted;
+        }
+    }
+
+    m->result = m->heap->allocate_string(oss.str().c_str());
 }
 
 } // namespace apl

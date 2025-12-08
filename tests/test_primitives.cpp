@@ -4534,3 +4534,260 @@ TEST_F(PrimitivesTest, RollIO1) {
         EXPECT_LE(val, 5.0);
     }
 }
+
+// ============================================================================
+// Format (⍕) Primitive Tests - ISO 13751 Section 15.4
+// ============================================================================
+
+// Monadic Format - String Passthrough
+TEST_F(PrimitivesTest, FormatMonadicStringPassthrough) {
+    Value* str = machine->heap->allocate_string("hello");
+    fn_format_monadic(machine, str);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "hello");
+}
+
+TEST_F(PrimitivesTest, FormatMonadicEmptyString) {
+    Value* str = machine->heap->allocate_string("");
+    fn_format_monadic(machine, str);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "");
+}
+
+// Monadic Format - Scalar Formatting
+TEST_F(PrimitivesTest, FormatMonadicIntegerScalar) {
+    Value* num = machine->heap->allocate_scalar(42.0);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "42");
+}
+
+TEST_F(PrimitivesTest, FormatMonadicNegativeInteger) {
+    Value* num = machine->heap->allocate_scalar(-5.0);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "¯5");
+}
+
+TEST_F(PrimitivesTest, FormatMonadicZero) {
+    Value* num = machine->heap->allocate_scalar(0.0);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "0");
+}
+
+TEST_F(PrimitivesTest, FormatMonadicFloat) {
+    Value* num = machine->heap->allocate_scalar(3.14);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("3.14") != std::string::npos);
+}
+
+TEST_F(PrimitivesTest, FormatMonadicNegativeFloat) {
+    Value* num = machine->heap->allocate_scalar(-3.14);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
+}
+
+// Monadic Format - Vector Formatting
+TEST_F(PrimitivesTest, FormatMonadicIntegerVector) {
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_format_monadic(machine, vec);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "1 2 3");
+}
+
+TEST_F(PrimitivesTest, FormatMonadicVectorWithNegatives) {
+    Eigen::VectorXd v(3);
+    v << -1.0, 2.0, -3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_format_monadic(machine, vec);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "¯1 2 ¯3");
+}
+
+// Monadic Format - Empty Vector
+TEST_F(PrimitivesTest, FormatMonadicEmptyVector) {
+    Eigen::VectorXd v(0);
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_format_monadic(machine, vec);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "");
+}
+
+// Monadic Format - Print Precision
+TEST_F(PrimitivesTest, FormatMonadicPrintPrecision3) {
+    machine->pp = 3;
+    Value* num = machine->heap->allocate_scalar(3.14159265);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.length() <= 6);  // "3.14" or similar
+}
+
+TEST_F(PrimitivesTest, FormatMonadicPrintPrecision10) {
+    machine->pp = 10;
+    Value* num = machine->heap->allocate_scalar(3.14159265);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("3.14159") != std::string::npos);
+}
+
+// Monadic Format - Large/Small Numbers (Exponential)
+TEST_F(PrimitivesTest, FormatMonadicLargeNumber) {
+    Value* num = machine->heap->allocate_scalar(1e15);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+}
+
+TEST_F(PrimitivesTest, FormatMonadicSmallNumber) {
+    Value* num = machine->heap->allocate_scalar(1e-7);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+}
+
+// Monadic Format - Infinity
+TEST_F(PrimitivesTest, FormatMonadicInfinity) {
+    Value* num = machine->heap->allocate_scalar(INFINITY);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("∞") != std::string::npos);
+}
+
+TEST_F(PrimitivesTest, FormatMonadicNegativeInfinity) {
+    Value* num = machine->heap->allocate_scalar(-INFINITY);
+    fn_format_monadic(machine, num);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("¯∞") != std::string::npos);
+}
+
+// Monadic Format - Matrix
+TEST_F(PrimitivesTest, FormatMonadicMatrix) {
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+    fn_format_monadic(machine, mat);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("\n") != std::string::npos);
+}
+
+// Dyadic Format - Fixed Decimal
+TEST_F(PrimitivesTest, FormatDyadicFixedBasic) {
+    Eigen::VectorXd spec(2);
+    spec << 5.0, 2.0;
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Value* omega = machine->heap->allocate_scalar(3.14159);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_EQ(s.length(), 5);
+    EXPECT_TRUE(s.find("3.14") != std::string::npos);
+}
+
+TEST_F(PrimitivesTest, FormatDyadicZeroDecimals) {
+    Eigen::VectorXd spec(2);
+    spec << 5.0, 0.0;
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Value* omega = machine->heap->allocate_scalar(42.7);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_EQ(s.length(), 5);
+    EXPECT_TRUE(s.find("43") != std::string::npos);  // Rounds
+}
+
+TEST_F(PrimitivesTest, FormatDyadicNegative) {
+    Eigen::VectorXd spec(2);
+    spec << 6.0, 2.0;
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Value* omega = machine->heap->allocate_scalar(-3.14);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_EQ(s.length(), 6);
+    EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
+}
+
+// Dyadic Format - Exponential (negative precision)
+TEST_F(PrimitivesTest, FormatDyadicExponential) {
+    Eigen::VectorXd spec(2);
+    spec << 10.0, -3.0;  // Negative precision = exponential
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Value* omega = machine->heap->allocate_scalar(3.14159);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+}
+
+// Dyadic Format - Vector
+TEST_F(PrimitivesTest, FormatDyadicVector) {
+    Eigen::VectorXd spec(2);
+    spec << 6.0, 2.0;
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* omega = machine->heap->allocate_vector(v);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_EQ(s.length(), 18);  // 3 * 6
+}
