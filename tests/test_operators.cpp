@@ -7,6 +7,8 @@
 #include "operators.h"
 #include "continuation.h"
 #include <Eigen/Dense>
+#include <cmath>
+#include <stdexcept>
 
 using namespace apl;
 
@@ -579,6 +581,152 @@ TEST_F(OperatorsTest, CatenateMatrixAxis2) {
     EXPECT_TRUE(result->is_matrix());
     EXPECT_EQ(result->rows(), 2);
     EXPECT_EQ(result->cols(), 4);
+}
+
+// ========================================================================
+// Reduction Identity Elements (ISO 13751 Table 5)
+// Empty vector reduction should return the identity element
+// Note: Using ⍳0 to create empty vector since ⍬ (zilde) not yet in lexer
+// ========================================================================
+
+TEST_F(OperatorsTest, ReduceEmptyPlus) {
+    // +/⍳0 → 0
+    Value* result = eval(machine, "+/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyMinus) {
+    // -/⍳0 → 0
+    Value* result = eval(machine, "-/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyTimes) {
+    // ×/⍳0 → 1
+    Value* result = eval(machine, "×/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyDivide) {
+    // ÷/⍳0 → 1
+    Value* result = eval(machine, "÷/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyMinimum) {
+    // ⌊/⍳0 → +∞ (positive-number-limit per ISO 13751)
+    Value* result = eval(machine, "⌊/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_TRUE(std::isinf(result->as_scalar()) && result->as_scalar() > 0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyMaximum) {
+    // ⌈/⍳0 → -∞ (negative-number-limit per ISO 13751)
+    Value* result = eval(machine, "⌈/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_TRUE(std::isinf(result->as_scalar()) && result->as_scalar() < 0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyAnd) {
+    // ∧/⍳0 → 1 (identity for logical AND)
+    Value* result = eval(machine, "∧/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyOr) {
+    // ∨/⍳0 → 0 (identity for logical OR)
+    Value* result = eval(machine, "∨/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyLessThan) {
+    // </⍳0 → 0
+    Value* result = eval(machine, "</⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyLessEqual) {
+    // ≤/⍳0 → 1
+    Value* result = eval(machine, "≤/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyEqual) {
+    // =/⍳0 → 1
+    Value* result = eval(machine, "=/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyGreaterEqual) {
+    // ≥/⍳0 → 1
+    Value* result = eval(machine, "≥/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyGreaterThan) {
+    // >/⍳0 → 0
+    Value* result = eval(machine, ">/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyNotEqual) {
+    // ≠/⍳0 → 0
+    Value* result = eval(machine, "≠/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyPower) {
+    // */⍳0 → 1 (identity for power)
+    Value* result = eval(machine, "*/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyLog) {
+    // ⍟/⍳0 → DOMAIN ERROR (no identity element)
+    EXPECT_THROW(eval(machine, "⍟/⍳0"), std::runtime_error);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyCircle) {
+    // ○/⍳0 → DOMAIN ERROR (no identity element)
+    EXPECT_THROW(eval(machine, "○/⍳0"), std::runtime_error);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyNand) {
+    // ⍲/⍳0 → DOMAIN ERROR (no identity element)
+    EXPECT_THROW(eval(machine, "⍲/⍳0"), std::runtime_error);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyNor) {
+    // ⍱/⍳0 → DOMAIN ERROR (no identity element)
+    EXPECT_THROW(eval(machine, "⍱/⍳0"), std::runtime_error);
 }
 
 int main(int argc, char** argv) {

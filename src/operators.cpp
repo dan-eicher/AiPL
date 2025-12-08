@@ -227,11 +227,28 @@ void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 // When reducing an empty vector, return the identity element for the function
 double get_identity_element(PrimitiveFn* fn) {
     // Match by function pointer
-    if (fn == &prim_plus) return 0.0;      // +/⍬ → 0
-    if (fn == &prim_minus) return 0.0;     // -/⍬ → 0
-    if (fn == &prim_times) return 1.0;     // ×/⍬ → 1
-    if (fn == &prim_divide) return 1.0;    // ÷/⍬ → 1
-    if (fn == &prim_star) return 1.0;      // */⍬ → 1
+    // Arithmetic
+    if (fn == &prim_plus) return 0.0;       // +/⍬ → 0
+    if (fn == &prim_minus) return 0.0;      // -/⍬ → 0
+    if (fn == &prim_times) return 1.0;      // ×/⍬ → 1
+    if (fn == &prim_divide) return 1.0;     // ÷/⍬ → 1
+    if (fn == &prim_star) return 1.0;       // */⍬ → 1
+
+    // Min/Max - ISO 13751 §5.4: positive/negative-number-limit
+    if (fn == &prim_floor) return std::numeric_limits<double>::infinity();   // ⌊/⍬ → +∞
+    if (fn == &prim_ceiling) return -std::numeric_limits<double>::infinity(); // ⌈/⍬ → -∞
+
+    // Logical
+    if (fn == &prim_and) return 1.0;        // ∧/⍬ → 1
+    if (fn == &prim_or) return 0.0;         // ∨/⍬ → 0
+
+    // Comparison
+    if (fn == &prim_less) return 0.0;       // </⍬ → 0
+    if (fn == &prim_less_eq) return 1.0;    // ≤/⍬ → 1
+    if (fn == &prim_equal) return 1.0;      // =/⍬ → 1
+    if (fn == &prim_greater_eq) return 1.0; // ≥/⍬ → 1
+    if (fn == &prim_greater) return 0.0;    // >/⍬ → 0
+    if (fn == &prim_not_equal) return 0.0;  // ≠/⍬ → 0
 
     // For functions without identity, return NaN
     return std::numeric_limits<double>::quiet_NaN();
