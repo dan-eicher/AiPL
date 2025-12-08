@@ -4088,3 +4088,231 @@ TEST_F(PrimitivesTest, RankErrorGradeDownScalar) {
     // ⍒5 → RANK ERROR (scalar)
     EXPECT_THROW(machine->eval("⍒5"), std::runtime_error);
 }
+
+// ============================================================================
+// Phase 3: Empty Array Handling Tests (ISO 13751)
+// ============================================================================
+
+// --- Structural Operations on Empty Arrays ---
+
+TEST_F(PrimitivesTest, ShapeEmptyVector) {
+    // ⍴⍳0 → 1-element vector containing 0
+    Value* result = machine->eval("⍴⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 0.0);
+}
+
+TEST_F(PrimitivesTest, ShapeEmptyMatrix) {
+    // ⍴0 3⍴0 → 0 3 (shape of 0×3 matrix)
+    Value* result = machine->eval("⍴0 3⍴0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, RavelEmptyMatrix) {
+    // ,0 3⍴0 → empty vector
+    Value* result = machine->eval(",0 3⍴0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, CatenateEmptyLeft) {
+    // (⍳0),1 2 3 → 1 2 3
+    Value* result = machine->eval("(⍳0),1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, CatenateEmptyRight) {
+    // 1 2 3,⍳0 → 1 2 3
+    Value* result = machine->eval("1 2 3,⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, CatenateEmptyBoth) {
+    // (⍳0),⍳0 → empty vector
+    Value* result = machine->eval("(⍳0),⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, TallyEmpty) {
+    // ≢⍳0 → 0
+    Value* result = machine->eval("≢⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, ReverseEmpty) {
+    // ⌽⍳0 → empty vector
+    Value* result = machine->eval("⌽⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, TransposeEmpty) {
+    // ⍉0 3⍴0 → 3 0 matrix
+    Value* result = machine->eval("⍉0 3⍴0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 0);
+}
+
+// --- Arithmetic on Empty Arrays ---
+
+TEST_F(PrimitivesTest, AddScalarEmpty) {
+    // 5+⍳0 → empty vector (scalar extension)
+    Value* result = machine->eval("5+⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, AddEmptyScalar) {
+    // (⍳0)+5 → empty vector
+    Value* result = machine->eval("(⍳0)+5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, DivideScalarEmpty) {
+    // 5÷⍳0 → empty vector (no domain error!)
+    Value* result = machine->eval("5÷⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, AddEmptyEmpty) {
+    // (⍳0)+⍳0 → empty vector
+    Value* result = machine->eval("(⍳0)+⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, TimesEmptyEmpty) {
+    // (⍳0)×⍳0 → empty vector
+    Value* result = machine->eval("(⍳0)×⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, NegateEmpty) {
+    // -⍳0 → empty vector
+    Value* result = machine->eval("-⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, ReciprocalEmpty) {
+    // ÷⍳0 → empty vector (no domain error!)
+    Value* result = machine->eval("÷⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+// --- Search Functions with Empty Arrays ---
+
+TEST_F(PrimitivesTest, MembershipEmptyRight) {
+    // 1 2 3∊⍳0 → 0 0 0 (nothing found in empty set)
+    Value* result = machine->eval("1 2 3∊⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 0.0);
+}
+
+TEST_F(PrimitivesTest, MembershipEmptyLeft) {
+    // (⍳0)∊1 2 3 → empty vector
+    Value* result = machine->eval("(⍳0)∊1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, UniqueEmpty) {
+    // ∪⍳0 → empty vector
+    Value* result = machine->eval("∪⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, GradeUpEmpty) {
+    // ⍋⍳0 → empty vector
+    Value* result = machine->eval("⍋⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, GradeDownEmpty) {
+    // ⍒⍳0 → empty vector
+    Value* result = machine->eval("⍒⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+// --- Take/Drop with Empty Arrays ---
+
+TEST_F(PrimitivesTest, TakeFromEmpty) {
+    // 3↑⍳0 → 0 0 0 (take pads with zeros)
+    Value* result = machine->eval("3↑⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 0.0);
+}
+
+TEST_F(PrimitivesTest, TakeZeroElements) {
+    // 0↑1 2 3 → empty vector
+    Value* result = machine->eval("0↑1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, DropToEmpty) {
+    // 3↓1 2 3 → empty vector
+    Value* result = machine->eval("3↓1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, DropFromEmpty) {
+    // 3↓⍳0 → empty vector
+    Value* result = machine->eval("3↓⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
