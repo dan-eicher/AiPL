@@ -67,13 +67,11 @@ Heap::~Heap() {
 }
 
 // Allocate a new Value in the heap
+// NOTE: We do NOT trigger GC here! GC is only safe at the trampoline's maybe_gc()
+// call, after each continuation completes. Triggering GC during allocation could
+// sweep Values that exist only in C local variables (not yet stored in roots).
 Value* Heap::allocate(Value* val) {
     if (!val) return nullptr;
-
-    // Check if GC is needed
-    if (should_gc() && !gc_in_progress && machine) {
-        collect(machine);
-    }
 
     // Add to young generation
     young_objects.push_back(val);
@@ -190,13 +188,9 @@ Value* Heap::allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType c
 }
 
 // Allocate a continuation in the heap (private - only called by template allocate)
+// NOTE: No GC trigger here - same reason as allocate() above.
 Continuation* Heap::allocate_continuation(Continuation* k) {
     if (!k) return nullptr;
-
-    // Check if GC is needed
-    if (should_gc() && !gc_in_progress) {
-        collect(nullptr);
-    }
 
     // Add to young generation
     k->marked = false;
@@ -208,13 +202,9 @@ Continuation* Heap::allocate_continuation(Continuation* k) {
 }
 
 // Allocate a completion in the heap (private - only called by template allocate)
+// NOTE: No GC trigger here - same reason as allocate() above.
 Completion* Heap::allocate_completion(Completion* comp) {
     if (!comp) return nullptr;
-
-    // Check if GC is needed
-    if (should_gc() && !gc_in_progress) {
-        collect(nullptr);
-    }
 
     // Add to completions list (no generational separation)
     comp->marked = false;
@@ -226,13 +216,9 @@ Completion* Heap::allocate_completion(Completion* comp) {
 }
 
 // Allocate an environment in the heap (private - only called by template allocate)
+// NOTE: No GC trigger here - same reason as allocate() above.
 Environment* Heap::allocate_environment(Environment* env) {
     if (!env) return nullptr;
-
-    // Check if GC is needed
-    if (should_gc() && !gc_in_progress) {
-        collect(nullptr);
-    }
 
     // Add to environments list (no generational separation - they're GC roots)
     env->marked = false;
@@ -246,6 +232,7 @@ Environment* Heap::allocate_environment(Environment* env) {
 // Trigger appropriate garbage collection
 void Heap::collect(Machine* machine) {
     if (gc_in_progress) return;
+    if (!machine) return;  // Can't GC without machine - no roots to mark!
 
     gc_in_progress = true;
 

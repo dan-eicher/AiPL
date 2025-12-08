@@ -2205,8 +2205,10 @@ void CellCollectK::invoke(Machine* machine) {
 }
 
 void CellCollectK::mark(Heap* heap) {
-    // iter is on the continuation stack, will be marked separately
-    (void)heap;
+    // iter holds Values (fn, lhs, rhs, results, accumulator) that must be marked
+    if (iter) {
+        heap->mark_continuation(iter);
+    }
 }
 
 // ============================================================================
@@ -2268,7 +2270,10 @@ void RowReduceCollectK::invoke(Machine* machine) {
 }
 
 void RowReduceCollectK::mark(Heap* heap) {
-    (void)heap;
+    // iter holds Values (fn, matrix, results) that must be marked
+    if (iter) {
+        heap->mark_continuation(iter);
+    }
 }
 
 // ============================================================================
@@ -2327,7 +2332,10 @@ void PrefixScanCollectK::invoke(Machine* machine) {
 }
 
 void PrefixScanCollectK::mark(Heap* heap) {
-    (void)heap;
+    // iter holds Values (fn, vec, results) that must be marked
+    if (iter) {
+        heap->mark_continuation(iter);
+    }
 }
 
 // ============================================================================
@@ -2416,7 +2424,10 @@ void RowScanCollectK::invoke(Machine* machine) {
 }
 
 void RowScanCollectK::mark(Heap* heap) {
-    (void)heap;
+    // iter holds Values (fn, matrix, results) that must be marked
+    if (iter) {
+        heap->mark_continuation(iter);
+    }
 }
 
 // ============================================================================
@@ -2535,7 +2546,10 @@ void InnerProductCollectK::invoke(Machine* machine) {
 }
 
 void InnerProductCollectK::mark(Heap* heap) {
-    (void)heap;
+    // iter holds Values (f_fn, g_fn, lhs, rhs, results) that must be marked
+    if (iter) {
+        heap->mark_continuation(iter);
+    }
 }
 
 // ============================================================================
@@ -2592,7 +2606,10 @@ void NwiseCollectK::invoke(Machine* machine) {
 }
 
 void NwiseCollectK::mark(Heap* heap) {
-    (void)heap;
+    // iter holds Values (fn, vec, results) that must be marked
+    if (iter) {
+        heap->mark_continuation(iter);
+    }
 }
 
 // ============================================================================
@@ -2669,7 +2686,10 @@ void NwiseMatrixCollectK::invoke(Machine* machine) {
 }
 
 void NwiseMatrixCollectK::mark(Heap* heap) {
-    (void)heap;
+    // iter holds Values (fn, matrix, results) that must be marked
+    if (iter) {
+        heap->mark_continuation(iter);
+    }
 }
 
 // ============================================================================

@@ -99,6 +99,7 @@ Machine::~Machine() {
 // High-level eval: parse and execute an expression
 Value* Machine::eval(const std::string& input) {
     Continuation* k = parser->parse(input);
+
     if (!k) {
         // Parse error - route through the same error mechanism as runtime errors
         const char* msg = string_pool.intern(parser->get_error().c_str());
