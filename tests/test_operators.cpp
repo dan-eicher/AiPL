@@ -1067,6 +1067,366 @@ TEST_F(OperatorsTest, EachLengthMismatch) {
     EXPECT_THROW(eval(machine, "1 2 +¨ 1 2 3"), APLError);
 }
 
+// ============================================================================
+// ISO 13751 Section 9.3: Dyadic Operators - Outer Product
+// ============================================================================
+
+TEST_F(OperatorsTest, OuterProductEmptyLeft) {
+    // (⍳0) ∘.+ (1 2 3) → empty matrix with shape 0 3
+    Value* result = eval(machine, "(⍳0) ∘.+ (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 0);
+    EXPECT_EQ(result->cols(), 3);
+}
+
+TEST_F(OperatorsTest, OuterProductEmptyRight) {
+    // (1 2 3) ∘.+ (⍳0) → empty matrix with shape 3 0
+    Value* result = eval(machine, "(1 2 3) ∘.+ (⍳0)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 0);
+}
+
+TEST_F(OperatorsTest, OuterProductBothEmpty) {
+    // (⍳0) ∘.+ (⍳0) → empty matrix with shape 0 0
+    Value* result = eval(machine, "(⍳0) ∘.+ (⍳0)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 0);
+    EXPECT_EQ(result->cols(), 0);
+}
+
+TEST_F(OperatorsTest, OuterProductScalarLeft) {
+    // 5 ∘.× (1 2 3) → 1×3 matrix: [[5,10,15]]
+    Value* result = eval(machine, "5 ∘.× (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 1);
+    EXPECT_EQ(result->cols(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 10.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 15.0);
+}
+
+TEST_F(OperatorsTest, OuterProductScalarRight) {
+    // (1 2 3) ∘.× 5 → 3×1 matrix: [[5],[10],[15]]
+    Value* result = eval(machine, "(1 2 3) ∘.× 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 1);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 15.0);
+}
+
+TEST_F(OperatorsTest, OuterProductNonCommutative) {
+    // (1 2) ∘.- (10 20 30) → subtraction table
+    Value* result = eval(machine, "(1 2) ∘.- (10 20 30)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // Row 0: 1-10=-9, 1-20=-19, 1-30=-29
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -9.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -19.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), -29.0);
+    // Row 1: 2-10=-8, 2-20=-18, 2-30=-28
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -8.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), -18.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), -28.0);
+}
+
+TEST_F(OperatorsTest, OuterProductComparison) {
+    // (1 2 3) ∘.= (1 2 3) → identity-like matrix
+    Value* result = eval(machine, "(1 2 3) ∘.= (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // Diagonal should be 1, off-diagonal 0
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 2), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);
+}
+
+// ============================================================================
+// ISO 13751 Section 9.3: Dyadic Operators - Inner Product
+// ============================================================================
+
+TEST_F(OperatorsTest, InnerProductEmptyVectors) {
+    // (⍳0) +.× (⍳0) → 0 (sum of empty products = identity for +)
+    Value* result = eval(machine, "(⍳0) +.× (⍳0)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, InnerProductScalarScalar) {
+    // 3 +.× 4 → 12 (scalar inner product is just multiply)
+    Value* result = eval(machine, "3 +.× 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+TEST_F(OperatorsTest, InnerProductVectorMatrix) {
+    // (1 2) +.× (2 3⍴⍳6) → vector × matrix
+    // [1,2] × [[1,2,3],[4,5,6]] = [1×1+2×4, 1×2+2×5, 1×3+2×6] = [9, 12, 15]
+    Value* result = eval(machine, "(1 2) +.× (2 3⍴⍳6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 15.0);
+}
+
+TEST_F(OperatorsTest, InnerProductMaxTimes) {
+    // (1 5 2) ⌈.× (2 1 3) → max of products: max(1×2, 5×1, 2×3) = max(2,5,6) = 6
+    Value* result = eval(machine, "(1 5 2) ⌈.× (2 1 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+TEST_F(OperatorsTest, InnerProductMinPlus) {
+    // (1 2 3) ⌊.+ (4 5 6) → min of sums: min(1+4, 2+5, 3+6) = min(5,7,9) = 5
+    Value* result = eval(machine, "(1 2 3) ⌊.+ (4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(OperatorsTest, InnerProductAndEqual) {
+    // (1 2 3) ∧.= (1 2 4) → all equal? 1∧1∧0 = 0
+    Value* result = eval(machine, "(1 2 3) ∧.= (1 2 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, InnerProductAndEqualTrue) {
+    // (1 2 3) ∧.= (1 2 3) → all equal? 1∧1∧1 = 1
+    Value* result = eval(machine, "(1 2 3) ∧.= (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, InnerProductOrLess) {
+    // (1 5 3) ∨.< (2 4 4) → any less? (1<2)∨(5<4)∨(3<4) = 1∨0∨1 = 1
+    Value* result = eval(machine, "(1 5 3) ∨.< (2 4 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// ============================================================================
+// ISO 13751 Section 9.3: Dyadic Operators - Rank Operator
+// ============================================================================
+
+TEST_F(OperatorsTest, RankMonadicEmptyVector) {
+    // -⍤0 (⍳0) → empty vector (apply to 0-cells of empty)
+    Value* result = eval(machine, "-⍤0 (⍳0)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(OperatorsTest, RankMonadicEmptyMatrix) {
+    // -⍤1 (0 3⍴0) → empty matrix (apply to 1-cells of 0×3)
+    Value* result = eval(machine, "-⍤1 (0 3⍴0)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 0);
+}
+
+TEST_F(OperatorsTest, RankHigherThanDimension) {
+    // -⍤5 (1 2 3) → rank 5 on rank-1 array clamps to full array
+    // Should apply - to the whole vector (same as -⍤1)
+    Value* result = eval(machine, "-⍤5 (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), -3.0);
+}
+
+TEST_F(OperatorsTest, RankWithReverse) {
+    // ⌽⍤1 on matrix → reverse each row
+    // 2 3⍴⍳6 = [[1,2,3],[4,5,6]]
+    // Reversed rows: [[3,2,1],[6,5,4]]
+    Value* result = eval(machine, "⌽⍤1 (2 3⍴⍳6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 4.0);
+}
+
+TEST_F(OperatorsTest, RankDyadicScalarExtension) {
+    // 10 +⍤0 (1 2 3) → add 10 to each element
+    Value* result = eval(machine, "10 +⍤0 (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 13.0);
+}
+
+TEST_F(OperatorsTest, RankWithIota) {
+    // ⍳⍤0 (2 3) → apply iota to each scalar: gives nested result
+    // Since we don't support nested arrays, this should apply ⍳ to each element
+    // ⍳2 = 1 2, ⍳3 = 1 2 3 - but without nesting, behavior may vary
+    // For now, test that it doesn't crash and returns something reasonable
+    Value* result = eval(machine, "⍳⍤0 (2 3)");
+    ASSERT_NE(result, nullptr);
+    // Result structure depends on implementation
+}
+
+TEST_F(OperatorsTest, RankDyadicMatrixVector) {
+    // Matrix +⍤1 vector → add vector to each row
+    // (2 3⍴1 2 3 4 5 6) +⍤1 (10 20 30)
+    // [[1,2,3],[4,5,6]] + [10,20,30] = [[11,22,33],[14,25,36]]
+    Value* result = eval(machine, "(2 3⍴1 2 3 4 5 6) +⍤1 (10 20 30)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 22.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 33.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 14.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 25.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 36.0);
+}
+
+TEST_F(OperatorsTest, RankNonIntegerError) {
+    // -⍤1.5 (1 2 3) → DOMAIN ERROR (rank must be integer)
+    EXPECT_THROW(eval(machine, "-⍤1.5 (1 2 3)"), APLError);
+}
+
+TEST_F(OperatorsTest, RankNegative) {
+    // -⍤¯1 (2 3⍴⍳6) → apply to rank-(r-1) = 1-cells (rows)
+    // Same as -⍤1 for a matrix
+    Value* result = eval(machine, "(-⍤¯1) (2 3⍴⍳6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), -3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -4.0);
+}
+
+// ============================================================================
+// Additional Outer Product Tests (ISO 9.3.1)
+// ============================================================================
+
+TEST_F(OperatorsTest, OuterProductBothScalars) {
+    // 3 ∘.× 4 → scalar result 12
+    Value* result = eval(machine, "3 ∘.× 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+TEST_F(OperatorsTest, OuterProductMultiplicationTable) {
+    // (1 2 3) ∘.× (1 2 3 4) → 3×4 multiplication table
+    Value* result = eval(machine, "(1 2 3) ∘.× (1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 4);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // Row 0: 1×1=1, 1×2=2, 1×3=3, 1×4=4
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 3), 4.0);
+    // Row 2: 3×1=3, 3×4=12
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 3), 12.0);
+}
+
+// ============================================================================
+// Additional Inner Product Tests (ISO 9.3.2)
+// ============================================================================
+
+TEST_F(OperatorsTest, InnerProductMatrixVector) {
+    // (2 3⍴⍳6) +.× (1 2 3) → matrix × vector = vector
+    // [[1,2,3],[4,5,6]] +.× [1,2,3] = [1+4+9, 4+10+18] = [14, 32]
+    Value* result = eval(machine, "(2 3⍴⍳6) +.× (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 14.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 32.0);
+}
+
+TEST_F(OperatorsTest, InnerProductMatrixMatrix) {
+    // (2 3⍴⍳6) +.× (3 2⍴⍳6) → 2×2 matrix multiplication
+    // [[1,2,3],[4,5,6]] +.× [[1,2],[3,4],[5,6]]
+    // = [[1×1+2×3+3×5, 1×2+2×4+3×6], [4×1+5×3+6×5, 4×2+5×4+6×6]]
+    // = [[1+6+15, 2+8+18], [4+15+30, 8+20+36]] = [[22,28],[49,64]]
+    Value* result = eval(machine, "(2 3⍴⍳6) +.× (3 2⍴⍳6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 22.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 28.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 49.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 64.0);
+}
+
+TEST_F(OperatorsTest, InnerProductScalarVector) {
+    // Per ISO 9.3.2: scalar extended to match vector
+    // 2 +.× (1 2 3) → scalar extended to (2 2 2), then 2+4+6 = 12
+    Value* result = eval(machine, "2 +.× (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+TEST_F(OperatorsTest, InnerProductVectorScalar) {
+    // Per ISO 9.3.2: scalar extended to match vector
+    // (1 2 3) +.× 2 → scalar extended to (2 2 2), then 2+4+6 = 12
+    Value* result = eval(machine, "(1 2 3) +.× 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+TEST_F(OperatorsTest, InnerProductOneElementVector) {
+    // Per ISO 9.3.2: one-element vector treated like scalar
+    // (,5) +.× (1 2 3) → 5+10+15 = 30
+    Value* result = eval(machine, "(,5) +.× (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

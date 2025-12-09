@@ -10,6 +10,9 @@
 
 namespace apl {
 
+// Forward declarations
+static double get_identity_for_function(Value* func);
+
 // ========================================================================
 // Outer Product Operator: A ∘.f B
 // ========================================================================
@@ -60,7 +63,44 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
         return;
     }
 
-    // Get dimensions
+    // Validate that lhs and rhs are data values (not functions or other non-data values)
+    if (!lhs->is_basic_value() || !rhs->is_basic_value()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: inner product requires array arguments"));
+        return;
+    }
+
+    // ISO 9.3.2: Scalar/one-element-vector extension
+    // "If A is a scalar or one-element-vector and B is not, set A1 to (1ρρB)ρA"
+    // "If B is a scalar or one-element-vector and A is not, set B1 to (ρA)[ρρA]ρB"
+    bool lhs_is_scalar_like = lhs->is_scalar() || (lhs->is_vector() && lhs->size() == 1);
+    bool rhs_is_scalar_like = rhs->is_scalar() || (rhs->is_vector() && rhs->size() == 1);
+
+    // Special case: both scalars or one-element vectors
+    if (lhs_is_scalar_like && rhs_is_scalar_like) {
+        // Scalar inner product: just apply g then return (no reduction needed)
+        m->push_kont(m->heap->allocate<DispatchFunctionK>(g, lhs, rhs));
+        return;
+    }
+
+    // Extend lhs if it's scalar-like and rhs is not
+    if (lhs_is_scalar_like && !rhs_is_scalar_like) {
+        double val = lhs->is_scalar() ? lhs->as_scalar() : (*lhs->as_matrix())(0, 0);
+        int extend_len = rhs->is_vector() ? rhs->size() : rhs->rows();
+        Eigen::VectorXd extended(extend_len);
+        extended.setConstant(val);
+        lhs = m->heap->allocate_vector(extended);
+    }
+
+    // Extend rhs if it's scalar-like and lhs is not
+    if (rhs_is_scalar_like && !lhs_is_scalar_like) {
+        double val = rhs->is_scalar() ? rhs->as_scalar() : (*rhs->as_matrix())(0, 0);
+        int extend_len = lhs->is_vector() ? lhs->size() : lhs->cols();
+        Eigen::VectorXd extended(extend_len);
+        extended.setConstant(val);
+        rhs = m->heap->allocate_vector(extended);
+    }
+
+    // Get dimensions (after potential extension)
     int lhs_rows = lhs->rows();
     int lhs_cols = lhs->cols();
     int rhs_rows = rhs->rows();
@@ -75,6 +115,17 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
         }
         int n = lhs_rows;  // Common dimension
 
+        // Empty vectors: return identity element for f
+        if (n == 0) {
+            double identity = get_identity_for_function(f);
+            if (std::isnan(identity)) {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: no identity element for empty inner product"));
+                return;
+            }
+            m->result = m->heap->allocate_scalar(identity);
+            return;
+        }
+
         // Vector inner product: f/ (lhs g rhs)
         // Push ReduceResultK(f), then dyadic CellIterK(g) for element-wise
         m->push_kont(m->heap->allocate<ReduceResultK>(f));
@@ -84,7 +135,33 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
         return;
     }
 
-    // General case: matrix inner product
+    // Vector × Matrix case: vector treated as 1×N row
+    if (lhs->is_vector() && rhs->is_matrix()) {
+        // Vector length must match matrix rows
+        if (lhs_rows != rhs_rows) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+            return;
+        }
+        // Result is a vector of length rhs_cols
+        m->push_kont(m->heap->allocate<InnerProductIterK>(
+            f, g, lhs, rhs, 1, lhs_rows, rhs_cols));
+        return;
+    }
+
+    // Matrix × Vector case: vector treated as N×1 column
+    if (lhs->is_matrix() && rhs->is_vector()) {
+        // Matrix cols must match vector length
+        if (lhs_cols != rhs_rows) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+            return;
+        }
+        // Result is a vector of length lhs_rows
+        m->push_kont(m->heap->allocate<InnerProductIterK>(
+            f, g, lhs, rhs, lhs_rows, lhs_cols, 1));
+        return;
+    }
+
+    // General case: matrix × matrix inner product
     // LENGTH constraint: last dimension of A must equal first dimension of B
     if (lhs_cols != rhs_rows) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
@@ -1053,11 +1130,21 @@ static int get_array_rank(Value* v) {
     return 2;  // Matrix
 }
 
+// Helper: check if a double is an integer value
+static bool is_integer_value(double x) {
+    return std::floor(x) == x && !std::isinf(x) && !std::isnan(x);
+}
+
 // Helper: extract rank values from rank specification
 static bool parse_rank_spec(Value* rank_spec, int array_rank,
                             int* monadic_rank, int* left_rank, int* right_rank) {
     if (rank_spec->is_scalar()) {
-        int k = static_cast<int>(rank_spec->as_scalar());
+        double val = rank_spec->as_scalar();
+        // Rank must be an integer
+        if (!is_integer_value(val)) {
+            return false;  // DOMAIN ERROR: rank must be integer
+        }
+        int k = static_cast<int>(val);
         // Negative rank means "array rank minus k"
         if (k < 0) k = std::max(0, array_rank + k);
         k = std::min(k, array_rank);  // Clamp to actual rank
@@ -1190,6 +1277,16 @@ void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs) {
         if (k < 0) k = std::max(0, rhs_rank + k);
 
         int num_cells = count_cells(rhs, k);
+
+        // Handle empty array: return empty array with same shape
+        if (num_cells == 0) {
+            if (rhs->is_vector()) {
+                m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+            } else {
+                m->result = m->heap->allocate_matrix(Eigen::MatrixXd(rhs->rows(), rhs->cols()));
+            }
+            return;
+        }
 
         if (num_cells == 1) {
             // Single cell: just apply f to whole array

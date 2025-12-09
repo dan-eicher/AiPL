@@ -1004,10 +1004,49 @@ void DispatchFunctionK::invoke(Machine* machine) {
             if (left_val && right_val) {
                 // Have both array arguments - call dyadic operator
                 // For reduce/scan: left_val is N, second_operand is axis
+
+                // Finalize any G_PRIME curried functions in arguments first
+                if (left_val->tag == ValueType::CURRIED_FN) {
+                    Value::CurriedFnData* lcd = left_val->data.curried_fn;
+                    if (lcd->curry_type == Value::CurryType::G_PRIME) {
+                        Value* fn = lcd->fn;
+                        Value* arg = lcd->first_arg;
+                        if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
+                            fn->data.primitive_fn->monadic(machine, arg);
+                            left_val = machine->result;
+                        }
+                    }
+                }
+                if (right_val->tag == ValueType::CURRIED_FN) {
+                    Value::CurriedFnData* rcd = right_val->data.curried_fn;
+                    if (rcd->curry_type == Value::CurryType::G_PRIME) {
+                        Value* fn = rcd->fn;
+                        Value* arg = rcd->first_arg;
+                        if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
+                            fn->data.primitive_fn->monadic(machine, arg);
+                            right_val = machine->result;
+                        }
+                    }
+                }
+
                 op->dyadic(machine, left_val, first_operand, second_operand, right_val);
             } else if (right_val) {
                 // Only have right array argument - curry to wait for potential left
                 // This enables N-wise reduction with axis: "2 +/[1] matrix"
+
+                // Finalize any G_PRIME curried function in right_val first
+                if (right_val->tag == ValueType::CURRIED_FN) {
+                    Value::CurriedFnData* rcd = right_val->data.curried_fn;
+                    if (rcd->curry_type == Value::CurryType::G_PRIME) {
+                        Value* fn = rcd->fn;
+                        Value* arg = rcd->first_arg;
+                        if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
+                            fn->data.primitive_fn->monadic(machine, arg);
+                            right_val = machine->result;
+                        }
+                    }
+                }
+
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
                 machine->result = curried;
             } else {
@@ -2113,18 +2152,18 @@ void CellIterK::invoke(Machine* machine) {
         // Cartesian product iteration for outer product
         if (current_cell >= total_cells) {
             // Done - assemble results into matrix
+            // Outer product ALWAYS returns a matrix (shape: lhs_shape × rhs_shape)
+            // Even with scalars: scalar∘.f vector → 1×N matrix, vector∘.f scalar → N×1 matrix
+            if (lhs_total == 0 || rhs_total == 0) {
+                // Empty result - return empty matrix with correct shape
+                machine->result = machine->heap->allocate_matrix(Eigen::MatrixXd(lhs_total, rhs_total));
+                return;
+            }
             if (lhs_total == 1 && rhs_total == 1) {
-                // Scalar result
+                // Scalar result (both sides scalar)
                 machine->result = results[0];
-            } else if (rhs_total == 1) {
-                // Column vector result
-                Eigen::VectorXd vec(lhs_total);
-                for (int i = 0; i < lhs_total; i++) {
-                    vec(i) = results[i]->as_scalar();
-                }
-                machine->result = machine->heap->allocate_vector(vec);
             } else {
-                // Matrix result
+                // Matrix result (including N×1 and 1×N cases)
                 Eigen::MatrixXd mat(lhs_total, rhs_total);
                 for (int i = 0; i < lhs_total; i++) {
                     for (int j = 0; j < rhs_total; j++) {
@@ -2486,10 +2525,17 @@ void InnerProductIterK::invoke(Machine* machine) {
             // Scalar result
             machine->result = results[0];
         } else if (rhs_cols == 1) {
-            // Vector result
+            // Column vector result (matrix × vector)
             Eigen::VectorXd vec(lhs_rows);
             for (int i = 0; i < lhs_rows; i++) {
                 vec(i) = results[i]->as_scalar();
+            }
+            machine->result = machine->heap->allocate_vector(vec);
+        } else if (lhs_rows == 1) {
+            // Row vector result (vector × matrix)
+            Eigen::VectorXd vec(rhs_cols);
+            for (int j = 0; j < rhs_cols; j++) {
+                vec(j) = results[j]->as_scalar();
             }
             machine->result = machine->heap->allocate_vector(vec);
         } else {
@@ -2506,11 +2552,26 @@ void InnerProductIterK::invoke(Machine* machine) {
     }
 
     // Extract row current_i from lhs and column current_j from rhs
+    // Handle vectors specially: vectors are stored as column vectors (N×1)
     const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
     const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
 
-    Eigen::VectorXd row_vec = lhs_mat->row(current_i).transpose();
-    Eigen::VectorXd col_vec = rhs_mat->col(current_j);
+    Eigen::VectorXd row_vec;
+    Eigen::VectorXd col_vec;
+
+    if (lhs->is_vector()) {
+        // Vector × matrix: use whole vector as the "row"
+        row_vec = lhs_mat->col(0);
+    } else {
+        row_vec = lhs_mat->row(current_i).transpose();
+    }
+
+    if (rhs->is_vector()) {
+        // Matrix × vector: use whole vector as the "column"
+        col_vec = rhs_mat->col(0);
+    } else {
+        col_vec = rhs_mat->col(current_j);
+    }
 
     Value* row = machine->heap->allocate_vector(row_vec);
     Value* col = machine->heap->allocate_vector(col_vec);
