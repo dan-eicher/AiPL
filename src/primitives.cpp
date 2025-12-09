@@ -3544,6 +3544,13 @@ void fn_execute(Machine* m, Value* omega) {
     }
 
     const char* code = str_val->as_string();
+
+    // Empty string returns zilde (empty numeric vector)
+    if (code[0] == '\0') {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
     Continuation* k = m->parser->parse(code);
 
     if (!k) {

@@ -2954,6 +2954,48 @@ TEST_F(PrimitivesTest, GradeFunctionsRegistered) {
     ASSERT_NE(machine->env->lookup("⍒"), nullptr);
 }
 
+// --- ISO 10.1.2/10.1.3 Grade Stability Tests ---
+// "The indices of identical elements of B occur in Z in ascending order"
+
+TEST_F(PrimitivesTest, GradeUpStable) {
+    // ⍋ 3 1 4 1 5 → indices that would sort ascending
+    // Two 1s at positions 2 and 4 - stable sort should return 2 before 4
+    Value* result = machine->eval("⍋ 3 1 4 1 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // First two indices should be positions of 1s: 2, 4 (in that order for stability)
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // First 1 at position 2
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 4.0);  // Second 1 at position 4
+}
+
+TEST_F(PrimitivesTest, GradeDownStable) {
+    // ⍒ 3 1 4 1 5 → indices that would sort descending
+    // Two 1s at positions 2 and 4 - stable sort should keep them in order (2 then 4)
+    Value* result = machine->eval("⍒ 3 1 4 1 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // Last two indices should be positions of 1s: 2, 4 (stable order preserved)
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 2.0);  // First 1 at position 2
+    EXPECT_DOUBLE_EQ((*m)(4, 0), 4.0);  // Second 1 at position 4
+}
+
+TEST_F(PrimitivesTest, GradeUpAllEqual) {
+    // ⍋ 5 5 5 5 → 1 2 3 4 (all equal, preserve original order)
+    Value* result = machine->eval("⍋ 5 5 5 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);
+}
+
 // ============================================================================
 // Replicate Function (/)
 // ============================================================================
@@ -3927,6 +3969,19 @@ TEST_F(PrimitivesTest, MatrixInverseVector) {
     ASSERT_FALSE(machine->result->is_scalar());
 }
 
+TEST_F(PrimitivesTest, MatrixInverseSingular) {
+    // Singular matrix: [[1,2],[2,4]] (rows are linearly dependent)
+    // ISO 10.1.6 says "generalisation of matrix inverse" - pseudoinverse
+    // Pseudoinverse is well-defined for singular matrices
+    Eigen::MatrixXd mat(2, 2);
+    mat << 1, 2, 2, 4;  // Row 2 = 2 * Row 1
+    Value* val = machine->heap->allocate_matrix(mat);
+    fn_matrix_inverse(machine, val);
+    // Pseudoinverse should succeed (not error)
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_matrix());
+}
+
 // ============================================================================
 // Matrix Divide (⌹) dyadic tests
 // ============================================================================
@@ -4084,6 +4139,14 @@ TEST_F(PrimitivesTest, ExecutePushesContination) {
 
 TEST_F(PrimitivesTest, ExecuteRegistered) {
     ASSERT_NE(machine->env->lookup("⍎"), nullptr);
+}
+
+TEST_F(PrimitivesTest, ExecuteEmptyString) {
+    // ⍎'' → zilde (empty numeric vector)
+    Value* result = machine->eval("⍎''");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
 }
 
 // ============================================================================
