@@ -3117,21 +3117,15 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
     }
 
     // Handle scalar/vector rhs
+    // ISO 10.2.6: "If B is a scalar, set B1 to (+/A1)µB" - extend scalar to ones_count copies
     if (rhs->is_scalar()) {
-        if (ones_count != 1) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
-            return;
-        }
-
         double val = rhs->data.scalar;
         Eigen::VectorXd result(mask.size());
-        int src_idx = 0;
         for (int i = 0; i < mask.size(); ++i) {
             if (static_cast<int>(mask(i)) == 1) {
-                result(i) = val;
-                src_idx++;
+                result(i) = val;  // Use scalar value for each 1
             } else {
-                result(i) = 0.0;  // Fill element
+                result(i) = 0.0;  // Fill element for each 0
             }
         }
         m->result = m->heap->allocate_vector(result);

@@ -2498,6 +2498,38 @@ TEST_F(PrimitivesTest, RotateFirstMatrix) {
     EXPECT_DOUBLE_EQ((*res)(2, 1), 2.0);
 }
 
+TEST_F(PrimitivesTest, RotateWrapAround) {
+    // ISO 10.2.7: rotation wraps around
+    // ¯7⌽'ABCDEF' → 'FABCDE' (¯7 mod 6 = ¯1)
+    Eigen::VectorXd v(5);
+    v << 1.0, 2.0, 3.0, 4.0, 5.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    Value* count = machine->heap->allocate_scalar(7.0);  // 7 mod 5 = 2
+
+    fn_rotate(machine, count, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 5);
+    // 7⌽1 2 3 4 5 = 2⌽1 2 3 4 5 = 3 4 5 1 2
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(4, 0), 2.0);
+}
+
+TEST_F(PrimitivesTest, RotateScalar) {
+    // ISO 10.2.7: rotating a scalar returns it unchanged
+    Value* scalar = machine->heap->allocate_scalar(42.0);
+    Value* count = machine->heap->allocate_scalar(5.0);
+
+    fn_rotate(machine, count, scalar);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 42.0);
+}
+
 TEST_F(PrimitivesTest, TallyVector) {
     Eigen::VectorXd v(5);
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
@@ -3760,6 +3792,24 @@ TEST_F(PrimitivesTest, ExpandDomainError) {
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
+TEST_F(PrimitivesTest, ExpandAllZeros) {
+    // ISO 10.2.6 example: 0 0\5 → empty vector
+    Eigen::VectorXd mask(2);
+    mask << 0.0, 0.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+    Value* data_val = machine->heap->allocate_scalar(5.0);
+
+    fn_expand(machine, mask_val, data_val);
+
+    // +/0 0 = 0, so B must have 0 elements (scalar 5 is treated as 0-element vector)
+    // Result should be empty (all zeros filled)
+    ASSERT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->size(), 2);
+    // All elements should be fill value (0)
+    EXPECT_DOUBLE_EQ(machine->result->as_matrix()->operator()(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(machine->result->as_matrix()->operator()(1, 0), 0.0);
+}
+
 TEST_F(PrimitivesTest, QuestionRegistered) {
     ASSERT_NE(machine->env->lookup("?"), nullptr);
 }
@@ -4790,6 +4840,19 @@ TEST_F(PrimitivesTest, DropFromEmpty) {
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, TakeNegativeOverextend) {
+    // ISO 10.2.11: ¯5↑1 2 3 → 0 0 1 2 3 (pads at beginning)
+    Value* result = machine->eval("¯5↑1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(3, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(4, 0), 3.0);
 }
 
 // ============================================================================
