@@ -1427,6 +1427,171 @@ TEST_F(OperatorsTest, InnerProductOneElementVector) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
 }
 
+// ============================================================================
+// ISO 13751 Section 9: Additional Operator Edge Cases
+// ============================================================================
+
+// --- Table 5: Missing Empty Vector Reduction Identities ---
+
+TEST_F(OperatorsTest, ReduceEmptyResidue) {
+    // ISO Table 5: |/⍳0 → 0 (residue identity)
+    Value* result = eval(machine, "|/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyBinomial) {
+    // ISO Table 5: !/⍳0 → 1 (binomial identity)
+    Value* result = eval(machine, "!/⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// --- Table 6: N-wise Reduction Empty Vector Identities ---
+
+TEST_F(OperatorsTest, NwiseZeroResidue) {
+    // ISO Table 6: 0|/⍳3 → 4 zeros (R reshape zero)
+    Value* result = eval(machine, "0|/⍳3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_DOUBLE_EQ((*m)(i, 0), 0.0);
+    }
+}
+
+TEST_F(OperatorsTest, NwiseZeroBinomial) {
+    // ISO Table 6: 0!/⍳3 → 4 ones (R reshape one)
+    Value* result = eval(machine, "0!/⍳3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_DOUBLE_EQ((*m)(i, 0), 1.0);
+    }
+}
+
+TEST_F(OperatorsTest, NwiseZeroLogError) {
+    // ISO Table 6: 0⍟/⍳3 → DOMAIN ERROR (no identity)
+    EXPECT_THROW(eval(machine, "0⍟/⍳3"), APLError);
+}
+
+TEST_F(OperatorsTest, NwiseZeroCircleError) {
+    // ISO Table 6: 0○/⍳3 → DOMAIN ERROR (no identity)
+    EXPECT_THROW(eval(machine, "0○/⍳3"), APLError);
+}
+
+TEST_F(OperatorsTest, NwiseZeroNandError) {
+    // ISO Table 6: 0⍲/⍳3 → DOMAIN ERROR (no identity)
+    EXPECT_THROW(eval(machine, "0⍲/⍳3"), APLError);
+}
+
+TEST_F(OperatorsTest, NwiseZeroNorError) {
+    // ISO Table 6: 0⍱/⍳3 → DOMAIN ERROR (no identity)
+    EXPECT_THROW(eval(machine, "0⍱/⍳3"), APLError);
+}
+
+// --- Scan First Axis (⍀) Tests ---
+
+TEST_F(OperatorsTest, ScanFirstVector) {
+    // ISO 9.2.2: +⍀ on vector is same as +\ (since there's only one axis)
+    Value* result = eval(machine, "+⍀1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);   // 1
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);   // 1+2+3
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 10.0);  // 1+2+3+4
+}
+
+TEST_F(OperatorsTest, ScanFirstMatrix) {
+    // ISO 9.2.2: +⍀ (2 3⍴⍳6) → scan along first axis (rows)
+    // Matrix: 1 2 3    Scan along axis 1 gives: 1 2 3
+    //         4 5 6                              5 7 9 (1+4, 2+5, 3+6)
+    Value* result = eval(machine, "+⍀2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // First row unchanged
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 3.0);
+    // Second row is cumulative sum
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);   // 1+4
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 7.0);   // 2+5
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 9.0);   // 3+6
+}
+
+TEST_F(OperatorsTest, ScanFirstScalar) {
+    // ISO 9.2.2: f⍀ scalar → scalar (identity)
+    Value* result = eval(machine, "+⍀5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// --- Empty Matrix Reduce/Scan (ISO 9.2.1 example) ---
+
+TEST_F(OperatorsTest, ReduceEmptyMatrixRows) {
+    // ISO 9.2.1: +/2 0⍴5 → vector 0 0 (per ISO example: "µ+/2 0µ5.1" = 2)
+    // Reducing along last axis of 2×0 matrix gives 2-element vector
+    Value* result = eval(machine, "+/2 0⍴5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEmptyMatrixCols) {
+    // +⌿0 3⍴5 → reduce along first axis of 0×3 matrix gives 3-element vector
+    Value* result = eval(machine, "+⌿0 3⍴5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_DOUBLE_EQ((*m)(i, 0), 0.0);
+    }
+}
+
+// --- Duplicate (⍨ monadic) Additional Tests ---
+
+TEST_F(OperatorsTest, DuplicateWithMinus) {
+    // -⍨5 → 5-5 = 0
+    Value* result = eval(machine, "-⍨5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, DuplicateWithPower) {
+    // *⍨3 → 3*3 = 27
+    Value* result = eval(machine, "*⍨3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 27.0);
+}
+
+// --- Commute Additional Tests ---
+
+TEST_F(OperatorsTest, CommuteWithPower) {
+    // 2*⍨3 → 3*2 = 9
+    Value* result = eval(machine, "2*⍨3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 9.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

@@ -389,6 +389,10 @@ double get_identity_element(PrimitiveFn* fn) {
     if (fn == &prim_greater) return 0.0;    // >/⍬ → 0
     if (fn == &prim_not_equal) return 0.0;  // ≠/⍬ → 0
 
+    // ISO Table 5: Additional identity elements
+    if (fn == &prim_stile) return 0.0;      // |/⍬ → 0 (residue)
+    if (fn == &prim_factorial) return 1.0;  // !/⍬ → 1 (binomial)
+
     // For functions without identity, return NaN
     return std::numeric_limits<double>::quiet_NaN();
 }
