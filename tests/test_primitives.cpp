@@ -243,6 +243,21 @@ TEST_F(PrimitivesTest, IdentityScalar) {
 
 }
 
+TEST_F(PrimitivesTest, IdentityVector) {
+    // ISO 7.1.1: Conjugate (+B) returns B for real numbers
+    Eigen::VectorXd v(4);
+    v << 1.0, -2.0, 0.0, 3.5;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_conjugate(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(3, 0), 3.5);
+}
+
 TEST_F(PrimitivesTest, NegateScalar) {
     Value* a = machine->heap->allocate_scalar(5.0);
     fn_negate(machine, a);
@@ -2169,6 +2184,38 @@ TEST_F(PrimitivesTest, ResidueVector) {
     EXPECT_DOUBLE_EQ((*res)(4, 0), 2.0);
 }
 
+TEST_F(PrimitivesTest, ResidueZeroLeft) {
+    // ISO 7.2.9: "If A is zero, return B"
+    // 0 | 5 → 5
+    Value* lhs = machine->heap->allocate_scalar(0.0);
+    Value* rhs = machine->heap->allocate_scalar(5.0);
+    fn_residue(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, ResidueZeroLeftNegative) {
+    // 0 | ¯7 → ¯7
+    Value* lhs = machine->heap->allocate_scalar(0.0);
+    Value* rhs = machine->heap->allocate_scalar(-7.0);
+    fn_residue(machine, lhs, rhs);
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), -7.0);
+}
+
+TEST_F(PrimitivesTest, ResidueZeroLeftVector) {
+    // 0 | 1 2 3 → 1 2 3
+    Value* lhs = machine->heap->allocate_scalar(0.0);
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* rhs = machine->heap->allocate_vector(v);
+    fn_residue(machine, lhs, rhs);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
 // Natural Logarithm (⍟ monadic)
 TEST_F(PrimitivesTest, NaturalLogE) {
     // ⍟ e → 1
@@ -2618,6 +2665,190 @@ TEST_F(PrimitivesTest, EnlistScalar) {
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 1);
     EXPECT_DOUBLE_EQ((*res)(0, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, EnlistMatrix) {
+    // ISO 8.2.6: ∊ (2 3⍴⍳6) → 1 2 3 4 5 6 (ravel for simple arrays)
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+
+    fn_enlist(machine, mat);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 6);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(5, 0), 6.0);
+}
+
+TEST_F(PrimitivesTest, EnlistEmptyVector) {
+    // ISO 8.2.6: ∊ (⍳0) → empty vector
+    Value* result = machine->eval("∊⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+// ============================================================================
+// ISO 13751 Section 8: Structural Primitive Functions - Edge Cases
+// ============================================================================
+
+// --- Ravel Edge Cases (Section 8.2.1) ---
+
+TEST_F(PrimitivesTest, RavelScalar) {
+    // ISO 8.2.1: ,5 → 1-element vector containing 5
+    Value* scalar = machine->heap->allocate_scalar(5.0);
+    fn_ravel(machine, scalar);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 1);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, RavelVector) {
+    // ISO 8.2.1: ,1 2 3 → same vector (identity for vectors)
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_ravel(machine, vec);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_EQ(res->rows(), 3);
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 3.0);
+}
+
+// --- Shape Edge Cases (Section 8.2.2) ---
+
+TEST_F(PrimitivesTest, ShapeMatrix) {
+    // ISO 8.2.2: ⍴ (2 3⍴⍳6) → 2 3
+    Value* result = machine->eval("⍴2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 3.0);
+}
+
+// --- Depth Tests (Section 8.2.5) ---
+// ISO 13751: simple-scalar → 0, simple-array → 1, nested → 1 + max depth
+
+TEST_F(PrimitivesTest, DepthScalar) {
+    // ISO 8.2.5: ≡5 → 0 (simple scalar)
+    Value* scalar = machine->heap->allocate_scalar(5.0);
+    fn_depth(machine, scalar);
+
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
+}
+
+TEST_F(PrimitivesTest, DepthVector) {
+    // ISO 8.2.5: ≡1 2 3 → 1 (simple array)
+    Eigen::VectorXd v(3);
+    v << 1.0, 2.0, 3.0;
+    Value* vec = machine->heap->allocate_vector(v);
+    fn_depth(machine, vec);
+
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, DepthMatrix) {
+    // ISO 8.2.5: ≡ (2 3⍴⍳6) → 1 (simple array)
+    Eigen::MatrixXd m(2, 3);
+    m << 1.0, 2.0, 3.0,
+         4.0, 5.0, 6.0;
+    Value* mat = machine->heap->allocate_matrix(m);
+    fn_depth(machine, mat);
+
+    EXPECT_TRUE(machine->result->is_scalar());
+    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, DepthEmptyVector) {
+    // ISO 8.2.5: ≡⍳0 → 1 (empty array still has depth 1)
+    Value* result = machine->eval("≡⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// --- Table Edge Cases (Section 8.2.4) ---
+
+TEST_F(PrimitivesTest, TableEmptyVector) {
+    // ISO 8.2.4: ⍪⍳0 → 0×1 matrix
+    Value* result = machine->eval("⍪⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 0);
+    EXPECT_EQ(mat->cols(), 1);
+}
+
+// --- Reshape Edge Cases (Section 8.3.1) ---
+
+TEST_F(PrimitivesTest, ReshapeToScalar) {
+    // ISO 8.3.1: (⍳0)⍴5 → scalar 5 (empty shape produces scalar)
+    Value* result = machine->eval("(⍳0)⍴5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, ReshapeZeroLength) {
+    // ISO 8.3.1: 0⍴5 → empty vector
+    Value* result = machine->eval("0⍴5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, ReshapeZeroMatrix) {
+    // ISO 8.3.1: 0 3⍴5 → 0×3 matrix (empty rows)
+    Value* result = machine->eval("0 3⍴5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 0);
+    EXPECT_EQ(mat->cols(), 3);
+}
+
+// --- Join/Catenate Edge Cases (Section 8.3.2) ---
+
+TEST_F(PrimitivesTest, CatenateScalarScalar) {
+    // ISO 8.3.2: 5,3 → 5 3 (two-element vector)
+    Value* result = machine->eval("5,3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, CatenateScalarVector) {
+    // ISO 8.3.2: 5,1 2 3 → 5 1 2 3
+    Value* result = machine->eval("5,1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(3, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, CatenateVectorScalar) {
+    // ISO 8.3.2: 1 2 3,5 → 1 2 3 5
+    Value* result = machine->eval("1 2 3,5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(3, 0), 5.0);
 }
 
 TEST_F(PrimitivesTest, SearchFunctionsRegistered) {
@@ -3158,6 +3389,72 @@ TEST_F(PrimitivesTest, CircularCosh) {
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularTanh) {
+    // 7○x = tanh(x)
+    Value* fn_code = machine->heap->allocate_scalar(7.0);
+    Value* arg = machine->heap->allocate_scalar(0.0);  // tanh(0) = 0
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularSqrt1PlusX2) {
+    // 4○x = sqrt(1+x²)
+    Value* fn_code = machine->heap->allocate_scalar(4.0);
+    Value* arg = machine->heap->allocate_scalar(2.0);  // sqrt(1+4) = sqrt(5) ≈ 2.236
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), std::sqrt(5.0), 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularAcos) {
+    // ¯2○x = acos(x)
+    Value* fn_code = machine->heap->allocate_scalar(-2.0);
+    Value* arg = machine->heap->allocate_scalar(1.0);  // acos(1) = 0
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularAsinh) {
+    // ¯5○x = asinh(x)
+    Value* fn_code = machine->heap->allocate_scalar(-5.0);
+    Value* arg = machine->heap->allocate_scalar(0.0);  // asinh(0) = 0
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularAcosh) {
+    // ¯6○x = acosh(x)
+    Value* fn_code = machine->heap->allocate_scalar(-6.0);
+    Value* arg = machine->heap->allocate_scalar(1.0);  // acosh(1) = 0
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
+}
+
+TEST_F(PrimitivesTest, CircularAtanh) {
+    // ¯7○x = atanh(x)
+    Value* fn_code = machine->heap->allocate_scalar(-7.0);
+    Value* arg = machine->heap->allocate_scalar(0.0);  // atanh(0) = 0
+
+    fn_circular(machine, fn_code, arg);
+
+    ASSERT_TRUE(machine->result->is_scalar());
+    EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
 }
 
 TEST_F(PrimitivesTest, CircularVector) {

@@ -1903,7 +1903,24 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
         target_cols = 1;
     } else {
         const Eigen::MatrixXd* shape_mat = lhs->as_matrix();
-        if (shape_mat->rows() == 1) {
+        if (shape_mat->rows() == 0) {
+            // ISO 13751 Section 8.3.1: Empty shape produces scalar
+            // (⍳0)⍴5 → 5 (scalar)
+            // Get first element of source
+            double scalar_val;
+            if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+            if (rhs->is_scalar()) {
+                scalar_val = rhs->as_scalar();
+            } else if (rhs->size() > 0) {
+                const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
+                scalar_val = (*rhs_mat)(0, 0);
+            } else {
+                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot reshape empty array to scalar"));
+                return;
+            }
+            m->result = m->heap->allocate_scalar(scalar_val);
+            return;
+        } else if (shape_mat->rows() == 1) {
             // Single element: vector of that length
             double dim = (*shape_mat)(0, 0);
             // Validate: must be non-negative integer
