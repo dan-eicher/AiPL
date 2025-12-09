@@ -184,6 +184,28 @@ TEST_F(OperatorsTest, CommuteWithDivide) {
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 4.0);
 }
 
+TEST_F(OperatorsTest, CommuteMatrix) {
+    // Matrix commute: swap left and right matrix args
+    Eigen::MatrixXd lmat(2, 2);
+    lmat << 10, 20, 30, 40;
+    Eigen::MatrixXd rmat(2, 2);
+    rmat << 1, 2, 3, 4;
+    Value* lhs = machine->heap->allocate_matrix(lmat);
+    Value* rhs = machine->heap->allocate_matrix(rmat);
+    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+
+    // lhs -⍨ rhs → rhs - lhs = (1-10, 2-20, 3-30, 4-40) = (-9, -18, -27, -36)
+    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
+
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_matrix());
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -9.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -18.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -27.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), -36.0);
+}
+
 TEST_F(OperatorsTest, DuplicateMatrix) {
     // Test duplicate with matrix subtraction
     Eigen::MatrixXd mat(2, 2);
@@ -396,6 +418,20 @@ TEST_F(OperatorsTest, ReduceAxisExpression) {
 // N-wise Reduction Tests (ISO 13751 §9.2.3)
 // ============================================================================
 
+TEST_F(OperatorsTest, NwiseReduceN1) {
+    // 1 +/ 1 2 3 4 5 -> window of 1: each element (5 results)
+    Value* result = eval(machine, "1 +/ 1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(4, 0), 5.0);
+}
+
 TEST_F(OperatorsTest, NwiseReduceVectorPairwise) {
     // 2 +/ 1 2 3 4 5 -> pairwise sums: 3 5 7 9
     Value* result = eval(machine, "2 +/ 1 2 3 4 5");
@@ -582,6 +618,31 @@ TEST_F(OperatorsTest, NwiseWindowEqualsLength) {
     } else {
         EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 6.0);
     }
+}
+
+TEST_F(OperatorsTest, ReduceAxisInvalidHigh) {
+    // +/[3] on 2D matrix → DOMAIN ERROR (only axes 1,2 valid)
+    EXPECT_THROW(eval(machine, "+/[3] 2 3⍴⍳6"), APLError);
+}
+
+TEST_F(OperatorsTest, ReduceAxisInvalidZero) {
+    // +/[0] → DOMAIN ERROR (axes are 1-based)
+    EXPECT_THROW(eval(machine, "+/[0] 1 2 3"), APLError);
+}
+
+TEST_F(OperatorsTest, ReduceAxisInvalidOnVector) {
+    // +/[2] on vector → DOMAIN ERROR (only axis 1 valid for vectors)
+    EXPECT_THROW(eval(machine, "+/[2] 1 2 3"), APLError);
+}
+
+TEST_F(OperatorsTest, ScanAxisInvalidHigh) {
+    // +\[3] on 2D matrix → DOMAIN ERROR
+    EXPECT_THROW(eval(machine, "+\\[3] 2 3⍴⍳6"), APLError);
+}
+
+TEST_F(OperatorsTest, ScanAxisInvalidZero) {
+    // +\[0] → DOMAIN ERROR (axes are 1-based)
+    EXPECT_THROW(eval(machine, "+\\[0] 1 2 3"), APLError);
 }
 
 TEST_F(OperatorsTest, ReduceAxisWithDifferentFunction) {
@@ -817,6 +878,193 @@ TEST_F(OperatorsTest, ReduceEmptyNand) {
 TEST_F(OperatorsTest, ReduceEmptyNor) {
     // ⍱/⍳0 → DOMAIN ERROR (no identity element)
     EXPECT_THROW(eval(machine, "⍱/⍳0"), APLError);
+}
+
+// ============================================================================
+// ISO 13751 Section 9.2.1: Reduce Edge Cases
+// ============================================================================
+
+TEST_F(OperatorsTest, ReduceVector) {
+    // +/1 2 3 4 → 10 (basic vector reduce)
+    Value* result = eval(machine, "+/1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(OperatorsTest, ReduceScalar) {
+    // +/5 → 5 (ISO 13751: "If B is a scalar, return B")
+    Value* result = eval(machine, "+/5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(OperatorsTest, ReduceSingleElement) {
+    // +/,5 → 5 (single element vector reduces to scalar)
+    Value* result = eval(machine, "+/,5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// ============================================================================
+// ISO 13751 Section 9.2.2: Scan Edge Cases
+// ============================================================================
+
+TEST_F(OperatorsTest, ScanVector) {
+    // +\1 2 3 4 → 1 3 6 10 (basic vector scan)
+    Value* result = eval(machine, "+\\1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*v)(3, 0), 10.0);
+}
+
+TEST_F(OperatorsTest, ScanScalar) {
+    // +\5 → 5 (ISO 13751: "If B is a scalar, return B")
+    Value* result = eval(machine, "+\\5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(OperatorsTest, ScanSingleElement) {
+    // +\,5 → ,5 (single element vector stays as vector)
+    Value* result = eval(machine, "+\\,5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 5.0);
+}
+
+TEST_F(OperatorsTest, ScanEmpty) {
+    // +\⍬ → ⍬ (scan of empty returns empty)
+    Value* result = eval(machine, "+\\⍬");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+// ============================================================================
+// ISO 13751 Section 9.2.6: Each Edge Cases
+// ============================================================================
+
+TEST_F(OperatorsTest, EachDyadic) {
+    // 1 2 3 +¨ 4 5 6 → 5 7 9
+    Value* result = eval(machine, "1 2 3 +¨ 4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 9.0);
+}
+
+TEST_F(OperatorsTest, EachScalarExtensionLeft) {
+    // 10 -¨ 1 2 3 → 9 8 7 (scalar extends to match vector)
+    Value* result = eval(machine, "10 -¨ 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 8.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 7.0);
+}
+
+TEST_F(OperatorsTest, EachScalarExtensionRight) {
+    // 1 2 3 +¨ 10 → 11 12 13 (scalar extends to match vector)
+    Value* result = eval(machine, "1 2 3 +¨ 10");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 13.0);
+}
+
+TEST_F(OperatorsTest, EachMonadic) {
+    // -¨1 2 3 → ¯1 ¯2 ¯3 (negate each element)
+    Value* result = eval(machine, "-¨1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), -3.0);
+}
+
+TEST_F(OperatorsTest, EachMonadicEmpty) {
+    // -¨⍬ → ⍬ (each on empty returns empty)
+    Value* result = eval(machine, "-¨⍬");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(OperatorsTest, EachDyadicEmpty) {
+    // ⍬ +¨ ⍬ → ⍬ (dyadic each on empty returns empty)
+    Value* result = eval(machine, "⍬ +¨ ⍬");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(OperatorsTest, EachMonadicScalar) {
+    // -¨5 → ¯5 (each on scalar returns scalar)
+    Value* result = eval(machine, "-¨5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(OperatorsTest, EachDyadicBothScalars) {
+    // 3 +¨ 4 → 7 (both scalars)
+    Value* result = eval(machine, "3 +¨ 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(OperatorsTest, EachMonadicMatrix) {
+    // -¨ 2 2⍴1 2 3 4 → matrix of negated values
+    Value* result = eval(machine, "-¨2 2⍴1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), -2.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), -4.0);
+}
+
+TEST_F(OperatorsTest, EachDyadicMatrix) {
+    // (2 2⍴1 2 3 4) +¨ (2 2⍴10 20 30 40) → element-wise add
+    Value* result = eval(machine, "(2 2⍴1 2 3 4) +¨ (2 2⍴10 20 30 40)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 22.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 33.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 44.0);
+}
+
+TEST_F(OperatorsTest, EachLengthMismatch) {
+    // 1 2 +¨ 1 2 3 → LENGTH ERROR (shapes must match)
+    EXPECT_THROW(eval(machine, "1 2 +¨ 1 2 3"), APLError);
 }
 
 int main(int argc, char** argv) {

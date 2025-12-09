@@ -1963,8 +1963,12 @@ void CellIterK::invoke(Machine* machine) {
         if (current_cell >= total_cells) {
             // Done - assemble results
             if (results.empty()) {
-                // No results - return empty (shouldn't happen)
-                machine->result = machine->heap->allocate_scalar(0);
+                // Empty array input - return empty with same shape
+                if (orig_is_vector) {
+                    machine->result = machine->heap->allocate_vector(Eigen::VectorXd(0));
+                } else {
+                    machine->result = machine->heap->allocate_matrix(Eigen::MatrixXd(orig_rows, orig_cols));
+                }
                 return;
             }
 

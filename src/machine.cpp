@@ -137,74 +137,68 @@ Value* Machine::execute() {
     // When we reach top level with a curried function, y is null, so apply monadically
     if (result && result->tag == ValueType::CURRIED_FN) {
         Value::CurriedFnData* curried_data = result->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            // This is a g' transformation curried function - finalize it
-            // Apply monadically: g1(x) where x is first_arg
-            Value* fn = curried_data->fn;
-            Value* arg = curried_data->first_arg;
+        Value* fn = curried_data->fn;
+        Value* arg = curried_data->first_arg;
 
-            if (fn->is_primitive()) {
-                PrimitiveFn* prim_fn = fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(this, arg);
-                    // Continue running if continuations were pushed (e.g., errors)
-                    while (!kont_stack.empty()) {
-                        Continuation* k = kont_stack.back();
-                        kont_stack.pop_back();
-                        k->invoke(this);
-                        maybe_gc();
-                    }
+        switch (curried_data->curry_type) {
+        case Value::CurryType::G_PRIME:
+            // g' curried function - finalize by applying monadic form: g1(x)
+            switch (fn->tag) {
+            case ValueType::PRIMITIVE:
+                if (fn->data.primitive_fn->monadic) {
+                    fn->data.primitive_fn->monadic(this, arg);
                 }
+                break;
+            case ValueType::DERIVED_OPERATOR: {
+                Value::DerivedOperatorData* derived = fn->data.derived_op;
+                if (derived->op->monadic) {
+                    derived->op->monadic(this, derived->first_operand, arg);
+                }
+                break;
             }
-        } else if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
-            // Check if this is an operator-derived curry at top level
-            // In that case, apply monadically since no left argument
-            Value* inner_fn = curried_data->fn;
-            Value* right_arr = curried_data->first_arg;
-
-            if (inner_fn->tag == ValueType::DERIVED_OPERATOR) {
-                // Direct DERIVED_OPERATOR curry: (+⌿ matrix) at top level
-                Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
-                PrimitiveOp* op = derived_data->op;
-                Value* first_operand = derived_data->first_operand;
-
-                if (op->monadic) {
-                    // Apply monadically: no lhs, no axis
-                    op->monadic(this, first_operand, right_arr);
-                    // Continue running to get the result
-                    while (!kont_stack.empty()) {
-                        Continuation* k = kont_stack.back();
-                        kont_stack.pop_back();
-                        k->invoke(this);
-                        maybe_gc();
-                    }
-                }
-            } else if (inner_fn->tag == ValueType::CURRIED_FN) {
-                Value::CurriedFnData* inner_curried = inner_fn->data.curried_fn;
-                if (inner_curried->curry_type == Value::CurryType::OPERATOR_CURRY) {
-                    // This is (f⍤k) B or (f/[axis]) B at top level - apply monadically
-                    Value* derived_op = inner_curried->fn;
-                    Value* second_operand = inner_curried->first_arg;
-
-                    if (derived_op->tag == ValueType::DERIVED_OPERATOR) {
-                        Value::DerivedOperatorData* derived_data = derived_op->data.derived_op;
-                        PrimitiveOp* op = derived_data->op;
-                        Value* first_operand = derived_data->first_operand;
-
-                        if (op->dyadic) {
-                            // Apply monadically: lhs=nullptr
-                            op->dyadic(this, nullptr, first_operand, second_operand, right_arr);
-                            // Continue running to get the result
-                            while (!kont_stack.empty()) {
-                                Continuation* k = kont_stack.back();
-                                kont_stack.pop_back();
-                                k->invoke(this);
-                                maybe_gc();
-                            }
-                        }
-                    }
-                }
+            default:
+                break;
             }
+            break;
+
+        case Value::CurryType::DYADIC_CURRY:
+            // Operator-derived curry at top level - apply monadically
+            switch (fn->tag) {
+            case ValueType::DERIVED_OPERATOR: {
+                // Direct: (+⌿ matrix) at top level
+                Value::DerivedOperatorData* derived = fn->data.derived_op;
+                if (derived->op->monadic) {
+                    derived->op->monadic(this, derived->first_operand, arg);
+                }
+                break;
+            }
+            case ValueType::CURRIED_FN: {
+                // Nested: (f⍤k) B or (f/[axis]) B at top level
+                Value::CurriedFnData* inner = fn->data.curried_fn;
+                if (inner->curry_type == Value::CurryType::OPERATOR_CURRY &&
+                    inner->fn->tag == ValueType::DERIVED_OPERATOR) {
+                    Value::DerivedOperatorData* derived = inner->fn->data.derived_op;
+                    if (derived->op->dyadic) {
+                        derived->op->dyadic(this, nullptr, derived->first_operand, inner->first_arg, arg);
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+            }
+            break;
+
+        default:
+            break;
+        }
+
+        // Drain continuation stack after finalization
+        while (!kont_stack.empty()) {
+            Continuation* k = kont_stack.back();
+            kont_stack.pop_back();
+            k->invoke(this);
+            maybe_gc();
         }
     }
 

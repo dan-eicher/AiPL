@@ -126,6 +126,67 @@ void op_each(Machine* m, Value* f, Value* omega) {
         CellIterMode::COLLECT, rows, cols, omega->is_vector()));
 }
 
+// Dyadic Each: A f¨B
+// Applies function element-wise to corresponding elements
+// Requires shapes to match, or one arg to be scalar (scalar extension)
+void op_each_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
+    (void)g;  // Each only uses one function operand
+    if (!f || !f->is_function()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: each operator requires a function operand"));
+        return;
+    }
+
+    // Both scalars: just apply function
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, lhs, rhs));
+        return;
+    }
+
+    // Scalar extension: scalar with array
+    if (lhs->is_scalar()) {
+        // Scalar left, array right
+        if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+        int rows = rhs->rows();
+        int cols = rhs->cols();
+        int num_cells = rows * cols;
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, lhs, rhs, 0, 0, num_cells,
+            CellIterMode::COLLECT, rows, cols, rhs->is_vector()));
+        return;
+    }
+
+    if (rhs->is_scalar()) {
+        // Array left, scalar right
+        if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+        int rows = lhs->rows();
+        int cols = lhs->cols();
+        int num_cells = rows * cols;
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, lhs, rhs, 0, 0, num_cells,
+            CellIterMode::COLLECT, rows, cols, lhs->is_vector()));
+        return;
+    }
+
+    // Both arrays: convert strings if needed, shapes must match
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    int lhs_rows = lhs->rows();
+    int lhs_cols = lhs->cols();
+    int rhs_rows = rhs->rows();
+    int rhs_cols = rhs->cols();
+
+    if (lhs_rows != rhs_rows || lhs_cols != rhs_cols) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: each requires matching shapes or scalar"));
+        return;
+    }
+
+    int num_cells = lhs_rows * lhs_cols;
+    m->push_kont(m->heap->allocate<CellIterK>(
+        f, lhs, rhs, 0, 0, num_cells,
+        CellIterMode::COLLECT, lhs_rows, lhs_cols, lhs->is_vector()));
+}
+
 // ========================================================================
 // Duplicate Operator: f⍨B (monadic)
 // ========================================================================
@@ -421,7 +482,10 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
             return;
         }
         if (len == 1) {
-            m->result = m->heap->allocate_scalar((*mat)(0, 0));
+            // Single-element vector: preserve vector shape (ISO 13751 scan semantics)
+            Eigen::VectorXd result(1);
+            result(0) = (*mat)(0, 0);
+            m->result = m->heap->allocate_vector(result);
             return;
         }
 
@@ -920,7 +984,7 @@ PrimitiveOp op_outer_dot = {
 PrimitiveOp op_diaeresis = {
     "¨",
     op_each,              // Monadic: f¨B
-    nullptr               // Dyadic form uses different evaluation (not yet implemented)
+    op_each_dyadic        // Dyadic: A f¨B
 };
 
 PrimitiveOp op_tilde = {
