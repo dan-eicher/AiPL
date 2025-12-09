@@ -94,6 +94,10 @@ enum TokenType {
     TOK_TABLE,          // ⍪ (table / catenate first)
     TOK_MATCH,          // ≡ (depth)
 
+    // Identity functions (ISO 10.2.17-18)
+    TOK_LEFT_TACK,      // ⊣ (left - returns left argument)
+    TOK_RIGHT_TACK,     // ⊢ (right - returns right argument)
+
     // Matrix operations
     TOK_DOMINO,         // ⌹ (matrix inverse / divide)
 

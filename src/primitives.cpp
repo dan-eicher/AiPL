@@ -59,6 +59,8 @@ PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr };
 PrimitiveFn prim_format    = { "⍕", fn_format_monadic, fn_format_dyadic };
 PrimitiveFn prim_table     = { "⍪", fn_table, fn_catenate_first };
 PrimitiveFn prim_squad     = { "⌷", nullptr, fn_squad };
+PrimitiveFn prim_left      = { "⊣", fn_right, fn_left };   // ISO 10.2.17: monadic ⊣ is identity, dyadic returns left
+PrimitiveFn prim_right     = { "⊢", fn_right, fn_right_dyadic }; // ISO 10.2.18: both return right argument
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -3445,6 +3447,25 @@ void fn_depth(Machine* m, Value* omega) {
         // All our arrays are simple (non-nested), so depth is 1
         m->result = m->heap->allocate_scalar(1.0);
     }
+}
+
+// Right (⊢ monadic and ⊣ monadic) - identity function
+// ISO 13751 Section 10.2.18: ⊢B returns B
+// Also used for monadic ⊣ per spec (both monadic forms return the argument)
+void fn_right(Machine* m, Value* omega) {
+    m->result = omega;
+}
+
+// Left (⊣ dyadic) - returns left argument
+// ISO 13751 Section 10.2.17: A⊣B returns A
+void fn_left(Machine* m, Value* alpha, Value* /* omega */) {
+    m->result = alpha;
+}
+
+// Right (⊢ dyadic) - returns right argument
+// ISO 13751 Section 10.2.18: A⊢B returns B
+void fn_right_dyadic(Machine* m, Value* /* alpha */, Value* omega) {
+    m->result = omega;
 }
 
 // Catenate First (⍪ dyadic) - join along first axis

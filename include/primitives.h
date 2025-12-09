@@ -111,6 +111,13 @@ extern PrimitiveFn prim_encode;    // ⊤ symbol (encode/representation)
 extern PrimitiveFn prim_execute;   // ⍎ symbol (execute)
 extern PrimitiveFn prim_format;    // ⍕ symbol (format)
 extern PrimitiveFn prim_table;     // ⍪ symbol (table/catenate first)
+extern PrimitiveFn prim_left;      // ⊣ symbol (left - ISO 10.2.17)
+extern PrimitiveFn prim_right;     // ⊢ symbol (right - ISO 10.2.18)
+
+// Identity functions (ISO 10.2.17-18)
+void fn_right(Machine* m, Value* omega);                    // ⊢ monadic (identity)
+void fn_left(Machine* m, Value* alpha, Value* omega);       // ⊣ dyadic (return left)
+void fn_right_dyadic(Machine* m, Value* alpha, Value* omega); // ⊢ dyadic (return right)
 
 // Array operation functions
 void fn_shape(Machine* m, Value* omega);                    // ⍴ monadic (get shape)

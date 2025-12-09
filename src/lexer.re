@@ -152,6 +152,8 @@ Lexer::Lexer(const char* input)
     enclose = "⊂";       // U+2282 (enclose - reserved)
     disclose = "⊃";      // U+2283 (disclose - reserved)
     match = "≡";         // U+2261 (depth)
+    left_tack = "⊣";     // U+22A3 (left - ISO 10.2.17)
+    right_tack = "⊢";    // U+22A2 (right - ISO 10.2.18)
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
@@ -344,6 +346,8 @@ Token Lexer::next_token() {
         enclose { column_++; return Token(TOK_ENCLOSE, token_line, token_column); }
         disclose { column_++; return Token(TOK_DISCLOSE, token_line, token_column); }
         match { column_++; return Token(TOK_MATCH, token_line, token_column); }
+        left_tack { column_++; return Token(TOK_LEFT_TACK, token_line, token_column); }
+        right_tack { column_++; return Token(TOK_RIGHT_TACK, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }

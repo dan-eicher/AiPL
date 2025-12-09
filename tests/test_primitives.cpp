@@ -4856,6 +4856,125 @@ TEST_F(PrimitivesTest, TakeNegativeOverextend) {
 }
 
 // ============================================================================
+// Left (⊣) and Right (⊢) - ISO 10.2.17-18
+// ============================================================================
+
+TEST_F(PrimitivesTest, LeftTackDyadic) {
+    // ISO 10.2.17: A⊣B returns A
+    Value* result = machine->eval("3⊣5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(PrimitivesTest, RightTackDyadic) {
+    // ISO 10.2.18: A⊢B returns B
+    Value* result = machine->eval("3⊢5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, LeftTackMonadic) {
+    // ISO 10.2.17: ⊣B returns B (identity)
+    Value* result = machine->eval("⊣5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, RightTackMonadic) {
+    // ISO 10.2.18: ⊢B returns B (identity)
+    Value* result = machine->eval("⊢5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, LeftTackVector) {
+    // A⊣B with vectors returns A unchanged
+    Value* result = machine->eval("1 2 3⊣4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, RightTackVector) {
+    // A⊢B with vectors returns B unchanged
+    Value* result = machine->eval("1 2 3⊢4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 6.0);
+}
+
+TEST_F(PrimitivesTest, LeftTackMixedShapes) {
+    // ISO 10.2.17 example: N2⊣'FRANCE' → 1 2
+    // Left returns left arg regardless of right arg's shape
+    Value* result = machine->eval("1 2⊣'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 2.0);
+}
+
+TEST_F(PrimitivesTest, RightTackMixedShapes) {
+    // Right returns right arg regardless of left arg's shape
+    Value* result = machine->eval("1 2 3⊢5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(PrimitivesTest, LeftTackEmpty) {
+    // Empty vector as left argument
+    Value* result = machine->eval("(⍳0)⊣1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, RightTackEmpty) {
+    // Empty vector as right argument
+    Value* result = machine->eval("1 2 3⊢⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, LeftTackMatrix) {
+    // Matrix as left argument
+    Value* result = machine->eval("(2 2⍴1 2 3 4)⊣99");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->as_matrix()->rows(), 2);
+    EXPECT_EQ(result->as_matrix()->cols(), 2);
+}
+
+TEST_F(PrimitivesTest, RightTackMatrix) {
+    // Matrix as right argument
+    Value* result = machine->eval("99⊢2 2⍴1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->as_matrix()->rows(), 2);
+    EXPECT_EQ(result->as_matrix()->cols(), 2);
+}
+
+TEST_F(PrimitivesTest, LeftTackRegistered) {
+    ASSERT_NE(machine->env->lookup("⊣"), nullptr);
+}
+
+TEST_F(PrimitivesTest, RightTackRegistered) {
+    ASSERT_NE(machine->env->lookup("⊢"), nullptr);
+}
+
+// ============================================================================
 // Phase 4: Scalar Extension Systematic Tests (ISO 13751)
 // ============================================================================
 

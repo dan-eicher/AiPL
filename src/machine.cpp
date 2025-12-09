@@ -69,6 +69,8 @@ void Machine::init_globals() {
     env->define("⍕", heap->allocate_primitive(&prim_format));
     env->define("⌷", heap->allocate_primitive(&prim_squad));
     env->define("⍪", heap->allocate_primitive(&prim_table));
+    env->define("⊣", heap->allocate_primitive(&prim_left));
+    env->define("⊢", heap->allocate_primitive(&prim_right));
 
     // Operators (higher-order functions)
     env->define(".", heap->allocate_operator(&op_dot));
