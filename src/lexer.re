@@ -149,6 +149,7 @@ Lexer::Lexer(const char* input)
     execute = "⍎";       // U+234E (execute)
     format = "⍕";        // U+2355 (format)
     table = "⍪";         // U+236A (table / catenate first)
+    squad = "⌷";         // U+2337 (index / squad)
     enclose = "⊂";       // U+2282 (enclose - reserved)
     disclose = "⊃";      // U+2283 (disclose - reserved)
     match = "≡";         // U+2261 (depth)
@@ -343,6 +344,7 @@ Token Lexer::next_token() {
         execute { column_++; return Token(TOK_EXECUTE, token_line, token_column); }
         format { column_++; return Token(TOK_FORMAT, token_line, token_column); }
         table { column_++; return Token(TOK_TABLE, token_line, token_column); }
+        squad { column_++; return Token(TOK_SQUAD, token_line, token_column); }
         enclose { column_++; return Token(TOK_ENCLOSE, token_line, token_column); }
         disclose { column_++; return Token(TOK_DISCLOSE, token_line, token_column); }
         match { column_++; return Token(TOK_MATCH, token_line, token_column); }

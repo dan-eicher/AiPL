@@ -2944,6 +2944,12 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
         const Eigen::MatrixXd* idx_mat = index_val->as_matrix();
         int num_indices = static_cast<int>(idx_mat->size());
 
+        // Empty index is a no-op (ISO 13751)
+        if (num_indices == 0) {
+            machine->result = value_val;
+            return;
+        }
+
         // Check value compatibility
         bool scalar_value = value_val->is_scalar();
         const Eigen::MatrixXd* val_mat = nullptr;

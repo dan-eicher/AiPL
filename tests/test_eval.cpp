@@ -4123,6 +4123,75 @@ TEST_F(EvalTest, IndexedAssignScalarToMultiple) {
     EXPECT_DOUBLE_EQ((*vec)(4, 0), 50.0);
 }
 
+TEST_F(EvalTest, IndexedAssignEmptyIndex) {
+    // A←1 2 3 ⋄ A[⍳0]←⍳0 ⋄ A → 1 2 3 (no-op assignment)
+    machine->eval("A←1 2 3");
+    machine->eval("A[⍳0]←⍳0");
+
+    Value* a_val = machine->eval("A");
+    ASSERT_NE(a_val, nullptr);
+    const Eigen::MatrixXd* vec = a_val->as_matrix();
+    EXPECT_EQ(vec->rows(), 3);
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*vec)(2, 0), 3.0);
+}
+
+TEST_F(EvalTest, IndexedRefEmptyIndex) {
+    // A←1 2 3 ⋄ A[⍳0] → ⍳0 (empty result)
+    machine->eval("A←1 2 3");
+    Value* result = machine->eval("A[⍳0]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_EQ(vec->rows(), 0);
+}
+
+// ============================================================================
+// GC Stress Tests
+// ============================================================================
+
+TEST_F(EvalTest, GCStressManyAllocations) {
+    // Execute many operations to stress GC with allocations
+    // Each iteration creates temporaries that should be collected
+    for (int i = 0; i < 100; i++) {
+        Value* result = machine->eval("⍳100");
+        ASSERT_NE(result, nullptr);
+        EXPECT_TRUE(result->is_vector());
+    }
+    // Should complete without running out of memory
+}
+
+TEST_F(EvalTest, GCStressDeepRecursion) {
+    // Define a recursive function and call it with moderate depth
+    machine->eval("fact←{⍵≤1: 1 ⋄ ⍵×∇ ⍵-1}");
+    Value* result = machine->eval("fact 10");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3628800.0);  // 10!
+}
+
+TEST_F(EvalTest, GCStressLargeArrays) {
+    // Create and operate on large arrays
+    Value* result = machine->eval("+/⍳1000");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 500500.0);  // sum 1..1000
+
+    // Matrix operations
+    result = machine->eval("+/,10 10⍴⍳100");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5050.0);  // sum 1..100
+}
+
+TEST_F(EvalTest, GCStressNestedDfnCalls) {
+    // Multiple function definitions and calls creating many environments
+    machine->eval("F←{⍵+1}");
+    machine->eval("G←{F F ⍵}");
+    machine->eval("H←{G G ⍵}");
+    Value* result = machine->eval("H 0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);  // 0+1+1+1+1
+}
+
 // ============================================================================
 // Table Function (⍪) Tests
 // ============================================================================

@@ -90,8 +90,9 @@ enum TokenType {
     TOK_DECODE,         // ⊥ (decode / base value)
     TOK_ENCODE,         // ⊤ (encode / representation)
 
-    // Table / Depth
+    // Table / Depth / Squad
     TOK_TABLE,          // ⍪ (table / catenate first)
+    TOK_SQUAD,          // ⌷ (index / squad)
     TOK_MATCH,          // ≡ (depth)
 
     // Identity functions (ISO 10.2.17-18)

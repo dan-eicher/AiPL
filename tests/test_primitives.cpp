@@ -4215,7 +4215,8 @@ TEST_F(PrimitivesTest, SquadVectorScalarIndex) {
     Value* arr = machine->heap->allocate_vector(v);
     Value* idx = machine->heap->allocate_scalar(3.0);
 
-    fn_squad(machine, arr, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, arr);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
@@ -4231,7 +4232,8 @@ TEST_F(PrimitivesTest, SquadVectorVectorIndex) {
     idx_v << 2.0, 4.0;
     Value* idx = machine->heap->allocate_vector(idx_v);
 
-    fn_squad(machine, arr, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, arr);
 
     ASSERT_TRUE(machine->result->is_vector());
     EXPECT_EQ(machine->result->data.matrix->size(), 2);
@@ -4246,7 +4248,8 @@ TEST_F(PrimitivesTest, SquadVectorFirstElement) {
     Value* arr = machine->heap->allocate_vector(v);
     Value* idx = machine->heap->allocate_scalar(1.0);
 
-    fn_squad(machine, arr, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, arr);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
@@ -4259,7 +4262,8 @@ TEST_F(PrimitivesTest, SquadVectorLastElement) {
     Value* arr = machine->heap->allocate_vector(v);
     Value* idx = machine->heap->allocate_scalar(3.0);
 
-    fn_squad(machine, arr, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, arr);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 7.0);
@@ -4272,7 +4276,8 @@ TEST_F(PrimitivesTest, SquadOutOfBoundsError) {
     Value* arr = machine->heap->allocate_vector(v);
     Value* idx = machine->heap->allocate_scalar(5.0);
 
-    fn_squad(machine, arr, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, arr);
 
     // Should push ThrowErrorK
     ASSERT_FALSE(machine->kont_stack.empty());
@@ -4287,7 +4292,8 @@ TEST_F(PrimitivesTest, SquadZeroIndexError) {
     Value* arr = machine->heap->allocate_vector(v);
     Value* idx = machine->heap->allocate_scalar(0.0);
 
-    fn_squad(machine, arr, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, arr);
 
     // Should push ThrowErrorK
     ASSERT_FALSE(machine->kont_stack.empty());
@@ -4304,7 +4310,8 @@ TEST_F(PrimitivesTest, SquadStringScalarIndex) {
     Value* str = machine->heap->allocate_string("hello");
     Value* idx = machine->heap->allocate_scalar(2.0);
 
-    fn_squad(machine, str, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, str);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 101.0);  // 'e'
@@ -4315,7 +4322,8 @@ TEST_F(PrimitivesTest, SquadStringFirstChar) {
     Value* str = machine->heap->allocate_string("hello");
     Value* idx = machine->heap->allocate_scalar(1.0);
 
-    fn_squad(machine, str, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, str);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 104.0);  // 'h'
@@ -4326,7 +4334,8 @@ TEST_F(PrimitivesTest, SquadStringLastChar) {
     Value* str = machine->heap->allocate_string("hello");
     Value* idx = machine->heap->allocate_scalar(5.0);
 
-    fn_squad(machine, str, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, str);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 111.0);  // 'o'
@@ -4339,7 +4348,8 @@ TEST_F(PrimitivesTest, SquadStringVectorIndex) {
     idx_v << 1.0, 3.0, 5.0;
     Value* idx = machine->heap->allocate_vector(idx_v);
 
-    fn_squad(machine, str, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, str);
 
     ASSERT_TRUE(machine->result->is_vector());
     EXPECT_EQ(machine->result->size(), 3);
@@ -4354,7 +4364,8 @@ TEST_F(PrimitivesTest, SquadStringOutOfBoundsError) {
     Value* str = machine->heap->allocate_string("hi");
     Value* idx = machine->heap->allocate_scalar(5.0);
 
-    fn_squad(machine, str, idx);
+    // ISO 13751: I⌷A where indices are left, array is right
+    fn_squad(machine, idx, str);
 
     ASSERT_FALSE(machine->kont_stack.empty());
     auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
@@ -5567,4 +5578,155 @@ TEST_F(PrimitivesTest, FormatDyadicVector) {
     ASSERT_TRUE(result->is_string());
     std::string s = result->as_string();
     EXPECT_EQ(s.length(), 18);  // 3 * 6
+}
+
+// ============================================================================
+// ISO 13751 Section 15.4 Format - Additional Edge Case Tests
+// ============================================================================
+
+// Monadic format: character vector returns unchanged (not just strings)
+TEST_F(PrimitivesTest, FormatMonadicCharVector) {
+    // Create a character vector (array with char data)
+    Value* cv = machine->eval("'ABC'");
+    ASSERT_NE(cv, nullptr);
+    fn_format_monadic(machine, cv);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    // Should return the character data (as string in our impl)
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "ABC");
+}
+
+// Monadic format: empty matrix returns empty character array
+TEST_F(PrimitivesTest, FormatMonadicEmptyMatrix) {
+    Value* em = machine->eval("0 3⍴0");  // 0x3 empty matrix
+    ASSERT_NE(em, nullptr);
+    fn_format_monadic(machine, em);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "");  // Empty
+}
+
+// Dyadic format: rank error if A is matrix
+TEST_F(PrimitivesTest, FormatDyadicRankErrorMatrix) {
+    EXPECT_THROW(machine->eval("(2 2⍴5 2 5 2)⍕42"), APLError);
+}
+
+// Dyadic format: length error if A has odd number of elements
+TEST_F(PrimitivesTest, FormatDyadicLengthErrorOdd) {
+    EXPECT_THROW(machine->eval("5 2 3⍕42"), APLError);
+}
+
+// Dyadic format: domain error if A is character
+TEST_F(PrimitivesTest, FormatDyadicDomainErrorCharLeft) {
+    EXPECT_THROW(machine->eval("'AB'⍕42"), APLError);
+}
+
+// Dyadic format: domain error if B is character
+TEST_F(PrimitivesTest, FormatDyadicDomainErrorCharRight) {
+    EXPECT_THROW(machine->eval("5 2⍕'hello'"), APLError);
+}
+
+// Dyadic format: width too narrow error
+TEST_F(PrimitivesTest, FormatDyadicWidthTooNarrow) {
+    EXPECT_THROW(machine->eval("2 2⍕12345"), APLError);
+}
+
+// Dyadic format: width must be positive
+TEST_F(PrimitivesTest, FormatDyadicWidthNotPositive) {
+    EXPECT_THROW(machine->eval("0 2⍕42"), APLError);
+}
+
+// Dyadic format: empty B returns empty string
+TEST_F(PrimitivesTest, FormatDyadicEmptyB) {
+    Eigen::VectorXd spec(2);
+    spec << 5.0, 2.0;
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Eigen::VectorXd v(0);  // Empty vector
+    Value* omega = machine->heap->allocate_vector(v);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string(), "");
+}
+
+// Dyadic format: matrix with single spec (applies to all columns)
+TEST_F(PrimitivesTest, FormatDyadicMatrixSingleSpec) {
+    Eigen::VectorXd spec(2);
+    spec << 5.0, 1.0;  // width=5, 1 decimal
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Eigen::MatrixXd m(2, 3);
+    m << 1.1, 2.2, 3.3,
+         4.4, 5.5, 6.6;
+    Value* omega = machine->heap->allocate_matrix(m);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    // Should have 2 rows, each with 3 columns of width 5 = 15 chars per row
+    EXPECT_TRUE(s.find("\n") != std::string::npos);  // Multi-row
+}
+
+// Dyadic format: multiple specs for different columns
+TEST_F(PrimitivesTest, FormatDyadicMultipleSpecs) {
+    Eigen::VectorXd spec(6);  // 3 pairs for 3 columns
+    spec << 4.0, 0.0,   // column 1: width=4, 0 decimals
+           6.0, 2.0,   // column 2: width=6, 2 decimals
+           8.0, -2.0;  // column 3: width=8, exponential with 2 digits
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Eigen::VectorXd v(3);
+    v << 42.0, 3.14159, 1234.5;
+    Value* omega = machine->heap->allocate_vector(v);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_EQ(s.length(), 18);  // 4 + 6 + 8 = 18
+}
+
+// Dyadic format: scalar width with implicit 0 decimals
+TEST_F(PrimitivesTest, FormatDyadicScalarSpec) {
+    Value* alpha = machine->heap->allocate_scalar(5.0);  // Just width
+    Value* omega = machine->heap->allocate_scalar(42.7);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_EQ(s.length(), 5);
+    EXPECT_TRUE(s.find("43") != std::string::npos);  // Rounded to integer
+}
+
+// Dyadic format: high precision exponential
+TEST_F(PrimitivesTest, FormatDyadicExponentialHighPrecision) {
+    Eigen::VectorXd spec(2);
+    spec << 15.0, -8.0;  // 8 significant digits in mantissa
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Value* omega = machine->heap->allocate_scalar(3.141592653589793);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+    EXPECT_TRUE(s.find("3.14159") != std::string::npos);  // At least 6 digits of pi
+}
+
+// Dyadic format: negative number in exponential form
+TEST_F(PrimitivesTest, FormatDyadicExponentialNegative) {
+    Eigen::VectorXd spec(2);
+    spec << 12.0, -3.0;
+    Value* alpha = machine->heap->allocate_vector(spec);
+    Value* omega = machine->heap->allocate_scalar(-0.00314159);
+    fn_format_dyadic(machine, alpha, omega);
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_string());
+    std::string s = result->as_string();
+    EXPECT_TRUE(s.find("E") != std::string::npos);
+    EXPECT_TRUE(s.find("¯") != std::string::npos);  // High minus for negative
 }
