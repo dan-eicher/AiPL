@@ -62,6 +62,11 @@ public:
     // Execute the machine until halt
     Value* execute();
 
+private:
+    // Finalize a curried function at top level (g' null case)
+    void finalize_curry();
+
+public:
     // Stack manipulation
 
     // Push continuation onto stack

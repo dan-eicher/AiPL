@@ -38,6 +38,7 @@ void fn_format_monadic(Machine* m, Value* omega);           // ⍕ monadic (form
 void fn_format_dyadic(Machine* m, Value* alpha, Value* omega); // ⍕ dyadic (format with spec)
 void fn_table(Machine* m, Value* omega);         // ⍪ monadic (table - convert to matrix)
 void fn_depth(Machine* m, Value* omega);         // ≡ monadic (depth - nesting level)
+void fn_match(Machine* m, Value* alpha, Value* omega); // ≡ dyadic (match - identical?)
 
 // Dyadic built-in functions
 void fn_catenate_first(Machine* m, Value* lhs, Value* rhs); // ⍪ dyadic (join along first axis)

@@ -352,6 +352,8 @@ Token Lexer::next_token() {
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }
         zilde { column_++; return Token(TOK_ZILDE, token_line, token_column); }
+        "∇" { column_++; return Token(TOK_DEL, token_line, token_column); }
+        ":" { column_++; return Token(TOK_COLON, token_line, token_column); }
 
         // Outer product (special two-character sequence)
         compose "." { column_ += 2; return Token(TOK_OUTER_PRODUCT, token_line, token_column); }

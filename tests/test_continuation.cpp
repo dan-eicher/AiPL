@@ -1411,6 +1411,101 @@ TEST_F(ContinuationTest, PerformIndexedAssignKMarking) {
     EXPECT_TRUE(idx->marked);
 }
 
+// ============================================================================
+// G_PRIME Curry Edge Case Tests
+// ============================================================================
+
+// Monadic-only function (≢) in dyadic context should error
+TEST_F(ContinuationTest, GPrimeMonadicOnlyErrorsInDyadicContext) {
+    Value* tally_fn = machine->heap->allocate_primitive(&prim_tally);
+    Eigen::VectorXd vec(3);
+    vec << 1, 2, 3;
+    Value* arr = machine->heap->allocate_vector(vec);
+
+    Value* curried = machine->heap->allocate_curried_fn(tally_fn, arr, Value::CurryType::G_PRIME);
+    Value* five = machine->heap->allocate_scalar(5.0);
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(curried, nullptr, five);
+    machine->push_kont(dispatch);
+
+    EXPECT_THROW(machine->execute(), APLError);
+}
+
+// Pure dyadic function (=) should remain as curry, not finalize
+TEST_F(ContinuationTest, GPrimeValidPartialApplicationNotFinalized) {
+    Value* equal_fn = machine->heap->allocate_primitive(&prim_equal);
+    Value* two = machine->heap->allocate_scalar(2.0);
+
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(equal_fn, nullptr, two);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CURRIED_FN);
+    EXPECT_EQ(result->data.curried_fn->curry_type, Value::CurryType::DYADIC_CURRY);
+}
+
+// G_PRIME curry of derived operator finalizes at top level: +/ 1 2 3 4 5 = 15
+TEST_F(ContinuationTest, GPrimeNestedCurryFinalization) {
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* reduce_op = machine->heap->allocate_derived_operator(&op_reduce, plus_fn);
+
+    Eigen::VectorXd vec(5);
+    vec << 1, 2, 3, 4, 5;
+    Value* iota_result = machine->heap->allocate_vector(vec);
+
+    Value* curried = machine->heap->allocate_curried_fn(reduce_op, iota_result, Value::CurryType::G_PRIME);
+    machine->result = curried;
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+// Overloaded function G_PRIME without second arg uses monadic: -5 = -5
+TEST_F(ContinuationTest, GPrimeOverloadedUsesMonadic) {
+    Value* minus_fn = machine->heap->allocate_primitive(&prim_minus);
+    Value* five = machine->heap->allocate_scalar(5.0);
+
+    Value* curried = machine->heap->allocate_curried_fn(minus_fn, five, Value::CurryType::G_PRIME);
+    machine->result = curried;
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+// G_PRIME curry with second arg uses dyadic: 3 - 5 = -2
+TEST_F(ContinuationTest, GPrimeCurryWithSecondArgUsesDyadic) {
+    Value* minus_fn = machine->heap->allocate_primitive(&prim_minus);
+    Value* five = machine->heap->allocate_scalar(5.0);
+
+    Value* curried = machine->heap->allocate_curried_fn(minus_fn, five, Value::CurryType::G_PRIME);
+    Value* three = machine->heap->allocate_scalar(3.0);
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(curried, nullptr, three);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -2.0);
+}
+
+// All monadic functions create G_PRIME curry, finalized at top level: ⍳5 = 1 2 3 4 5
+TEST_F(ContinuationTest, GPrimeAllMonadicFinalizedAtTopLevel) {
+    Value* iota_fn = machine->heap->allocate_primitive(&prim_iota);
+    Value* five = machine->heap->allocate_scalar(5.0);
+
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(iota_fn, nullptr, five, false);
+    machine->push_kont(dispatch);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->rows(), 5);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

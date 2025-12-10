@@ -46,7 +46,7 @@ PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
 PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate };
 PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
 PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
-PrimitiveFn prim_depth     = { "≡", fn_depth, nullptr };  // No dyadic match without nested arrays
+PrimitiveFn prim_depth     = { "≡", fn_depth, fn_match };  // ISO 13751: depth/match
 PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
 PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, nullptr };
 PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
@@ -3447,6 +3447,73 @@ void fn_depth(Machine* m, Value* omega) {
         // All our arrays are simple (non-nested), so depth is 1
         m->result = m->heap->allocate_scalar(1.0);
     }
+}
+
+// Match (≡ dyadic) - returns 1 if arguments are identical, 0 otherwise
+// ISO 13751 Section 10.2.53: A≡B returns 1 if A and B are identical
+void fn_match(Machine* m, Value* alpha, Value* omega) {
+    // Different types never match
+    if (alpha->tag != omega->tag) {
+        m->result = m->heap->allocate_scalar(0.0);
+        return;
+    }
+
+    // Handle scalars
+    if (alpha->is_scalar() && omega->is_scalar()) {
+        double a = alpha->as_scalar();
+        double o = omega->as_scalar();
+        // Handle NaN: NaN ≡ NaN should be 1 (identical)
+        if (std::isnan(a) && std::isnan(o)) {
+            m->result = m->heap->allocate_scalar(1.0);
+        } else {
+            m->result = m->heap->allocate_scalar(a == o ? 1.0 : 0.0);
+        }
+        return;
+    }
+
+    // Handle strings
+    if (alpha->is_string() && omega->is_string()) {
+        m->result = m->heap->allocate_scalar(
+            strcmp(alpha->as_string(), omega->as_string()) == 0 ? 1.0 : 0.0);
+        return;
+    }
+
+    // Handle arrays
+    if (alpha->is_array() && omega->is_array()) {
+        const Eigen::MatrixXd* a_mat = alpha->as_matrix();
+        const Eigen::MatrixXd* o_mat = omega->as_matrix();
+
+        // Shape must match
+        if (a_mat->rows() != o_mat->rows() || a_mat->cols() != o_mat->cols()) {
+            m->result = m->heap->allocate_scalar(0.0);
+            return;
+        }
+
+        // Character data flag must match
+        if (alpha->is_char_data() != omega->is_char_data()) {
+            m->result = m->heap->allocate_scalar(0.0);
+            return;
+        }
+
+        // All elements must match
+        for (int i = 0; i < a_mat->rows(); i++) {
+            for (int j = 0; j < a_mat->cols(); j++) {
+                double av = (*a_mat)(i, j);
+                double ov = (*o_mat)(i, j);
+                // Handle NaN comparison
+                if (std::isnan(av) && std::isnan(ov)) continue;
+                if (av != ov) {
+                    m->result = m->heap->allocate_scalar(0.0);
+                    return;
+                }
+            }
+        }
+        m->result = m->heap->allocate_scalar(1.0);
+        return;
+    }
+
+    // Different types (scalar vs array, etc.)
+    m->result = m->heap->allocate_scalar(0.0);
 }
 
 // Right (⊢ monadic and ⊣ monadic) - identity function

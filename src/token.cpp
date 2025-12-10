@@ -90,6 +90,8 @@ const char* token_type_name(TokenType type) {
         case TOK_RBRACE: return "}";
         case TOK_ALPHA: return "⍺";
         case TOK_OMEGA: return "⍵";
+        case TOK_DEL: return "∇";
+        case TOK_COLON: return ":";
         case TOK_DIAMOND: return "⋄";
         case TOK_NEWLINE: return "NEWLINE";
         case TOK_COMMENT: return "COMMENT";

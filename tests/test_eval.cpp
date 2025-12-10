@@ -528,6 +528,428 @@ TEST_F(EvalTest, ApplyNestedDfn) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 23.0);
 }
 
+// Test monadic dfn application (direct, without left argument)
+TEST_F(EvalTest, DfnMonadicDirect) {
+    // {⍵+1}5 should evaluate to 6
+    Continuation* k = parser->parse("{⍵+1}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+// Test named dfn called monadically
+TEST_F(EvalTest, DfnNamedMonadic) {
+    // F←{⍵×2} ⋄ F 5 should return 10
+    Continuation* k = parser->parse("F←{⍵×2} ⋄ F 5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test dfn with local assignment
+TEST_F(EvalTest, DfnLocalAssignment) {
+    // {x←5 ⋄ x+⍵}3 should return 8
+    Continuation* k = parser->parse("{x←5 ⋄ x+⍵}3");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
+// Test dfn returning vector
+TEST_F(EvalTest, DfnReturnsVector) {
+    // {⍵ ⍵ ⍵}5 should return 5 5 5
+    Continuation* k = parser->parse("{⍵ ⍵ ⍵}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    ASSERT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 5.0);
+}
+
+// Test dfn with vector argument
+TEST_F(EvalTest, DfnVectorArgument) {
+    // {+/⍵}1 2 3 should return 6
+    Continuation* k = parser->parse("{+/⍵}1 2 3");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+// Test guard with true condition
+TEST_F(EvalTest, DfnGuardTrue) {
+    // {⍵>0: ⍵}5 should return 5
+    Continuation* k = parser->parse("{⍵>0: ⍵}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test guard with false condition followed by default
+TEST_F(EvalTest, DfnGuardFalseWithDefault) {
+    // {⍵>0: ⍵ ⋄ 0}¯5 should return 0
+    Continuation* k = parser->parse("{⍵>0: ⍵ ⋄ 0}¯5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// Test multiple guards (first matching wins)
+TEST_F(EvalTest, DfnMultipleGuards) {
+    // {⍵<0: ¯1 ⋄ ⍵=0: 0 ⋄ 1}5 should return 1 (positive)
+    Continuation* k = parser->parse("{⍵<0: ¯1 ⋄ ⍵=0: 0 ⋄ 1}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// Test multiple guards - second condition matches
+TEST_F(EvalTest, DfnMultipleGuardsSecond) {
+    // {⍵<0: ¯1 ⋄ ⍵=0: 0 ⋄ 1}0 should return 0
+    Continuation* k = parser->parse("{⍵<0: ¯1 ⋄ ⍵=0: 0 ⋄ 1}0");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// Test multiple guards - first condition matches
+TEST_F(EvalTest, DfnMultipleGuardsFirst) {
+    // {⍵<0: ¯1 ⋄ ⍵=0: 0 ⋄ 1}¯5 should return ¯1
+    Continuation* k = parser->parse("{⍵<0: ¯1 ⋄ ⍵=0: 0 ⋄ 1}¯5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -1.0);
+}
+
+// Test recursive dfn with ∇ (factorial)
+TEST_F(EvalTest, DfnRecursiveFactorial) {
+    // {⍵≤1: 1 ⋄ ⍵×∇ ⍵-1}5 should return 120 (5!)
+    Continuation* k = parser->parse("{⍵≤1: 1 ⋄ ⍵×∇ ⍵-1}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 120.0);
+}
+
+// Test recursive dfn with ∇ (fibonacci)
+TEST_F(EvalTest, DfnRecursiveFibonacci) {
+    // {⍵≤1: ⍵ ⋄ (∇ ⍵-1)+∇ ⍵-2}6 should return 8 (fib(6))
+    Continuation* k = parser->parse("{⍵≤1: ⍵ ⋄ (∇ ⍵-1)+∇ ⍵-2}6");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
+// Test named recursive dfn
+TEST_F(EvalTest, DfnNamedRecursive) {
+    // fact←{⍵≤1: 1 ⋄ ⍵×∇ ⍵-1} ⋄ fact 5 should return 120
+    Continuation* k = parser->parse("fact←{⍵≤1: 1 ⋄ ⍵×∇ ⍵-1} ⋄ fact 5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 120.0);
+}
+
+// Test dfn with alpha when called monadically (alpha should error or use default)
+TEST_F(EvalTest, DfnAlphaMonadicError) {
+    // {⍺+⍵}5 - calling a dfn that uses ⍺ monadically should error
+    // because ⍺ is not defined when called without left argument
+    Continuation* k = parser->parse("{⍺+⍵}5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    // Expect VALUE ERROR for undefined ⍺
+    EXPECT_THROW(machine->execute(), APLError);
+}
+
+// Test nested dfn (dfn defined inside dfn)
+TEST_F(EvalTest, DfnNested) {
+    // {F←{⍵+1} ⋄ F ⍵}5 should return 6
+    Continuation* k = parser->parse("{F←{⍵+1} ⋄ F ⍵}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+// Test dfn returning a dfn (higher-order)
+TEST_F(EvalTest, DfnReturningDfn) {
+    // adder←{⍵{⍺+⍵}} creates a function that adds ⍵
+    // Not all APLs support this - test for graceful handling
+    Continuation* k = parser->parse("adder←{{⍺+⍵}⍵}");
+
+    // May or may not parse - test doesn't crash
+    if (k != nullptr) {
+        machine->push_kont(k);
+        machine->execute();
+    }
+}
+
+// Test dfn as reduce operand
+TEST_F(EvalTest, DfnAsReduceOperand) {
+    // {⍺+⍵}/1 2 3 4 should return 10
+    Continuation* k = parser->parse("{⍺+⍵}/1 2 3 4");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test dfn as each operand
+TEST_F(EvalTest, DfnAsEachOperand) {
+    // {⍵×2}¨1 2 3 should return 2 4 6
+    Value* result = machine->eval("{⍵×2}¨1 2 3");
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    ASSERT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 6.0);
+}
+
+// Test alpha default value syntax
+TEST_F(EvalTest, DfnAlphaDefault) {
+    // {⍺←10 ⋄ ⍺+⍵}5 should return 15 (alpha defaults to 10)
+    Continuation* k = parser->parse("{⍺←10 ⋄ ⍺+⍵}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+// Test alpha default value overridden by caller
+TEST_F(EvalTest, DfnAlphaDefaultOverride) {
+    // 3{⍺←10 ⋄ ⍺+⍵}5 should return 8 (alpha=3 overrides default)
+    Continuation* k = parser->parse("3{⍺←10 ⋄ ⍺+⍵}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
+// Test dfn with matrix argument
+TEST_F(EvalTest, DfnMatrixArgument) {
+    // {⍴⍵}2 3⍴⍳6 should return 2 3
+    Continuation* k = parser->parse("{⍴⍵}2 3⍴⍳6");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    ASSERT_EQ(result->size(), 2);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+}
+
+// Test dfn calling another named dfn
+TEST_F(EvalTest, DfnCallsNamedDfn) {
+    // double←{⍵×2} ⋄ {double ⍵}5 should return 10
+    Continuation* k = parser->parse("double←{⍵×2} ⋄ {double ⍵}5");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test empty dfn body
+TEST_F(EvalTest, DfnEmpty) {
+    // {} - empty dfn, behavior varies by implementation
+    Continuation* k = parser->parse("{}5");
+
+    // Should either error or return something predictable
+    // Test that it doesn't crash
+    if (k != nullptr) {
+        machine->push_kont(k);
+        machine->execute();
+    }
+}
+
+// Test dfn with multiple local variables
+TEST_F(EvalTest, DfnMultipleLocals) {
+    // {a←1 ⋄ b←2 ⋄ c←3 ⋄ a+b+c+⍵}10 should return 16
+    Continuation* k = parser->parse("{a←1 ⋄ b←2 ⋄ c←3 ⋄ a+b+c+⍵}10");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);
+}
+
+// Test dfn with scan operator
+TEST_F(EvalTest, DfnAsScanOperand) {
+    // {⍺+⍵}\1 2 3 4 should return 1 3 6 10
+    Continuation* k = parser->parse("{⍺+⍵}\\1 2 3 4");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    ASSERT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 10.0);
+}
+
+// Test dfn with outer product
+TEST_F(EvalTest, DfnAsOuterProduct) {
+    // 1 2∘.{⍺×⍵}3 4 should return 2x2 matrix: 3 4 / 6 8
+    Continuation* k = parser->parse("1 2∘.{⍺×⍵}3 4");
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+    EXPECT_EQ(parser->get_error(), "");
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 8.0);
+}
+
 // ============================================================================
 // GC Integration Tests (Phase 5.2)
 // ============================================================================
@@ -3843,9 +4265,24 @@ TEST_F(EvalTest, DepthEmptyVector) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 }
 
-TEST_F(EvalTest, DepthDyadicReserved) {
-    // Dyadic ≡ (match) requires nested arrays - should error
-    EXPECT_THROW(machine->eval("1 2 3 ≡ 1 2 3"), APLError);
+TEST_F(EvalTest, MatchDyadicBasic) {
+    // Dyadic ≡ (match) - returns 1 if identical, 0 otherwise
+    // ISO 13751 Section 10.2.53
+    Value* result = machine->eval("1 2 3 ≡ 1 2 3");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // Identical arrays match
+
+    result = machine->eval("1 2 3 ≡ 1 2 4");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // Different values don't match
+
+    result = machine->eval("5 ≡ 5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // Identical scalars match
+
+    result = machine->eval("5 ≡ 1 2 3");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // Different shapes don't match
 }
 
 // ============================================================================

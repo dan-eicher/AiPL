@@ -313,7 +313,14 @@ void PerformAssignK::invoke(Machine* machine) {
         }
     }
 
-    machine->env->define(var_name, val);
+    // Special handling for ⍺←value (alpha default): only assign if ⍺ not already defined
+    // This implements APL's conditional default argument syntax
+    if (strcmp(var_name, "⍺") == 0 && machine->env->lookup(var_name) != nullptr) {
+        // ⍺ already defined (left arg was passed) - skip assignment
+        // result stays as-is for the expression value
+    } else {
+        machine->env->define(var_name, val);
+    }
 
     // Assignment expression returns the assigned value
     machine->result = val;
@@ -391,9 +398,43 @@ void EvalJuxtaposeLeftK::mark(Heap* heap) {
 
 // PerformJuxtaposeK implementation
 // Both left and right are evaluated - apply G2 juxtaposition rule
-// Rule: if type(x₁) = bas then x₂(x₁) else x₁(x₂)
+// Extended rule: if both basic then strand, else if type(x₁) = bas then x₂(x₁) else x₁(x₂)
 void PerformJuxtaposeK::invoke(Machine* machine) {
     Value* left_val = machine->result;
+
+    // Extension to G2: when both values are basic, form a strand (vector)
+    // This handles cases like {⍵ ⍵}5 which should return 5 5
+    if (left_val->is_basic_value() && right_val->is_basic_value()) {
+        // Concatenate left and right into a vector
+        size_t left_size = left_val->is_scalar() ? 1 : left_val->size();
+        size_t right_size = right_val->is_scalar() ? 1 : right_val->size();
+        size_t total = left_size + right_size;
+
+        Eigen::VectorXd result(total);
+
+        // Copy left elements
+        if (left_val->is_scalar()) {
+            result(0) = left_val->as_scalar();
+        } else {
+            const Eigen::MatrixXd* left_mat = left_val->as_matrix();
+            for (size_t i = 0; i < left_size; i++) {
+                result(i) = (*left_mat)(i, 0);
+            }
+        }
+
+        // Copy right elements
+        if (right_val->is_scalar()) {
+            result(left_size) = right_val->as_scalar();
+        } else {
+            const Eigen::MatrixXd* right_mat = right_val->as_matrix();
+            for (size_t i = 0; i < right_size; i++) {
+                result(left_size + i) = (*right_mat)(i, 0);
+            }
+        }
+
+        machine->result = machine->heap->allocate_vector(result);
+        return;
+    }
 
     // G2 Rule: if type(left) = bas then right(left) else left(right)
     if (left_val->is_basic_value()) {
@@ -1169,34 +1210,20 @@ void DispatchFunctionK::invoke(Machine* machine) {
     // G2 g' finalization: Unwrap any g' curried functions in arguments
     // Per paper: when a g' curried function is used as an argument (not at top level),
     // it should be unwrapped by applying g1(x)
-    if (left_val && left_val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = left_val->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            // Unwrap g' curried function
-            Value* fn = curried_data->fn;
-            Value* arg = curried_data->first_arg;
-            if (fn->is_primitive()) {
-                PrimitiveFn* prim_fn = fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(machine, arg);
-                    left_val = machine->result;  // Use the finalized value
-                }
-            }
-        }
-    }
+    // Use continuation machinery to handle async evaluation (e.g., ⍎)
     if (right_val && right_val->tag == ValueType::CURRIED_FN) {
         Value::CurriedFnData* curried_data = right_val->data.curried_fn;
         if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            // Unwrap g' curried function
-            Value* fn = curried_data->fn;
-            Value* arg = curried_data->first_arg;
-            if (fn->is_primitive()) {
-                PrimitiveFn* prim_fn = fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(machine, arg);
-                    right_val = machine->result;  // Use the finalized value
-                }
-            }
+            // Unwrap g' curried function via continuation machinery
+            Value* inner_fn = curried_data->fn;
+            Value* inner_arg = curried_data->first_arg;
+            // Push DeferredDispatchK to continue with unwrapped right_val
+            machine->push_kont(machine->heap->allocate<DeferredDispatchK>(fn_val, left_val, force_monadic));
+            // Dispatch inner function with force_monadic=true to actually evaluate
+            DispatchFunctionK* inner = machine->heap->allocate<DispatchFunctionK>(inner_fn, nullptr, inner_arg);
+            inner->force_monadic = true;
+            machine->push_kont(inner);
+            return;
         } else if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
             // Finalize DYADIC_CURRY from reduce/scan when used as argument
             // This handles nested reductions like "+/×/1 2 3 4"
@@ -1297,9 +1324,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
     if (left_val == nullptr) {
         // Monadic case: only right argument
 
-        if (prim_fn->monadic && prim_fn->dyadic && !force_monadic) {
-            // Overloaded function: use g' transformation (complex currying)
-            // Unless force_monadic is set, in which case apply monadic form directly
+        if (prim_fn->monadic && !force_monadic) {
+            // G_PRIME curry for all monadic functions (not just overloaded)
+            // This allows proper error handling if used in dyadic context
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
             machine->result = curried;
         } else if (prim_fn->monadic && force_monadic) {
@@ -1309,9 +1336,6 @@ void DispatchFunctionK::invoke(Machine* machine) {
             // Pure dyadic function: simple currying (right arg captured, waiting for left)
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
             machine->result = curried;
-        } else if (prim_fn->monadic) {
-            // Pure monadic function - apply directly
-            prim_fn->monadic(machine, right_val);
         } else {
             // No forms available
             machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no forms"));
@@ -1786,6 +1810,8 @@ void FunctionCallK::invoke(Machine* machine) {
     if (left_arg) {
         call_env->define("⍺", left_arg);
     }
+    // Bind ∇ for recursive self-reference
+    call_env->define("∇", fn_value);
 
     // Save current environment
     Environment* saved_env = machine->env;

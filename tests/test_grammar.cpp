@@ -1194,6 +1194,77 @@ TEST_F(GrammarTest, ExecuteInExpression) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
+// ============================================================================
+// G2 Grammar: G_PRIME Curry Tests
+// Per Georgeff et al. "Parsing and Evaluation of APL with Operators"
+// ============================================================================
+
+TEST_F(GrammarTest, GPrimeMonadicOnlyInDyadicContextErrors) {
+    // Monadic-only functions used in dyadic context should error
+    // ≢ (tally) has no dyadic form
+    EXPECT_THROW(eval("5 ≢ 1 2 3"), APLError);
+    // ⍋ (grade up) has no dyadic form
+    EXPECT_THROW(eval("1 ⍋ 3 1 2"), APLError);
+    // ⍒ (grade down) has no dyadic form
+    EXPECT_THROW(eval("1 ⍒ 3 1 2"), APLError);
+}
+
+TEST_F(GrammarTest, GPrimeOverloadedFunctionDyadic) {
+    // Overloaded functions (both monadic and dyadic) should apply dyadically
+    // ≡ (depth/match) has both forms - dyadic match returns 1 if identical
+    Value* result = eval("1 2 3 ≡ 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+
+    result = eval("1 2 3 ≡ 4 5 6");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(GrammarTest, GPrimeNestedCurryFinalization) {
+    // Execute (⍎) creates G_PRIME curry, inner code may also create curries
+    // All should finalize properly
+    Value* result = eval("⍎'⍳5'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+
+    result = eval("⍎'+/⍳5'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+
+    result = eval("⍎'≢1 2 3 4 5'");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(GrammarTest, GPrimeCurryInExpressionContext) {
+    // G_PRIME curry as argument to another function should unwrap
+    Value* result = eval("2 + ⍎'3'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+
+    result = eval("10 - ≢1 2 3");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(GrammarTest, GPrimeStrandFormationInDfn) {
+    // Value-value juxtaposition in dfn body forms strands
+    Value* result = eval("{⍵ ⍵}5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+
+    result = eval("{⍵ ⍵ ⍵}5");
+    EXPECT_EQ(result->size(), 3);
+
+    // But A f B should NOT strand if f has dyadic form
+    result = eval("3{⍺ + ⍵}5");  // Should add, not strand
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

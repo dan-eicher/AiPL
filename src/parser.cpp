@@ -171,6 +171,7 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_NAME:
                 case TOK_ALPHA:  // ⍺ in dfns
                 case TOK_OMEGA:  // ⍵ in dfns
+                case TOK_DEL:    // ∇ in recursive dfns
                 // Primitive function tokens are identifiers in G2 grammar
                 case TOK_PLUS:
                 case TOK_MINUS:
@@ -229,7 +230,8 @@ Continuation* Parser::parse_expression(int min_bp) {
         // APL is right-associative, so we use >= instead of >
         // This means: continue parsing if next_bp >= min_bp
         // For right-associativity, when we recurse, we pass bp (not bp+1)
-        if (bp < min_bp) {
+        // Also: if bp=0 and not juxtaposition, there's no led for this token
+        if (bp < min_bp || (bp == 0 && !is_juxtaposition)) {
             break;
         }
 
@@ -466,6 +468,13 @@ Continuation* Parser::nud(const Token& token) {
             return lookup;
         }
 
+        case TOK_DEL: {
+            // ∇ (del) - self-reference in recursive dfn
+            const char* interned_name = machine->string_pool.intern("∇");
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            return lookup;
+        }
+
         case TOK_ZILDE: {
             // ⍬ (zilde) - empty numeric vector
             Eigen::VectorXd empty_vec(0);
@@ -692,13 +701,32 @@ Continuation* Parser::parse_dfn_body() {
     skip_separators();
 
     // Parse statements until } (dfns use expressions, not statements)
-    std::vector<Continuation*> statements;
+    // Handles guards: {cond: result ⋄ cond2: result2 ⋄ default}
+    // Guards are compiled to nested IfK continuations
+    struct GuardedExpr {
+        Continuation* condition;  // nullptr for default (unguarded) expression
+        Continuation* result;
+    };
+    std::vector<GuardedExpr> guarded_exprs;
+
     while (!at_end() && current().type != TOK_RBRACE) {
-        Continuation* stmt = parse_expression(BP_NONE);
-        if (!stmt) {
+        Continuation* expr = parse_expression(BP_NONE);
+        if (!expr) {
             return nullptr;
         }
-        statements.push_back(stmt);
+
+        // Check for guard syntax: expr : result
+        if (current().type == TOK_COLON) {
+            advance();  // consume :
+            Continuation* result = parse_expression(BP_NONE);
+            if (!result) {
+                return nullptr;
+            }
+            guarded_exprs.push_back({expr, result});
+        } else {
+            // Unguarded expression (default case or simple statement)
+            guarded_exprs.push_back({nullptr, expr});
+        }
         skip_separators();
     }
 
@@ -711,15 +739,36 @@ Continuation* Parser::parse_dfn_body() {
 
     // Create body continuation
     Continuation* body;
-    if (statements.empty()) {
+    if (guarded_exprs.empty()) {
         // Empty dfn body - return 0
         body = machine->heap->allocate<LiteralK>(0.0);
-    } else if (statements.size() == 1) {
-        // Single expression - use directly
-        body = statements[0];
     } else {
-        // Multiple statements - wrap in SeqK
-        body = machine->heap->allocate<SeqK>(statements);
+        // Build body from guarded expressions
+        // Work backwards to create nested IfK for guards
+        // Last expression becomes the else branch
+        body = nullptr;
+        for (int i = guarded_exprs.size() - 1; i >= 0; i--) {
+            if (guarded_exprs[i].condition == nullptr) {
+                // Unguarded expression
+                if (body == nullptr) {
+                    body = guarded_exprs[i].result;
+                } else {
+                    // Multiple unguarded - sequence them
+                    std::vector<Continuation*> seq = {guarded_exprs[i].result, body};
+                    body = machine->heap->allocate<SeqK>(seq);
+                }
+            } else {
+                // Guarded expression: wrap in IfK
+                body = machine->heap->allocate<IfK>(
+                    guarded_exprs[i].condition,
+                    guarded_exprs[i].result,
+                    body  // else branch is the rest of the guards/default
+                );
+            }
+        }
+        if (body == nullptr) {
+            body = machine->heap->allocate<LiteralK>(0.0);
+        }
     }
 
     return body;
