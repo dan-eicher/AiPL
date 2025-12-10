@@ -293,23 +293,14 @@ void PerformAssignK::invoke(Machine* machine) {
     // Bind it to the variable name
     Value* val = machine->result;
 
-    // Finalize G_PRIME curried functions before assignment
-    // This handles cases like A←⍳5 where ⍳5 produces a curried function
-    // that needs to be resolved to its monadic result before storing
+    // Finalize curried functions before assignment (A←⍳5, A←+/1 2 3)
     if (val && val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = val->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            // Apply monadically: g1(x) where x is first_arg
-            Value* fn = curried_data->fn;
-            Value* arg = curried_data->first_arg;
-
-            if (fn->is_primitive()) {
-                PrimitiveFn* prim_fn = fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(machine, arg);
-                    val = machine->result;  // Get the finalized result
-                }
-            }
+        Value::CurriedFnData* cd = val->data.curried_fn;
+        if (cd->curry_type == Value::CurryType::G_PRIME ||
+            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
+            machine->push_kont(this);
+            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
+            return;
         }
     }
 
@@ -462,6 +453,87 @@ void PerformJuxtaposeK::mark(Heap* heap) {
         heap->mark_value(right_val);
     }
 }
+
+// FinalizeK implementation
+// Wraps parenthesized expressions to force g' finalization
+void FinalizeK::invoke(Machine* machine) {
+    // Push auxiliary to check/finalize result after inner evaluates
+    machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
+    // Push inner expression to evaluate
+    machine->push_kont(inner);
+}
+
+void FinalizeK::mark(Heap* heap) {
+    if (inner) {
+        heap->mark_continuation(inner);
+    }
+}
+
+// PerformFinalizeK - g' null(y) case: finalize curry to value via continuation graph
+void PerformFinalizeK::invoke(Machine* machine) {
+    Value* val = machine->result;
+
+    if (val && val->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* cd = val->data.curried_fn;
+
+        // G_PRIME: always has monadic form (that's why it's G_PRIME)
+        if (cd->curry_type == Value::CurryType::G_PRIME) {
+            DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
+                cd->fn, nullptr, cd->first_arg);
+            dispatch->force_monadic = true;
+            machine->push_kont(dispatch);
+            return;
+        }
+
+        // DYADIC_CURRY: finalize based on inner function type
+        if (cd->curry_type == Value::CurryType::DYADIC_CURRY) {
+            Value* fn = cd->fn;
+            Value* arg = cd->first_arg;
+
+            // Special case: DYADIC_CURRY wrapping OPERATOR_CURRY (axis-based reduce/scan)
+            // DYADIC_CURRY(OPERATOR_CURRY(DERIVED_OP(op, f), axis), array)
+            // → call op->dyadic(null, f, axis, array)
+            if (fn->tag == ValueType::CURRIED_FN &&
+                fn->data.curried_fn->curry_type == Value::CurryType::OPERATOR_CURRY) {
+                Value::CurriedFnData* oc = fn->data.curried_fn;
+                Value* derived = oc->fn;  // DERIVED_OPERATOR
+                Value* axis = oc->first_arg;  // axis specification
+
+                if (derived->tag == ValueType::DERIVED_OPERATOR) {
+                    PrimitiveOp* op = derived->data.derived_op->op;
+                    Value* first_operand = derived->data.derived_op->first_operand;
+                    // Call dyadic operator with null left (non-N-wise axis reduce/scan)
+                    op->dyadic(machine, nullptr, first_operand, axis, arg);
+                    return;
+                }
+            }
+
+            // Standard case: check if inner function has monadic form
+            bool has_monadic = false;
+            if (fn->tag == ValueType::DERIVED_OPERATOR) {
+                has_monadic = fn->data.derived_op->op->monadic != nullptr;
+            } else if (fn->tag == ValueType::PRIMITIVE) {
+                has_monadic = fn->data.primitive_fn->monadic != nullptr;
+            } else if (fn->tag == ValueType::CLOSURE) {
+                has_monadic = true;  // Closures always have monadic form
+            }
+
+            if (has_monadic) {
+                DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
+                    fn, nullptr, arg);
+                dispatch->force_monadic = true;
+                machine->push_kont(dispatch);
+                return;
+            }
+            // No monadic form - leave as valid partial application
+        }
+    }
+}
+
+void PerformFinalizeK::mark(Heap* heap) {
+    (void)heap;  // No Values or Continuations to mark
+}
+
 void MonadicK::invoke(Machine* machine) {
     // Monadic function application: evaluate operand, then apply function
     // Strategy: push operand continuation, then push auxiliary to apply function
@@ -537,22 +609,14 @@ void ApplyMonadicK::invoke(Machine* machine) {
     // Operand has been evaluated - its value is in result
     Value* operand_val = machine->result;
 
-    // G2 g' finalization: If operand is a g' curried function, unwrap it first
-    // Per paper: g' x = λy. if null(y) then g1(x) else ...
-    // When used as an argument (y is not null), we apply g1(x) first
+    // g' finalization: If operand is a curry, finalize it first
     if (operand_val && operand_val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = operand_val->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            // This is a g' curried function being used as an argument - finalize it
-            Value* fn = curried_data->fn;
-            Value* arg = curried_data->first_arg;
-            if (fn->is_primitive()) {
-                PrimitiveFn* prim_fn = fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(machine, arg);
-                    operand_val = machine->result;  // Use the finalized value
-                }
-            }
+        Value::CurriedFnData* cd = operand_val->data.curried_fn;
+        if (cd->curry_type == Value::CurryType::G_PRIME ||
+            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
+            machine->push_kont(this);
+            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
+            return;
         }
     }
 
@@ -665,20 +729,14 @@ void EvalStrandElementK::invoke(Machine* machine) {
     // Add it to the FRONT of evaluated_values (we're going right-to-left)
     Value* current_val = machine->result;
 
-    // G2 g' finalization: Unwrap g' curried functions before adding to strand
+    // g' finalization: Finalize curries before adding to strand
     if (current_val && current_val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = current_val->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            // Unwrap g' curried function
-            Value* fn = curried_data->fn;
-            Value* arg = curried_data->first_arg;
-            if (fn->is_primitive()) {
-                PrimitiveFn* prim_fn = fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(machine, arg);
-                    current_val = machine->result;  // Use the finalized value
-                }
-            }
+        Value::CurriedFnData* cd = current_val->data.curried_fn;
+        if (cd->curry_type == Value::CurryType::G_PRIME ||
+            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
+            machine->push_kont(this);
+            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
+            return;
         }
     }
 
@@ -1013,21 +1071,30 @@ void DispatchFunctionK::invoke(Machine* machine) {
         Value* first_arg = curried_data->first_arg;
 
         if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
-            // Simple dyadic curry: fn was curried with first_arg (RIGHT/omega)
-            // Now apply right_val as the LEFT/alpha argument
-            // In G2 semantics: captured arg is omega, new arg is alpha
+            // DYADIC_CURRY g' transformation:
+            // null(y) → g1(x), bas(y) → g2(x,y), else → y(g1(x))
             if (right_val == nullptr) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: curried function expects argument"));
+                // null(y): finalize monadically via DispatchFunctionK
+                DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
+                    inner_fn, nullptr, first_arg);
+                dispatch->force_monadic = true;
+                machine->push_kont(dispatch);
+                return;
+            } else if (right_val->is_basic_value()) {
+                // bas(y): apply dyadically with swapped args
+                fn_val = inner_fn;
+                left_val = right_val;
+                right_val = first_arg;
+                // Fall through to dispatch
+            } else {
+                // y is a function: first finalize g1(x), then apply y to result
+                machine->push_kont(machine->heap->allocate<PerformJuxtaposeK>(right_val));
+                DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
+                    inner_fn, nullptr, first_arg);
+                dispatch->force_monadic = true;
+                machine->push_kont(dispatch);
                 return;
             }
-
-            // Update state: swap arguments like G_PRIME does
-            // right_val (newly applied) becomes LEFT (alpha)
-            // first_arg (captured) becomes RIGHT (omega)
-            fn_val = inner_fn;
-            left_val = right_val;   // New argument is LEFT (alpha)
-            right_val = first_arg;  // Captured argument is RIGHT (omega)
-            // Fall through to check fn_val type below
         } else if (curried_data->curry_type == Value::CurryType::OPERATOR_CURRY) {
             // Operator curry: inner_fn is DERIVED_OPERATOR, first_arg is second operand
             // For inner product: first_arg is second function operand (×)
@@ -1104,6 +1171,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 fn_val = inner_fn;
                 left_val = nullptr;
                 right_val = first_arg;
+                first_arg = nullptr;  // Clear to prevent misuse in DERIVED_OPERATOR handling
                 // Fall through to apply monadic
             } else if (right_val->is_basic_value()) {
                 // bas(y): Second argument is a basic value - apply dyadically
@@ -1112,6 +1180,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 fn_val = inner_fn;
                 left_val = right_val;  // New argument is LEFT (alpha)
                 right_val = first_arg; // Captured argument is RIGHT (omega)
+                first_arg = nullptr;  // Clear to prevent misuse in DERIVED_OPERATOR handling
                 // Fall through to apply dyadic
             } else {
                 // y is a function: apply y(g1(x))
@@ -1192,14 +1261,15 @@ void DispatchFunctionK::invoke(Machine* machine) {
             } else if (op->dyadic && left_val) {
                 // Have left array but arrays weren't extracted - use original values
                 op->dyadic(machine, left_val, first_operand, second_func_operand, right_val);
+            } else if (op->monadic && !left_val) {
+                // Monadic operator application - prefer this over curry when available
+                // This handles cases like +/1 2 3 (reduce with no N argument)
+                op->monadic(machine, first_operand, right_val);
             } else if (op->dyadic && !left_val) {
-                // Only have right argument - this is the second operator operand
+                // Only have right argument and no monadic form - curry for second operand
                 // Use OPERATOR_CURRY to capture it properly (not DYADIC_CURRY which is for array args)
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
                 machine->result = curried;
-            } else if (op->monadic && !left_val) {
-                // Pure monadic operator - apply immediately
-                op->monadic(machine, first_operand, right_val);
             } else {
                 machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires operands"));
             }
@@ -2813,6 +2883,17 @@ void IndexedAssignIndexK::mark(Heap* heap) {
 void PerformIndexedAssignK::invoke(Machine* machine) {
     // Index just evaluated
     index_val = machine->result;
+
+    // g' finalization: If index is a curry, finalize it first
+    if (index_val && index_val->tag == ValueType::CURRIED_FN) {
+        Value::CurriedFnData* cd = index_val->data.curried_fn;
+        if (cd->curry_type == Value::CurryType::G_PRIME ||
+            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
+            machine->push_kont(this);
+            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
+            return;
+        }
+    }
 
     // Lookup the array variable
     Value* arr = machine->env->lookup(var_name);

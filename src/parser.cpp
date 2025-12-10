@@ -215,6 +215,7 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_EXECUTE:
                 case TOK_FORMAT:
                 case TOK_TABLE:
+                case TOK_SQUAD:
                 case TOK_MATCH:
                 case TOK_LEFT_TACK:
                 case TOK_RIGHT_TACK:
@@ -299,7 +300,10 @@ Continuation* Parser::nud(const Token& token) {
             }
             advance();  // consume ')'
 
-            return inner;
+            // Wrap in FinalizeK to force g' finalization of curries
+            // This ensures (f/x) becomes a value before being used in strand context
+            FinalizeK* finalize = machine->heap->allocate<FinalizeK>(inner);
+            return finalize;
         }
 
         case TOK_RAVEL: {
@@ -369,6 +373,7 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_EXECUTE:
         case TOK_FORMAT:
         case TOK_TABLE:
+        case TOK_SQUAD:
         case TOK_MATCH:
         case TOK_LEFT_TACK:
         case TOK_RIGHT_TACK: {
@@ -420,6 +425,7 @@ Continuation* Parser::nud(const Token& token) {
                 case TOK_EXECUTE:       op_name = "⍎"; break;
                 case TOK_FORMAT:        op_name = "⍕"; break;
                 case TOK_TABLE:         op_name = "⍪"; break;
+                case TOK_SQUAD:         op_name = "⌷"; break;
                 case TOK_MATCH:         op_name = "≡"; break;
                 case TOK_LEFT_TACK:     op_name = "⊣"; break;
                 case TOK_RIGHT_TACK:    op_name = "⊢"; break;
@@ -532,19 +538,25 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             }
 
             // Check for indexed assignment: A[I]←V
-            // A[I] is parsed as DyadicK("⌷", array_cont, index_cont)
-            DyadicK* dyadic = dynamic_cast<DyadicK*>(left);
-            if (dyadic && strcmp(dyadic->op_name, "⌷") == 0) {
-                // Extract variable name - must be a LookupK
-                LookupK* lookup = dynamic_cast<LookupK*>(dyadic->left);
-                if (!lookup) {
-                    error_message_ = "Left side of indexed assignment must be a variable";
-                    return nullptr;
+            // A[I] is parsed as JuxtaposeK(I, JuxtaposeK(⌷, A)) for proper curry handling
+            JuxtaposeK* outer = dynamic_cast<JuxtaposeK*>(left);
+            if (outer) {
+                JuxtaposeK* inner = dynamic_cast<JuxtaposeK*>(outer->right);
+                if (inner) {
+                    LookupK* squad_lookup = dynamic_cast<LookupK*>(inner->left);
+                    if (squad_lookup && strcmp(squad_lookup->var_name, "⌷") == 0) {
+                        // Extract variable name from inner->right (the array)
+                        LookupK* var_lookup = dynamic_cast<LookupK*>(inner->right);
+                        if (!var_lookup) {
+                            error_message_ = "Left side of indexed assignment must be a variable";
+                            return nullptr;
+                        }
+                        // outer->left is the index, inner->right is the array variable
+                        IndexedAssignK* indexed_assign = machine->heap->allocate<IndexedAssignK>(
+                            var_lookup->var_name, outer->left, right);
+                        return indexed_assign;
+                    }
                 }
-                // Pass var_name (interned string) and index_cont through
-                IndexedAssignK* indexed_assign = machine->heap->allocate<IndexedAssignK>(
-                    lookup->var_name, dyadic->right, right);
-                return indexed_assign;
             }
 
             // Regular assignment: left side must be a LookupK (variable name)
@@ -667,9 +679,8 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         }
 
         case TOK_LBRACKET: {
-            // Bracket indexing: A[I]
-            // Parse index expression, create DyadicK with ⌷ (squad)
-            // Note: [ already consumed by parse_expression before calling led()
+            // Bracket indexing: A[I] is equivalent to I⌷A
+            // Use JuxtaposeK instead of DyadicK to go through proper curry handling
             Continuation* index_cont = parse_expression(0);
             if (!index_cont) {
                 error_message_ = "Expected index expression after [";
@@ -681,9 +692,13 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             }
             advance();  // consume ]
 
+            // Build I⌷A as JuxtaposeK(I, JuxtaposeK(⌷, A))
+            // This goes through DispatchFunctionK which handles curry finalization
             const char* squad_name = machine->string_pool.intern("⌷");
-            DyadicK* dyadic = machine->heap->allocate<DyadicK>(squad_name, left, index_cont);
-            return dyadic;
+            LookupK* squad_lookup = machine->heap->allocate<LookupK>(squad_name);
+            JuxtaposeK* squad_array = machine->heap->allocate<JuxtaposeK>(squad_lookup, left);
+            JuxtaposeK* full_expr = machine->heap->allocate<JuxtaposeK>(index_cont, squad_array);
+            return full_expr;
         }
 
         default:

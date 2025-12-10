@@ -113,8 +113,7 @@ Value* Machine::eval(const std::string& input) {
 }
 
 // Execute the machine until halt
-// This is the main trampoline loop that drives the CEK machine
-// Phase 3.3: Pure trampoline - just pop and invoke until stack empty
+// Main trampoline loop - pure continuation-based execution
 Value* Machine::execute() {
     // Main evaluation loop
     while (!kont_stack.empty()) {
@@ -129,15 +128,13 @@ Value* Machine::execute() {
         maybe_gc();
     }
 
-    // Finalize curries at top level - loop until stable
-    // Some curries (like partial application of pure dyadic) shouldn't be finalized
+    // Finalize curries at top level via continuation graph
     while (result && result->tag == ValueType::CURRIED_FN) {
-        size_t stack_size_before = kont_stack.size();
         Value* result_before = result;
 
-        finalize_curry();
+        push_kont(heap->allocate<PerformFinalizeK>());
 
-        // If finalization pushed continuations, process them
+        // Run the finalization
         while (!kont_stack.empty()) {
             Continuation* k = kont_stack.back();
             kont_stack.pop_back();
@@ -145,83 +142,13 @@ Value* Machine::execute() {
             maybe_gc();
         }
 
-        // If result didn't change and no continuations were pushed, we're done
-        // (curry can't be finalized - it's a valid partial application)
-        if (result == result_before && stack_size_before == 0) {
+        // If result unchanged, curry can't be finalized (valid partial application)
+        if (result == result_before) {
             break;
         }
     }
 
     return result;
-}
-
-void Machine::finalize_curry() {
-    // Finalize curried function at top level (null y case of g')
-    // Per paper: g' = λx . λy . if null(y) then g1(x) ...
-    // May push continuations - caller's loop will process them
-    Value::CurriedFnData* curried_data = result->data.curried_fn;
-    Value* fn = curried_data->fn;
-    Value* arg = curried_data->first_arg;
-
-    switch (curried_data->curry_type) {
-    case Value::CurryType::G_PRIME:
-        // g' curried function - finalize by applying monadic form: g1(x)
-        switch (fn->tag) {
-        case ValueType::PRIMITIVE:
-            if (fn->data.primitive_fn->monadic) {
-                fn->data.primitive_fn->monadic(this, arg);
-            }
-            // No monadic form - leave curry as-is (caller detects no change)
-            break;
-        case ValueType::DERIVED_OPERATOR: {
-            Value::DerivedOperatorData* derived = fn->data.derived_op;
-            if (derived->op->monadic) {
-                derived->op->monadic(this, derived->first_operand, arg);
-            }
-            break;
-        }
-        case ValueType::CLOSURE: {
-            // Dfn - use DispatchFunctionK with force_monadic
-            DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg);
-            dispatch->force_monadic = true;
-            push_kont(dispatch);
-            break;
-        }
-        default:
-            break;
-        }
-        break;
-
-    case Value::CurryType::DYADIC_CURRY:
-        // Operator-derived curry at top level - apply monadically
-        switch (fn->tag) {
-        case ValueType::DERIVED_OPERATOR: {
-            Value::DerivedOperatorData* derived = fn->data.derived_op;
-            if (derived->op->monadic) {
-                derived->op->monadic(this, derived->first_operand, arg);
-            }
-            break;
-        }
-        case ValueType::CURRIED_FN: {
-            // Nested: (f⍤k) B or (f/[axis]) B at top level
-            Value::CurriedFnData* inner = fn->data.curried_fn;
-            if (inner->curry_type == Value::CurryType::OPERATOR_CURRY &&
-                inner->fn->tag == ValueType::DERIVED_OPERATOR) {
-                Value::DerivedOperatorData* derived = inner->fn->data.derived_op;
-                if (derived->op->dyadic) {
-                    derived->op->dyadic(this, nullptr, derived->first_operand, inner->first_arg, arg);
-                }
-            }
-            break;
-        }
-        default:
-            break;
-        }
-        break;
-
-    default:
-        break;
-    }
 }
 
 // Phase 2 complete: Completion handling now done through continuations

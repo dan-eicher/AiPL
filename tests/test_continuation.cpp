@@ -1506,6 +1506,365 @@ TEST_F(ContinuationTest, GPrimeAllMonadicFinalizedAtTopLevel) {
     EXPECT_EQ(result->rows(), 5);
 }
 
+// ============================================================================
+// Curry Finalization Consistency Tests
+// These test that all curry finalization paths handle all function types
+// ============================================================================
+
+// Test: PerformAssignK should finalize G_PRIME curry of CLOSURE
+TEST_F(ContinuationTest, PerformAssignKFinalizesClosureCurry) {
+    // Create a dfn: {⍵+1}
+    Value* result = machine->eval("{⍵+1}");
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->tag, ValueType::CLOSURE);
+
+    // Create G_PRIME curry of the closure with arg 5
+    Value* five = machine->heap->allocate_scalar(5.0);
+    Value* curried = machine->heap->allocate_curried_fn(result, five, Value::CurryType::G_PRIME);
+
+    // Assign it: A←curried should finalize to 6
+    machine->result = curried;
+    const char* var_name = machine->string_pool.intern("TestA");
+    PerformAssignK* assign = heap->allocate<PerformAssignK>(var_name);
+    machine->push_kont(assign);
+    result = machine->execute();
+
+    // Should be finalized to 6, not remain as curry
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "PerformAssignK should finalize CLOSURE curry";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+    }
+}
+
+// Test: PerformAssignK should finalize G_PRIME curry of DERIVED_OPERATOR
+TEST_F(ContinuationTest, PerformAssignKFinalizesDerivedOpCurry) {
+    // Create +/ derived operator
+    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* reduce_op = machine->heap->allocate_derived_operator(&op_reduce, plus_fn);
+
+    // Create G_PRIME curry with 1 2 3 4 5
+    Eigen::VectorXd vec(5);
+    vec << 1, 2, 3, 4, 5;
+    Value* arr = machine->heap->allocate_vector(vec);
+    Value* curried = machine->heap->allocate_curried_fn(reduce_op, arr, Value::CurryType::G_PRIME);
+
+    // Assign it: A←curried should finalize to 15
+    machine->result = curried;
+    const char* var_name = machine->string_pool.intern("TestB");
+    PerformAssignK* assign = heap->allocate<PerformAssignK>(var_name);
+    machine->push_kont(assign);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "PerformAssignK should finalize DERIVED_OPERATOR curry";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+    }
+}
+
+// Test: EvalStrandElementK should finalize G_PRIME curry of CLOSURE in strand
+TEST_F(ContinuationTest, StrandFinalizesClosureCurry) {
+    // {⍵+1}5 in a strand context: 1 ({⍵+1}5) 3 should give 1 6 3
+    Value* result = machine->eval("1 ({⍵+1}5) 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector()) << "Strand should finalize CLOSURE curry";
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 3);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+    }
+}
+
+// Test: Assigned reduce result should be usable in strand
+TEST_F(ContinuationTest, AssignedReduceUsableInStrand) {
+    // A←+/1 2 3 should store 6, then 10 A 20 should give 10 6 20
+    machine->eval("A←+/1 2 3");
+    Value* a_val = machine->env->lookup("A");
+    ASSERT_NE(a_val, nullptr);
+    EXPECT_TRUE(a_val->is_scalar()) << "Assignment should store finalized value, not curry";
+    if (a_val->is_scalar()) {
+        EXPECT_DOUBLE_EQ(a_val->as_scalar(), 6.0);
+    }
+
+    // Now use A in a strand - should work without N-wise reduce errors
+    Value* result = machine->eval("10 A 20");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 3);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 20.0);
+    }
+}
+
+// Test: fn_squad (⌷) should finalize G_PRIME curry used as index
+TEST_F(ContinuationTest, SquadFinalizesIndexCurry) {
+    // (⍳3)⌷10 20 30 40 50 should give 10 20 30 (indices 1 2 3)
+    Value* result = machine->eval("(⍳3)⌷10 20 30 40 50");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector()) << "Squad should finalize index curry";
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 3);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 20.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 30.0);
+    }
+}
+
+// Test: ApplyMonadicK consistency - should create G_PRIME for all monadic
+TEST_F(ContinuationTest, ApplyMonadicKCreatesGPrimeForAllMonadic) {
+    // ⍳5 via ApplyMonadicK path should work same as DispatchFunctionK
+    // Both should create G_PRIME curry that gets finalized at top level
+    Value* result = machine->eval("⍳5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->rows(), 5);
+}
+
+// Test: Assignment with execute returning curry: A←⍎'+/⍳5'
+TEST_F(ContinuationTest, AssignExecuteWithCurry) {
+    Value* result = machine->eval("A←⍎'+/⍳5'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "Execute returning curry should be finalized before assignment";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+    }
+
+    // Verify the variable got the finalized value
+    Value* a_val = machine->env->lookup("A");
+    ASSERT_NE(a_val, nullptr);
+    EXPECT_TRUE(a_val->is_scalar());
+    if (a_val->is_scalar()) {
+        EXPECT_DOUBLE_EQ(a_val->as_scalar(), 15.0);
+    }
+}
+
+// Test: DYADIC_CURRY as left operand of dyadic function
+// Per g': when y is a function, result is y(g1(x)) - finalize first, then apply y
+TEST_F(ContinuationTest, DyadicCurryAsLeftOperand) {
+    // (+/1 2 3) + 10 should give 16
+    // +/1 2 3 creates DYADIC_CURRY, must be finalized to 6 before dyadic +
+    Value* result = machine->eval("(+/1 2 3) + 10");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "(+/1 2 3) + 10 should produce scalar 16";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);
+    }
+}
+
+// Test: DYADIC_CURRY in the middle of a strand
+TEST_F(ContinuationTest, DyadicCurryInStrand) {
+    // 1 2 (+/1 2 3) 4 should give 1 2 6 4
+    // The curry must be finalized before strand formation
+    Value* result = machine->eval("1 2 (+/1 2 3) 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector()) << "Strand with curry should produce vector";
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 4);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);
+        EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);
+    }
+}
+
+// Test: G_PRIME curry as left operand
+TEST_F(ContinuationTest, GPrimeAsLeftOperand) {
+    // (⍳5) + 10 should give 11 12 13 14 15
+    // ⍳5 creates G_PRIME, must be finalized to 1 2 3 4 5 before dyadic +
+    Value* result = machine->eval("(⍳5) + 10");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector()) << "(⍳5) + 10 should produce vector";
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 5);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 11.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 12.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 13.0);
+        EXPECT_DOUBLE_EQ((*m)(3, 0), 14.0);
+        EXPECT_DOUBLE_EQ((*m)(4, 0), 15.0);
+    }
+}
+
+// Test: Nested reduce curries
+TEST_F(ContinuationTest, NestedReduceCurries) {
+    // (+/1 2 3) + (+/10 20) should give 6 + 30 = 36
+    Value* result = machine->eval("(+/1 2 3) + (+/10 20)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 36.0);
+    }
+}
+
+// ============================================================================
+// Additional Curry Finalization Edge Case Tests
+// ============================================================================
+
+// Test: Curry as bracket index - finalized curry used as index
+TEST_F(ContinuationTest, CurryAsBracketIndex) {
+    // (⍳5)[+/1 2] should finalize +/1 2 to 3, then index at position 3
+    Value* result = machine->eval("(⍳5)[+/1 2]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "Bracket index with curry should return scalar";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);  // ⎕IO=1, so position 3 is value 3
+    }
+}
+
+// Test: Curry in indexed assignment - curry as index position
+TEST_F(ContinuationTest, CurryInIndexedAssignment) {
+    // A←⍳10 ⋄ A[+/1 2 3]←99 should set A[6]←99
+    machine->eval("A←⍳10");
+    Value* result = machine->eval("A[+/1 2 3]←99");
+    ASSERT_NE(result, nullptr);
+
+    // Check that A[6] is now 99
+    Value* a_val = machine->env->lookup("A");
+    ASSERT_NE(a_val, nullptr);
+    EXPECT_TRUE(a_val->is_vector());
+    if (a_val->is_vector()) {
+        const Eigen::MatrixXd* m = a_val->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(5, 0), 99.0);  // Index 6 (⎕IO=1) is position 5 (0-based)
+    }
+}
+
+// Test: Double parentheses - nested finalization
+TEST_F(ContinuationTest, DoubleParenthesesFinalization) {
+    // ((+/1 2 3)) should finalize to 6
+    Value* result = machine->eval("((+/1 2 3))");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "Double parentheses should finalize curry";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+    }
+}
+
+// Test: Shape of finalized curry - monadic ⍴ on finalized reduce
+TEST_F(ContinuationTest, ShapeOfFinalizedCurry) {
+    // ⍴(+/1 2 3) should give ⍬ (empty shape = scalar)
+    Value* result = machine->eval("⍴(+/1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector()) << "Shape should return vector";
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 0) << "Shape of scalar should be empty vector";
+    }
+}
+
+// Test: Dfn applied to finalized curry
+TEST_F(ContinuationTest, DfnAppliedToFinalizedCurry) {
+    // {⍵+1}(+/1 2 3) should finalize curry to 6, then apply dfn to get 7
+    Value* result = machine->eval("{⍵+1}(+/1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "Dfn should receive finalized value";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+    }
+}
+
+// Test: Parenthesized derived function applied monadically
+TEST_F(ContinuationTest, ParenthesizedDerivedFunctionMonadic) {
+    // (+/)1 2 3 should apply reduce monadically (not curry)
+    Value* result = machine->eval("(+/)1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar()) << "Parenthesized reduce should apply monadically";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+    }
+}
+
+// Test: Triple nested curry finalization
+TEST_F(ContinuationTest, TripleNestedCurryFinalization) {
+    // (((⍳3))) should finalize to 1 2 3
+    Value* result = machine->eval("(((⍳3)))");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 3);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+    }
+}
+
+// Test: Curry in take operation - curry as left argument
+TEST_F(ContinuationTest, CurryInTakeOperation) {
+    // (+/1 2)↑10 20 30 40 50 should finalize curry to 3, take first 3 elements
+    Value* result = machine->eval("(+/1 2)↑10 20 30 40 50");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 3);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 20.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 30.0);
+    }
+}
+
+// Test: Curry in reshape - both arguments are curries
+TEST_F(ContinuationTest, CurryInReshapeBothArgs) {
+    // (+/1 2)⍴(×/2 3) should be 3⍴6 = 6 6 6
+    Value* result = machine->eval("(+/1 2)⍴(×/2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 3);
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 6.0);
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);
+    }
+}
+
+// Test: Curry used as right operand in operator - reduce with curry axis
+// This tests OPERATOR_CURRY path in DispatchFunctionK
+TEST_F(ContinuationTest, CurryAsOperatorSecondOperand) {
+    // 2 3⍴⍳6 gives matrix, then +/[1]mat reduces along axis 1
+    // But first test simpler case: +/(⍳5) should reduce the finalized vector
+    Value* result = machine->eval("+/(⍳5)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);  // 1+2+3+4+5
+    }
+}
+
+// Test: Curry in comparison chain - finalized curries in relational ops
+TEST_F(ContinuationTest, CurryInComparisonChain) {
+    // (+/1 2 3) = (+/2 4) tests if 6 = 6, should give 1
+    Value* result = machine->eval("(+/1 2 3) = (+/2 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 6 = 6 → 1
+    }
+}
+
+// Test: N-wise reduction should NOT finalize when legitimate curry
+TEST_F(ContinuationTest, NWiseReductionNotPrematurelyFinalized) {
+    // 2+/1 2 3 4 5 should do N-wise reduction (2-wise sums), not finalize +
+    Value* result = machine->eval("2+/1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector()) << "N-wise reduction should produce vector";
+    if (result->is_vector()) {
+        EXPECT_EQ(result->rows(), 4);  // 5-2+1 = 4 windows
+        const Eigen::MatrixXd* m = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);   // 1+2
+        EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);   // 2+3
+        EXPECT_DOUBLE_EQ((*m)(2, 0), 7.0);   // 3+4
+        EXPECT_DOUBLE_EQ((*m)(3, 0), 9.0);   // 4+5
+    }
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

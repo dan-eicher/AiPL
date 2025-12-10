@@ -3294,60 +3294,33 @@ void fn_encode(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // ============================================================================
-// Squad (Index): A[I] via ⌷
+// Squad (Index): I⌷A per ISO 13751
 // ============================================================================
 // APL uses 1-based indexing (⎕IO=1)
+// I⌷A: I=indices (left), A=array (right)
 
 void fn_squad(Machine* m, Value* lhs, Value* rhs) {
-    // lhs = array, rhs = index
-
-    // Finalize G_PRIME curried functions (e.g., from ⍳5)
-    // Per Georgeff et al: g' with null(y) → apply g1(x)
-    if (lhs->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = lhs->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            Value* inner_fn = curried_data->fn;
-            Value* first_arg = curried_data->first_arg;
-            if (inner_fn->is_primitive()) {
-                PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(m, first_arg);
-                    lhs = m->result;  // Use the finalized result
-                }
-            }
-        }
-    }
-    if (rhs->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = rhs->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            Value* inner_fn = curried_data->fn;
-            Value* first_arg = curried_data->first_arg;
-            if (inner_fn->is_primitive()) {
-                PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(m, first_arg);
-                    rhs = m->result;  // Use the finalized result
-                }
-            }
-        }
-    }
+    // ISO 13751: I⌷A where lhs=indices, rhs=array
+    // Curry finalization is handled by DispatchFunctionK in the continuation graph
+    Value* indices = lhs;
+    Value* array = rhs;
 
     // Convert STRING to char vector so all arrays use the same code path
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (array->is_string()) array = array->to_char_vector(m->heap);
 
     // Handle array indexing
-    if (!lhs->is_array() && !lhs->is_scalar()) {
+    if (!array->is_array() && !array->is_scalar()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot index non-array value"));
         return;
     }
 
-    const Eigen::MatrixXd* arr = lhs->as_matrix();
+    const Eigen::MatrixXd* arr = array->as_matrix();
     int rows = arr->rows();
     int cols = arr->cols();
     bool is_vec = (cols == 1);
 
-    if (rhs->is_scalar()) {
-        int idx = static_cast<int>(rhs->as_scalar()) - m->io;  // ⎕IO
+    if (indices->is_scalar()) {
+        int idx = static_cast<int>(indices->as_scalar()) - m->io;  // ⎕IO
         if (is_vec) {
             if (idx < 0 || idx >= rows) {
                 m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
@@ -3365,8 +3338,8 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
             int col = idx % cols;
             m->result = m->heap->allocate_scalar((*arr)(row, col));
         }
-    } else if (rhs->is_array()) {
-        const Eigen::MatrixXd* idx_mat = rhs->as_matrix();
+    } else if (indices->is_array()) {
+        const Eigen::MatrixXd* idx_mat = indices->as_matrix();
         int n = idx_mat->rows();
 
         if (is_vec) {

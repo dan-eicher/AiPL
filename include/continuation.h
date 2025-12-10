@@ -324,6 +324,34 @@ protected:
     void invoke(Machine* machine) override;
 };
 
+// FinalizeK - Forces g' finalization of parenthesized expressions
+// When a parenthesized expression evaluates to a curry, finalize it to a value
+// This ensures (f/x) becomes a value before being used in strand context
+class FinalizeK : public Continuation {
+public:
+    Continuation* inner;  // The expression to evaluate and finalize
+
+    FinalizeK(Continuation* expr) : inner(expr) {}
+
+    ~FinalizeK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// PerformFinalizeK - Auxiliary that checks result after inner evaluates
+class PerformFinalizeK : public Continuation {
+public:
+    PerformFinalizeK() {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
 // MonadicK - Monadic function application (e.g., -x, ⍳x)
 // Evaluates operand, then applies monadic function
 class MonadicK : public Continuation {
