@@ -3190,6 +3190,12 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
 // 10⊥1 2 3 → 123 (decimal digits)
 // 24 60 60⊥1 30 45 → 5445 (hours:mins:secs to seconds)
 void fn_decode(Machine* m, Value* lhs, Value* rhs) {
+    // Fast path: scalar radix with scalar digit → just return the digit
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3444,10 +3450,10 @@ void fn_match(Machine* m, Value* alpha, Value* omega) {
         return;
     }
 
-    // Handle strings
+    // Handle strings - pointer comparison is valid since all strings are interned
     if (alpha->is_string() && omega->is_string()) {
         m->result = m->heap->allocate_scalar(
-            strcmp(alpha->as_string(), omega->as_string()) == 0 ? 1.0 : 0.0);
+            alpha->as_string() == omega->as_string() ? 1.0 : 0.0);
         return;
     }
 
