@@ -382,57 +382,7 @@ Continuation* Parser::nud(const Token& token) {
             // Monadic behavior emerges from juxtaposition + runtime semantics
             // So ALWAYS create LookupK for primitive function tokens
 
-            const char* op_name = nullptr;
-            switch (token.type) {
-                case TOK_PLUS:          op_name = "+"; break;
-                case TOK_MINUS:         op_name = "-"; break;
-                case TOK_TIMES:         op_name = "×"; break;
-                case TOK_POWER:         op_name = "*"; break;
-                case TOK_DIVIDE:        op_name = "÷"; break;
-                case TOK_RESHAPE:       op_name = "⍴"; break;
-                case TOK_IOTA:          op_name = "⍳"; break;
-                case TOK_EQUAL:         op_name = "="; break;
-                case TOK_NOT_EQUAL:     op_name = "≠"; break;
-                case TOK_LESS:          op_name = "<"; break;
-                case TOK_LESS_EQUAL:    op_name = "≤"; break;
-                case TOK_GREATER:       op_name = ">"; break;
-                case TOK_GREATER_EQUAL: op_name = "≥"; break;
-                case TOK_CEILING:       op_name = "⌈"; break;
-                case TOK_FLOOR:         op_name = "⌊"; break;
-                case TOK_AND:           op_name = "∧"; break;
-                case TOK_OR:            op_name = "∨"; break;
-                case TOK_NOT:           op_name = "~"; break;
-                case TOK_NAND:          op_name = "⍲"; break;
-                case TOK_NOR:           op_name = "⍱"; break;
-                case TOK_STILE:         op_name = "|"; break;
-                case TOK_LOG:           op_name = "⍟"; break;
-                case TOK_FACTORIAL:     op_name = "!"; break;
-                case TOK_TRANSPOSE:     op_name = "⍉"; break;
-                case TOK_TAKE:          op_name = "↑"; break;
-                case TOK_DROP:          op_name = "↓"; break;
-                case TOK_REVERSE:       op_name = "⌽"; break;
-                case TOK_REVERSE_FIRST: op_name = "⊖"; break;
-                case TOK_TALLY:         op_name = "≢"; break;
-                case TOK_MEMBER:        op_name = "∊"; break;
-                case TOK_GRADE_UP:      op_name = "⍋"; break;
-                case TOK_GRADE_DOWN:    op_name = "⍒"; break;
-                case TOK_UNION:         op_name = "∪"; break;
-                case TOK_CIRCLE:        op_name = "○"; break;
-                case TOK_QUESTION:      op_name = "?"; break;
-                case TOK_DECODE:        op_name = "⊥"; break;
-                case TOK_ENCODE:        op_name = "⊤"; break;
-                case TOK_DOMINO:        op_name = "⌹"; break;
-                case TOK_EXECUTE:       op_name = "⍎"; break;
-                case TOK_FORMAT:        op_name = "⍕"; break;
-                case TOK_TABLE:         op_name = "⍪"; break;
-                case TOK_SQUAD:         op_name = "⌷"; break;
-                case TOK_MATCH:         op_name = "≡"; break;
-                case TOK_LEFT_TACK:     op_name = "⊣"; break;
-                case TOK_RIGHT_TACK:    op_name = "⊢"; break;
-                default: break;
-            }
-
-            const char* interned_name = machine->string_pool.intern(op_name);
+            const char* interned_name = machine->string_pool.intern(token_type_name(token.type));
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             return lookup;
         }
