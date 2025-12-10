@@ -792,6 +792,45 @@ TEST_F(LexerTest, DyadicFormatExpression) {
     EXPECT_EQ(tokens[2].type, TOK_NUMBER);
 }
 
+// Test left tack token (⊣)
+TEST_F(LexerTest, LeftTackToken) {
+    auto tokens = tokenize("⊣");
+    ASSERT_EQ(tokens.size(), 2);  // ⊣ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_LEFT_TACK);
+}
+
+// Test right tack token (⊢)
+TEST_F(LexerTest, RightTackToken) {
+    auto tokens = tokenize("⊢");
+    ASSERT_EQ(tokens.size(), 2);  // ⊢ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_RIGHT_TACK);
+}
+
+// Test squad token (⌷)
+TEST_F(LexerTest, SquadToken) {
+    auto tokens = tokenize("⌷");
+    ASSERT_EQ(tokens.size(), 2);  // ⌷ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_SQUAD);
+}
+
+// Test left/right tack in expressions
+TEST_F(LexerTest, TackInExpression) {
+    auto tokens = tokenize("3⊣5");
+    ASSERT_EQ(tokens.size(), 4);  // 3 ⊣ 5 EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);
+    EXPECT_EQ(tokens[1].type, TOK_LEFT_TACK);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+}
+
+// Test squad in expression
+TEST_F(LexerTest, SquadInExpression) {
+    auto tokens = tokenize("2⌷1 2 3");
+    ASSERT_EQ(tokens.size(), 4);  // 2 ⌷ VECTOR EOF
+    EXPECT_EQ(tokens[0].type, TOK_NUMBER);
+    EXPECT_EQ(tokens[1].type, TOK_SQUAD);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER_VECTOR);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

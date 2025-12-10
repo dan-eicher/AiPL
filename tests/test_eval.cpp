@@ -4355,6 +4355,92 @@ TEST_F(EvalTest, MatchDyadicBasic) {
 }
 
 // ============================================================================
+// Left Tack (⊣) and Right Tack (⊢) Tests - ISO 13751 Section 10.2.17-18
+// ============================================================================
+
+TEST_F(EvalTest, LeftTackDyadic) {
+    // ⍺⊣⍵ returns ⍺ (left argument)
+    Value* result = machine->eval("3⊣5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(EvalTest, RightTackDyadic) {
+    // ⍺⊢⍵ returns ⍵ (right argument)
+    Value* result = machine->eval("3⊢5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(EvalTest, LeftTackMonadic) {
+    // ⊣⍵ returns ⍵ (identity)
+    Value* result = machine->eval("⊣7");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(EvalTest, RightTackMonadic) {
+    // ⊢⍵ returns ⍵ (identity)
+    Value* result = machine->eval("⊢7");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(EvalTest, LeftTackWithVector) {
+    // ⍺⊣⍵ returns ⍺ even with vector arguments
+    Value* result = machine->eval("1 2 3 ⊣ 4 5 6");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+TEST_F(EvalTest, RightTackWithVector) {
+    // ⍺⊢⍵ returns ⍵ even with vector arguments
+    Value* result = machine->eval("1 2 3 ⊢ 4 5 6");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 6.0);
+}
+
+// ============================================================================
+// Squad (⌷) Tests - ISO 13751 Section 10.2.5
+// ============================================================================
+
+TEST_F(EvalTest, SquadScalarIndex) {
+    // I⌷V - scalar index into vector
+    Value* result = machine->eval("2⌷10 20 30 40");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
+}
+
+TEST_F(EvalTest, SquadVectorIndex) {
+    // I⌷V - vector index into vector
+    Value* result = machine->eval("2 4⌷10 20 30 40 50");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 20.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 40.0);
+}
+
+TEST_F(EvalTest, SquadWithIota) {
+    // (⍳n)⌷V - iota indices into vector
+    Value* result = machine->eval("(⍳3)⌷10 20 30 40 50");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 20.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 30.0);
+}
+
+// ============================================================================
 // Zilde (⍬) Tests - Empty Vector Literal
 // ============================================================================
 
