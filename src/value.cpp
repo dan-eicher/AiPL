@@ -116,23 +116,17 @@ const Eigen::MatrixXd* Value::as_matrix() const {
 void Value::mark(Heap* heap) {
     // If this is a CLOSURE, mark the continuation graph
     if (tag == ValueType::CLOSURE && data.closure) {
-        heap->mark_continuation(data.closure);
+        heap->mark(data.closure);
     }
 
     // Mark referenced Values in G2 grammar structures
     if (tag == ValueType::DERIVED_OPERATOR && data.derived_op) {
-        if (data.derived_op->first_operand) {
-            heap->mark_value(data.derived_op->first_operand);
-        }
+        heap->mark(data.derived_op->first_operand);
     }
 
     if (tag == ValueType::CURRIED_FN && data.curried_fn) {
-        if (data.curried_fn->fn) {
-            heap->mark_value(data.curried_fn->fn);
-        }
-        if (data.curried_fn->first_arg) {
-            heap->mark_value(data.curried_fn->first_arg);
-        }
+        heap->mark(data.curried_fn->fn);
+        heap->mark(data.curried_fn->first_arg);
     }
 
     // PRIMITIVEs and OPERATORs are C pointers, not GC objects

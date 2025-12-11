@@ -119,9 +119,7 @@ public:
 
     // Mark phase - mark all reachable objects
     void mark_from_roots(Machine* machine);
-    void mark_value(Value* val);
-    void mark_continuation(Continuation* k);
-    void mark_completion(Completion* comp);
+    void mark(GCObject* obj);  // Unified mark for any GC object
 
     // Sweep phase - reclaim unmarked values
     void sweep();

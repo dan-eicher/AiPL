@@ -134,12 +134,12 @@ TEST_F(HeapTest, MarkValue) {
 
     EXPECT_FALSE(v->marked);
 
-    machine->heap->mark_value(v);
+    machine->heap->mark(v);
 
     EXPECT_TRUE(v->marked);
 
     // Marking again should be idempotent
-    machine->heap->mark_value(v);
+    machine->heap->mark(v);
     EXPECT_TRUE(v->marked);
 }
 
@@ -344,12 +344,12 @@ TEST_F(HeapTest, MarkContinuation) {
 
     EXPECT_FALSE(k->marked);
 
-    machine->heap->mark_continuation(k);
+    machine->heap->mark(k);
 
     EXPECT_TRUE(k->marked);
 
     // Marking again should be idempotent
-    machine->heap->mark_continuation(k);
+    machine->heap->mark(k);
     EXPECT_TRUE(k->marked);
 }
 
@@ -365,7 +365,7 @@ TEST_F(HeapTest, MarkContinuationGraph) {
     EXPECT_EQ(machine->heap->young_continuations.size(), 4);
 
     // Mark only the head - should transitively mark entire graph
-    machine->heap->mark_continuation(k1);
+    machine->heap->mark(k1);
 
     EXPECT_TRUE(k1->marked);
     EXPECT_TRUE(k2->marked);
@@ -383,7 +383,7 @@ TEST_F(HeapTest, ArgKMarksValue) {
     EXPECT_FALSE(arg->marked);
     EXPECT_FALSE(k_arg->marked);
 
-    machine->heap->mark_continuation(k_arg);
+    machine->heap->mark(k_arg);
 
     EXPECT_TRUE(k_arg->marked);
     EXPECT_TRUE(k_next->marked);
@@ -406,7 +406,7 @@ TEST_F(HeapTest, ClosureMarksGraph) {
     EXPECT_FALSE(k_halt->marked);
 
     // Mark the closure - should transitively mark continuation graph
-    machine->heap->mark_value(closure);
+    machine->heap->mark(closure);
 
     EXPECT_TRUE(closure->marked);
     EXPECT_TRUE(k_body->marked);
@@ -575,7 +575,7 @@ TEST_F(HeapTest, BidirectionalMarking) {
     EXPECT_FALSE(arg->marked);
 
     // Mark the closure - should mark entire graph
-    machine->heap->mark_value(closure);
+    machine->heap->mark(closure);
 
     EXPECT_TRUE(closure->marked);
     EXPECT_TRUE(k_arg->marked);
@@ -604,7 +604,7 @@ TEST_F(HeapTest, ComplexContinuationGraph) {
     // allocate_closure already calls allocate() internally, don't double-allocate!
 
     // Mark only closure1
-    machine->heap->mark_value(closure1);
+    machine->heap->mark(closure1);
 
     // Should mark k1, k2, k_halt, value1
     EXPECT_TRUE(closure1->marked);
@@ -618,7 +618,7 @@ TEST_F(HeapTest, ComplexContinuationGraph) {
     EXPECT_FALSE(closure2->marked);
 
     // Now mark closure2
-    machine->heap->mark_value(closure2);
+    machine->heap->mark(closure2);
 
     // Now k3 and closure2 should be marked (k2 already marked)
     EXPECT_TRUE(k3->marked);
@@ -732,7 +732,7 @@ TEST_F(HeapTest, TemplateAllocationComplexTypes) {
     EXPECT_EQ(machine->heap->young_continuations.size(), 3);
 
     // Test marking through the chain
-    machine->heap->mark_continuation(k_frame);
+    machine->heap->mark(k_frame);
 
     EXPECT_TRUE(k_frame->marked);
     EXPECT_TRUE(k_arg->marked);

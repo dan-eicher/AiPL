@@ -92,9 +92,7 @@ void PropagateCompletionK::invoke(Machine* machine) {
 }
 
 void PropagateCompletionK::mark(Heap* heap) {
-    if (completion) {
-        heap->mark_completion(completion);
-    }
+    heap->mark(completion);
 }
 
 // CatchReturnK - Catches RETURN completions at function boundaries
@@ -176,9 +174,7 @@ void CatchContinueK::invoke(Machine* machine) {
 }
 
 void CatchContinueK::mark(Heap* heap) {
-    if (loop_cont) {
-        heap->mark_continuation(loop_cont);
-    }
+    heap->mark(loop_cont);
 }
 
 // CatchErrorK - Catches THROW completions (Phase 5)
@@ -241,9 +237,7 @@ void ClosureLiteralK::invoke(Machine* machine) {
 
 void ClosureLiteralK::mark(Heap* heap) {
     // Mark the body continuation graph
-    if (body) {
-        heap->mark_continuation(body);
-    }
+    heap->mark(body);
 }
 
 // LookupK implementation
@@ -282,9 +276,7 @@ void AssignK::invoke(Machine* machine) {
 }
 
 void AssignK::mark(Heap* heap) {
-    if (expr) {
-        heap->mark_continuation(expr);
-    }
+    heap->mark(expr);
 }
 
 // PerformAssignK implementation
@@ -358,7 +350,7 @@ void SysVarAssignK::invoke(Machine* machine) {
 }
 
 void SysVarAssignK::mark(Heap* heap) {
-    if (expr) heap->mark_continuation(expr);
+    heap->mark(expr);
 }
 
 // PerformSysVarAssignK implementation - perform actual system variable assignment
@@ -430,9 +422,7 @@ void StrandK::invoke(Machine* machine) {
 
 void StrandK::mark(Heap* heap) {
     // Mark the vector Value
-    if (vector_value) {
-        heap->mark_value(vector_value);
-    }
+    heap->mark(vector_value);
 }
 
 // ============================================================================
@@ -454,12 +444,8 @@ void JuxtaposeK::invoke(Machine* machine) {
 }
 
 void JuxtaposeK::mark(Heap* heap) {
-    if (left) {
-        heap->mark_continuation(left);
-    }
-    if (right) {
-        heap->mark_continuation(right);
-    }
+    heap->mark(left);
+    heap->mark(right);
 }
 
 // EvalJuxtaposeLeftK implementation
@@ -477,12 +463,8 @@ void EvalJuxtaposeLeftK::invoke(Machine* machine) {
 }
 
 void EvalJuxtaposeLeftK::mark(Heap* heap) {
-    if (left) {
-        heap->mark_continuation(left);
-    }
-    if (right_val) {
-        heap->mark_value(right_val);
-    }
+    heap->mark(left);
+    heap->mark(right_val);
 }
 
 // PerformJuxtaposeK implementation
@@ -547,9 +529,7 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
 }
 
 void PerformJuxtaposeK::mark(Heap* heap) {
-    if (right_val) {
-        heap->mark_value(right_val);
-    }
+    heap->mark(right_val);
 }
 
 // FinalizeK implementation
@@ -562,9 +542,7 @@ void FinalizeK::invoke(Machine* machine) {
 }
 
 void FinalizeK::mark(Heap* heap) {
-    if (inner) {
-        heap->mark_continuation(inner);
-    }
+    heap->mark(inner);
 }
 
 // PerformFinalizeK - g' null(y) case: finalize curry to value via continuation graph
@@ -647,9 +625,7 @@ void MonadicK::invoke(Machine* machine) {
 }
 
 void MonadicK::mark(Heap* heap) {
-    if (operand) {
-        heap->mark_continuation(operand);
-    }
+    heap->mark(operand);
 }
 
 // DyadicK implementation
@@ -668,12 +644,8 @@ void DyadicK::invoke(Machine* machine) {
 }
 
 void DyadicK::mark(Heap* heap) {
-    if (left) {
-        heap->mark_continuation(left);
-    }
-    if (right) {
-        heap->mark_continuation(right);
-    }
+    heap->mark(left);
+    heap->mark(right);
 }
 
 // EvalDyadicLeftK implementation
@@ -693,12 +665,8 @@ void EvalDyadicLeftK::invoke(Machine* machine) {
 }
 
 void EvalDyadicLeftK::mark(Heap* heap) {
-    if (left) {
-        heap->mark_continuation(left);
-    }
-    if (right_val) {
-        heap->mark_value(right_val);
-    }
+    heap->mark(left);
+    heap->mark(right_val);
 }
 
 
@@ -770,14 +738,10 @@ void ArgK::invoke(Machine* machine) {
 
 void ArgK::mark(Heap* heap) {
     // Mark the argument Value
-    if (arg_value) {
-        heap->mark_value(arg_value);
-    }
+    heap->mark(arg_value);
 
     // Mark next continuation
-    if (next) {
-        heap->mark_continuation(next);
-    }
+    heap->mark(next);
 }
 
 // ApplyDyadicK implementation
@@ -813,9 +777,7 @@ void ApplyDyadicK::invoke(Machine* machine) {
 
 void ApplyDyadicK::mark(Heap* heap) {
     // Mark the saved right value
-    if (right_val) {
-        heap->mark_value(right_val);
-    }
+    heap->mark(right_val);
 }
 
 // ============================================================================
@@ -864,16 +826,12 @@ void EvalStrandElementK::invoke(Machine* machine) {
 void EvalStrandElementK::mark(Heap* heap) {
     // Mark remaining continuations
     for (Continuation* elem : remaining_elements) {
-        if (elem) {
-            heap->mark_continuation(elem);
-        }
+        heap->mark(elem);
     }
 
     // Mark evaluated values
     for (Value* val : evaluated_values) {
-        if (val) {
-            heap->mark_value(val);
-        }
+        heap->mark(val);
     }
 }
 
@@ -989,9 +947,7 @@ void BuildStrandK::invoke(Machine* machine) {
 void BuildStrandK::mark(Heap* heap) {
     // Mark all values
     for (Value* val : values) {
-        if (val) {
-            heap->mark_value(val);
-        }
+        heap->mark(val);
     }
 }
 
@@ -1017,9 +973,7 @@ void FrameK::invoke(Machine* machine) {
 
 void FrameK::mark(Heap* heap) {
     // Mark return continuation
-    if (return_k) {
-        heap->mark_continuation(return_k);
-    }
+    heap->mark(return_k);
 }
 
 // ApplyFunctionK implementation
@@ -1052,15 +1006,9 @@ void ApplyFunctionK::invoke(Machine* machine) {
 }
 
 void ApplyFunctionK::mark(Heap* heap) {
-    if (fn_cont) {
-        heap->mark_continuation(fn_cont);
-    }
-    if (left_arg) {
-        heap->mark_continuation(left_arg);
-    }
-    if (right_arg) {
-        heap->mark_continuation(right_arg);
-    }
+    heap->mark(fn_cont);
+    heap->mark(left_arg);
+    heap->mark(right_arg);
 }
 
 // EvalApplyFunctionLeftK implementation
@@ -1079,15 +1027,9 @@ void EvalApplyFunctionLeftK::invoke(Machine* machine) {
 }
 
 void EvalApplyFunctionLeftK::mark(Heap* heap) {
-    if (fn_cont) {
-        heap->mark_continuation(fn_cont);
-    }
-    if (left_arg) {
-        heap->mark_continuation(left_arg);
-    }
-    if (right_val) {
-        heap->mark_value(right_val);
-    }
+    heap->mark(fn_cont);
+    heap->mark(left_arg);
+    heap->mark(right_val);
 }
 
 // EvalApplyFunctionMonadicK implementation
@@ -1105,12 +1047,8 @@ void EvalApplyFunctionMonadicK::invoke(Machine* machine) {
 }
 
 void EvalApplyFunctionMonadicK::mark(Heap* heap) {
-    if (fn_cont) {
-        heap->mark_continuation(fn_cont);
-    }
-    if (arg_val) {
-        heap->mark_value(arg_val);
-    }
+    heap->mark(fn_cont);
+    heap->mark(arg_val);
 }
 
 // EvalApplyFunctionDyadicK implementation
@@ -1128,15 +1066,9 @@ void EvalApplyFunctionDyadicK::invoke(Machine* machine) {
 }
 
 void EvalApplyFunctionDyadicK::mark(Heap* heap) {
-    if (fn_cont) {
-        heap->mark_continuation(fn_cont);
-    }
-    if (left_val) {
-        heap->mark_value(left_val);
-    }
-    if (right_val) {
-        heap->mark_value(right_val);
-    }
+    heap->mark(fn_cont);
+    heap->mark(left_val);
+    heap->mark(right_val);
 }
 
 // DispatchFunctionK implementation
@@ -1524,15 +1456,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
 }
 
 void DispatchFunctionK::mark(Heap* heap) {
-    if (fn_val) {
-        heap->mark_value(fn_val);
-    }
-    if (left_val) {
-        heap->mark_value(left_val);
-    }
-    if (right_val) {
-        heap->mark_value(right_val);
-    }
+    heap->mark(fn_val);
+    heap->mark(left_val);
+    heap->mark(right_val);
 }
 
 // DeferredDispatchK implementation - continues dispatch with result as right_val
@@ -1545,12 +1471,8 @@ void DeferredDispatchK::invoke(Machine* machine) {
 }
 
 void DeferredDispatchK::mark(Heap* heap) {
-    if (fn_val) {
-        heap->mark_value(fn_val);
-    }
-    if (left_val) {
-        heap->mark_value(left_val);
-    }
+    heap->mark(fn_val);
+    heap->mark(left_val);
 }
 
 // ============================================================================
@@ -1582,9 +1504,7 @@ void SeqK::invoke(Machine* machine) {
 
 void SeqK::mark(Heap* heap) {
     for (Continuation* stmt : statements) {
-        if (stmt) {
-            heap->mark_continuation(stmt);
-        }
+        heap->mark(stmt);
     }
 }
 
@@ -1614,9 +1534,7 @@ void ExecNextStatementK::invoke(Machine* machine) {
 
 void ExecNextStatementK::mark(Heap* heap) {
     for (Continuation* stmt : statements) {
-        if (stmt) {
-            heap->mark_continuation(stmt);
-        }
+        heap->mark(stmt);
     }
 }
 
@@ -1637,15 +1555,9 @@ void IfK::invoke(Machine* machine) {
 }
 
 void IfK::mark(Heap* heap) {
-    if (condition) {
-        heap->mark_continuation(condition);
-    }
-    if (then_branch) {
-        heap->mark_continuation(then_branch);
-    }
-    if (else_branch) {
-        heap->mark_continuation(else_branch);
-    }
+    heap->mark(condition);
+    heap->mark(then_branch);
+    heap->mark(else_branch);
 }
 
 // SelectBranchK implementation - select branch based on condition result
@@ -1690,12 +1602,8 @@ void SelectBranchK::invoke(Machine* machine) {
 }
 
 void SelectBranchK::mark(Heap* heap) {
-    if (then_branch) {
-        heap->mark_continuation(then_branch);
-    }
-    if (else_branch) {
-        heap->mark_continuation(else_branch);
-    }
+    heap->mark(then_branch);
+    heap->mark(else_branch);
 }
 
 // WhileK implementation - check condition and loop
@@ -1715,12 +1623,8 @@ void WhileK::invoke(Machine* machine) {
 }
 
 void WhileK::mark(Heap* heap) {
-    if (condition) {
-        heap->mark_continuation(condition);
-    }
-    if (body) {
-        heap->mark_continuation(body);
-    }
+    heap->mark(condition);
+    heap->mark(body);
 }
 
 // CheckWhileCondK implementation - check condition and decide whether to loop
@@ -1768,12 +1672,8 @@ void CheckWhileCondK::invoke(Machine* machine) {
 }
 
 void CheckWhileCondK::mark(Heap* heap) {
-    if (condition) {
-        heap->mark_continuation(condition);
-    }
-    if (body) {
-        heap->mark_continuation(body);
-    }
+    heap->mark(condition);
+    heap->mark(body);
 }
 
 // ForK implementation - evaluate array and start iteration
@@ -1793,12 +1693,8 @@ void ForK::invoke(Machine* machine) {
 }
 
 void ForK::mark(Heap* heap) {
-    if (array_expr) {
-        heap->mark_continuation(array_expr);
-    }
-    if (body) {
-        heap->mark_continuation(body);
-    }
+    heap->mark(array_expr);
+    heap->mark(body);
 }
 
 // ForIterateK implementation - iterate over array elements
@@ -1862,12 +1758,8 @@ void ForIterateK::invoke(Machine* machine) {
 }
 
 void ForIterateK::mark(Heap* heap) {
-    if (array) {
-        heap->mark_value(array);
-    }
-    if (body) {
-        heap->mark_continuation(body);
-    }
+    heap->mark(array);
+    heap->mark(body);
 }
 
 // LeaveK implementation - exit from loop
@@ -1923,9 +1815,7 @@ void ReturnK::invoke(Machine* machine) {
 }
 
 void ReturnK::mark(Heap* heap) {
-    if (value_expr) {
-        heap->mark_continuation(value_expr);
-    }
+    heap->mark(value_expr);
 }
 
 // CreateReturnK implementation - create RETURN completion from evaluated value
@@ -1998,15 +1888,9 @@ void FunctionCallK::invoke(Machine* machine) {
 }
 
 void FunctionCallK::mark(Heap* heap) {
-    if (fn_value) {
-        heap->mark_value(fn_value);
-    }
-    if (left_arg) {
-        heap->mark_value(left_arg);
-    }
-    if (right_arg) {
-        heap->mark_value(right_arg);
-    }
+    heap->mark(fn_value);
+    heap->mark(left_arg);
+    heap->mark(right_arg);
 }
 
 // RestoreEnvK implementation - restore environment after function call
@@ -2036,12 +1920,8 @@ void DerivedOperatorK::invoke(Machine* machine) {
 }
 
 void DerivedOperatorK::mark(Heap* heap) {
-    if (operand_cont) {
-        heap->mark_continuation(operand_cont);
-    }
-    if (axis_cont) {
-        heap->mark_continuation(axis_cont);
-    }
+    heap->mark(operand_cont);
+    heap->mark(axis_cont);
 }
 
 // ApplyDerivedOperatorK implementation - create DERIVED_OPERATOR value
@@ -2090,9 +1970,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
 }
 
 void ApplyDerivedOperatorK::mark(Heap* heap) {
-    if (axis_cont) {
-        heap->mark_continuation(axis_cont);
-    }
+    heap->mark(axis_cont);
 }
 
 // ApplyAxisK implementation - apply axis to derived operator
@@ -2107,9 +1985,7 @@ void ApplyAxisK::invoke(Machine* machine) {
 }
 
 void ApplyAxisK::mark(Heap* heap) {
-    if (derived_op) {
-        heap->mark_value(derived_op);
-    }
+    heap->mark(derived_op);
 }
 
 // ============================================================================
@@ -2410,12 +2286,12 @@ void CellIterK::invoke(Machine* machine) {
 }
 
 void CellIterK::mark(Heap* heap) {
-    if (fn) heap->mark_value(fn);
-    if (lhs) heap->mark_value(lhs);
-    if (rhs) heap->mark_value(rhs);
-    if (accumulator) heap->mark_value(accumulator);
+    heap->mark(fn);
+    heap->mark(lhs);
+    heap->mark(rhs);
+    heap->mark(accumulator);
     for (Value* v : results) {
-        if (v) heap->mark_value(v);
+        heap->mark(v);
     }
 }
 
@@ -2443,9 +2319,7 @@ void CellCollectK::invoke(Machine* machine) {
 
 void CellCollectK::mark(Heap* heap) {
     // iter holds Values (fn, lhs, rhs, results, accumulator) that must be marked
-    if (iter) {
-        heap->mark_continuation(iter);
-    }
+    heap->mark(iter);
 }
 
 // ============================================================================
@@ -2492,10 +2366,10 @@ void RowReduceK::invoke(Machine* machine) {
 }
 
 void RowReduceK::mark(Heap* heap) {
-    if (fn) heap->mark_value(fn);
-    if (matrix) heap->mark_value(matrix);
+    heap->mark(fn);
+    heap->mark(matrix);
     for (Value* v : results) {
-        if (v) heap->mark_value(v);
+        heap->mark(v);
     }
 }
 
@@ -2508,9 +2382,7 @@ void RowReduceCollectK::invoke(Machine* machine) {
 
 void RowReduceCollectK::mark(Heap* heap) {
     // iter holds Values (fn, matrix, results) that must be marked
-    if (iter) {
-        heap->mark_continuation(iter);
-    }
+    heap->mark(iter);
 }
 
 // ============================================================================
@@ -2554,10 +2426,10 @@ void PrefixScanK::invoke(Machine* machine) {
 }
 
 void PrefixScanK::mark(Heap* heap) {
-    if (fn) heap->mark_value(fn);
-    if (vec) heap->mark_value(vec);
+    heap->mark(fn);
+    heap->mark(vec);
     for (Value* v : results) {
-        if (v) heap->mark_value(v);
+        heap->mark(v);
     }
 }
 
@@ -2570,9 +2442,7 @@ void PrefixScanCollectK::invoke(Machine* machine) {
 
 void PrefixScanCollectK::mark(Heap* heap) {
     // iter holds Values (fn, vec, results) that must be marked
-    if (iter) {
-        heap->mark_continuation(iter);
-    }
+    heap->mark(iter);
 }
 
 // ============================================================================
@@ -2646,10 +2516,10 @@ void RowScanK::invoke(Machine* machine) {
 }
 
 void RowScanK::mark(Heap* heap) {
-    if (fn) heap->mark_value(fn);
-    if (matrix) heap->mark_value(matrix);
+    heap->mark(fn);
+    heap->mark(matrix);
     for (Value* v : results) {
-        if (v) heap->mark_value(v);
+        heap->mark(v);
     }
 }
 
@@ -2662,9 +2532,7 @@ void RowScanCollectK::invoke(Machine* machine) {
 
 void RowScanCollectK::mark(Heap* heap) {
     // iter holds Values (fn, matrix, results) that must be marked
-    if (iter) {
-        heap->mark_continuation(iter);
-    }
+    heap->mark(iter);
 }
 
 // ============================================================================
@@ -2702,7 +2570,7 @@ void ReduceResultK::invoke(Machine* machine) {
 }
 
 void ReduceResultK::mark(Heap* heap) {
-    if (fn) heap->mark_value(fn);
+    heap->mark(fn);
 }
 
 // ============================================================================
@@ -2780,12 +2648,12 @@ void InnerProductIterK::invoke(Machine* machine) {
 }
 
 void InnerProductIterK::mark(Heap* heap) {
-    if (f_fn) heap->mark_value(f_fn);
-    if (g_fn) heap->mark_value(g_fn);
-    if (lhs) heap->mark_value(lhs);
-    if (rhs) heap->mark_value(rhs);
+    heap->mark(f_fn);
+    heap->mark(g_fn);
+    heap->mark(lhs);
+    heap->mark(rhs);
     for (Value* v : results) {
-        if (v) heap->mark_value(v);
+        heap->mark(v);
     }
 }
 
@@ -2806,9 +2674,7 @@ void InnerProductCollectK::invoke(Machine* machine) {
 
 void InnerProductCollectK::mark(Heap* heap) {
     // iter holds Values (f_fn, g_fn, lhs, rhs, results) that must be marked
-    if (iter) {
-        heap->mark_continuation(iter);
-    }
+    heap->mark(iter);
 }
 
 // ============================================================================
@@ -2850,10 +2716,10 @@ void NwiseReduceK::invoke(Machine* machine) {
 }
 
 void NwiseReduceK::mark(Heap* heap) {
-    if (fn) heap->mark_value(fn);
-    if (vec) heap->mark_value(vec);
+    heap->mark(fn);
+    heap->mark(vec);
     for (Value* v : results) {
-        if (v) heap->mark_value(v);
+        heap->mark(v);
     }
 }
 
@@ -2866,9 +2732,7 @@ void NwiseCollectK::invoke(Machine* machine) {
 
 void NwiseCollectK::mark(Heap* heap) {
     // iter holds Values (fn, vec, results) that must be marked
-    if (iter) {
-        heap->mark_continuation(iter);
-    }
+    heap->mark(iter);
 }
 
 // ============================================================================
@@ -2930,10 +2794,10 @@ void NwiseMatrixReduceK::invoke(Machine* machine) {
 }
 
 void NwiseMatrixReduceK::mark(Heap* heap) {
-    if (fn) heap->mark_value(fn);
-    if (matrix) heap->mark_value(matrix);
+    heap->mark(fn);
+    heap->mark(matrix);
     for (Value* v : results) {
-        if (v) heap->mark_value(v);
+        heap->mark(v);
     }
 }
 
@@ -2946,9 +2810,7 @@ void NwiseMatrixCollectK::invoke(Machine* machine) {
 
 void NwiseMatrixCollectK::mark(Heap* heap) {
     // iter holds Values (fn, matrix, results) that must be marked
-    if (iter) {
-        heap->mark_continuation(iter);
-    }
+    heap->mark(iter);
 }
 
 // ============================================================================
@@ -2962,8 +2824,8 @@ void IndexedAssignK::invoke(Machine* machine) {
 }
 
 void IndexedAssignK::mark(Heap* heap) {
-    if (index_cont) heap->mark_continuation(index_cont);
-    if (value_cont) heap->mark_continuation(value_cont);
+    heap->mark(index_cont);
+    heap->mark(value_cont);
 }
 
 void IndexedAssignIndexK::invoke(Machine* machine) {
@@ -2974,8 +2836,8 @@ void IndexedAssignIndexK::invoke(Machine* machine) {
 }
 
 void IndexedAssignIndexK::mark(Heap* heap) {
-    if (value_val) heap->mark_value(value_val);
-    if (index_cont) heap->mark_continuation(index_cont);
+    heap->mark(value_val);
+    heap->mark(index_cont);
 }
 
 void PerformIndexedAssignK::invoke(Machine* machine) {
@@ -3094,8 +2956,8 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
 }
 
 void PerformIndexedAssignK::mark(Heap* heap) {
-    if (value_val) heap->mark_value(value_val);
-    if (index_val) heap->mark_value(index_val);
+    heap->mark(value_val);
+    heap->mark(index_val);
 }
 
 } // namespace apl

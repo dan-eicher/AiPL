@@ -316,73 +316,35 @@ void Heap::mark_from_roots(Machine* machine) {
 
     // Mark cached scalars (they're roots - we want to keep common values alive)
     for (int i = 0; i < 256; i++) {
-        if (scalar_cache[i]) {
-            mark_value(scalar_cache[i]);
-        }
+        mark(scalar_cache[i]);
     }
 
     // Mark value in control register
-    if (machine->result) {
-        mark_value(machine->result);
-    }
+    mark(machine->result);
 
-    // Phase 1: No more completion field in Control
-    // Completions will be managed through continuation handlers in Phase 2
-
-    // Mark continuations on kont_stack (they're GC objects now!)
+    // Mark continuations on kont_stack
     for (Continuation* k : machine->kont_stack) {
-        if (k) {
-            mark_continuation(k);
-        }
+        mark(k);
     }
 
     // Mark continuations in function_cache
     for (auto& pair : machine->function_cache) {
-        if (pair.second) {
-            mark_continuation(pair.second);
-        }
+        mark(pair.second);
     }
 
-    // Mark environment (GC root - now GC-managed)
-    if (machine->env) {
-        if (!machine->env->marked) {
-            machine->env->marked = true;
-            machine->env->mark(this);  // Will recursively mark parent envs
-        }
-    }
+    // Mark environment (GC root)
+    mark(machine->env);
 }
 
-// Mark a value and its transitive references
-void Heap::mark_value(Value* val) {
-    if (!val) return;
-    if (val->marked) return;  // Already marked
+// Mark any GC object and its transitive references
+void Heap::mark(GCObject* obj) {
+    if (!obj) return;
+    if (obj->marked) return;  // Already marked
 
-    val->marked = true;
+    obj->marked = true;
 
-    // Mark objects this value references (e.g., CLOSURE continuation graphs)
-    val->mark(this);
-}
-
-// Mark a continuation and its transitive references
-void Heap::mark_continuation(Continuation* k) {
-    if (!k) return;
-    if (k->marked) return;  // Already marked
-
-    k->marked = true;
-
-    // Mark Values and Continuations this continuation references
-    k->mark(this);
-}
-
-// Mark a completion and its transitive references
-void Heap::mark_completion(Completion* comp) {
-    if (!comp) return;
-    if (comp->marked) return;  // Already marked
-
-    comp->marked = true;
-
-    // Mark values this completion references
-    comp->mark(this);
+    // Polymorphic call to mark referenced objects
+    obj->mark(this);
 }
 
 // Sweep unmarked objects from both generations

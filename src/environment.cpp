@@ -10,16 +10,11 @@ void Environment::mark(Heap* heap) {
 
     // Mark all values in this environment
     for (auto& pair : bindings) {
-        if (pair.second) {
-            heap->mark_value(pair.second);
-        }
+        heap->mark(pair.second);
     }
 
-    // Mark parent environment (now GC-managed)
-    if (parent && !parent->marked) {
-        parent->marked = true;
-        parent->mark(heap);
-    }
+    // Mark parent environment
+    heap->mark(parent);
 }
 
 } // namespace apl
