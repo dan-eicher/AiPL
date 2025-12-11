@@ -1767,8 +1767,8 @@ static double circular_function(int fn_code, double x) {
         case -5: return std::asinh(x);                    // asinh
         case -6: return std::acosh(x);                    // acosh
         case -7: return std::atanh(x);                    // atanh
-        // For complex numbers (not implemented): -12 to -8 and 8 to 12
-        default: return std::nan("");                     // Invalid function code
+        default:
+            throw std::runtime_error("VM BUG: circular function code not validated before dispatch");
     }
 }
 
