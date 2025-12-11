@@ -601,6 +601,12 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
 // Scan-first (⍀) - scan along first axis (rows)
 // Uses PrefixScanK for continuation-based execution
 void fn_scan_first(Machine* m, Value* func, Value* omega) {
+    // Handle expand-first: if "func" is actually an array, this is A ⍀ B (expand-first)
+    if (func->is_array() || func->is_scalar()) {
+        fn_expand_first(m, func, omega);
+        return;
+    }
+
     if (!func->is_function()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan-first requires a function"));
         return;

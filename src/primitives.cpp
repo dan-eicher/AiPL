@@ -3567,6 +3567,73 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
     m->result = m->heap->allocate_vector(result, is_char);
 }
 
+// Expand-first (⍀ dyadic) - insert fill elements along first axis
+// A⍀B - A is boolean mask, B is data array
+// Expands along first axis (rows) for matrices
+void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    bool is_char = rhs->is_char_data();
+
+    // Get boolean mask from lhs
+    Eigen::VectorXd mask = flatten_value(lhs);
+
+    // Count number of 1s in mask - must equal length of rhs along first axis
+    int ones_count = 0;
+    for (int i = 0; i < mask.size(); ++i) {
+        int val = static_cast<int>(mask(i));
+        if (val != 0 && val != 1) {
+            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: expand mask must be boolean"));
+            return;
+        }
+        if (val == 1) ones_count++;
+    }
+
+    // Handle scalar rhs
+    if (rhs->is_scalar()) {
+        double val = rhs->data.scalar;
+        Eigen::VectorXd result(mask.size());
+        for (int i = 0; i < mask.size(); ++i) {
+            if (static_cast<int>(mask(i)) == 1) {
+                result(i) = val;
+            } else {
+                result(i) = 0.0;
+            }
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // For vectors, expand-first is same as expand (only one axis)
+    if (rhs->is_vector()) {
+        fn_expand(m, lhs, rhs);
+        return;
+    }
+
+    // Matrix case: expand along first axis (rows)
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (ones_count != rows) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
+        return;
+    }
+
+    Eigen::MatrixXd result(mask.size(), cols);
+    int src_row = 0;
+    for (int i = 0; i < mask.size(); ++i) {
+        if (static_cast<int>(mask(i)) == 1) {
+            result.row(i) = mat->row(src_row++);
+        } else {
+            result.row(i) = Eigen::RowVectorXd::Zero(cols);  // Fill row
+        }
+    }
+
+    m->result = m->heap->allocate_matrix(result, is_char);
+}
+
 // ============================================================================
 // Encode/Decode Functions (⊥ ⊤)
 // ============================================================================

@@ -4162,6 +4162,80 @@ TEST_F(PrimitivesTest, ExpandAllZeros) {
     EXPECT_DOUBLE_EQ(machine->result->as_matrix()->operator()(1, 0), 0.0);
 }
 
+// Expand-first (⍀ dyadic) Tests - ISO 13751 Section 10.2.6 variant
+
+TEST_F(PrimitivesTest, ExpandFirstVector) {
+    // 1 0 1⍀1 2 → 1 0 2 (same as expand for vectors)
+    Eigen::VectorXd mask(3);
+    mask << 1.0, 0.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+    Eigen::VectorXd data(2);
+    data << 1.0, 2.0;
+    Value* data_val = machine->heap->allocate_vector(data);
+
+    fn_expand_first(machine, mask_val, data_val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->size(), 3);
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 0.0);  // Fill
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 2.0);
+}
+
+TEST_F(PrimitivesTest, ExpandFirstMatrix) {
+    // 1 0 1⍀ 2 3⍴⍳6 → 3×3 matrix with row 2 filled with zeros
+    // Input: [[1,2,3],[4,5,6]] → Output: [[1,2,3],[0,0,0],[4,5,6]]
+    Eigen::VectorXd mask(3);
+    mask << 1.0, 0.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+    Eigen::MatrixXd mat(2, 3);
+    mat << 1, 2, 3,
+           4, 5, 6;
+    Value* data_val = machine->heap->allocate_matrix(mat);
+
+    fn_expand_first(machine, mask_val, data_val);
+
+    ASSERT_TRUE(machine->result->is_matrix());
+    EXPECT_EQ(machine->result->rows(), 3);
+    EXPECT_EQ(machine->result->cols(), 3);
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    // Row 0: original row 0
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 1), 2.0);
+    EXPECT_DOUBLE_EQ((*res)(0, 2), 3.0);
+    // Row 1: fill row (zeros)
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 1), 0.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 2), 0.0);
+    // Row 2: original row 1
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(2, 2), 6.0);
+}
+
+TEST_F(PrimitivesTest, ExpandFirstScalar) {
+    // 1 0 1⍀5 → 5 0 5
+    Eigen::VectorXd mask(3);
+    mask << 1.0, 0.0, 1.0;
+    Value* mask_val = machine->heap->allocate_vector(mask);
+    Value* data_val = machine->heap->allocate_scalar(5.0);
+
+    fn_expand_first(machine, mask_val, data_val);
+
+    ASSERT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->size(), 3);
+    const Eigen::MatrixXd* res = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*res)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*res)(1, 0), 0.0);  // Fill
+    EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);
+}
+
+TEST_F(PrimitivesTest, ExpandFirstLengthError) {
+    // 1 0 1⍀ 3 3⍴⍳9 → LENGTH ERROR (3 rows, mask has 2 ones)
+    EXPECT_THROW(machine->eval("1 0 1 ⍀ 3 3⍴⍳9"), APLError);
+}
+
 TEST_F(PrimitivesTest, QuestionRegistered) {
     ASSERT_NE(machine->env->lookup("?"), nullptr);
 }
