@@ -159,6 +159,10 @@ Lexer::Lexer(const char* input)
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
     zilde = "⍬";         // U+236C (empty vector)
+    quad = "⎕";          // U+2395 (quad - system variable prefix)
+
+    // Quad names (system variables): ⎕IO, ⎕PP, etc.
+    quad_name = quad name;
 
     // Comments (⍝ to end of line)
     comment = "⍝" [^\n]*;  // U+235D
@@ -274,7 +278,17 @@ Token Lexer::next_token() {
             return Token(TOK_STRING, str, token_line, token_column);
         }
 
-        // Names (must come after keywords and strings)
+        // Quad names (system variables) - must come before regular names
+        quad_name {
+            // Skip the ⎕ character (3 bytes in UTF-8: E2 8E 95)
+            const char* name_start = token_start + 3;
+            size_t name_len = cursor_ - name_start;
+            char* str = arena_.allocate_string(name_start, name_len);
+            column_ += (cursor_ - token_start);
+            return Token(TOK_QUAD_NAME, str, token_line, token_column);
+        }
+
+        // Names (must come after keywords, strings, and quad names)
         name {
             size_t len = cursor_ - token_start;
             char* str = arena_.allocate_string(token_start, len);

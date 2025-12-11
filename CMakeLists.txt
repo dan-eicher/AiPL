@@ -48,6 +48,7 @@ set(APL_SOURCES
     src/primitives.cpp
     src/operators.cpp
     src/parser.cpp
+    src/sysvar.cpp
 )
 
 # Build APL VM as a library (build once, link everywhere)

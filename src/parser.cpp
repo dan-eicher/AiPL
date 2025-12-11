@@ -220,6 +220,7 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_LEFT_TACK:
                 case TOK_RIGHT_TACK:
                 case TOK_ZILDE:  // ⍬ (empty vector)
+                case TOK_QUAD_NAME:  // ⎕IO, ⎕PP (system variables)
                     is_juxtaposition = true;
                     bp = BP_JUXTAPOSE;
                     break;
@@ -437,6 +438,30 @@ Continuation* Parser::nud(const Token& token) {
             Value* empty_val = machine->heap->allocate_vector(empty_vec);
             StrandK* strand = machine->heap->allocate<StrandK>(empty_val);
             return strand;
+        }
+
+        case TOK_QUAD_NAME: {
+            // System variable reference or assignment (⎕IO, ⎕PP, etc.)
+            SysVarId var_id = lookup_sysvar(token.name, machine->sysvar_mask);
+            if (var_id == SysVarId::INVALID) {
+                error_message_ = std::string("Unknown or disabled system variable: ⎕") + token.name;
+                return nullptr;
+            }
+
+            // Check for assignment: ⎕IO ← VALUE
+            if (current_token_.type == TOK_ASSIGN) {
+                advance();  // consume ←
+                Continuation* value = parse_expression(BP_ASSIGN);
+                if (!value) {
+                    return nullptr;
+                }
+                SysVarAssignK* assign = machine->heap->allocate<SysVarAssignK>(var_id, value);
+                return assign;
+            }
+
+            // Just a system variable read
+            SysVarReadK* read = machine->heap->allocate<SysVarReadK>(var_id);
+            return read;
         }
 
         case TOK_LBRACE: {

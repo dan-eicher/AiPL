@@ -145,6 +145,7 @@ enum TokenType {
     TOK_NEWLINE,
     TOK_COMMENT,
     TOK_ZILDE,          // ⍬ (empty vector)
+    TOK_QUAD_NAME,      // ⎕IO, ⎕PP, etc. (system variable name in .name field)
 
     TOK_ERROR           // Lexer error
 };

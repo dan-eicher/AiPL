@@ -1865,6 +1865,65 @@ TEST_F(ContinuationTest, NWiseReductionNotPrematurelyFinalized) {
     }
 }
 
+// ============================================================================
+// System Variable Tests
+// ============================================================================
+
+// Test lookup_sysvar function
+TEST_F(ContinuationTest, SysVarLookupIO) {
+    SysVarId id = lookup_sysvar("IO", SYSVAR_ALL);
+    EXPECT_EQ(id, SysVarId::IO);
+}
+
+TEST_F(ContinuationTest, SysVarLookupPP) {
+    SysVarId id = lookup_sysvar("PP", SYSVAR_ALL);
+    EXPECT_EQ(id, SysVarId::PP);
+}
+
+TEST_F(ContinuationTest, SysVarLookupInvalid) {
+    SysVarId id = lookup_sysvar("XY", SYSVAR_ALL);
+    EXPECT_EQ(id, SysVarId::INVALID);
+}
+
+TEST_F(ContinuationTest, SysVarLookupDisabledIO) {
+    // Disable IO in mask
+    SysVarId id = lookup_sysvar("IO", SYSVAR_PP);  // Only PP enabled
+    EXPECT_EQ(id, SysVarId::INVALID);
+}
+
+TEST_F(ContinuationTest, SysVarLookupDisabledPP) {
+    // Disable PP in mask
+    SysVarId id = lookup_sysvar("PP", SYSVAR_IO);  // Only IO enabled
+    EXPECT_EQ(id, SysVarId::INVALID);
+}
+
+TEST_F(ContinuationTest, SysVarNameIO) {
+    EXPECT_STREQ(sysvar_name(SysVarId::IO), "IO");
+}
+
+TEST_F(ContinuationTest, SysVarNamePP) {
+    EXPECT_STREQ(sysvar_name(SysVarId::PP), "PP");
+}
+
+// Test SysVarReadK continuation
+TEST_F(ContinuationTest, SysVarReadKIO) {
+    SysVarReadK* read = heap->allocate<SysVarReadK>(SysVarId::IO);
+    machine->push_kont(read);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // Default IO is 1
+}
+
+TEST_F(ContinuationTest, SysVarReadKPP) {
+    SysVarReadK* read = heap->allocate<SysVarReadK>(SysVarId::PP);
+    machine->push_kont(read);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);  // Default PP is 10
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

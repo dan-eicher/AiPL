@@ -831,6 +831,39 @@ TEST_F(LexerTest, SquadInExpression) {
     EXPECT_EQ(tokens[2].type, TOK_NUMBER_VECTOR);
 }
 
+// Test quad name token (⎕IO, ⎕PP)
+TEST_F(LexerTest, QuadNameIO) {
+    auto tokens = tokenize("⎕IO");
+    ASSERT_EQ(tokens.size(), 2);  // ⎕IO + EOF
+    EXPECT_EQ(tokens[0].type, TOK_QUAD_NAME);
+    EXPECT_STREQ(tokens[0].name, "IO");
+}
+
+TEST_F(LexerTest, QuadNamePP) {
+    auto tokens = tokenize("⎕PP");
+    ASSERT_EQ(tokens.size(), 2);  // ⎕PP + EOF
+    EXPECT_EQ(tokens[0].type, TOK_QUAD_NAME);
+    EXPECT_STREQ(tokens[0].name, "PP");
+}
+
+TEST_F(LexerTest, QuadNameInAssignment) {
+    auto tokens = tokenize("⎕IO←0");
+    ASSERT_EQ(tokens.size(), 4);  // ⎕IO ← 0 EOF
+    EXPECT_EQ(tokens[0].type, TOK_QUAD_NAME);
+    EXPECT_STREQ(tokens[0].name, "IO");
+    EXPECT_EQ(tokens[1].type, TOK_ASSIGN);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+}
+
+TEST_F(LexerTest, QuadNameInExpression) {
+    auto tokens = tokenize("⎕IO+5");
+    ASSERT_EQ(tokens.size(), 4);  // ⎕IO + 5 EOF
+    EXPECT_EQ(tokens[0].type, TOK_QUAD_NAME);
+    EXPECT_STREQ(tokens[0].name, "IO");
+    EXPECT_EQ(tokens[1].type, TOK_PLUS);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

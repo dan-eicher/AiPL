@@ -4587,6 +4587,227 @@ TEST_F(EvalTest, StatementSeparatorReturnsLast) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
+// ============================================================================
+// System Variables Tests
+// ============================================================================
+
+TEST_F(EvalTest, SysVarIORead) {
+    // ⎕IO default is 1
+    Value* result = machine->eval("⎕IO");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, SysVarPPRead) {
+    // ⎕PP default is 10
+    Value* result = machine->eval("⎕PP");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+TEST_F(EvalTest, SysVarIOAssign) {
+    // ⎕IO←0 sets index origin to 0
+    Value* result = machine->eval("⎕IO←0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+    EXPECT_EQ(machine->io, 0);
+}
+
+TEST_F(EvalTest, SysVarIOAffectsIota) {
+    // With ⎕IO←0, iota should return 0 1 2 3 4
+    machine->eval("⎕IO←0");
+    Value* result = machine->eval("⍳5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*vec)(4, 0), 4.0);
+}
+
+TEST_F(EvalTest, SysVarPPAssign) {
+    // ⎕PP←5 sets print precision to 5
+    Value* result = machine->eval("⎕PP←5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+    EXPECT_EQ(machine->pp, 5);
+}
+
+TEST_F(EvalTest, SysVarIOInvalidValueError) {
+    // ⎕IO←2 should error (only 0 or 1 allowed)
+    EXPECT_THROW(machine->eval("⎕IO←2"), APLError);
+}
+
+TEST_F(EvalTest, SysVarPPInvalidValueError) {
+    // ⎕PP←0 should error (must be 1-17)
+    EXPECT_THROW(machine->eval("⎕PP←0"), APLError);
+}
+
+TEST_F(EvalTest, SysVarInExpression) {
+    // System variables can be used in expressions
+    Value* result = machine->eval("⎕IO + 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);  // 1 + 5
+}
+
+// ============================================================================
+// Comparison Tolerance (⎕CT) Tests
+// ============================================================================
+
+TEST_F(EvalTest, SysVarCTRead) {
+    // ⎕CT default is 0 (exact comparisons, Eigen fast path)
+    Value* result = machine->eval("⎕CT");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(EvalTest, SysVarCTAssign) {
+    // ⎕CT←0 sets comparison tolerance to 0
+    Value* result = machine->eval("⎕CT←0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(machine->ct, 0.0);
+}
+
+TEST_F(EvalTest, SysVarCTAssignLarger) {
+    // ⎕CT←0.1 sets comparison tolerance to 0.1
+    Value* result = machine->eval("⎕CT←0.1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.1);
+    EXPECT_DOUBLE_EQ(machine->ct, 0.1);
+}
+
+TEST_F(EvalTest, SysVarCTInvalidNegative) {
+    // ⎕CT←¯1 should error (must be nonnegative)
+    EXPECT_THROW(machine->eval("⎕CT←¯1"), APLError);
+}
+
+TEST_F(EvalTest, SysVarCTTolerantEquality) {
+    // With large tolerance, nearly equal values should be equal
+    machine->eval("⎕CT←0.1");
+    Value* result = machine->eval("1.05 = 1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // Tolerantly equal
+}
+
+TEST_F(EvalTest, SysVarCTExactEquality) {
+    // With CT=0, exact comparison only
+    machine->eval("⎕CT←0");
+    Value* result = machine->eval("1.0000000001 = 1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // Not exactly equal
+}
+
+TEST_F(EvalTest, SysVarCTTolerantLessThan) {
+    // With large tolerance, tolerantly equal values are NOT less than
+    machine->eval("⎕CT←0.1");
+    Value* result = machine->eval("0.95 < 1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // Tolerantly equal, so not <
+}
+
+TEST_F(EvalTest, SysVarCTTolerantFloor) {
+    // Floor with tolerance: 2.9999999999 should round to 3
+    machine->eval("⎕CT←1e-9");
+    Value* result = machine->eval("⌊2.9999999999");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(EvalTest, SysVarCTTolerantCeiling) {
+    // Ceiling with tolerance: 3.0000000001 should round to 3
+    machine->eval("⎕CT←1e-9");
+    Value* result = machine->eval("⌈3.0000000001");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(EvalTest, SysVarCTZeroFloorExact) {
+    // With CT=0, floor is exact
+    machine->eval("⎕CT←0");
+    Value* result = machine->eval("⌊2.9999999999");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+// ============================================================================
+// Random Link (⎕RL) Tests
+// ============================================================================
+
+TEST_F(EvalTest, SysVarRLRead) {
+    // ⎕RL is seeded from system at startup (positive integer)
+    Value* result = machine->eval("⎕RL");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_GT(result->as_scalar(), 0.0);  // Must be positive
+}
+
+TEST_F(EvalTest, SysVarRLAssign) {
+    // ⎕RL←12345 sets random seed
+    Value* result = machine->eval("⎕RL←12345");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12345.0);
+    EXPECT_EQ(machine->rl, 12345u);
+}
+
+TEST_F(EvalTest, SysVarRLInvalidZero) {
+    // ⎕RL←0 should error (must be positive)
+    EXPECT_THROW(machine->eval("⎕RL←0"), APLError);
+}
+
+TEST_F(EvalTest, SysVarRLInvalidNegative) {
+    // ⎕RL←¯1 should error (must be positive)
+    EXPECT_THROW(machine->eval("⎕RL←¯1"), APLError);
+}
+
+TEST_F(EvalTest, SysVarRLInvalidNonInteger) {
+    // ⎕RL←1.5 should error (must be integer)
+    EXPECT_THROW(machine->eval("⎕RL←1.5"), APLError);
+}
+
+TEST_F(EvalTest, SysVarRLReproducibility) {
+    // Same seed produces same sequence
+    machine->eval("⎕RL←42");
+    Value* r1 = machine->eval("?100");
+    double first1 = r1->as_scalar();
+
+    machine->eval("⎕RL←42");  // Reset to same seed
+    Value* r2 = machine->eval("?100");
+    double first2 = r2->as_scalar();
+
+    EXPECT_DOUBLE_EQ(first1, first2);
+}
+
+TEST_F(EvalTest, SysVarRLDifferentSeeds) {
+    // Different seeds produce different sequences (with high probability)
+    machine->eval("⎕RL←1");
+    Value* r1 = machine->eval("?1000000");
+    double val1 = r1->as_scalar();
+
+    machine->eval("⎕RL←2");
+    Value* r2 = machine->eval("?1000000");
+    double val2 = r2->as_scalar();
+
+    EXPECT_NE(val1, val2);
+}
+
+TEST_F(EvalTest, SysVarRLDealReproducibility) {
+    // Deal also uses ⎕RL for reproducibility
+    machine->eval("⎕RL←123");
+    Value* d1 = machine->eval("5?10");
+    const Eigen::MatrixXd* v1 = d1->as_matrix();
+
+    machine->eval("⎕RL←123");  // Reset to same seed
+    Value* d2 = machine->eval("5?10");
+    const Eigen::MatrixXd* v2 = d2->as_matrix();
+
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_DOUBLE_EQ((*v1)(i, 0), (*v2)(i, 0));
+    }
+}
+
 // Main function
 
 int main(int argc, char** argv) {

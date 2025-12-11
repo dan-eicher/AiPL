@@ -5,6 +5,7 @@
 #include <vector>
 #include <string>
 #include "value.h"
+#include "sysvar.h"
 
 namespace apl {
 
@@ -244,6 +245,49 @@ public:
         : var_name(name) {}
 
     ~PerformAssignK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// SysVarReadK - Read a system variable (⎕IO, ⎕PP, etc.)
+class SysVarReadK : public Continuation {
+public:
+    SysVarId var_id;
+
+    SysVarReadK(SysVarId id) : var_id(id) {}
+    ~SysVarReadK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// SysVarAssignK - Assignment to a system variable
+class SysVarAssignK : public Continuation {
+public:
+    SysVarId var_id;
+    Continuation* expr;
+
+    SysVarAssignK(SysVarId id, Continuation* e) : var_id(id), expr(e) {}
+    ~SysVarAssignK() override {}
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// PerformSysVarAssignK - Performs actual system variable assignment after expression evaluation
+class PerformSysVarAssignK : public Continuation {
+public:
+    SysVarId var_id;
+
+    PerformSysVarAssignK(SysVarId id) : var_id(id) {}
+    ~PerformSysVarAssignK() override {}
 
     void mark(Heap* heap) override;
 

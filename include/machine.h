@@ -6,10 +6,12 @@
 #include "heap.h"
 #include "environment.h"
 #include "string_pool.h"
+#include "sysvar.h"
 #include <vector>
 #include <unordered_map>
 #include <string>
 #include <exception>
+#include <random>
 
 namespace apl {
 
@@ -36,6 +38,10 @@ public:
     std::vector<Continuation*> kont_stack;  // Continuation stack
     int io = 1;                             // Index origin (⎕IO): 0 or 1
     int pp = 10;                            // Print precision (⎕PP): 1-17, default 10
+    double ct = 0.0;                        // Comparison tolerance (⎕CT): 0 = exact (Eigen fast path)
+    uint64_t rl;                            // Random link (⎕RL): seeded from system at startup
+    std::mt19937_64 rng;                    // Random number generator (seeded by rl)
+    uint32_t sysvar_mask = SYSVAR_ALL;      // Enabled system variables (for sandboxing)
 
     // Memory management
     Heap* heap;                          // Garbage-collected heap

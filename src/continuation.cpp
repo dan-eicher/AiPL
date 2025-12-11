@@ -324,6 +324,104 @@ void PerformAssignK::mark(Heap* heap) {
     (void)heap;  // Unused
 }
 
+// SysVarReadK implementation - read a system variable
+void SysVarReadK::invoke(Machine* machine) {
+    switch (var_id) {
+        case SysVarId::IO:
+            machine->result = machine->heap->allocate_scalar(static_cast<double>(machine->io));
+            break;
+        case SysVarId::PP:
+            machine->result = machine->heap->allocate_scalar(static_cast<double>(machine->pp));
+            break;
+        case SysVarId::CT:
+            machine->result = machine->heap->allocate_scalar(machine->ct);
+            break;
+        case SysVarId::RL:
+            machine->result = machine->heap->allocate_scalar(static_cast<double>(machine->rl));
+            break;
+        default:
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYSTEM ERROR: unknown system variable"));
+            break;
+    }
+}
+
+void SysVarReadK::mark(Heap* heap) {
+    (void)heap;  // var_id is an enum, nothing to mark
+}
+
+// SysVarAssignK implementation - evaluate expression then assign to system variable
+void SysVarAssignK::invoke(Machine* machine) {
+    // Push continuation to perform the assignment after expression is evaluated
+    machine->push_kont(machine->heap->allocate<PerformSysVarAssignK>(var_id));
+    // Push the expression to evaluate
+    machine->push_kont(expr);
+}
+
+void SysVarAssignK::mark(Heap* heap) {
+    if (expr) heap->mark_continuation(expr);
+}
+
+// PerformSysVarAssignK implementation - perform actual system variable assignment
+void PerformSysVarAssignK::invoke(Machine* machine) {
+    Value* val = machine->result;
+
+    // System variables require scalar values
+    if (!val || !val->is_scalar()) {
+        machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: system variable requires scalar value"));
+        return;
+    }
+
+    double dbl_val = val->as_scalar();
+
+    switch (var_id) {
+        case SysVarId::IO: {
+            int int_val = static_cast<int>(dbl_val);
+            if (dbl_val != int_val || (int_val != 0 && int_val != 1)) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕IO must be 0 or 1"));
+                return;
+            }
+            machine->io = int_val;
+            break;
+        }
+        case SysVarId::PP: {
+            int int_val = static_cast<int>(dbl_val);
+            if (dbl_val != int_val || int_val < 1 || int_val > 17) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕PP must be 1-17"));
+                return;
+            }
+            machine->pp = int_val;
+            break;
+        }
+        case SysVarId::CT:
+            if (dbl_val < 0) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕CT must be nonnegative"));
+                return;
+            }
+            machine->ct = dbl_val;
+            break;
+        case SysVarId::RL: {
+            // RL must be a positive integer
+            if (dbl_val < 1 || dbl_val != static_cast<double>(static_cast<uint64_t>(dbl_val))) {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕RL must be a positive integer"));
+                return;
+            }
+            machine->rl = static_cast<uint64_t>(dbl_val);
+            machine->rng.seed(machine->rl);
+            break;
+        }
+        default:
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYSTEM ERROR: unknown system variable"));
+            return;
+    }
+
+    // Assignment returns the assigned value
+    machine->result = val;
+}
+
+void PerformSysVarAssignK::mark(Heap* heap) {
+    (void)heap;  // var_id is an enum, nothing to mark
+}
+
 // StrandK implementation
 void StrandK::invoke(Machine* machine) {
     // Lexical strand: just return the pre-computed vector Value

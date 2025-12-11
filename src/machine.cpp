@@ -17,6 +17,11 @@ Machine::Machine() {
     heap->set_machine(this);  // Give heap back-pointer for GC
     env = heap->allocate<Environment>();  // Global environment (GC-managed)
     parser = new Parser(this);  // Parser owned by machine
+    // Seed RNG from system random device (standard APL behavior)
+    std::random_device rd;
+    rl = rd();
+    if (rl == 0) rl = 1;  // Ensure positive
+    rng.seed(rl);
     init_globals();  // Populate with APL primitives and operators
 }
 

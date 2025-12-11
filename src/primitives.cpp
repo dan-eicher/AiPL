@@ -13,6 +13,38 @@
 
 namespace apl {
 
+// ============================================================================
+// Tolerant Comparison Helpers (ISO 13751)
+// ============================================================================
+
+// Tolerant equality: |A - B| <= CT * max(|A|, |B|)
+inline bool tolerant_eq(double a, double b, double ct) {
+    if (ct == 0.0) return a == b;
+    double diff = std::abs(a - b);
+    double magnitude = std::max(std::abs(a), std::abs(b));
+    return diff <= ct * magnitude;
+}
+
+// Tolerant floor: largest integer n where n ≤ X (with tolerance)
+inline double tolerant_floor(double x, double ct) {
+    double f = std::floor(x);
+    // If x is tolerantly equal to ceiling, use ceiling
+    if (tolerant_eq(x, f + 1.0, ct)) {
+        return f + 1.0;
+    }
+    return f;
+}
+
+// Tolerant ceiling: smallest integer n where n ≥ X (with tolerance)
+inline double tolerant_ceiling(double x, double ct) {
+    double c = std::ceil(x);
+    // If x is tolerantly equal to floor, use floor
+    if (tolerant_eq(x, c - 1.0, ct)) {
+        return c - 1.0;
+    }
+    return c;
+}
+
 // PrimitiveFn structs combining monadic and dyadic forms
 PrimitiveFn prim_plus    = { "+", fn_conjugate, fn_add };
 PrimitiveFn prim_minus   = { "-", fn_negate, fn_subtract };
@@ -390,9 +422,11 @@ void fn_power(Machine* m, Value* lhs, Value* rhs) {
 
 // Equality (=)
 void fn_equal(Machine* m, Value* lhs, Value* rhs) {
+    double ct = m->ct;
+
     // Fast path: scalar = scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(lhs->data.scalar == rhs->data.scalar ? 1.0 : 0.0);
+        m->result = m->heap->allocate_scalar(tolerant_eq(lhs->data.scalar, rhs->data.scalar, ct) ? 1.0 : 0.0);
         return;
     }
 
@@ -405,7 +439,7 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar == rmat->data()[i]) ? 1.0 : 0.0;
+            result(i) = tolerant_eq(lhs->data.scalar, rmat->data()[i], ct) ? 1.0 : 0.0;
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -419,7 +453,7 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] == rhs->data.scalar) ? 1.0 : 0.0;
+            result(i) = tolerant_eq(lmat->data()[i], rhs->data.scalar, ct) ? 1.0 : 0.0;
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -440,7 +474,7 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] == rmat->data()[i]) ? 1.0 : 0.0;
+        result(i) = tolerant_eq(lmat->data()[i], rmat->data()[i], ct) ? 1.0 : 0.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -452,9 +486,11 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
 
 // Not Equal (≠)
 void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
+    double ct = m->ct;
+
     // Fast path: scalar ≠ scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(lhs->data.scalar != rhs->data.scalar ? 1.0 : 0.0);
+        m->result = m->heap->allocate_scalar(!tolerant_eq(lhs->data.scalar, rhs->data.scalar, ct) ? 1.0 : 0.0);
         return;
     }
 
@@ -467,7 +503,7 @@ void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar != rmat->data()[i]) ? 1.0 : 0.0;
+            result(i) = !tolerant_eq(lhs->data.scalar, rmat->data()[i], ct) ? 1.0 : 0.0;
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -481,7 +517,7 @@ void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] != rhs->data.scalar) ? 1.0 : 0.0;
+            result(i) = !tolerant_eq(lmat->data()[i], rhs->data.scalar, ct) ? 1.0 : 0.0;
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -502,7 +538,7 @@ void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] != rmat->data()[i]) ? 1.0 : 0.0;
+        result(i) = !tolerant_eq(lmat->data()[i], rmat->data()[i], ct) ? 1.0 : 0.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -512,11 +548,14 @@ void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
-// Less Than (<)
+// Less Than (<) - strictly less and not tolerantly equal
 void fn_less(Machine* m, Value* lhs, Value* rhs) {
+    double ct = m->ct;
+
     // Fast path: scalar < scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(lhs->data.scalar < rhs->data.scalar ? 1.0 : 0.0);
+        double a = lhs->data.scalar, b = rhs->data.scalar;
+        m->result = m->heap->allocate_scalar((a < b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0);
         return;
     }
 
@@ -528,8 +567,10 @@ void fn_less(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar < rmat->data()[i]) ? 1.0 : 0.0;
+            double b = rmat->data()[i];
+            result(i) = (a < b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -542,8 +583,10 @@ void fn_less(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] < rhs->data.scalar) ? 1.0 : 0.0;
+            double a = lmat->data()[i];
+            result(i) = (a < b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -564,7 +607,8 @@ void fn_less(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] < rmat->data()[i]) ? 1.0 : 0.0;
+        double a = lmat->data()[i], b = rmat->data()[i];
+        result(i) = (a < b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -574,11 +618,14 @@ void fn_less(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
-// Greater Than (>)
+// Greater Than (>) - strictly greater and not tolerantly equal
 void fn_greater(Machine* m, Value* lhs, Value* rhs) {
+    double ct = m->ct;
+
     // Fast path: scalar > scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(lhs->data.scalar > rhs->data.scalar ? 1.0 : 0.0);
+        double a = lhs->data.scalar, b = rhs->data.scalar;
+        m->result = m->heap->allocate_scalar((a > b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0);
         return;
     }
 
@@ -590,8 +637,10 @@ void fn_greater(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar > rmat->data()[i]) ? 1.0 : 0.0;
+            double b = rmat->data()[i];
+            result(i) = (a > b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -604,8 +653,10 @@ void fn_greater(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] > rhs->data.scalar) ? 1.0 : 0.0;
+            double a = lmat->data()[i];
+            result(i) = (a > b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -626,7 +677,8 @@ void fn_greater(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] > rmat->data()[i]) ? 1.0 : 0.0;
+        double a = lmat->data()[i], b = rmat->data()[i];
+        result(i) = (a > b && !tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -636,11 +688,14 @@ void fn_greater(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
-// Less Than or Equal (≤)
+// Less Than or Equal (≤) - less than or tolerantly equal
 void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
+    double ct = m->ct;
+
     // Fast path: scalar ≤ scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(lhs->data.scalar <= rhs->data.scalar ? 1.0 : 0.0);
+        double a = lhs->data.scalar, b = rhs->data.scalar;
+        m->result = m->heap->allocate_scalar((a <= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0);
         return;
     }
 
@@ -652,8 +707,10 @@ void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar <= rmat->data()[i]) ? 1.0 : 0.0;
+            double b = rmat->data()[i];
+            result(i) = (a <= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -666,8 +723,10 @@ void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] <= rhs->data.scalar) ? 1.0 : 0.0;
+            double a = lmat->data()[i];
+            result(i) = (a <= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -688,7 +747,8 @@ void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] <= rmat->data()[i]) ? 1.0 : 0.0;
+        double a = lmat->data()[i], b = rmat->data()[i];
+        result(i) = (a <= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -698,11 +758,14 @@ void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
     }
 }
 
-// Greater Than or Equal (≥)
+// Greater Than or Equal (≥) - greater than or tolerantly equal
 void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
+    double ct = m->ct;
+
     // Fast path: scalar ≥ scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(lhs->data.scalar >= rhs->data.scalar ? 1.0 : 0.0);
+        double a = lhs->data.scalar, b = rhs->data.scalar;
+        m->result = m->heap->allocate_scalar((a >= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0);
         return;
     }
 
@@ -714,8 +777,10 @@ void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = (lhs->data.scalar >= rmat->data()[i]) ? 1.0 : 0.0;
+            double b = rmat->data()[i];
+            result(i) = (a >= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -728,8 +793,10 @@ void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = (lmat->data()[i] >= rhs->data.scalar) ? 1.0 : 0.0;
+            double a = lmat->data()[i];
+            result(i) = (a >= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -750,7 +817,8 @@ void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = (lmat->data()[i] >= rmat->data()[i]) ? 1.0 : 0.0;
+        double a = lmat->data()[i], b = rmat->data()[i];
+        result(i) = (a >= b || tolerant_eq(a, b, ct)) ? 1.0 : 0.0;
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -866,8 +934,10 @@ void fn_minimum(Machine* m, Value* lhs, Value* rhs) {
 
 // Ceiling (⌈) - monadic
 void fn_ceiling(Machine* m, Value* omega) {
+    double ct = m->ct;
+
     if (omega->is_scalar()) {
-        m->result = m->heap->allocate_scalar(std::ceil(omega->data.scalar));
+        m->result = m->heap->allocate_scalar(tolerant_ceiling(omega->data.scalar, ct));
         return;
     }
 
@@ -875,7 +945,22 @@ void fn_ceiling(Machine* m, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
-    Eigen::MatrixXd result = mat->array().ceil();
+
+    // Fast path: no tolerance, use Eigen vectorized ceil
+    if (ct == 0.0) {
+        Eigen::MatrixXd result = mat->array().ceil();
+        if (omega->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    for (int i = 0; i < mat->size(); ++i) {
+        result(i) = tolerant_ceiling(mat->data()[i], ct);
+    }
 
     if (omega->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -886,8 +971,10 @@ void fn_ceiling(Machine* m, Value* omega) {
 
 // Floor (⌊) - monadic
 void fn_floor(Machine* m, Value* omega) {
+    double ct = m->ct;
+
     if (omega->is_scalar()) {
-        m->result = m->heap->allocate_scalar(std::floor(omega->data.scalar));
+        m->result = m->heap->allocate_scalar(tolerant_floor(omega->data.scalar, ct));
         return;
     }
 
@@ -895,7 +982,22 @@ void fn_floor(Machine* m, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
-    Eigen::MatrixXd result = mat->array().floor();
+
+    // Fast path: no tolerance, use Eigen vectorized floor
+    if (ct == 0.0) {
+        Eigen::MatrixXd result = mat->array().floor();
+        if (omega->is_vector()) {
+            m->result = m->heap->allocate_vector(result.col(0));
+        } else {
+            m->result = m->heap->allocate_matrix(result);
+        }
+        return;
+    }
+
+    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    for (int i = 0; i < mat->size(); ++i) {
+        result(i) = tolerant_floor(mat->data()[i], ct);
+    }
 
     if (omega->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -3294,11 +3396,9 @@ void fn_without(Machine* m, Value* lhs, Value* rhs) {
 // Random Functions (?)
 // ============================================================================
 
-// Thread-local random number generator
-static thread_local std::mt19937_64 rng(std::random_device{}());
-
 // Roll (? monadic) - random integer from ⎕IO to N-1+⎕IO
 // ?N returns random integer in [⎕IO, N-1+⎕IO]
+// Uses machine's RNG seeded by ⎕RL for reproducibility
 void fn_roll(Machine* m, Value* omega) {
     int io = m->io;
     if (omega->is_scalar()) {
@@ -3308,7 +3408,7 @@ void fn_roll(Machine* m, Value* omega) {
             return;
         }
         std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
-        m->result = m->heap->allocate_scalar(static_cast<double>(dist(rng)));
+        m->result = m->heap->allocate_scalar(static_cast<double>(dist(m->rng)));
         return;
     }
 
@@ -3322,7 +3422,7 @@ void fn_roll(Machine* m, Value* omega) {
             return;
         }
         std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
-        result(i) = static_cast<double>(dist(rng));
+        result(i) = static_cast<double>(dist(m->rng));
     }
 
     if (omega->is_vector()) {
@@ -3368,7 +3468,7 @@ void fn_deal(Machine* m, Value* lhs, Value* rhs) {
     // Partial Fisher-Yates: only shuffle first 'a' positions
     for (int i = 0; i < a; ++i) {
         std::uniform_int_distribution<int> dist(i, b - 1);
-        int j = dist(rng);
+        int j = dist(m->rng);
         std::swap(pool(i), pool(j));
     }
 

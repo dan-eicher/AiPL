@@ -97,6 +97,7 @@ const char* token_type_name(TokenType type) {
         case TOK_NEWLINE: return "NEWLINE";
         case TOK_COMMENT: return "COMMENT";
         case TOK_ZILDE: return "⍬";
+        case TOK_QUAD_NAME: return "⎕";
         case TOK_ERROR: return "ERROR";
         default: return "UNKNOWN";
     }
