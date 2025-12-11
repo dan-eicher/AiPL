@@ -67,6 +67,10 @@ private:
     // Statement separator helpers (Phase 3.3)
     void skip_separators();  // Skip newlines, diamonds, and comments
     bool is_separator(const Token& token) const;
+
+    // Error formatting helper - creates "SYNTAX ERROR [line:col]: message"
+    void set_error(const std::string& message);
+    void set_error(const std::string& message, const Token& token);
 };
 
 } // namespace apl

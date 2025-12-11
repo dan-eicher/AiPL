@@ -39,7 +39,7 @@ Continuation* Parser::parse(const std::string& input) {
     current_token_ = lexer_->next_token();
 
     if (current_token_.type == TOK_ERROR) {
-        error_message_ = "Lexer error";
+        set_error(std::string("unexpected character '") + current_token_.name + "'", current_token_);
         delete lexer_;
         lexer_ = nullptr;
         return nullptr;
@@ -57,7 +57,7 @@ Continuation* Parser::parse(const std::string& input) {
 
         if (!stmt) {
             if (error_message_.empty()) {
-                error_message_ = "Failed to parse statement";
+                set_error("failed to parse statement");
             }
             delete lexer_;
             lexer_ = nullptr;
@@ -146,7 +146,7 @@ Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
 // Core Pratt parsing algorithm
 Continuation* Parser::parse_expression(int min_bp) {
     if (at_end()) {
-        error_message_ = "Unexpected end of input";
+        set_error("unexpected end of input");
         return nullptr;
     }
 
@@ -329,7 +329,7 @@ Continuation* Parser::nud(const Token& token) {
 
             // Expect closing parenthesis
             if (at_end() || current().type != TOK_RPAREN) {
-                error_message_ = "Expected ')' after expression";
+                set_error("expected ')' after expression");
                 return nullptr;
             }
             advance();  // consume ')'
@@ -347,11 +347,11 @@ Continuation* Parser::nud(const Token& token) {
                 advance();  // consume [
                 Continuation* axis_cont = parse_expression(0);
                 if (!axis_cont) {
-                    error_message_ = "Expected axis expression after [";
+                    set_error("expected axis expression after '['");
                     return nullptr;
                 }
                 if (current_token_.type != TOK_RBRACKET) {
-                    error_message_ = "Expected ] after axis expression";
+                    set_error("expected ']' after axis expression");
                     return nullptr;
                 }
                 advance();  // consume ]
@@ -492,7 +492,7 @@ Continuation* Parser::nud(const Token& token) {
             // System variable reference or assignment (⎕IO, ⎕PP, etc.)
             SysVarId var_id = lookup_sysvar(token.name, machine->sysvar_mask);
             if (var_id == SysVarId::INVALID) {
-                error_message_ = std::string("Unknown or disabled system variable: ⎕") + token.name;
+                set_error(std::string("unknown or disabled system variable: ⎕") + token.name, token);
                 return nullptr;
             }
 
@@ -530,7 +530,7 @@ Continuation* Parser::nud(const Token& token) {
             // Parse the function operand with high binding power to get just the function
             Continuation* fn_operand = parse_expression(BP_POSTFIX_OP);
             if (!fn_operand) {
-                error_message_ = "Outer product operator requires a function operand";
+                set_error("outer product operator requires a function operand", token);
                 return nullptr;
             }
 
@@ -540,7 +540,7 @@ Continuation* Parser::nud(const Token& token) {
         }
 
         default:
-            error_message_ = std::string("Unexpected token in prefix position: ") + token_type_name(token.type);
+            set_error(std::string("unexpected token in prefix position: ") + token_type_name(token.type), token);
             return nullptr;
     }
 }
@@ -571,7 +571,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                         // Extract variable name from inner->right (the array)
                         LookupK* var_lookup = dynamic_cast<LookupK*>(inner->right);
                         if (!var_lookup) {
-                            error_message_ = "Left side of indexed assignment must be a variable";
+                            set_error("left side of indexed assignment must be a variable", token);
                             return nullptr;
                         }
                         // outer->left is the index, inner->right is the array variable
@@ -608,7 +608,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                         // Right side should be a closure body
                         ClosureLiteralK* closure = dynamic_cast<ClosureLiteralK*>(right);
                         if (!closure) {
-                            error_message_ = "Operator body must be a dfn";
+                            set_error("operator body must be a dfn", token);
                             return nullptr;
                         }
                         // Create DefinedOperatorLiteralK for dyadic operator
@@ -625,7 +625,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                     // Monadic operator header: (FF OP)
                     ClosureLiteralK* closure = dynamic_cast<ClosureLiteralK*>(right);
                     if (!closure) {
-                        error_message_ = "Operator body must be a dfn";
+                        set_error("operator body must be a dfn", token);
                         return nullptr;
                     }
                     // Create DefinedOperatorLiteralK for monadic operator
@@ -638,7 +638,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Regular assignment: left side must be a LookupK (variable name)
             LookupK* lookup = dynamic_cast<LookupK*>(left);
             if (!lookup) {
-                error_message_ = "Left side of assignment must be a variable name";
+                set_error("left side of assignment must be a variable name", token);
                 return nullptr;
             }
 
@@ -700,11 +700,11 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                 advance();  // consume [
                 axis_cont = parse_expression(0);
                 if (!axis_cont) {
-                    error_message_ = "Expected axis expression after [";
+                    set_error("expected axis expression after '['");
                     return nullptr;
                 }
                 if (current_token_.type != TOK_RBRACKET) {
-                    error_message_ = "Expected ] after axis expression";
+                    set_error("expected ']' after axis expression");
                     return nullptr;
                 }
                 advance();  // consume ]
@@ -721,7 +721,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // In "3 ∘.× 5", left=3 (array), we need to parse × (function)
             Continuation* fn_operand = parse_expression(BP_POSTFIX_OP);
             if (!fn_operand) {
-                error_message_ = "Outer product operator requires a function operand";
+                set_error("outer product operator requires a function operand", token);
                 return nullptr;
             }
 
@@ -767,11 +767,11 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Use JuxtaposeK instead of DyadicK to go through proper curry handling
             Continuation* index_cont = parse_expression(0);
             if (!index_cont) {
-                error_message_ = "Expected index expression after [";
+                set_error("expected index expression after '['", token);
                 return nullptr;
             }
             if (current_token_.type != TOK_RBRACKET) {
-                error_message_ = "Expected ] after index expression";
+                set_error("expected ']' after index expression");
                 return nullptr;
             }
             advance();  // consume ]
@@ -787,7 +787,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 
         default:
             // Unexpected token in infix position
-            error_message_ = std::string("Unexpected token in infix position: ") + token_type_name(token.type);
+            set_error(std::string("unexpected token in infix position: ") + token_type_name(token.type), token);
             return nullptr;
     }
 }
@@ -831,7 +831,7 @@ Continuation* Parser::parse_dfn_body() {
 
     // Expect closing brace
     if (current().type != TOK_RBRACE) {
-        error_message_ = "Expected } to close dfn";
+        set_error("expected '}' to close dfn");
         return nullptr;
     }
     advance();  // consume }
@@ -943,7 +943,7 @@ Continuation* Parser::parse_if_statement() {
 
     // Expect :EndIf
     if (at_end() || current().type != TOK_ENDIF) {
-        error_message_ = "Expected :EndIf";
+        set_error("expected ':EndIf'");
         return nullptr;
     }
     advance();  // consume :EndIf
@@ -978,7 +978,7 @@ Continuation* Parser::parse_while_statement() {
 
     // Expect :EndWhile
     if (at_end() || current().type != TOK_ENDWHILE) {
-        error_message_ = "Expected :EndWhile";
+        set_error("expected ':EndWhile'");
         return nullptr;
     }
     advance();  // consume :EndWhile
@@ -995,7 +995,7 @@ Continuation* Parser::parse_for_statement() {
 
     // Expect variable name
     if (at_end() || current().type != TOK_NAME) {
-        error_message_ = "Expected variable name after :For";
+        set_error("expected variable name after ':For'");
         return nullptr;
     }
     // Intern the variable name in the string pool
@@ -1006,7 +1006,7 @@ Continuation* Parser::parse_for_statement() {
 
     // Expect :In
     if (at_end() || current().type != TOK_IN) {
-        error_message_ = "Expected :In after variable name";
+        set_error("expected ':In' after variable name");
         return nullptr;
     }
     advance();  // consume :In
@@ -1035,7 +1035,7 @@ Continuation* Parser::parse_for_statement() {
 
     // Expect :EndFor
     if (at_end() || current().type != TOK_ENDFOR) {
-        error_message_ = "Expected :EndFor";
+        set_error("expected ':EndFor'");
         return nullptr;
     }
     advance();  // consume :EndFor
@@ -1179,6 +1179,17 @@ void Parser::skip_separators() {
     while (!at_end() && is_separator(current_token_)) {
         advance();
     }
+}
+
+// Error formatting helpers - create consistent "SYNTAX ERROR [line:col]: message" format
+void Parser::set_error(const std::string& message) {
+    // Use current token's location
+    set_error(message, current_token_);
+}
+
+void Parser::set_error(const std::string& message, const Token& token) {
+    error_message_ = "SYNTAX ERROR [" + std::to_string(token.line) + ":" +
+                     std::to_string(token.column) + "]: " + message;
 }
 
 } // namespace apl

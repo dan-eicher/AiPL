@@ -52,6 +52,15 @@ static double parse_apl_number(const char* start, const char* end) {
     return negative ? -num : num;
 }
 
+// Get UTF-8 byte length from leading byte
+static int utf8_char_len(unsigned char c) {
+    if ((c & 0x80) == 0) return 1;
+    if ((c & 0xE0) == 0xC0) return 2;
+    if ((c & 0xF0) == 0xE0) return 3;
+    if ((c & 0xF8) == 0xF0) return 4;
+    return 1;  // Invalid, treat as single byte
+}
+
 // Lexer constructor
 Lexer::Lexer(const char* input)
     : cursor_(input)
@@ -382,8 +391,10 @@ Token Lexer::next_token() {
 
             // Unknown character - error
             * {
+                int len = utf8_char_len(static_cast<unsigned char>(*token_start));
+                char* bad_char = arena_.allocate_string(token_start, len);
                 column_++;
-                return Token(TOK_ERROR, token_line, token_column);
+                return Token(TOK_ERROR, bad_char, token_line, token_column);
             }
         */
     }
