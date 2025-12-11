@@ -5,6 +5,7 @@
 #include "completion.h"
 #include "operators.h"
 #include <algorithm>
+#include <stdexcept>
 
 namespace apl {
 
@@ -101,16 +102,13 @@ void CatchReturnK::invoke(Machine* machine) {
     // 1. Function body completed normally - just return the value in ctrl
     // 2. PropagateCompletionK pushed us back - check if there's a completion on stack
 
-    // Check if next item on stack is a PropagateCompletionK with RETURN
+    // Check if next item on stack is propagating a RETURN completion
     if (!machine->kont_stack.empty()) {
-        Continuation* next = machine->kont_stack.back();
-        PropagateCompletionK* prop = dynamic_cast<PropagateCompletionK*>(next);
-
-        if (prop && prop->completion && prop->completion->is_return()) {
-            // Pop the PropagateCompletionK - we're handling the return
+        Completion* comp = machine->kont_stack.back()->get_propagating_completion();
+        if (comp && comp->is_return()) {
+            // Pop the propagating continuation - we're handling the return
             machine->pop_kont();
-            // The return value is already in result (set by PropagateCompletionK)
-            // Just continue normally - completion is handled
+            // The return value is already in result
             return;
         }
     }
@@ -126,40 +124,32 @@ void CatchReturnK::mark(Heap* heap) {
 
 // CatchBreakK - Catches BREAK completions at loop boundaries
 void CatchBreakK::invoke(Machine* machine) {
-    // Check if next item on stack is a PropagateCompletionK with BREAK
+    // Check if next item on stack is propagating a BREAK completion
     if (!machine->kont_stack.empty()) {
-        Continuation* next = machine->kont_stack.back();
-        PropagateCompletionK* prop = dynamic_cast<PropagateCompletionK*>(next);
-
-        if (prop && prop->completion && prop->completion->is_break()) {
-            // Pop the PropagateCompletionK - we're handling the break
+        Completion* comp = machine->kont_stack.back()->get_propagating_completion();
+        if (comp && comp->is_break()) {
+            // Pop the propagating continuation - we're handling the break
             machine->pop_kont();
-            // For :Leave, we typically return the last value or a default
-            // The value is already in result
-            // Just continue normally - loop is exited
+            // The value is already in result - loop is exited
             return;
         }
     }
 
-    // This shouldn't normally be invoked without a break completion
-    // If we get here, just continue (shouldn't happen in normal execution)
-    (void)label;  // Unused for now (could be used for labeled breaks)
+    // Normal loop termination (condition became false) - just continue
 }
 
 void CatchBreakK::mark(Heap* heap) {
-    // No GC references to mark (label is static)
+    // No GC references to mark
     (void)heap;
 }
 
 // CatchContinueK - Catches CONTINUE completions at loop boundaries
 void CatchContinueK::invoke(Machine* machine) {
-    // Check if next item on stack is a PropagateCompletionK with CONTINUE
+    // Check if next item on stack is propagating a CONTINUE completion
     if (!machine->kont_stack.empty()) {
-        Continuation* next = machine->kont_stack.back();
-        PropagateCompletionK* prop = dynamic_cast<PropagateCompletionK*>(next);
-
-        if (prop && prop->completion && prop->completion->is_continue()) {
-            // Pop the PropagateCompletionK - we're handling the continue
+        Completion* comp = machine->kont_stack.back()->get_propagating_completion();
+        if (comp && comp->is_continue()) {
+            // Pop the propagating continuation - we're handling the continue
             machine->pop_kont();
             // Re-push the loop continuation to restart the loop
             if (loop_cont) {
@@ -169,8 +159,8 @@ void CatchContinueK::invoke(Machine* machine) {
         }
     }
 
-    // This shouldn't normally be invoked without a continue completion
-    (void)loop_cont;  // Used above
+    // VM bug: CatchContinueK invoked without a continue completion on stack
+    throw std::runtime_error("VM BUG: CatchContinueK::invoke called without CONTINUE completion");
 }
 
 void CatchContinueK::mark(Heap* heap) {

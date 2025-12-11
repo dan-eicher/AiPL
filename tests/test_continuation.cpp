@@ -55,7 +55,6 @@ TEST_F(ContinuationTest, HaltKNotBoundary) {
 
     EXPECT_FALSE(halt->is_function_boundary());
     EXPECT_FALSE(halt->is_loop_boundary());
-    EXPECT_FALSE(halt->matches_label("any"));
 
 }
 
@@ -121,8 +120,6 @@ TEST_F(ContinuationTest, ArgKNotBoundary) {
 
     EXPECT_FALSE(argk->is_function_boundary());
     EXPECT_FALSE(argk->is_loop_boundary());
-    EXPECT_FALSE(argk->matches_label("label"));
-
 }
 
 // Test FrameK basic
@@ -148,8 +145,6 @@ TEST_F(ContinuationTest, FrameKIsFunctionBoundary) {
 
     EXPECT_TRUE(frame->is_function_boundary());
     EXPECT_FALSE(frame->is_loop_boundary());
-    EXPECT_FALSE(frame->matches_label("label"));
-
 }
 
 // Test FrameK without return continuation

@@ -46,12 +46,9 @@ public:
     // Used by BREAK/CONTINUE to find loop context
     virtual bool is_loop_boundary() const { return false; }
 
-    // Does this continuation match a target label?
-    // Used by labeled BREAK/CONTINUE
-    virtual bool matches_label(const char* label) const {
-        (void)label;  // Unused
-        return false;
-    }
+    // Get completion being propagated (if any)
+    // Used by catch handlers to check for completions without dynamic_cast
+    virtual Completion* get_propagating_completion() const { return nullptr; }
 
 protected:
     // Execute this continuation
@@ -85,6 +82,7 @@ public:
     PropagateCompletionK(Completion* comp) : completion(comp) {}
 
     void mark(Heap* heap) override;
+    Completion* get_propagating_completion() const override { return completion; }
 
 protected:
     void invoke(Machine* machine) override;
@@ -109,9 +107,7 @@ protected:
 // Pushed by WhileK and ForK to establish loop boundaries for :Leave
 class CatchBreakK : public Continuation {
 public:
-    const char* label;  // Optional label for labeled breaks (not GC-managed, assumed static)
-
-    CatchBreakK(const char* lbl = nullptr) : label(lbl) {}
+    CatchBreakK() = default;
 
     void mark(Heap* heap) override;
     bool is_loop_boundary() const override { return true; }

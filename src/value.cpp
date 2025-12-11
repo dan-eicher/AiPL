@@ -11,6 +11,32 @@
 
 namespace apl {
 
+// UTF-8 encoding constants
+namespace utf8 {
+    // Byte length thresholds (codepoint ranges)
+    constexpr uint32_t MAX_1BYTE = 0x7F;      // ASCII range
+    constexpr uint32_t MAX_2BYTE = 0x7FF;     // 2-byte sequences
+    constexpr uint32_t MAX_3BYTE = 0xFFFF;    // 3-byte sequences (BMP)
+
+    // Leading byte patterns (for encoding)
+    constexpr uint8_t PREFIX_2BYTE = 0xC0;    // 110xxxxx
+    constexpr uint8_t PREFIX_3BYTE = 0xE0;    // 1110xxxx
+    constexpr uint8_t PREFIX_4BYTE = 0xF0;    // 11110xxx
+    constexpr uint8_t PREFIX_CONT  = 0x80;    // 10xxxxxx
+
+    // Masks for decoding
+    constexpr uint8_t MASK_1BYTE = 0x80;      // Check if ASCII
+    constexpr uint8_t MASK_2BYTE = 0xE0;      // Check for 2-byte lead
+    constexpr uint8_t MASK_3BYTE = 0xF0;      // Check for 3-byte lead
+    constexpr uint8_t MASK_4BYTE = 0xF8;      // Check for 4-byte lead
+    constexpr uint8_t MASK_CONT  = 0x3F;      // Continuation byte data (6 bits)
+
+    // Data masks for leading bytes
+    constexpr uint8_t DATA_2BYTE = 0x1F;      // 5 bits from 2-byte lead
+    constexpr uint8_t DATA_3BYTE = 0x0F;      // 4 bits from 3-byte lead
+    constexpr uint8_t DATA_4BYTE = 0x07;      // 3 bits from 4-byte lead
+}
+
 // Destructor
 Value::~Value() {
     cleanup();
@@ -153,27 +179,27 @@ Value* Value::to_char_vector(Heap* heap) {
         unsigned char c = static_cast<unsigned char>(*s);
         uint32_t cp;
 
-        if ((c & 0x80) == 0) {
+        if ((c & utf8::MASK_1BYTE) == 0) {
             // 1-byte (ASCII)
             cp = c;
             s += 1;
-        } else if ((c & 0xE0) == 0xC0) {
+        } else if ((c & utf8::MASK_2BYTE) == utf8::PREFIX_2BYTE) {
             // 2-byte
-            cp = (c & 0x1F) << 6;
-            cp |= (static_cast<unsigned char>(s[1]) & 0x3F);
+            cp = (c & utf8::DATA_2BYTE) << 6;
+            cp |= (static_cast<unsigned char>(s[1]) & utf8::MASK_CONT);
             s += 2;
-        } else if ((c & 0xF0) == 0xE0) {
+        } else if ((c & utf8::MASK_3BYTE) == utf8::PREFIX_3BYTE) {
             // 3-byte
-            cp = (c & 0x0F) << 12;
-            cp |= (static_cast<unsigned char>(s[1]) & 0x3F) << 6;
-            cp |= (static_cast<unsigned char>(s[2]) & 0x3F);
+            cp = (c & utf8::DATA_3BYTE) << 12;
+            cp |= (static_cast<unsigned char>(s[1]) & utf8::MASK_CONT) << 6;
+            cp |= (static_cast<unsigned char>(s[2]) & utf8::MASK_CONT);
             s += 3;
-        } else if ((c & 0xF8) == 0xF0) {
+        } else if ((c & utf8::MASK_4BYTE) == utf8::PREFIX_4BYTE) {
             // 4-byte
-            cp = (c & 0x07) << 18;
-            cp |= (static_cast<unsigned char>(s[1]) & 0x3F) << 12;
-            cp |= (static_cast<unsigned char>(s[2]) & 0x3F) << 6;
-            cp |= (static_cast<unsigned char>(s[3]) & 0x3F);
+            cp = (c & utf8::DATA_4BYTE) << 18;
+            cp |= (static_cast<unsigned char>(s[1]) & utf8::MASK_CONT) << 12;
+            cp |= (static_cast<unsigned char>(s[2]) & utf8::MASK_CONT) << 6;
+            cp |= (static_cast<unsigned char>(s[3]) & utf8::MASK_CONT);
             s += 4;
         } else {
             // Invalid UTF-8, treat as single byte
@@ -210,20 +236,20 @@ Value* Value::to_string_value(Heap* heap) {
     for (int i = 0; i < mat->size(); ++i) {
         uint32_t cp = static_cast<uint32_t>((*mat)(i % mat->rows(), i / mat->rows()));
 
-        if (cp < 0x80) {
+        if (cp <= utf8::MAX_1BYTE) {
             result += static_cast<char>(cp);
-        } else if (cp < 0x800) {
-            result += static_cast<char>(0xC0 | (cp >> 6));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
-        } else if (cp < 0x10000) {
-            result += static_cast<char>(0xE0 | (cp >> 12));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
+        } else if (cp <= utf8::MAX_2BYTE) {
+            result += static_cast<char>(utf8::PREFIX_2BYTE | (cp >> 6));
+            result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
+        } else if (cp <= utf8::MAX_3BYTE) {
+            result += static_cast<char>(utf8::PREFIX_3BYTE | (cp >> 12));
+            result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
+            result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
         } else {
-            result += static_cast<char>(0xF0 | (cp >> 18));
-            result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-            result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-            result += static_cast<char>(0x80 | (cp & 0x3F));
+            result += static_cast<char>(utf8::PREFIX_4BYTE | (cp >> 18));
+            result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 12) & utf8::MASK_CONT));
+            result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
+            result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
         }
     }
 
@@ -276,20 +302,20 @@ static std::string format_number(double d) {
 // Helper: format a codepoint as a character (UTF-8)
 static std::string codepoint_to_utf8(uint32_t cp) {
     std::string result;
-    if (cp < 0x80) {
+    if (cp <= utf8::MAX_1BYTE) {
         result += static_cast<char>(cp);
-    } else if (cp < 0x800) {
-        result += static_cast<char>(0xC0 | (cp >> 6));
-        result += static_cast<char>(0x80 | (cp & 0x3F));
-    } else if (cp < 0x10000) {
-        result += static_cast<char>(0xE0 | (cp >> 12));
-        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        result += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp <= utf8::MAX_2BYTE) {
+        result += static_cast<char>(utf8::PREFIX_2BYTE | (cp >> 6));
+        result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
+    } else if (cp <= utf8::MAX_3BYTE) {
+        result += static_cast<char>(utf8::PREFIX_3BYTE | (cp >> 12));
+        result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
+        result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
     } else {
-        result += static_cast<char>(0xF0 | (cp >> 18));
-        result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        result += static_cast<char>(0x80 | (cp & 0x3F));
+        result += static_cast<char>(utf8::PREFIX_4BYTE | (cp >> 18));
+        result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 12) & utf8::MASK_CONT));
+        result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
+        result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
     }
     return result;
 }
