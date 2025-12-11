@@ -672,6 +672,157 @@ TEST_F(StringTest, DyadicFormatZeroWidth) {
     EXPECT_THROW(eval("0 2⍕42"), APLError);
 }
 
+// ============================================================================
+// Character Data Preservation Tests
+// Verify is_char_data() flag is preserved through array operations
+// ============================================================================
+
+TEST_F(StringTest, ReshapePreservesCharData) {
+    Value* result = eval("3 3 ⍴ 'abcdefghi'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, ReshapePreservesCharDataCyclic) {
+    // Cyclic fill should still preserve char data
+    Value* result = eval("2 4 ⍴ 'AB'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, ReshapeToVectorPreservesCharData) {
+    Value* result = eval("5 ⍴ 'abc'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, RavelPreservesCharData) {
+    Value* result = eval(",'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, RavelMatrixPreservesCharData) {
+    Value* result = eval(",2 3⍴'ABCDEF'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, TakePreservesCharData) {
+    Value* result = eval("3↑'ABCDE'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, TakeOverfillPreservesCharData) {
+    // Taking more than available fills with zeros but should preserve char flag
+    Value* result = eval("5↑'AB'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, DropPreservesCharData) {
+    Value* result = eval("2↓'ABCDE'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, ReversePreservesCharData) {
+    Value* result = eval("⌽'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, RotatePreservesCharData) {
+    Value* result = eval("1⌽'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, TransposePreservesCharData) {
+    Value* result = eval("⍉2 3⍴'ABCDEF'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, CatenatePreservesCharData) {
+    Value* result = eval("'ABC','DEF'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, CatenateFirstPreservesCharData) {
+    Value* result = eval("(2 3⍴'ABCDEF')⍪(1 3⍴'GHI')");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, FirstPreservesCharData) {
+    // ↑'ABC' returns scalar, scalars don't have char flag
+    // but ↑ on matrix should preserve it
+    Value* result = eval("↑2 3⍴'ABCDEF'");
+    ASSERT_NE(result, nullptr);
+    // First of matrix is first row (a vector)
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, ReverseFirstPreservesCharData) {
+    Value* result = eval("⊖2 3⍴'ABCDEF'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, RotateFirstPreservesCharData) {
+    Value* result = eval("1⊖2 3⍴'ABCDEF'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, ReplicatePreservesCharData) {
+    Value* result = eval("1 0 1/'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, ExpandPreservesCharData) {
+    Value* result = eval("1 0 1 0 1\\'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, IndexingPreservesCharData) {
+    Value* result = eval("'ABCDE'[2 4]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
+TEST_F(StringTest, EachPreservesCharData) {
+    // ⊢¨'ABC' should return each character, preserving char flag
+    Value* result = eval("⊢¨'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+}
+
 // Round-trip tests (⍎⍕)
 TEST_F(StringTest, FormatExecuteRoundTripInteger) {
     Value* result = eval("⍎⍕42");

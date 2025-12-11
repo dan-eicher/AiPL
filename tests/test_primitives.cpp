@@ -3029,6 +3029,358 @@ TEST_F(PrimitivesTest, GradeUpAllEqual) {
 }
 
 // ============================================================================
+// Dyadic Character Grade Functions (A⍋B, A⍒B) - ISO 13751 Sections 10.2.20-21
+// Unit tests that directly call fn_grade_up_dyadic / fn_grade_down_dyadic
+// ============================================================================
+
+// Helper to create character vector from string
+static Value* make_char_vec(Machine* m, const std::string& s) {
+    Eigen::VectorXd v(s.size());
+    for (size_t i = 0; i < s.size(); ++i) {
+        v(i) = static_cast<double>(static_cast<unsigned char>(s[i]));
+    }
+    return m->heap->allocate_vector(v, true);  // is_char_data = true
+}
+
+// Helper to create character matrix from strings (each string is a row)
+static Value* make_char_matrix(Machine* m, const std::vector<std::string>& rows) {
+    if (rows.empty()) return m->heap->allocate_vector(Eigen::VectorXd(0), true);
+    size_t cols = rows[0].size();
+    Eigen::MatrixXd mat(rows.size(), cols);
+    for (size_t r = 0; r < rows.size(); ++r) {
+        for (size_t c = 0; c < cols; ++c) {
+            mat(r, c) = static_cast<double>(static_cast<unsigned char>(rows[r][c]));
+        }
+    }
+    return m->heap->allocate_matrix(mat, true);  // is_char_data = true
+}
+
+// --- Basic Character Grade Up Tests ---
+
+TEST_F(PrimitivesTest, CharGradeUpBasicVector) {
+    // 'ABC'⍋'CAB' → 2 3 1
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_vec(machine, "CAB");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    ASSERT_NE(machine->result, nullptr);
+    EXPECT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->size(), 3);
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 'A' at position 2 in 'CAB'
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);  // 'B' at position 3
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 'C' at position 1
+}
+
+TEST_F(PrimitivesTest, CharGradeUpAlreadySorted) {
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_vec(machine, "ABC");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, CharGradeUpReversed) {
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_vec(machine, "CBA");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);
+}
+
+// --- Character Grade Down Tests ---
+
+TEST_F(PrimitivesTest, CharGradeDownBasicVector) {
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_vec(machine, "CAB");
+
+    fn_grade_down_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // 'C' first (highest)
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);  // 'B' second
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);  // 'A' last
+}
+
+TEST_F(PrimitivesTest, CharGradeDownReversed) {
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_vec(machine, "CBA");
+
+    fn_grade_down_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // Already descending
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+// --- ISO 13751: Characters not in A are equal and occur after all characters in A ---
+
+TEST_F(PrimitivesTest, CharGradeUpUnknownCharsLast) {
+    Value* collating = make_char_vec(machine, "AB");
+    Value* data = make_char_vec(machine, "CBA");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);  // 'A' first (known, lowest)
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);  // 'B' second (known)
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 'C' last (unknown)
+}
+
+TEST_F(PrimitivesTest, CharGradeDownUnknownCharsLast) {
+    // ISO 13751: unknowns sort AFTER all known chars, even in descending
+    Value* collating = make_char_vec(machine, "AB");
+    Value* data = make_char_vec(machine, "CBA");
+
+    fn_grade_down_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 'B' first (highest known)
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);  // 'A' second
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // 'C' last (unknown)
+}
+
+TEST_F(PrimitivesTest, CharGradeUpMultipleUnknowns) {
+    // Multiple unknown chars should be equal (stable among themselves)
+    Value* collating = make_char_vec(machine, "A");
+    Value* data = make_char_vec(machine, "XAYZ");  // X,Y,Z unknown
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 'A' first (only known)
+    // Unknowns maintain original order (stable): X@1, Y@3, Z@4
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 'X'
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);  // 'Y'
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);  // 'Z'
+}
+
+// --- ISO 13751: Stable sort requirement ---
+
+TEST_F(PrimitivesTest, CharGradeUpStable) {
+    Value* collating = make_char_vec(machine, "AB");
+    Value* data = make_char_vec(machine, "ABBA");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // First 'A' at position 1
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 4.0);  // Second 'A' at position 4
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);  // First 'B' at position 2
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 3.0);  // Second 'B' at position 3
+}
+
+TEST_F(PrimitivesTest, CharGradeDownStable) {
+    Value* collating = make_char_vec(machine, "AB");
+    Value* data = make_char_vec(machine, "ABBA");
+
+    fn_grade_down_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // First 'B'
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);  // Second 'B'
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // First 'A'
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);  // Second 'A'
+}
+
+TEST_F(PrimitivesTest, CharGradeUpAllEqualPreservesOrder) {
+    Value* collating = make_char_vec(machine, "A");
+    Value* data = make_char_vec(machine, "AAA");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+// --- ISO 13751: Edge cases from evaluation sequence ---
+
+TEST_F(PrimitivesTest, CharGradeUpEmptyCollating) {
+    // "If A is empty, return IO+⍳1↑⍴B" (identity permutation)
+    Value* collating = make_char_vec(machine, "");
+    Value* data = make_char_vec(machine, "ABC");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, CharGradeUpEmptyRight) {
+    // "If 1↑⍴B is zero, return ⍳0"
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_vec(machine, "");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    EXPECT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, CharGradeUpSingleElement) {
+    // "If 1↑⍴B is one, return one-element-vector containing index-origin"
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_vec(machine, "X");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    EXPECT_EQ(machine->result->size(), 1);
+    EXPECT_DOUBLE_EQ(machine->result->as_matrix()->operator()(0, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, CharGradeDownEmptyCollating) {
+    Value* collating = make_char_vec(machine, "");
+    Value* data = make_char_vec(machine, "CBA");
+
+    fn_grade_down_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+}
+
+// --- ISO 13751: "If A is a scalar, signal rank-error" ---
+
+TEST_F(PrimitivesTest, CharGradeUpScalarCollatingError) {
+    Value* scalar = machine->heap->allocate_scalar(static_cast<double>('A'));
+    Value* data = make_char_vec(machine, "ABC");
+
+    fn_grade_up_dyadic(machine, scalar, data);
+
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(err, nullptr);
+    EXPECT_TRUE(std::string(err->error_message).find("RANK") != std::string::npos);
+}
+
+TEST_F(PrimitivesTest, CharGradeDownScalarCollatingError) {
+    Value* scalar = machine->heap->allocate_scalar(static_cast<double>('A'));
+    Value* data = make_char_vec(machine, "ABC");
+
+    fn_grade_down_dyadic(machine, scalar, data);
+
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// --- ISO 13751: Domain errors ---
+
+TEST_F(PrimitivesTest, CharGradeUpNumericRightError) {
+    Value* collating = make_char_vec(machine, "ABC");
+    Eigen::VectorXd nums(3);
+    nums << 1.0, 2.0, 3.0;
+    Value* numeric = machine->heap->allocate_vector(nums);
+
+    fn_grade_up_dyadic(machine, collating, numeric);
+
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(err, nullptr);
+    EXPECT_TRUE(std::string(err->error_message).find("DOMAIN") != std::string::npos);
+}
+
+TEST_F(PrimitivesTest, CharGradeUpNumericLeftError) {
+    Eigen::VectorXd nums(3);
+    nums << 1.0, 2.0, 3.0;
+    Value* numeric = machine->heap->allocate_vector(nums);
+    Value* chars = make_char_vec(machine, "ABC");
+
+    fn_grade_up_dyadic(machine, numeric, chars);
+
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
+    ASSERT_NE(err, nullptr);
+    EXPECT_TRUE(std::string(err->error_message).find("DOMAIN") != std::string::npos);
+}
+
+// --- ISO 13751: First occurrence determines position for duplicates ---
+
+TEST_F(PrimitivesTest, CharGradeUpDuplicateInCollating) {
+    // 'AABB' → A at pos 0, B at pos 2 (first occurrence)
+    Value* collating = make_char_vec(machine, "AABB");
+    Value* data = make_char_vec(machine, "BA");
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 'A' first (pos 0)
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 'B' second (pos 2)
+}
+
+// --- ISO 13751: Matrix B - sort rows lexicographically ---
+
+TEST_F(PrimitivesTest, CharGradeUpMatrixRows) {
+    // Sort rows of character matrix
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_matrix(machine, {"CA", "AB", "BC"});
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    EXPECT_EQ(machine->result->size(), 3);
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    // "AB" < "BC" < "CA" in 'ABC' order
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // "AB" first
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);  // "BC" second
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // "CA" last
+}
+
+TEST_F(PrimitivesTest, CharGradeDownMatrixRows) {
+    Value* collating = make_char_vec(machine, "ABC");
+    Value* data = make_char_matrix(machine, {"CA", "AB", "BC"});
+
+    fn_grade_down_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    // Descending: "CA" > "BC" > "AB"
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // "CA" first
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);  // "BC" second
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);  // "AB" last
+}
+
+TEST_F(PrimitivesTest, CharGradeUpMatrixRowsStable) {
+    // Equal rows should maintain original order
+    Value* collating = make_char_vec(machine, "AB");
+    Value* data = make_char_matrix(machine, {"AB", "AB", "AA"});
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    // "AA" < "AB" = "AB", stable keeps first "AB" before second
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);  // "AA" first
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // First "AB"
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 2.0);  // Second "AB"
+}
+
+TEST_F(PrimitivesTest, CharGradeUpMatrixWithUnknowns) {
+    // Rows with unknown chars sort after rows with known chars
+    Value* collating = make_char_vec(machine, "AB");
+    Value* data = make_char_matrix(machine, {"XY", "AB", "BA"});
+
+    fn_grade_up_dyadic(machine, collating, data);
+
+    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    // "AB" < "BA" < "XY" (unknowns last)
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // "AB"
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 3.0);  // "BA"
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // "XY" (all unknown)
+}
+
+// ============================================================================
 // Replicate Function (/)
 // ============================================================================
 

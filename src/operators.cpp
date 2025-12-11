@@ -197,10 +197,11 @@ void op_each(Machine* m, Value* f, Value* omega) {
     int rows = omega->rows();
     int cols = omega->cols();
     int num_cells = rows * cols;
+    bool is_char = omega->is_char_data();
 
     m->push_kont(m->heap->allocate<CellIterK>(
         f, nullptr, omega, 0, 0, num_cells,
-        CellIterMode::COLLECT, rows, cols, omega->is_vector()));
+        CellIterMode::COLLECT, rows, cols, omega->is_vector(), is_char));
 }
 
 // Dyadic Each: A f¨B
@@ -226,9 +227,10 @@ void op_each_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
         int rows = rhs->rows();
         int cols = rhs->cols();
         int num_cells = rows * cols;
+        bool is_char = rhs->is_char_data();
         m->push_kont(m->heap->allocate<CellIterK>(
             f, lhs, rhs, 0, 0, num_cells,
-            CellIterMode::COLLECT, rows, cols, rhs->is_vector()));
+            CellIterMode::COLLECT, rows, cols, rhs->is_vector(), is_char));
         return;
     }
 
@@ -238,9 +240,10 @@ void op_each_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
         int rows = lhs->rows();
         int cols = lhs->cols();
         int num_cells = rows * cols;
+        bool is_char = lhs->is_char_data();
         m->push_kont(m->heap->allocate<CellIterK>(
             f, lhs, rhs, 0, 0, num_cells,
-            CellIterMode::COLLECT, rows, cols, lhs->is_vector()));
+            CellIterMode::COLLECT, rows, cols, lhs->is_vector(), is_char));
         return;
     }
 
@@ -259,9 +262,10 @@ void op_each_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     }
 
     int num_cells = lhs_rows * lhs_cols;
+    bool is_char = lhs->is_char_data() && rhs->is_char_data();
     m->push_kont(m->heap->allocate<CellIterK>(
         f, lhs, rhs, 0, 0, num_cells,
-        CellIterMode::COLLECT, lhs_rows, lhs_cols, lhs->is_vector()));
+        CellIterMode::COLLECT, lhs_rows, lhs_cols, lhs->is_vector(), is_char));
 }
 
 // ========================================================================

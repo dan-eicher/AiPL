@@ -9,6 +9,7 @@
 #include <stdexcept>
 #include <random>
 #include <iomanip>
+#include <map>
 
 namespace apl {
 
@@ -48,8 +49,8 @@ PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
 PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
 PrimitiveFn prim_depth     = { "≡", fn_depth, fn_match };  // ISO 13751: depth/match
 PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
-PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, nullptr };
-PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, nullptr };
+PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, fn_grade_up_dyadic };
+PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, fn_grade_down_dyadic };
 PrimitiveFn prim_union     = { "∪", fn_unique, fn_union };
 PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular };
 PrimitiveFn prim_question  = { "?", fn_roll, fn_deal };
@@ -1990,10 +1991,13 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
         result(i / target_cols, i % target_cols) = source(i % source.size());
     }
 
+    // Preserve character data flag from source
+    bool is_char = rhs->is_char_data();
+
     if (target_cols == 1) {
-        m->result = m->heap->allocate_vector(result.col(0));
+        m->result = m->heap->allocate_vector(result.col(0), is_char);
     } else {
-        m->result = m->heap->allocate_matrix(result);
+        m->result = m->heap->allocate_matrix(result, is_char);
     }
 }
 
@@ -2009,6 +2013,7 @@ void fn_ravel(Machine* m, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Flatten in row-major order (APL standard)
     int size = mat->size();
@@ -2018,7 +2023,7 @@ void fn_ravel(Machine* m, Value* omega) {
     for (int i = 0; i < size; ++i) {
         result(i) = (*mat)(i / cols, i % cols);
     }
-    m->result = m->heap->allocate_vector(result);
+    m->result = m->heap->allocate_vector(result, is_char);
 }
 
 // Catenate (,) - dyadic: concatenate arrays
@@ -2026,6 +2031,9 @@ void fn_catenate(Machine* m, Value* lhs, Value* rhs) {
     // String → char vector conversion for array operations
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    // Preserve char data if both operands are char data
+    bool is_char = lhs->is_char_data() && rhs->is_char_data();
 
     // Convert both to matrices for uniform handling
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -2041,9 +2049,9 @@ void fn_catenate(Machine* m, Value* lhs, Value* rhs) {
     result << *lmat, *rmat;
 
     if (result.cols() == 1) {
-        m->result = m->heap->allocate_vector(result.col(0));
+        m->result = m->heap->allocate_vector(result.col(0), is_char);
     } else {
-        m->result = m->heap->allocate_matrix(result);
+        m->result = m->heap->allocate_matrix(result, is_char);
     }
 }
 
@@ -2067,7 +2075,7 @@ void fn_transpose(Machine* m, Value* omega) {
     // Matrix transpose
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->transpose();
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, omega->is_char_data());
 }
 
 // Dyadic Transpose (⍉) - reorder axes
@@ -2241,7 +2249,7 @@ void fn_first(Machine* m, Value* omega) {
 
     // First of matrix is the first row as vector
     Eigen::VectorXd first_row = mat->row(0);
-    m->result = m->heap->allocate_vector(first_row);
+    m->result = m->heap->allocate_vector(first_row, omega->is_char_data());
 }
 
 // Take (↑) - dyadic: take first n elements
@@ -2262,6 +2270,7 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
@@ -2282,7 +2291,7 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
                 result(i) = (src_idx >= 0) ? (*mat)(src_idx, 0) : 0.0;
             }
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
@@ -2311,7 +2320,7 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
         }
     }
 
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // Drop (↓) - dyadic: drop first n elements
@@ -2331,6 +2340,7 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
@@ -2340,7 +2350,7 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
         if (abs_n >= len) {
             // Drop everything
             Eigen::VectorXd result(0);
-            m->result = m->heap->allocate_vector(result);
+            m->result = m->heap->allocate_vector(result, is_char);
             return;
         }
 
@@ -2358,7 +2368,7 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
                 result(i) = (*mat)(i, 0);
             }
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
@@ -2369,7 +2379,7 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
     if (abs_n >= rows) {
         // Drop everything - return empty matrix
         Eigen::MatrixXd result(0, mat->cols());
-        m->result = m->heap->allocate_matrix(result);
+        m->result = m->heap->allocate_matrix(result, is_char);
         return;
     }
 
@@ -2382,7 +2392,7 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
         result = mat->topRows(result_rows);
     }
 
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // ============================================================================
@@ -2400,6 +2410,7 @@ void fn_reverse(Machine* m, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (omega->is_vector()) {
@@ -2408,7 +2419,7 @@ void fn_reverse(Machine* m, Value* omega) {
         for (int i = 0; i < mat->rows(); ++i) {
             result(i) = (*mat)(mat->rows() - 1 - i, 0);
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
@@ -2419,7 +2430,7 @@ void fn_reverse(Machine* m, Value* omega) {
             result(i, j) = (*mat)(i, mat->cols() - 1 - j);
         }
     }
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // Reverse First (⊖) - monadic: reverse elements along first axis
@@ -2431,6 +2442,7 @@ void fn_reverse_first(Machine* m, Value* omega) {
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (omega->is_vector()) {
@@ -2439,7 +2451,7 @@ void fn_reverse_first(Machine* m, Value* omega) {
         for (int i = 0; i < mat->rows(); ++i) {
             result(i) = (*mat)(mat->rows() - 1 - i, 0);
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
@@ -2448,7 +2460,7 @@ void fn_reverse_first(Machine* m, Value* omega) {
     for (int i = 0; i < mat->rows(); ++i) {
         result.row(i) = mat->row(mat->rows() - 1 - i);
     }
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // Tally (≢) - monadic: count along first axis
@@ -2483,12 +2495,13 @@ void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
         int len = mat->rows();
         if (len == 0) {
-            m->result = m->heap->allocate_vector(mat->col(0));
+            m->result = m->heap->allocate_vector(mat->col(0), is_char);
             return;
         }
         // Normalize rotation (positive = left rotate, APL convention)
@@ -2497,14 +2510,14 @@ void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
         for (int i = 0; i < len; ++i) {
             result(i) = (*mat)((i + n) % len, 0);
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
     // For matrices: rotate columns within each row
     int cols = mat->cols();
     if (cols == 0) {
-        m->result = m->heap->allocate_matrix(*mat);
+        m->result = m->heap->allocate_matrix(*mat, is_char);
         return;
     }
     n = ((n % cols) + cols) % cols;
@@ -2514,7 +2527,7 @@ void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
             result(i, j) = (*mat)(i, (j + n) % cols);
         }
     }
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // Rotate First (⊖) - dyadic: rotate elements along first axis
@@ -2533,13 +2546,14 @@ void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
         // For vectors, first axis is the only axis
         int len = mat->rows();
         if (len == 0) {
-            m->result = m->heap->allocate_vector(mat->col(0));
+            m->result = m->heap->allocate_vector(mat->col(0), is_char);
             return;
         }
         n = ((n % len) + len) % len;
@@ -2547,14 +2561,14 @@ void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
         for (int i = 0; i < len; ++i) {
             result(i) = (*mat)((i + n) % len, 0);
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
     // For matrices: rotate rows (first axis)
     int rows = mat->rows();
     if (rows == 0) {
-        m->result = m->heap->allocate_matrix(*mat);
+        m->result = m->heap->allocate_matrix(*mat, is_char);
         return;
     }
     n = ((n % rows) + rows) % rows;
@@ -2562,7 +2576,7 @@ void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
     for (int i = 0; i < rows; ++i) {
         result.row(i) = mat->row((i + n) % rows);
     }
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // ============================================================================
@@ -2749,6 +2763,275 @@ void fn_grade_down(Machine* m, Value* omega) {
     m->result = m->heap->allocate_vector(result);
 }
 
+// Character Grade Up (A⍋B) - dyadic: sort B according to collating sequence A
+// ISO 13751 Section 10.2.21
+// A must be a character array with rank > 0
+// B must be a character array
+// Result is a permutation of ⍳1↑⍴B that sorts B's subarrays along first axis
+// Uses stable sort; characters not in A sort after all characters in A
+void fn_grade_up_dyadic(Machine* m, Value* lhs, Value* rhs) {
+    // Validate A (collating sequence) is character array with rank > 0
+    if (lhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: collating sequence must have rank > 0"));
+        return;
+    }
+    if (!lhs->is_char_data() && !lhs->is_string()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: collating sequence must be character"));
+        return;
+    }
+
+    // Validate B is character array
+    if (!rhs->is_char_data() && !rhs->is_string()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: right argument must be character"));
+        return;
+    }
+
+    Value* A = lhs;
+    Value* B = rhs;
+    if (A->is_string()) A = A->to_char_vector(m->heap);
+    if (B->is_string()) B = B->to_char_vector(m->heap);
+
+    const Eigen::MatrixXd* A_mat = A->as_matrix();
+    const Eigen::MatrixXd* B_mat = B->as_matrix();
+
+    // First axis length of B
+    int first_axis_len = B->rows();
+
+    // Handle empty B - return empty vector
+    if (first_axis_len == 0) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
+    // Handle single element - return ⍳1
+    if (first_axis_len == 1) {
+        Eigen::VectorXd result(1);
+        result(0) = m->io;
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // Handle empty A - return identity permutation (all chars equal)
+    if (A->size() == 0) {
+        Eigen::VectorXd result(first_axis_len);
+        for (int i = 0; i < first_axis_len; ++i) {
+            result(i) = i + m->io;
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // Build collating lookup: char -> position (first occurrence)
+    // Characters not in A get position = A->size() (sort last)
+    std::map<int, int> char_to_pos;
+    int A_size = A->size();
+
+    if (A->is_vector()) {
+        for (int i = 0; i < A_size; ++i) {
+            int ch = static_cast<int>((*A_mat)(i, 0));
+            if (char_to_pos.find(ch) == char_to_pos.end()) {
+                char_to_pos[ch] = i;
+            }
+        }
+    } else {
+        // For matrix A, use ravel order (last axis varies fastest)
+        int rows = A->rows();
+        int cols = A->cols();
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                int ch = static_cast<int>((*A_mat)(r, c));
+                if (char_to_pos.find(ch) == char_to_pos.end()) {
+                    char_to_pos[ch] = r * cols + c;
+                }
+            }
+        }
+    }
+
+    int not_found_pos = A_size;  // Characters not in A sort last
+
+    // Create indices to sort
+    std::vector<int> indices(first_axis_len);
+    for (int i = 0; i < first_axis_len; ++i) {
+        indices[i] = i;
+    }
+
+    // Helper to get collating position of a character
+    auto get_pos = [&](int ch) -> int {
+        auto it = char_to_pos.find(ch);
+        return (it != char_to_pos.end()) ? it->second : not_found_pos;
+    };
+
+    // Comparison function based on B's structure
+    if (B->is_vector()) {
+        // Grade individual characters (1D case)
+        auto compare = [&](int i, int j) -> bool {
+            int ch_i = static_cast<int>((*B_mat)(i, 0));
+            int ch_j = static_cast<int>((*B_mat)(j, 0));
+            return get_pos(ch_i) < get_pos(ch_j);
+        };
+        std::stable_sort(indices.begin(), indices.end(), compare);
+    } else {
+        // Grade rows lexicographically (matrix case)
+        int cols = B->cols();
+        auto compare = [&](int i, int j) -> bool {
+            for (int k = 0; k < cols; ++k) {
+                int ch_i = static_cast<int>((*B_mat)(i, k));
+                int ch_j = static_cast<int>((*B_mat)(j, k));
+                int pos_i = get_pos(ch_i);
+                int pos_j = get_pos(ch_j);
+                if (pos_i < pos_j) return true;
+                if (pos_i > pos_j) return false;
+            }
+            return false;  // Rows are equal
+        };
+        std::stable_sort(indices.begin(), indices.end(), compare);
+    }
+
+    // Convert to result vector with ⎕IO
+    Eigen::VectorXd result(first_axis_len);
+    for (int i = 0; i < first_axis_len; ++i) {
+        result(i) = static_cast<double>(indices[i] + m->io);
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// Character Grade Down (A⍒B) - dyadic: sort B descending according to collating sequence A
+// ISO 13751 Section 10.2.20
+// Same as grade up but with reversed comparison
+void fn_grade_down_dyadic(Machine* m, Value* lhs, Value* rhs) {
+    // Validate A (collating sequence) is character array with rank > 0
+    if (lhs->is_scalar()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: collating sequence must have rank > 0"));
+        return;
+    }
+    if (!lhs->is_char_data() && !lhs->is_string()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: collating sequence must be character"));
+        return;
+    }
+
+    // Validate B is character array
+    if (!rhs->is_char_data() && !rhs->is_string()) {
+        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: right argument must be character"));
+        return;
+    }
+
+    Value* A = lhs;
+    Value* B = rhs;
+    if (A->is_string()) A = A->to_char_vector(m->heap);
+    if (B->is_string()) B = B->to_char_vector(m->heap);
+
+    const Eigen::MatrixXd* A_mat = A->as_matrix();
+    const Eigen::MatrixXd* B_mat = B->as_matrix();
+
+    // First axis length of B
+    int first_axis_len = B->rows();
+
+    // Handle empty B - return empty vector
+    if (first_axis_len == 0) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
+    // Handle single element - return ⍳1
+    if (first_axis_len == 1) {
+        Eigen::VectorXd result(1);
+        result(0) = m->io;
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // Handle empty A - return identity permutation (all chars equal)
+    if (A->size() == 0) {
+        Eigen::VectorXd result(first_axis_len);
+        for (int i = 0; i < first_axis_len; ++i) {
+            result(i) = i + m->io;
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // Build collating lookup: char -> position (first occurrence)
+    std::map<int, int> char_to_pos;
+    int A_size = A->size();
+
+    if (A->is_vector()) {
+        for (int i = 0; i < A_size; ++i) {
+            int ch = static_cast<int>((*A_mat)(i, 0));
+            if (char_to_pos.find(ch) == char_to_pos.end()) {
+                char_to_pos[ch] = i;
+            }
+        }
+    } else {
+        int rows = A->rows();
+        int cols = A->cols();
+        for (int r = 0; r < rows; ++r) {
+            for (int c = 0; c < cols; ++c) {
+                int ch = static_cast<int>((*A_mat)(r, c));
+                if (char_to_pos.find(ch) == char_to_pos.end()) {
+                    char_to_pos[ch] = r * cols + c;
+                }
+            }
+        }
+    }
+
+    int not_found_pos = A_size;
+
+    std::vector<int> indices(first_axis_len);
+    for (int i = 0; i < first_axis_len; ++i) {
+        indices[i] = i;
+    }
+
+    auto get_pos = [&](int ch) -> int {
+        auto it = char_to_pos.find(ch);
+        return (it != char_to_pos.end()) ? it->second : not_found_pos;
+    };
+
+    // For grade down, unknowns still sort AFTER all known chars (ISO 13751)
+    // Compare known chars descending, but unknowns always sort last
+    auto compare_desc = [&](int pos_i, int pos_j) -> int {
+        bool i_unknown = (pos_i == not_found_pos);
+        bool j_unknown = (pos_j == not_found_pos);
+        if (i_unknown && j_unknown) return 0;  // Both unknown: equal
+        if (i_unknown) return 1;               // i unknown: i sorts after j
+        if (j_unknown) return -1;              // j unknown: j sorts after i
+        // Both known: descending order
+        if (pos_i > pos_j) return -1;
+        if (pos_i < pos_j) return 1;
+        return 0;
+    };
+
+    if (B->is_vector()) {
+        // Grade individual characters descending
+        auto compare = [&](int i, int j) -> bool {
+            int ch_i = static_cast<int>((*B_mat)(i, 0));
+            int ch_j = static_cast<int>((*B_mat)(j, 0));
+            return compare_desc(get_pos(ch_i), get_pos(ch_j)) < 0;
+        };
+        std::stable_sort(indices.begin(), indices.end(), compare);
+    } else {
+        int cols = B->cols();
+        auto compare = [&](int i, int j) -> bool {
+            for (int k = 0; k < cols; ++k) {
+                int ch_i = static_cast<int>((*B_mat)(i, k));
+                int ch_j = static_cast<int>((*B_mat)(j, k));
+                int cmp = compare_desc(get_pos(ch_i), get_pos(ch_j));
+                if (cmp < 0) return true;
+                if (cmp > 0) return false;
+            }
+            return false;
+        };
+        std::stable_sort(indices.begin(), indices.end(), compare);
+    }
+
+    Eigen::VectorXd result(first_axis_len);
+    for (int i = 0; i < first_axis_len; ++i) {
+        result(i) = static_cast<double>(indices[i] + m->io);
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
 // ============================================================================
 // Replicate Function (/)
 // ============================================================================
@@ -2760,6 +3043,8 @@ void fn_grade_down(Machine* m, Value* omega) {
 void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    bool is_char = rhs->is_char_data();
 
     // Get counts from lhs
     Eigen::VectorXd counts = flatten_value(lhs);
@@ -2790,7 +3075,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
         if (total_cols == 0) {
             // Empty result - return empty vector (shape 0)
             Eigen::VectorXd empty(0);
-            m->result = m->heap->allocate_vector(empty);
+            m->result = m->heap->allocate_vector(empty, is_char);
             return;
         }
 
@@ -2803,7 +3088,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
             }
         }
 
-        m->result = m->heap->allocate_matrix(result);
+        m->result = m->heap->allocate_matrix(result, is_char);
         return;
     }
 
@@ -2829,7 +3114,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
     if (total == 0) {
         // Empty result
         Eigen::VectorXd empty(0);
-        m->result = m->heap->allocate_vector(empty);
+        m->result = m->heap->allocate_vector(empty, is_char);
         return;
     }
 
@@ -2843,7 +3128,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
         }
     }
 
-    m->result = m->heap->allocate_vector(result);
+    m->result = m->heap->allocate_vector(result, is_char);
 }
 
 // ============================================================================
@@ -3104,6 +3389,8 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
+    bool is_char = rhs->is_char_data();
+
     // Get boolean mask from lhs
     Eigen::VectorXd mask = flatten_value(lhs);
 
@@ -3155,7 +3442,7 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
             }
         }
 
-        m->result = m->heap->allocate_matrix(result);
+        m->result = m->heap->allocate_matrix(result, is_char);
         return;
     }
 
@@ -3177,7 +3464,7 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
         }
     }
 
-    m->result = m->heap->allocate_vector(result);
+    m->result = m->heap->allocate_vector(result, is_char);
 }
 
 // ============================================================================
@@ -3314,6 +3601,8 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
     // Convert STRING to char vector so all arrays use the same code path
     if (array->is_string()) array = array->to_char_vector(m->heap);
 
+    bool is_char = array->is_char_data();
+
     // Handle array indexing
     if (!array->is_array() && !array->is_scalar()) {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot index non-array value"));
@@ -3358,7 +3647,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
                 }
                 result(i) = (*arr)(idx, 0);
             }
-            m->result = m->heap->allocate_vector(result);
+            m->result = m->heap->allocate_vector(result, is_char);
         } else {
             Eigen::MatrixXd result(n, cols);
             for (int i = 0; i < n; i++) {
@@ -3369,7 +3658,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
                 }
                 result.row(i) = arr->row(idx);
             }
-            m->result = m->heap->allocate_matrix(result);
+            m->result = m->heap->allocate_matrix(result, is_char);
         }
     } else {
         m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: index must be numeric"));
@@ -3521,6 +3810,9 @@ void fn_catenate_first(Machine* m, Value* alpha, Value* omega) {
     if (alpha->is_string()) alpha = alpha->to_char_vector(m->heap);
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    // Preserve char data if both operands are char data
+    bool is_char = alpha->is_char_data() && omega->is_char_data();
+
     // Handle scalars: treat as 1×1 matrices
     if (alpha->is_scalar() && omega->is_scalar()) {
         Eigen::MatrixXd result(2, 1);
@@ -3584,7 +3876,7 @@ void fn_catenate_first(Machine* m, Value* alpha, Value* omega) {
     result.topRows(mat_a.rows()) = mat_a;
     result.bottomRows(mat_b.rows()) = mat_b;
 
-    m->result = m->heap->allocate_matrix(result);
+    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // ============================================================================

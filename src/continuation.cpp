@@ -2100,9 +2100,9 @@ void CellIterK::invoke(Machine* machine) {
             if (results.empty()) {
                 // Empty array input - return empty with same shape
                 if (orig_is_vector) {
-                    machine->result = machine->heap->allocate_vector(Eigen::VectorXd(0));
+                    machine->result = machine->heap->allocate_vector(Eigen::VectorXd(0), orig_is_char);
                 } else {
-                    machine->result = machine->heap->allocate_matrix(Eigen::MatrixXd(orig_rows, orig_cols));
+                    machine->result = machine->heap->allocate_matrix(Eigen::MatrixXd(orig_rows, orig_cols), orig_is_char);
                 }
                 return;
             }
@@ -2129,14 +2129,14 @@ void CellIterK::invoke(Machine* machine) {
                     for (size_t i = 0; i < results.size(); i++) {
                         mat(i / orig_cols, i % orig_cols) = results[i]->as_scalar();
                     }
-                    machine->result = machine->heap->allocate_matrix(mat);
+                    machine->result = machine->heap->allocate_matrix(mat, orig_is_char);
                 } else {
                     // Otherwise (including reduction), return vector of results
                     Eigen::VectorXd vec(results.size());
                     for (size_t i = 0; i < results.size(); i++) {
                         vec(i) = results[i]->as_scalar();
                     }
-                    machine->result = machine->heap->allocate_vector(vec);
+                    machine->result = machine->heap->allocate_vector(vec, orig_is_char);
                 }
             } else {
                 // Results are vectors - try to assemble into matrix
@@ -2158,7 +2158,7 @@ void CellIterK::invoke(Machine* machine) {
                         const Eigen::MatrixXd* v = results[i]->as_matrix();
                         mat.row(i) = v->col(0).transpose();
                     }
-                    machine->result = machine->heap->allocate_matrix(mat);
+                    machine->result = machine->heap->allocate_matrix(mat, orig_is_char);
                 } else {
                     // Mixed results - return last (TODO: nested arrays)
                     machine->result = results.back();
@@ -2216,7 +2216,7 @@ void CellIterK::invoke(Machine* machine) {
                 for (size_t i = 0; i < results.size(); i++) {
                     vec(i) = results[i]->as_scalar();
                 }
-                machine->result = machine->heap->allocate_vector(vec);
+                machine->result = machine->heap->allocate_vector(vec, orig_is_char);
             } else {
                 // For matrix scan, each row is scanned independently
                 // This simplified version assumes vector input
@@ -2224,7 +2224,7 @@ void CellIterK::invoke(Machine* machine) {
                 for (size_t i = 0; i < results.size(); i++) {
                     vec(i) = results[i]->as_scalar();
                 }
-                machine->result = machine->heap->allocate_vector(vec);
+                machine->result = machine->heap->allocate_vector(vec, orig_is_char);
             }
             return;
         }

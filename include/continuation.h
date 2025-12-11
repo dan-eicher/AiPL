@@ -995,6 +995,7 @@ public:
     int orig_rows;
     int orig_cols;
     bool orig_is_vector;
+    bool orig_is_char;     // Preserve character data flag
 
     // For OUTER mode: dimensions for Cartesian product
     int lhs_total;          // Total elements in lhs (for OUTER)
@@ -1003,10 +1004,10 @@ public:
     int rhs_cols;           // Columns in rhs (for extracting elements)
 
     CellIterK(Value* f, Value* l, Value* r, int lk, int rk, int total,
-              CellIterMode m, int rows, int cols, bool is_vec)
+              CellIterMode m, int rows, int cols, bool is_vec, bool is_char = false)
         : fn(f), lhs(l), rhs(r), left_rank(lk), right_rank(rk),
           total_cells(total), current_cell(0), mode(m), accumulator(nullptr),
-          orig_rows(rows), orig_cols(cols), orig_is_vector(is_vec),
+          orig_rows(rows), orig_cols(cols), orig_is_vector(is_vec), orig_is_char(is_char),
           lhs_total(0), rhs_total(0), lhs_cols(1), rhs_cols(1) {
         if (mode == CellIterMode::COLLECT || mode == CellIterMode::SCAN_RIGHT || mode == CellIterMode::OUTER) {
             results.reserve(total);
@@ -1021,7 +1022,7 @@ public:
     CellIterK(Value* f, Value* l, Value* r, int l_total, int r_total, int l_cols, int r_cols)
         : fn(f), lhs(l), rhs(r), left_rank(0), right_rank(0),
           total_cells(l_total * r_total), current_cell(0), mode(CellIterMode::OUTER),
-          accumulator(nullptr), orig_rows(l_total), orig_cols(r_total), orig_is_vector(false),
+          accumulator(nullptr), orig_rows(l_total), orig_cols(r_total), orig_is_vector(false), orig_is_char(false),
           lhs_total(l_total), rhs_total(r_total), lhs_cols(l_cols), rhs_cols(r_cols) {
         results.reserve(total_cells);
     }

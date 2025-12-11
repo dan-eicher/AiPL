@@ -30,6 +30,8 @@ void fn_tally(Machine* m, Value* omega);         // ≢ monadic (count along fir
 void fn_enlist(Machine* m, Value* omega);        // ∊ monadic (enlist/flatten)
 void fn_grade_up(Machine* m, Value* omega);      // ⍋ monadic (grade up)
 void fn_grade_down(Machine* m, Value* omega);    // ⍒ monadic (grade down)
+void fn_grade_up_dyadic(Machine* m, Value* lhs, Value* rhs);   // ⍋ dyadic (character grade up)
+void fn_grade_down_dyadic(Machine* m, Value* lhs, Value* rhs); // ⍒ dyadic (character grade down)
 void fn_unique(Machine* m, Value* omega);        // ∪ monadic (unique)
 void fn_pi_times(Machine* m, Value* omega);      // ○ monadic (pi times)
 void fn_roll(Machine* m, Value* omega);          // ? monadic (random)

@@ -1203,10 +1203,81 @@ TEST_F(GrammarTest, GPrimeMonadicOnlyInDyadicContextErrors) {
     // Monadic-only functions used in dyadic context should error
     // ≢ (tally) has no dyadic form
     EXPECT_THROW(eval("5 ≢ 1 2 3"), APLError);
-    // ⍋ (grade up) has no dyadic form
-    EXPECT_THROW(eval("1 ⍋ 3 1 2"), APLError);
-    // ⍒ (grade down) has no dyadic form
-    EXPECT_THROW(eval("1 ⍒ 3 1 2"), APLError);
+}
+
+// ============================================================================
+// Dyadic Character Grade Tests (ISO 13751 Section 10.2.20-21)
+// ============================================================================
+
+TEST_F(GrammarTest, DyadicGradeUpBasic) {
+    // A⍋B - grade up using collating sequence A
+    // 'abc' ⍋ 'cab' should give indices that sort 'cab' to 'abc' order
+    Value* result = eval("'abc' ⍋ 'cab'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    // 'cab' positions: c=2, a=0, b=1 -> sorted order is a,b,c -> indices 2,3,1 (1-indexed)
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 1.0);
+}
+
+TEST_F(GrammarTest, DyadicGradeDownBasic) {
+    // A⍒B - grade down using collating sequence A
+    Value* result = eval("'abc' ⍒ 'cab'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    // Descending order: c,b,a -> indices 1,3,2 (1-indexed)
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 2.0);
+}
+
+TEST_F(GrammarTest, DyadicGradeUnknownCharsLast) {
+    // Characters not in collating sequence sort after known characters
+    Value* result = eval("'ab' ⍋ 'axb'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->size(), 3);
+    // 'a'=pos0, 'x'=unknown, 'b'=pos1 -> sorted: a,b,x -> indices 1,3,2
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 2.0);
+}
+
+TEST_F(GrammarTest, DyadicGradeDownUnknownCharsStillLast) {
+    // Even in descending order, unknowns sort LAST (ISO 13751)
+    Value* result = eval("'ab' ⍒ 'axb'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->size(), 3);
+    // Descending known chars first: b,a then unknowns: x -> indices 3,1,2
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 2.0);
+}
+
+TEST_F(GrammarTest, DyadicGradeMatrixRows) {
+    // Matrix B sorts rows lexicographically
+    Value* result = eval("'abc' ⍋ 3 3 ⍴ 'cabbbaabc'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    // Rows: 'cab', 'bba', 'abc' -> sorted: 'abc'(3), 'bba'(2), 'cab'(1)
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 1.0);
+}
+
+TEST_F(GrammarTest, DyadicGradeScalarCollatingError) {
+    // Scalar A should signal RANK ERROR - use ↑ (first) to get actual scalar
+    EXPECT_THROW(eval("(↑'a') ⍋ 'abc'"), APLError);
+    EXPECT_THROW(eval("(↑'a') ⍒ 'abc'"), APLError);
+}
+
+TEST_F(GrammarTest, DyadicGradeDomainError) {
+    // Non-character B should signal DOMAIN ERROR
+    EXPECT_THROW(eval("'abc' ⍋ 1 2 3"), APLError);
+    EXPECT_THROW(eval("'abc' ⍒ 1 2 3"), APLError);
 }
 
 TEST_F(GrammarTest, GPrimeOverloadedFunctionDyadic) {
