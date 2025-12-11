@@ -137,6 +137,8 @@ enum TokenType {
     TOK_RBRACE,         // }
     TOK_ALPHA,          // ⍺ (left argument)
     TOK_OMEGA,          // ⍵ (right argument)
+    TOK_ALPHA_ALPHA,    // ⍺⍺ (left operand in defined operator)
+    TOK_OMEGA_OMEGA,    // ⍵⍵ (right operand in defined operator)
     TOK_DEL,            // ∇ (self-reference in recursive dfns)
     TOK_COLON,          // : (guard separator in dfns)
 

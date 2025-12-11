@@ -166,13 +166,35 @@ Value* Heap::allocate_closure(Continuation* body) {
     return allocate(val);
 }
 
-// G2 grammar: Allocate a derived operator (result of applying dyadic operator to first operand)
+// Allocate a DEFINED_OPERATOR value (user-defined operator)
+Value* Heap::allocate_defined_operator(Value::DefinedOperatorData* op_data) {
+    Value* val = new Value();
+    val->tag = ValueType::DEFINED_OPERATOR;
+    val->data.defined_op_data = op_data;
+    return allocate(val);
+}
+
+// G2 grammar: Allocate a derived operator from primitive op + first operand
 Value* Heap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand) {
     Value* val = new Value();
     val->tag = ValueType::DERIVED_OPERATOR;
     val->data.derived_op = new Value::DerivedOperatorData();
-    val->data.derived_op->op = op;
+    val->data.derived_op->primitive_op = op;
+    val->data.derived_op->defined_op = nullptr;
     val->data.derived_op->first_operand = first_operand;
+    val->data.derived_op->operator_value = nullptr;
+    return allocate(val);
+}
+
+// G2 grammar: Allocate a derived operator from defined op + first operand
+Value* Heap::allocate_derived_operator(Value::DefinedOperatorData* op, Value* first_operand, Value* operator_value) {
+    Value* val = new Value();
+    val->tag = ValueType::DERIVED_OPERATOR;
+    val->data.derived_op = new Value::DerivedOperatorData();
+    val->data.derived_op->primitive_op = nullptr;
+    val->data.derived_op->defined_op = op;
+    val->data.derived_op->first_operand = first_operand;
+    val->data.derived_op->operator_value = operator_value;
     return allocate(val);
 }
 

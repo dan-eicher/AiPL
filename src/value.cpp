@@ -3,6 +3,7 @@
 #include "value.h"
 #include "heap.h"
 #include "continuation.h"
+#include "environment.h"
 #include <cassert>
 #include <stdexcept>
 #include <sstream>
@@ -49,10 +50,14 @@ void Value::cleanup() {
         delete data.matrix;
         data.matrix = nullptr;
     }
-    // Note: Functions and operators are not owned by Value
-    // They will be managed separately (likely by a function table)
+    // Note: PRIMITIVE and OPERATOR values point to static globals (prim_plus, op_reduce, etc.)
+    // CLOSURE values point to GC-managed Continuations (marked via mark(), not deleted here)
 
     // Clean up G2 grammar structures (heap-allocated)
+    if (tag == ValueType::DEFINED_OPERATOR) {
+        delete data.defined_op_data;
+        data.defined_op_data = nullptr;
+    }
     if (tag == ValueType::DERIVED_OPERATOR) {
         delete data.derived_op;
         data.derived_op = nullptr;
@@ -145,9 +150,18 @@ void Value::mark(Heap* heap) {
         heap->mark(data.closure);
     }
 
+    // DEFINED_OPERATOR: mark body and lexical environment
+    if (tag == ValueType::DEFINED_OPERATOR && data.defined_op_data) {
+        heap->mark(data.defined_op_data->body);
+        heap->mark(data.defined_op_data->lexical_env);
+    }
+
     // Mark referenced Values in G2 grammar structures
     if (tag == ValueType::DERIVED_OPERATOR && data.derived_op) {
         heap->mark(data.derived_op->first_operand);
+        heap->mark(data.derived_op->operator_value);
+        // Note: defined_op points to DefinedOperatorData inside a DEFINED_OPERATOR Value
+        // which is marked separately; primitive_op is a static global
     }
 
     if (tag == ValueType::CURRIED_FN && data.curried_fn) {
@@ -155,8 +169,7 @@ void Value::mark(Heap* heap) {
         heap->mark(data.curried_fn->first_arg);
     }
 
-    // PRIMITIVEs and OPERATORs are C pointers, not GC objects
-    // Matrices will be handled when we add nested Value support
+    // PRIMITIVEs and OPERATORs point to static globals, not GC objects
 }
 
 // Convert STRING to character vector (UTF-8 decode)
@@ -388,6 +401,10 @@ std::string format_value(const Value* v) {
 
         case ValueType::OPERATOR:
             return std::string("<operator:") + (v->data.op->name ? v->data.op->name : "?") + ">";
+
+        case ValueType::DEFINED_OPERATOR:
+            return std::string("<defined-operator:") +
+                   (v->data.defined_op_data->name ? v->data.defined_op_data->name : "?") + ">";
 
         case ValueType::DERIVED_OPERATOR:
             return "<derived-operator>";

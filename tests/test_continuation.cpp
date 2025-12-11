@@ -366,7 +366,7 @@ TEST_F(ContinuationTest, ApplyDerivedOperatorKExecution) {
     EXPECT_NE(result, nullptr);
     EXPECT_TRUE(result->is_derived_operator());
     EXPECT_EQ(result->data.derived_op->first_operand, operand);
-    EXPECT_EQ(result->data.derived_op->op, &op_dot);
+    EXPECT_EQ(result->data.derived_op->primitive_op, &op_dot);
 }
 
 // Test DerivedOperatorK marking for GC
@@ -1917,6 +1917,81 @@ TEST_F(ContinuationTest, SysVarReadKPP) {
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);  // Default PP is 10
+}
+
+// ============================================================================
+// ApplyDerivedOperatorK with DEFINED_OPERATOR Tests
+// ============================================================================
+
+TEST_F(ContinuationTest, ApplyDerivedOperatorKWithDefinedOperator) {
+    // First define a monadic operator in the environment
+    machine->eval("(F TWICE) ← {F F ⍵}");
+
+    // Create the operand (a function)
+    Value* operand = heap->allocate_primitive(&prim_minus);
+    machine->result = operand;
+
+    // Create ApplyDerivedOperatorK for the user-defined operator
+    const char* op_name = machine->string_pool.intern("TWICE");
+    ApplyDerivedOperatorK* apply_k = heap->allocate<ApplyDerivedOperatorK>(op_name);
+
+    // Push and execute
+    machine->push_kont(apply_k);
+    machine->execute();
+
+    // Result should be a DERIVED_OPERATOR value
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_derived_operator());
+    // The derived operator should have the function operand
+    EXPECT_EQ(result->data.derived_op->first_operand, operand);
+    // And should have the defined operator (not primitive)
+    EXPECT_NE(result->data.derived_op->defined_op, nullptr);
+    EXPECT_EQ(result->data.derived_op->primitive_op, nullptr);
+}
+
+TEST_F(ContinuationTest, ApplyDerivedOperatorKWithDyadicDefinedOperator) {
+    // Define a dyadic operator
+    machine->eval("(F COMPOSE G) ← {F G ⍵}");
+
+    // Create the first operand (a function)
+    Value* first_operand = heap->allocate_primitive(&prim_minus);
+    machine->result = first_operand;
+
+    // Create ApplyDerivedOperatorK for COMPOSE
+    const char* op_name = machine->string_pool.intern("COMPOSE");
+    ApplyDerivedOperatorK* apply_k = heap->allocate<ApplyDerivedOperatorK>(op_name);
+
+    // Push and execute - should create DERIVED_OPERATOR waiting for second operand
+    machine->push_kont(apply_k);
+    machine->execute();
+
+    Value* result = machine->result;
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_derived_operator());
+    EXPECT_EQ(result->data.derived_op->first_operand, first_operand);
+    // Should be a dyadic operator
+    EXPECT_TRUE(result->data.derived_op->defined_op->is_dyadic_operator);
+}
+
+TEST_F(ContinuationTest, DerivedOperatorKWithDefinedOperatorName) {
+    // Define the operator first
+    machine->eval("(F TWICE) ← {F F ⍵}");
+
+    // Create DerivedOperatorK which evaluates operand and creates derived operator
+    LookupK* operand_cont = heap->allocate<LookupK>(machine->string_pool.intern("-"));
+    const char* op_name = machine->string_pool.intern("TWICE");
+    DerivedOperatorK* derived_k = heap->allocate<DerivedOperatorK>(operand_cont, op_name);
+
+    machine->push_kont(derived_k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_derived_operator());
+    // First operand should be the minus function
+    EXPECT_TRUE(result->data.derived_op->first_operand->is_primitive());
+    // Should have defined operator, not primitive
+    EXPECT_NE(result->data.derived_op->defined_op, nullptr);
 }
 
 // Main function

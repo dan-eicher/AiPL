@@ -425,7 +425,7 @@ TEST_F(ValueTest, DerivedOperatorCreation) {
     EXPECT_EQ(derived->tag, ValueType::DERIVED_OPERATOR);
 
     // Check the data is correctly stored
-    EXPECT_EQ(derived->data.derived_op->op, &op_dot);
+    EXPECT_EQ(derived->data.derived_op->primitive_op, &op_dot);
     EXPECT_EQ(derived->data.derived_op->first_operand, operand);
 
 }
@@ -533,7 +533,7 @@ TEST_F(ValueTest, DerivedOperatorWithFunction) {
     Value* derived = machine->heap->allocate_derived_operator(&op_diaeresis, func);
 
     EXPECT_TRUE(derived->is_derived_operator());
-    EXPECT_EQ(derived->data.derived_op->op, &op_diaeresis);
+    EXPECT_EQ(derived->data.derived_op->primitive_op, &op_diaeresis);
     EXPECT_EQ(derived->data.derived_op->first_operand, func);
     EXPECT_TRUE(derived->data.derived_op->first_operand->is_function());
 

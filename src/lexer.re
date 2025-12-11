@@ -158,6 +158,8 @@ Lexer::Lexer(const char* input)
     diamond = "⋄";       // U+22C4
     alpha_sym = "⍺";     // U+237A (left argument)
     omega_sym = "⍵";     // U+2375 (right argument)
+    alpha_alpha = "⍺⍺";  // U+237A U+237A (left operand in dop)
+    omega_omega = "⍵⍵";  // U+2375 U+2375 (right operand in dop)
     zilde = "⍬";         // U+236C (empty vector)
     quad = "⎕";          // U+2395 (quad - system variable prefix)
 
@@ -365,6 +367,9 @@ Token Lexer::next_token() {
         left_tack { column_++; return Token(TOK_LEFT_TACK, token_line, token_column); }
         right_tack { column_++; return Token(TOK_RIGHT_TACK, token_line, token_column); }
         diamond { column_++; return Token(TOK_DIAMOND, token_line, token_column); }
+        // Operand references (must come before single alpha/omega for longest match)
+        alpha_alpha { column_ += 2; return Token(TOK_ALPHA_ALPHA, token_line, token_column); }
+        omega_omega { column_ += 2; return Token(TOK_OMEGA_OMEGA, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }
         zilde { column_++; return Token(TOK_ZILDE, token_line, token_column); }

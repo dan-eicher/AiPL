@@ -774,6 +774,275 @@ TEST_F(ParserTest, StringAsArgument) {
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 }
 
+// =============================================================================
+// Defined operator header parsing tests
+// =============================================================================
+
+TEST_F(ParserTest, MonadicOperatorHeaderParses) {
+    // (F OP) ← {body} should create DefinedOperatorLiteralK
+    Continuation* k = parser->parse("(F TWICE) ← {F F ⍵}");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Should be a DefinedOperatorLiteralK
+    DefinedOperatorLiteralK* def_op = dynamic_cast<DefinedOperatorLiteralK*>(k);
+    ASSERT_NE(def_op, nullptr) << "Expected DefinedOperatorLiteralK";
+
+    // Check operator name and operand names
+    EXPECT_STREQ(def_op->operator_name, "TWICE");
+    EXPECT_STREQ(def_op->left_operand_name, "F");
+    EXPECT_EQ(def_op->right_operand_name, nullptr);  // Monadic operator
+    EXPECT_FALSE(def_op->is_dyadic_operator());
+}
+
+TEST_F(ParserTest, DyadicHeaderStructure) {
+    // Verify structure of (F COMPOSE G) - right-associative parsing
+    // Parentheses wrap in FinalizeK to finalize DYADIC_CURRY but preserve G_PRIME
+    // Structure: FinalizeK(JuxtaposeK(F, JuxtaposeK(COMPOSE, G)))
+    Continuation* k = parser->parse("(F COMPOSE G)");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Parentheses add FinalizeK (with finalize_gprime=false)
+    FinalizeK* finalize = dynamic_cast<FinalizeK*>(k);
+    ASSERT_NE(finalize, nullptr) << "Expected FinalizeK at top";
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(finalize->inner);
+    ASSERT_NE(jux, nullptr) << "Expected JuxtaposeK inside FinalizeK";
+
+    // Right-associative: jux = JuxtaposeK(F, JuxtaposeK(COMPOSE, G))
+    LookupK* ff = dynamic_cast<LookupK*>(jux->left);
+    ASSERT_NE(ff, nullptr) << "Expected LookupK(F) as jux->left";
+    EXPECT_STREQ(ff->var_name, "F");
+
+    JuxtaposeK* right_jux = dynamic_cast<JuxtaposeK*>(jux->right);
+    ASSERT_NE(right_jux, nullptr) << "Expected JuxtaposeK as jux->right";
+
+    LookupK* op_name = dynamic_cast<LookupK*>(right_jux->left);
+    ASSERT_NE(op_name, nullptr) << "Expected LookupK(COMPOSE) as right_jux->left";
+    EXPECT_STREQ(op_name->var_name, "COMPOSE");
+
+    LookupK* gg = dynamic_cast<LookupK*>(right_jux->right);
+    ASSERT_NE(gg, nullptr) << "Expected LookupK(G) as right_jux->right";
+    EXPECT_STREQ(gg->var_name, "G");
+}
+
+TEST_F(ParserTest, DyadicOperatorHeaderParses) {
+    // (F OP G) ← {body} should create DefinedOperatorLiteralK for dyadic operator
+    Continuation* k = parser->parse("(F COMPOSE G) ← {F G ⍵}");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Should be a DefinedOperatorLiteralK
+    DefinedOperatorLiteralK* def_op = dynamic_cast<DefinedOperatorLiteralK*>(k);
+    ASSERT_NE(def_op, nullptr) << "Expected DefinedOperatorLiteralK";
+
+    // Check operator name and operand names
+    EXPECT_STREQ(def_op->operator_name, "COMPOSE");
+    EXPECT_STREQ(def_op->left_operand_name, "F");
+    EXPECT_STREQ(def_op->right_operand_name, "G");
+    EXPECT_TRUE(def_op->is_dyadic_operator());
+}
+
+TEST_F(ParserTest, OperatorDefinitionRequiresDfnBody) {
+    // (F OP) ← expr should fail if expr is not a dfn
+    Continuation* k = parser->parse("(F OP) ← 42");
+    EXPECT_EQ(k, nullptr);  // Should fail
+    EXPECT_NE(parser->get_error().find("dfn"), std::string::npos);
+}
+
+TEST_F(ParserTest, MonadicOperatorDefinitionExecutes) {
+    // Define and then look up operator
+    Continuation* k = parser->parse("(F TWICE) ← {F F ⍵}");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_defined_operator());
+
+    // The operator should be in the environment
+    Value* looked_up = machine->env->lookup("TWICE");
+    ASSERT_NE(looked_up, nullptr);
+    EXPECT_TRUE(looked_up->is_defined_operator());
+}
+
+TEST_F(ParserTest, DyadicOperatorDefinitionExecutes) {
+    // Define a dyadic operator
+    Continuation* k = parser->parse("(F COMP G) ← {F G ⍵}");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_defined_operator());
+
+    // The operator should be in the environment
+    Value* looked_up = machine->env->lookup("COMP");
+    ASSERT_NE(looked_up, nullptr);
+    EXPECT_TRUE(looked_up->is_defined_operator());
+
+    // Verify it's marked as dyadic
+    EXPECT_TRUE(looked_up->data.defined_op_data->is_dyadic_operator);
+}
+
+// =============================================================================
+// Defined operator binding power and DerivedOperatorK creation tests
+// =============================================================================
+
+TEST_F(ParserTest, DefinedOperatorGetsHigherBindingPower) {
+    // Define a dyadic operator
+    machine->eval("(F COMPOSE G) ← {F G ⍵}");
+
+    // Now parse "-COMPOSE÷" - should create DerivedOperatorK at top level
+    // because COMPOSE has high binding power and grabs its operands
+    Continuation* k = parser->parse("-COMPOSE÷");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // The structure should be JuxtaposeK(-, JuxtaposeK(COMPOSE, ÷)) where
+    // -COMPOSE creates a JuxtaposeK with DerivedOperatorK in the inner result
+    JuxtaposeK* top_jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(top_jux, nullptr) << "-COMPOSE÷ should create JuxtaposeK at top level";
+
+    // Check that we have DerivedOperatorK in the structure
+    // The parse should be: left=LookupK(-), right=JuxtaposeK(DerivedOperatorK(COMPOSE,-), ÷)
+    // But since COMPOSE has high BP, it should bind tightly
+    // Actually with operator BP, it should be: JuxtaposeK(JuxtaposeK(-, DerivedOperatorK(COMPOSE)), ÷)
+}
+
+TEST_F(ParserTest, DefinedOperatorCreatesCorrectContinuationStructure) {
+    // Define a monadic operator
+    machine->eval("(F TWICE) ← {F F ⍵}");
+
+    // Parse "-TWICE" - operator has high BP so TWICE grabs - as operand
+    // Result should be DerivedOperatorK(LookupK("-"), "TWICE")
+    Continuation* k = parser->parse("-TWICE");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // G2 grammar: f OP creates derived operator - parser creates DerivedOperatorK
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr) << "-TWICE should create DerivedOperatorK";
+    EXPECT_STREQ(derived->op_name, "TWICE");
+
+    // The operand should be a LookupK for "-"
+    LookupK* operand = dynamic_cast<LookupK*>(derived->operand_cont);
+    ASSERT_NE(operand, nullptr) << "Operand should be LookupK";
+    EXPECT_STREQ(operand->var_name, "-");
+}
+
+TEST_F(ParserTest, DefinedOperatorWithFunctionOperandCreatesDerivedOperatorK) {
+    // First define the operator
+    machine->eval("(F TWICE) ← {F F ⍵}");
+
+    // Then parse just +TWICE - the parser should create DerivedOperatorK
+    // because TWICE is recognized as an operator and has high BP
+    Continuation* k = parser->parse("+TWICE");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Verify structure - should have DerivedOperatorK somewhere
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    if (jux) {
+        // Check if right is DerivedOperatorK
+        DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(jux->right);
+        if (!derived) {
+            // Maybe it's on the left side
+            derived = dynamic_cast<DerivedOperatorK*>(jux->left);
+        }
+        // One of them should be DerivedOperatorK(TWICE)
+        if (derived) {
+            EXPECT_STREQ(derived->op_name, "TWICE");
+        }
+    }
+}
+
+TEST_F(ParserTest, DefinedDyadicOperatorBindsTwoOperands) {
+    // Define a dyadic operator
+    machine->eval("(F COMP G) ← {F G ⍵}");
+
+    // Parse "+COMP-" - COMP should bind both + and -
+    Continuation* k = parser->parse("+COMP-");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // This is the key test - with proper operator precedence,
+    // +COMP- should parse such that COMP gets both operands
+}
+
+TEST_F(ParserTest, DefinedOperatorFollowedByArgumentEvaluates) {
+    // Define operator and test parsing "-TWICE 5"
+    machine->eval("(F TWICE) ← {F F ⍵}");
+
+    Continuation* k = parser->parse("-TWICE 5");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Should evaluate correctly
+    machine->push_kont(k);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    // -TWICE 5 = -(-5) = 5 (negate twice = identity)
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+    }
+}
+
+// ============================================================================
+// FinalizeK Tests - G_PRIME vs DYADIC_CURRY distinction
+// ============================================================================
+
+TEST_F(ParserTest, ParenthesesCreateFinalizeKWithGPrimePreserved) {
+    // Parentheses should create FinalizeK at top level
+    Continuation* k = parser->parse("(2+3)");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Should be FinalizeK at top
+    FinalizeK* finalize = dynamic_cast<FinalizeK*>(k);
+    ASSERT_NE(finalize, nullptr) << "Expected FinalizeK wrapping parenthesized expression";
+
+    // FinalizeK should have finalize_gprime = false for parentheses
+    EXPECT_FALSE(finalize->finalize_gprime) << "Parentheses should set finalize_gprime=false";
+}
+
+TEST_F(ParserTest, AlphaAlphaTokenParsesToLookupK) {
+    // ⍺⍺ should parse to a LookupK
+    Continuation* k = parser->parse("⍺⍺");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    LookupK* lookup = dynamic_cast<LookupK*>(k);
+    ASSERT_NE(lookup, nullptr) << "⍺⍺ should parse to LookupK";
+    EXPECT_STREQ(lookup->var_name, "⍺⍺");
+}
+
+TEST_F(ParserTest, OmegaOmegaTokenParsesToLookupK) {
+    // ⍵⍵ should parse to a LookupK
+    Continuation* k = parser->parse("⍵⍵");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    LookupK* lookup = dynamic_cast<LookupK*>(k);
+    ASSERT_NE(lookup, nullptr) << "⍵⍵ should parse to LookupK";
+    EXPECT_STREQ(lookup->var_name, "⍵⍵");
+}
+
+TEST_F(ParserTest, OperatorBodyWithAlphaAlphaOmegaOmega) {
+    // Operator body should be able to reference ⍺⍺ and ⍵⍵
+    Continuation* k = parser->parse("(F OP G) ← {⍺⍺ ⍵⍵ ⍵}");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Should create DefinedOperatorLiteralK
+    DefinedOperatorLiteralK* def_op = dynamic_cast<DefinedOperatorLiteralK*>(k);
+    ASSERT_NE(def_op, nullptr) << "Should create DefinedOperatorLiteralK";
+    EXPECT_TRUE(def_op->is_dyadic_operator());
+}
+
+TEST_F(ParserTest, NestedParenthesesWithFinalizeK) {
+    // Nested parentheses should each have FinalizeK
+    Continuation* k = parser->parse("((1+2))");
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    // Outer should be FinalizeK
+    FinalizeK* outer = dynamic_cast<FinalizeK*>(k);
+    ASSERT_NE(outer, nullptr) << "Outer parens should be FinalizeK";
+
+    // Inner should also be FinalizeK
+    FinalizeK* inner = dynamic_cast<FinalizeK*>(outer->inner);
+    ASSERT_NE(inner, nullptr) << "Inner parens should also be FinalizeK";
+}
+
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

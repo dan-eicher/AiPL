@@ -230,6 +230,88 @@ void ClosureLiteralK::mark(Heap* heap) {
     heap->mark(body);
 }
 
+// DefinedOperatorLiteralK implementation
+void DefinedOperatorLiteralK::invoke(Machine* machine) {
+    // Create DEFINED_OPERATOR value with captured environment
+    Value::DefinedOperatorData* op_data = new Value::DefinedOperatorData();
+    op_data->body = body;
+    op_data->name = operator_name;
+    op_data->is_dyadic_operator = (right_operand_name != nullptr);
+    op_data->is_ambivalent = true;  // dfn-style operators are always ambivalent
+    op_data->left_operand_name = left_operand_name;
+    op_data->right_operand_name = right_operand_name;
+    op_data->left_arg_name = "⍺";   // dfn convention
+    op_data->right_arg_name = "⍵";  // dfn convention
+    op_data->result_name = nullptr; // dfn-style doesn't name result
+    op_data->lexical_env = machine->env;  // Capture current environment
+
+    Value* op_val = machine->heap->allocate_defined_operator(op_data);
+
+    // Assign to operator name in environment
+    machine->env->define(operator_name, op_val);
+    machine->result = op_val;
+}
+
+void DefinedOperatorLiteralK::mark(Heap* heap) {
+    heap->mark(body);
+    // operator_name, left_operand_name, right_operand_name are interned strings
+}
+
+// InvokeDefinedOperatorK implementation
+// Invokes a user-defined operator with bound operands and arguments
+void InvokeDefinedOperatorK::invoke(Machine* machine) {
+    // Create new environment extending the operator's lexical environment
+    Environment* env = machine->heap->allocate<Environment>(op->lexical_env);
+
+    // Bind the left operand to named parameter (always present)
+    env->define(op->left_operand_name, left_operand);
+    // Also bind to ⍺⍺ for APL compatibility
+    env->define("⍺⍺", left_operand);
+
+    // Bind the right operand for dyadic operators
+    if (op->is_dyadic_operator && right_operand && op->right_operand_name) {
+        env->define(op->right_operand_name, right_operand);
+        // Also bind to ⍵⍵ for APL compatibility
+        env->define("⍵⍵", right_operand);
+    }
+
+    // Bind ∇ for recursive self-reference to the operator
+    if (operator_value) {
+        env->define("∇", operator_value);
+    }
+
+    // Bind arguments using dfn conventions (⍺ and ⍵)
+    if (left_arg && op->left_arg_name) {
+        env->define(op->left_arg_name, left_arg);
+    }
+    env->define(op->right_arg_name, right_arg);
+
+    // Save current environment and set up for body execution
+    Environment* saved_env = machine->env;
+    machine->env = env;
+
+    // Push continuation to restore environment after body completes
+    machine->push_kont(machine->heap->allocate<RestoreEnvK>(saved_env));
+
+    // Push continuation to catch RETURN completions
+    machine->push_kont(machine->heap->allocate<CatchReturnK>(op->name));
+
+    // Push the operator body for execution
+    machine->push_kont(op->body);
+}
+
+void InvokeDefinedOperatorK::mark(Heap* heap) {
+    // Note: op->body is GC-managed
+    if (op && op->body) {
+        heap->mark(op->body);
+    }
+    heap->mark(operator_value);
+    heap->mark(left_operand);
+    heap->mark(right_operand);
+    heap->mark(left_arg);
+    heap->mark(right_arg);
+}
+
 // LookupK implementation
 void LookupK::invoke(Machine* machine) {
     // Look up the variable in the environment
@@ -507,6 +589,60 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
         machine->result = right_val;
         // Use DispatchFunctionK to apply right_val as function to left_val as argument
         machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, left_val));
+    } else if (right_val->is_defined_operator() && left_val->is_function()) {
+        // Operator application: left is function operand, right is DEFINED_OPERATOR
+        // Create a DERIVED_OPERATOR that captures the operand
+        Value::DefinedOperatorData* def_op = right_val->data.defined_op_data;
+        Value* derived = machine->heap->allocate_derived_operator(def_op, left_val, right_val);
+        machine->result = derived;
+    } else if (left_val->is_defined_operator() && right_val->is_function()) {
+        // Operator application: right is function operand, left is DEFINED_OPERATOR
+        Value::DefinedOperatorData* def_op = left_val->data.defined_op_data;
+        if (def_op->is_dyadic_operator) {
+            // Dyadic operator: right is second operand, curry to wait for first
+            Value* curried = machine->heap->allocate_curried_fn(left_val, right_val, Value::CurryType::OPERATOR_CURRY);
+            machine->result = curried;
+        } else {
+            // Monadic operator: right is the operand, create derived function
+            Value* derived = machine->heap->allocate_derived_operator(def_op, right_val, left_val);
+            machine->result = derived;
+        }
+    } else if (left_val->is_defined_operator() && right_val->is_array()) {
+        // Dyadic operator with value as second operand (e.g., F POW N where N is a number)
+        Value::DefinedOperatorData* def_op = left_val->data.defined_op_data;
+        if (def_op->is_dyadic_operator) {
+            // Dyadic operator: right is second operand (value), curry to wait for first operand (function)
+            Value* curried = machine->heap->allocate_curried_fn(left_val, right_val, Value::CurryType::OPERATOR_CURRY);
+            machine->result = curried;
+        } else {
+            // Monadic operator doesn't take a value as operand - this is an error
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Monadic operator cannot take value as operand"));
+            return;
+        }
+    } else if (left_val->is_function() && right_val->tag == ValueType::CURRIED_FN &&
+               right_val->data.curried_fn->curry_type == Value::CurryType::OPERATOR_CURRY) {
+        // Complete dyadic operator application: F (OP N) where OP is curried with second operand N
+        Value::CurriedFnData* curry = right_val->data.curried_fn;
+        Value* op_or_derived = curry->fn;
+        Value* second_operand = curry->first_arg;
+
+        if (op_or_derived->is_defined_operator()) {
+            // OPERATOR_CURRY(DEFINED_OPERATOR, second_operand) + function
+            // → create DERIVED_OPERATOR with first_operand=left_val, then apply second_operand
+            Value::DefinedOperatorData* def_op = op_or_derived->data.defined_op_data;
+            Value* derived = machine->heap->allocate_derived_operator(def_op, left_val, op_or_derived);
+            // Now apply second operand via OPERATOR_CURRY
+            Value* final_curry = machine->heap->allocate_curried_fn(derived, second_operand, Value::CurryType::OPERATOR_CURRY);
+            machine->result = final_curry;
+        } else if (op_or_derived->tag == ValueType::DERIVED_OPERATOR) {
+            // Standard case: OPERATOR_CURRY(DERIVED_OPERATOR, second_operand) + function
+            // Just pass through - this is handled elsewhere
+            machine->result = left_val;
+            machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, right_val));
+        } else {
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: Invalid OPERATOR_CURRY structure"));
+            return;
+        }
     } else {
         // Left is a function (or curried function, or derived operator)
         // Apply left to right: left(right)
@@ -526,7 +662,8 @@ void PerformJuxtaposeK::mark(Heap* heap) {
 // Wraps parenthesized expressions to force g' finalization
 void FinalizeK::invoke(Machine* machine) {
     // Push auxiliary to check/finalize result after inner evaluates
-    machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
+    // Pass finalize_gprime flag to control whether G_PRIME gets finalized
+    machine->push_kont(machine->heap->allocate<PerformFinalizeK>(finalize_gprime));
     // Push inner expression to evaluate
     machine->push_kont(inner);
 }
@@ -543,7 +680,9 @@ void PerformFinalizeK::invoke(Machine* machine) {
         Value::CurriedFnData* cd = val->data.curried_fn;
 
         // G_PRIME: always has monadic form (that's why it's G_PRIME)
-        if (cd->curry_type == Value::CurryType::G_PRIME) {
+        // Only finalize G_PRIME if finalize_gprime flag is true
+        // Parentheses set this to false to preserve partial applications like (2×)
+        if (cd->curry_type == Value::CurryType::G_PRIME && finalize_gprime) {
             DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
                 cd->fn, nullptr, cd->first_arg);
             dispatch->force_monadic = true;
@@ -566,18 +705,29 @@ void PerformFinalizeK::invoke(Machine* machine) {
                 Value* axis = oc->first_arg;  // axis specification
 
                 if (derived->tag == ValueType::DERIVED_OPERATOR) {
-                    PrimitiveOp* op = derived->data.derived_op->op;
+                    PrimitiveOp* op = derived->data.derived_op->primitive_op;
+                    Value::DefinedOperatorData* def_op = derived->data.derived_op->defined_op;
                     Value* first_operand = derived->data.derived_op->first_operand;
-                    // Call dyadic operator with null left (non-N-wise axis reduce/scan)
-                    op->dyadic(machine, nullptr, first_operand, axis, arg);
-                    return;
+                    Value* op_value = derived->data.derived_op->operator_value;
+
+                    if (def_op) {
+                        // User-defined dyadic operator with axis as second operand
+                        machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                            def_op, op_value, first_operand, axis, nullptr, arg));
+                        return;
+                    } else if (op) {
+                        op->dyadic(machine, nullptr, first_operand, axis, arg);
+                        return;
+                    }
                 }
             }
 
             // Standard case: check if inner function has monadic form
             bool has_monadic = false;
             if (fn->tag == ValueType::DERIVED_OPERATOR) {
-                has_monadic = fn->data.derived_op->op->monadic != nullptr;
+                // For primitive ops, check monadic; defined ops always have monadic form
+                auto* prim_op = fn->data.derived_op->primitive_op;
+                has_monadic = prim_op ? (prim_op->monadic != nullptr) : true;
             } else if (fn->tag == ValueType::PRIMITIVE) {
                 has_monadic = fn->data.primitive_fn->monadic != nullptr;
             } else if (fn->tag == ValueType::CLOSURE) {
@@ -1125,8 +1275,10 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 return;
             }
             Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
-            PrimitiveOp* op = derived_data->op;
+            PrimitiveOp* op = derived_data->primitive_op;
+            Value::DefinedOperatorData* def_op = derived_data->defined_op;
             Value* first_operand = derived_data->first_operand;
+            Value* op_value = derived_data->operator_value;
             Value* second_operand = first_arg;  // Second operand (function for ., value for ⍤)
 
             if (left_val && right_val) {
@@ -1157,7 +1309,13 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     }
                 }
 
-                op->dyadic(machine, left_val, first_operand, second_operand, right_val);
+                if (def_op) {
+                    // User-defined dyadic operator with both operands and both args
+                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                        def_op, op_value, first_operand, second_operand, left_val, right_val));
+                } else {
+                    op->dyadic(machine, left_val, first_operand, second_operand, right_val);
+                }
             } else if (right_val) {
                 // Only have right array argument - curry to wait for potential left
                 // This enables N-wise reduction with axis: "2 +/[1] matrix"
@@ -1175,8 +1333,14 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     }
                 }
 
-                Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
-                machine->result = curried;
+                if (def_op) {
+                    // User-defined dyadic operator with both operands, monadic application
+                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                        def_op, op_value, first_operand, second_operand, nullptr, right_val));
+                } else {
+                    Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
+                    machine->result = curried;
+                }
             } else {
                 machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator curry expects array argument"));
             }
@@ -1241,8 +1405,18 @@ void DispatchFunctionK::invoke(Machine* machine) {
         }
         if (fn_val->tag == ValueType::DERIVED_OPERATOR) {
             Value::DerivedOperatorData* derived_data = fn_val->data.derived_op;
-            PrimitiveOp* op = derived_data->op;
+            PrimitiveOp* op = derived_data->primitive_op;
+            Value::DefinedOperatorData* def_op = derived_data->defined_op;
             Value* first_operand = derived_data->first_operand;
+            Value* op_value = derived_data->operator_value;
+
+            // Handle user-defined operators (G_PRIME finalization path)
+            if (def_op) {
+                // Invoke the defined operator with both arguments
+                machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                    def_op, op_value, first_operand, nullptr, left_val, right_val));
+                return;
+            }
 
             // For DERIVED_OPERATOR from dyadic operator (like inner product f.g):
             // first_arg contains the second function operand (g)
@@ -1254,7 +1428,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             Value* actual_left_array = nullptr;
             Value* actual_right_array = nullptr;
 
-            if (op->dyadic && first_arg) {
+            if (op && op->dyadic && first_arg) {
                 if (first_arg->tag == ValueType::CURRIED_FN) {
                     // Unwrap CURRIED_FN to extract second function operand and right array
                     Value::CurriedFnData* inner_curried = first_arg->data.curried_fn;
@@ -1321,7 +1495,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             Value* arg = curried_data->first_arg;
             if (inner_fn->tag == ValueType::DERIVED_OPERATOR) {
                 Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
-                PrimitiveOp* op = derived_data->op;
+                PrimitiveOp* op = derived_data->primitive_op;
                 Value* first_operand = derived_data->first_operand;
                 if (op->monadic) {
                     // Push DeferredDispatchK to continue after inner reduction completes
@@ -1337,8 +1511,36 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
     if (fn_val->tag == ValueType::DERIVED_OPERATOR) {
         Value::DerivedOperatorData* derived_data = fn_val->data.derived_op;
-        PrimitiveOp* op = derived_data->op;
+        PrimitiveOp* op = derived_data->primitive_op;
+        Value::DefinedOperatorData* def_op = derived_data->defined_op;
         Value* first_operand = derived_data->first_operand;
+        Value* op_value = derived_data->operator_value;
+
+        // User-defined operators
+        if (def_op) {
+            if (right_val) {
+                if (def_op->is_dyadic_operator) {
+                    // Dyadic operator needs second operand - curry to wait for it
+                    Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
+                    machine->result = curried;
+                } else if (left_val) {
+                    // Monadic operator with both arguments - invoke dyadically
+                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                        def_op, op_value, first_operand, nullptr, left_val, right_val));
+                } else if (force_monadic || !def_op->is_ambivalent) {
+                    // Force monadic (from finalization) or non-ambivalent - invoke immediately
+                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                        def_op, op_value, first_operand, nullptr, nullptr, right_val));
+                } else {
+                    // Ambivalent operator with only right arg - curry to wait for potential left arg
+                    Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
+                    machine->result = curried;
+                }
+            } else {
+                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires argument"));
+            }
+            return;
+        }
 
         // Force monadic: apply monadic form directly (used by each, rank operators)
         if (force_monadic && op->monadic && !left_val && right_val) {
@@ -1400,6 +1602,20 @@ void DispatchFunctionK::invoke(Machine* machine) {
         }
 
         machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires operands"));
+        return;
+    }
+
+    // Handle DEFINED_OPERATOR being "applied" to a value
+    // This happens with right-to-left eval: "TWICE 5" before "-TWICE 5"
+    // The operator needs an operand first, so curry to wait for it
+    if (fn_val->is_defined_operator()) {
+        if (right_val) {
+            // Curry: store the value, wait for operand (function) to arrive
+            Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
+            machine->result = curried;
+        } else {
+            machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires argument"));
+        }
         return;
     }
 
@@ -1927,7 +2143,22 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
         return;
     }
 
-    // The operator should be stored as an OPERATOR ValueType
+    // Handle both primitive operators (OPERATOR) and defined operators (DEFINED_OPERATOR)
+    if (op_val->tag == ValueType::DEFINED_OPERATOR) {
+        // User-defined operator
+        Value::DefinedOperatorData* def_op = op_val->data.defined_op_data;
+        Value* derived = machine->heap->allocate_derived_operator(def_op, first_operand, op_val);
+
+        // If axis is specified (f OP[k] syntax), evaluate it and create OPERATOR_CURRY
+        if (axis_cont) {
+            machine->push_kont(machine->heap->allocate<ApplyAxisK>(derived));
+            machine->push_kont(axis_cont);
+        } else {
+            machine->result = derived;
+        }
+        return;
+    }
+
     if (op_val->tag != ValueType::OPERATOR) {
         std::string msg = std::string("VALUE ERROR: Not an operator: ") + op_name;
         const char* interned_msg = machine->string_pool.intern(msg.c_str());

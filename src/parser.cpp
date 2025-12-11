@@ -96,17 +96,38 @@ Continuation* Parser::parse(const std::string& input) {
 // Strands are handled at lexer level for numeric literals only (ISO 13751)
 Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
     // G2 Rule 3: derived-operator fb → fb-term
-    // If left is a derived operator from a DYADIC operator (like "." or "⍤"),
+    // If left is a derived operator from a DYADIC operator that needs a second OPERAND,
     // it should grab just fb (the function/value), not a full fbn-term.
     // This is distinct from Rule 1 (fb-term fbn-term) for general juxtaposition.
+    //
+    // Important distinction:
+    // - Operators like "." (inner product) and "⍤" (rank) need a second OPERAND from parsing
+    // - Operators like "/" (reduce) have dyadic APPLICATION (N f/ B) but don't need an operand
+    // - User-defined dyadic operators (FF OP GG) need the second operand GG from parsing
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(left);
-    if (derived && (strcmp(derived->op_name, ".") == 0 || strcmp(derived->op_name, "⍤") == 0)) {
-        // Dyadic operator's derived form: parse right with high BP to get just the operand
-        Continuation* right = parse_expression(BP_POSTFIX_OP);
-        if (!right) {
-            return nullptr;
+    if (derived) {
+        // Check if this operator needs a second operand from parsing
+        bool needs_second_operand = false;
+
+        // Built-in operators that need second operand: "." and "⍤"
+        if (strcmp(derived->op_name, ".") == 0 || strcmp(derived->op_name, "⍤") == 0) {
+            needs_second_operand = true;
+        } else {
+            // Check for user-defined dyadic operators
+            Value* op_val = machine->env->lookup(derived->op_name);
+            if (op_val && op_val->is_defined_operator()) {
+                needs_second_operand = op_val->data.defined_op_data->is_dyadic_operator;
+            }
         }
-        return machine->heap->allocate<JuxtaposeK>(left, right);
+
+        if (needs_second_operand) {
+            // Dyadic operator's derived form: parse right with high BP to get just the operand
+            Continuation* right = parse_expression(BP_POSTFIX_OP);
+            if (!right) {
+                return nullptr;
+            }
+            return machine->heap->allocate<JuxtaposeK>(left, right);
+        }
     }
 
     // Parse the right operand
@@ -156,6 +177,16 @@ Continuation* Parser::parse_expression(int min_bp) {
         // Primitive functions are identifiers, so they trigger juxtaposition
         bool is_juxtaposition = false;
 
+        // Check if TOK_NAME is a defined operator - operators have higher precedence
+        if (next.type == TOK_NAME && bp == BP_NONE) {
+            const char* interned = machine->string_pool.intern(next.name);
+            Value* val = machine->env->lookup(interned);
+            if (val && val->is_defined_operator()) {
+                // Defined operator: use operator binding power, handled in led
+                bp = BP_POSTFIX_OP;
+            }
+        }
+
         // Special case: ∘. (outer product) always triggers juxtaposition
         // It has a binding power but should be treated as a prefix operator
         if (next.type == TOK_OUTER_PRODUCT) {
@@ -171,6 +202,8 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_NAME:
                 case TOK_ALPHA:  // ⍺ in dfns
                 case TOK_OMEGA:  // ⍵ in dfns
+                case TOK_ALPHA_ALPHA:  // ⍺⍺ in defined operators
+                case TOK_OMEGA_OMEGA:  // ⍵⍵ in defined operators
                 case TOK_DEL:    // ∇ in recursive dfns
                 // Primitive function tokens are identifiers in G2 grammar
                 case TOK_PLUS:
@@ -301,9 +334,10 @@ Continuation* Parser::nud(const Token& token) {
             }
             advance();  // consume ')'
 
-            // Wrap in FinalizeK to force g' finalization of curries
-            // This ensures (f/x) becomes a value before being used in strand context
-            FinalizeK* finalize = machine->heap->allocate<FinalizeK>(inner);
+            // Wrap in FinalizeK with finalize_gprime=false
+            // This finalizes DYADIC_CURRY (like +/1 2 3) to values, but preserves
+            // G_PRIME partial applications (like 2×) per ISO 13751 semantics
+            FinalizeK* finalize = machine->heap->allocate<FinalizeK>(inner, false);
             return finalize;
         }
 
@@ -425,6 +459,20 @@ Continuation* Parser::nud(const Token& token) {
             return lookup;
         }
 
+        case TOK_ALPHA_ALPHA: {
+            // ⍺⍺ - left operand in defined operator
+            const char* interned_name = machine->string_pool.intern("⍺⍺");
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            return lookup;
+        }
+
+        case TOK_OMEGA_OMEGA: {
+            // ⍵⍵ - right operand in defined operator
+            const char* interned_name = machine->string_pool.intern("⍵⍵");
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            return lookup;
+        }
+
         case TOK_DEL: {
             // ∇ (del) - self-reference in recursive dfn
             const char* interned_name = machine->string_pool.intern("∇");
@@ -531,6 +579,59 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                             var_lookup->var_name, outer->left, right);
                         return indexed_assign;
                     }
+                }
+            }
+
+            // Check for operator definition: (FF OP) ← body or (FF OP GG) ← body
+            // Parenthesized names produce FinalizeK wrapping JuxtaposeK of LookupKs
+            // Due to right-associative parsing:
+            //   (FF OP) → FinalizeK(JuxtaposeK(FF, OP))
+            //   (FF OP GG) → FinalizeK(JuxtaposeK(FF, JuxtaposeK(OP, GG)))
+            // Unwrap FinalizeK if present
+            Continuation* inner_left = left;
+            FinalizeK* finalize = dynamic_cast<FinalizeK*>(left);
+            if (finalize) {
+                inner_left = finalize->inner;
+            }
+            JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(inner_left);
+            if (jux) {
+                // Check for dyadic operator: (FF OP GG) = JuxtaposeK(FF, JuxtaposeK(OP, GG))
+                LookupK* ff = dynamic_cast<LookupK*>(jux->left);
+                JuxtaposeK* inner_jux = dynamic_cast<JuxtaposeK*>(jux->right);
+
+                if (ff && inner_jux) {
+                    LookupK* op_name = dynamic_cast<LookupK*>(inner_jux->left);
+                    LookupK* gg = dynamic_cast<LookupK*>(inner_jux->right);
+
+                    if (op_name && gg) {
+                        // Dyadic operator header: (FF OP GG)
+                        // Right side should be a closure body
+                        ClosureLiteralK* closure = dynamic_cast<ClosureLiteralK*>(right);
+                        if (!closure) {
+                            error_message_ = "Operator body must be a dfn";
+                            return nullptr;
+                        }
+                        // Create DefinedOperatorLiteralK for dyadic operator
+                        DefinedOperatorLiteralK* def_op = machine->heap->allocate<DefinedOperatorLiteralK>(
+                            closure->body, op_name->var_name, ff->var_name, gg->var_name);
+                        return def_op;
+                    }
+                }
+
+                // Check for monadic operator: (FF OP) = JuxtaposeK(FF, OP)
+                LookupK* op_name = dynamic_cast<LookupK*>(jux->right);
+
+                if (ff && op_name) {
+                    // Monadic operator header: (FF OP)
+                    ClosureLiteralK* closure = dynamic_cast<ClosureLiteralK*>(right);
+                    if (!closure) {
+                        error_message_ = "Operator body must be a dfn";
+                        return nullptr;
+                    }
+                    // Create DefinedOperatorLiteralK for monadic operator
+                    DefinedOperatorLiteralK* def_op = machine->heap->allocate<DefinedOperatorLiteralK>(
+                        closure->body, op_name->var_name, ff->var_name);
+                    return def_op;
                 }
             }
 
@@ -649,6 +750,14 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // f⍤k applies function f to k-cells of the argument(s)
             // Dyadic operator: first operand is function, second is rank specification
             const char* interned_name = machine->string_pool.intern("⍤");
+            DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
+            return derived;
+        }
+
+        case TOK_NAME: {
+            // Defined operator: handle like primitive operators
+            // At this point we already checked it's a defined operator in the parsing loop
+            const char* interned_name = machine->string_pool.intern(token.name);
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             return derived;
         }

@@ -11,6 +11,7 @@ namespace apl {
 // Forward declarations
 class Value;
 class Continuation;
+class Environment;
 class Heap;
 class Machine;
 
@@ -56,7 +57,8 @@ enum class ValueType {
     PRIMITIVE,  // Primitive function (C function pointer)
     CLOSURE,    // User-defined function (continuation graph)
     OPERATOR,   // Higher-order operator (takes functions, returns derived functions)
-    DERIVED_OPERATOR,  // Result of applying dyadic operator to first operand (G2 grammar)
+    DEFINED_OPERATOR,  // User-defined operator (closure-like)
+    DERIVED_OPERATOR,  // Result of applying operator to first operand (G2 grammar)
     CURRIED_FN  // Result of applying function to first argument (G2 grammar currying)
 };
 
@@ -73,10 +75,30 @@ private:
 public:
     ValueType tag;
 
-    // Data structures for new G2 grammar types
+    // User-defined operator data
+    struct DefinedOperatorData {
+        Continuation* body;              // The operator's body (continuation graph)
+        const char* name;                // Operator name
+        bool is_dyadic_operator;         // Takes 1 or 2 operands?
+        bool is_ambivalent;              // Can be called monadically or dyadically?
+
+        // Parameter names (for binding in environment)
+        const char* left_operand_name;   // e.g., "FF" - always present
+        const char* right_operand_name;  // e.g., "GG" - only for dyadic operators
+        const char* left_arg_name;       // e.g., "A" - for ambivalent operators (nullptr if monadic-only)
+        const char* right_arg_name;      // e.g., "B" - always present
+        const char* result_name;         // e.g., "Z"
+
+        Environment* lexical_env;        // Captured environment (like closures)
+    };
+
+    // Data structures for G2 grammar types
+    // Holds result of applying operator to first operand - works for both primitive and defined ops
     struct DerivedOperatorData {
-        PrimitiveOp* op;           // The operator
-        Value* first_operand;      // The first operand
+        PrimitiveOp* primitive_op;       // For primitive operators (or nullptr)
+        DefinedOperatorData* defined_op; // For defined operators (or nullptr)
+        Value* first_operand;            // The first operand (always present)
+        Value* operator_value;           // For defined ops: the DEFINED_OPERATOR Value (for ∇ binding)
     };
 
     // Curry types for CURRIED_FN values
@@ -99,7 +121,8 @@ public:
         const char* string;         // For STRING (interned pointer, not owned)
         PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
         Continuation* closure;      // For CLOSURE (user-defined function body)
-        PrimitiveOp* op;            // For OPERATOR
+        PrimitiveOp* op;            // For OPERATOR (primitive)
+        DefinedOperatorData* defined_op_data;  // For DEFINED_OPERATOR (user-defined)
         DerivedOperatorData* derived_op;  // For DERIVED_OPERATOR
         CurriedFnData* curried_fn;  // For CURRIED_FN
 
@@ -127,7 +150,8 @@ public:
     bool is_primitive() const { return tag == ValueType::PRIMITIVE; }
     bool is_closure() const { return tag == ValueType::CLOSURE; }
     bool is_function() const { return tag == ValueType::PRIMITIVE || tag == ValueType::CLOSURE || tag == ValueType::CURRIED_FN || tag == ValueType::DERIVED_OPERATOR; }
-    bool is_operator() const { return tag == ValueType::OPERATOR || tag == ValueType::DERIVED_OPERATOR; }
+    bool is_operator() const { return tag == ValueType::OPERATOR || tag == ValueType::DEFINED_OPERATOR || tag == ValueType::DERIVED_OPERATOR; }
+    bool is_defined_operator() const { return tag == ValueType::DEFINED_OPERATOR; }
     bool is_derived_operator() const { return tag == ValueType::DERIVED_OPERATOR; }
     bool is_curried_fn() const { return tag == ValueType::CURRIED_FN; }
     // G2 grammar: "bas" type = basic values (scalars, vectors, matrices, strings)

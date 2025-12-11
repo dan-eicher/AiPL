@@ -241,7 +241,7 @@ TEST_F(OperatorsTest, PostfixMonadicOperator) {
     ASSERT_NE(result, nullptr);
     // Should create a DERIVED_OPERATOR value
     EXPECT_TRUE(result->is_derived_operator());
-    EXPECT_EQ(result->data.derived_op->op, &op_diaeresis);
+    EXPECT_EQ(result->data.derived_op->primitive_op, &op_diaeresis);
     // The first_operand should be the plus function
     EXPECT_TRUE(result->data.derived_op->first_operand->is_primitive());
 }
@@ -1590,6 +1590,284 @@ TEST_F(OperatorsTest, CommuteWithPower) {
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 9.0);
+}
+
+// ============================================================================
+// Defined Operator Tests (User-defined operators)
+// ============================================================================
+
+TEST_F(OperatorsTest, DefinedMonadicOperatorTwice) {
+    // Define TWICE operator: applies function twice
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+
+    // -TWICE 5 should return 5 (negate twice = identity)
+    Value* result = eval(machine, "-TWICE 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(OperatorsTest, DefinedMonadicOperatorWithCurriedFunction) {
+    // To use a curried function as operand, need explicit parentheses
+    // (2×)TWICE 3 = apply (2×) twice to 3 = 2×(2×3) = 2×6 = 12
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+
+    Value* result = eval(machine, "(2×)TWICE 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+TEST_F(OperatorsTest, DefinedMonadicOperatorSignum) {
+    // ×TWICE 5 = signum(signum(5)) = signum(1) = 1
+    // Note: monadic + is identity (conjugate), × is signum
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+    Value* result = eval(machine, "×TWICE 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, DefinedDyadicOperatorCompose) {
+    // Define COMPOSE operator: applies g then f
+    eval(machine, "(F COMPOSE G) ← {F G ⍵}");
+
+    // -COMPOSE÷ 4 = -(÷4) = -0.25
+    Value* result = eval(machine, "-COMPOSE÷ 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -0.25);
+}
+
+TEST_F(OperatorsTest, DefinedDyadicOperatorWithParens) {
+    // Same but with explicit parentheses
+    eval(machine, "(F COMPOSE G) ← {F G ⍵}");
+
+    Value* result = eval(machine, "(-COMPOSE÷) 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -0.25);
+}
+
+TEST_F(OperatorsTest, DefinedDyadicOperatorComposeWithVector) {
+    // -COMPOSE⌽ on vector
+    eval(machine, "(F COMPOSE G) ← {F G ⍵}");
+
+    // Reverse then negate: -COMPOSE⌽ 1 2 3 = -(⌽1 2 3) = -(3 2 1) = ¯3 ¯2 ¯1
+    Value* result = eval(machine, "-COMPOSE⌽ 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), -3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), -1.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorAmbivalent) {
+    // Ambivalent operator: can be used monadically or dyadically
+    eval(machine, "(F OP) ← {⍺←0 ⋄ ⍺ F ⍵}");
+
+    // Monadic: 0 + ⍵
+    Value* result1 = eval(machine, "+OP 5");
+    ASSERT_NE(result1, nullptr);
+    EXPECT_DOUBLE_EQ(result1->as_scalar(), 5.0);
+
+    // Dyadic: ⍺ + ⍵
+    Value* result2 = eval(machine, "10 +OP 5");
+    ASSERT_NE(result2, nullptr);
+    EXPECT_DOUBLE_EQ(result2->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorWithClosure) {
+    // Define a function and use it with operator
+    eval(machine, "double ← {⍵+⍵}");
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+
+    // doubleTWICE 3 = double(double(3)) = double(6) = 12
+    Value* result = eval(machine, "double TWICE 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+TEST_F(OperatorsTest, DefinedDyadicOperatorBothClosures) {
+    // Both operands are user-defined functions
+    eval(machine, "square ← {⍵×⍵}");
+    eval(machine, "double ← {⍵+⍵}");
+    eval(machine, "(F COMPOSE G) ← {F G ⍵}");
+
+    // square COMPOSE double 3 = square(double(3)) = square(6) = 36
+    Value* result = eval(machine, "square COMPOSE double 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 36.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorChained) {
+    // Chain operators: +/TWICE means apply +/ twice
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+
+    // +/TWICE 1 2 3 4 = +/(+/1 2 3 4) = +/10 = 10
+    Value* result = eval(machine, "+/TWICE 1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// ============================================================================
+// Additional Defined Operator Tests - Edge Cases and ⍺⍺/⍵⍵ Syntax
+// ============================================================================
+
+TEST_F(OperatorsTest, DefinedOperatorWithAlphaAlphaSyntax) {
+    // Use ⍺⍺ syntax directly instead of named operand F
+    eval(machine, "(F APPLY) ← {⍺⍺ ⍵}");
+
+    // -APPLY 5 = -5
+    Value* result = eval(machine, "-APPLY 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(OperatorsTest, DefinedDyadicOperatorWithOmegaOmegaSyntax) {
+    // Use ⍵⍵ syntax for second operand
+    eval(machine, "(F THEN G) ← {⍵⍵ ⍺⍺ ⍵}");
+
+    // -THEN÷ 4 = ÷(-4) = -0.25
+    Value* result = eval(machine, "-THEN÷ 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -0.25);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorWithDyadicApplication) {
+    // Operator where derived function takes left argument
+    eval(machine, "(F SWAP) ← {⍵ F ⍺}");
+
+    // 3 -SWAP 10 = 10 - 3 = 7
+    Value* result = eval(machine, "3 -SWAP 10");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorMultipleApplications) {
+    // Apply operand multiple times
+    eval(machine, "(F TRIPLE) ← {F F F ⍵}");
+
+    // -TRIPLE 5 = ---5 = -5
+    Value* result = eval(machine, "-TRIPLE 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorWithVectorOperand) {
+    // Operand that works on vectors
+    eval(machine, "(F EACH2) ← {F¨ ⍵}");
+
+    // -EACH2 1 2 3 = -¨ 1 2 3 = ¯1 ¯2 ¯3
+    Value* result = eval(machine, "-EACH2 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), -3.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorReturningScalar) {
+    // Operator that reduces result to scalar
+    eval(machine, "(F SUM) ← {+/F ⍵}");
+
+    // ⍳SUM 5 = +/(⍳5) = +/1 2 3 4 5 = 15
+    Value* result = eval(machine, "⍳SUM 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorWithReduceOperand) {
+    // Use reduce as operand
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+
+    // ×/TWICE 2 3 = ×/(×/2 3) = ×/6 = 6
+    Value* result = eval(machine, "×/TWICE 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorPreservesGPrimeCurry) {
+    // Parenthesized curry (2×) should be preserved, not finalized to signum(2)
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+
+    // (3+)TWICE 5 = (3+)(3+)5 = 3+(3+5) = 3+8 = 11
+    Value* result = eval(machine, "(3+)TWICE 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 11.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorFinalizesReduceCurry) {
+    // Parenthesized reduce (+/1 2 3) should finalize to 6
+    // Then strand with other values
+    Value* result = eval(machine, "0 (+/1 2 3) 10");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);   // +/1 2 3 = 6
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 10.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorNestedApplication) {
+    // Two different operators
+    eval(machine, "(F TWICE) ← {F F ⍵}");
+    eval(machine, "(F COMPOSE G) ← {F G ⍵}");
+
+    // -TWICE COMPOSE ⍳ 3 = apply (-TWICE) to (⍳3) = --(1 2 3) = 1 2 3
+    Value* result = eval(machine, "-TWICE COMPOSE ⍳ 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorWithDefaultAlpha) {
+    // Ambivalent derived function with default left arg
+    eval(machine, "(F WITHDEFAULT) ← {⍺←100 ⋄ ⍺ F ⍵}");
+
+    // Monadic: uses default 100
+    Value* result1 = eval(machine, "+WITHDEFAULT 5");
+    ASSERT_NE(result1, nullptr);
+    EXPECT_DOUBLE_EQ(result1->as_scalar(), 105.0);
+
+    // Dyadic: uses provided left arg
+    Value* result2 = eval(machine, "10 +WITHDEFAULT 5");
+    ASSERT_NE(result2, nullptr);
+    EXPECT_DOUBLE_EQ(result2->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DefinedOperatorIdentity) {
+    // Identity operator - just returns operand applied to arg
+    eval(machine, "(F ID) ← {F ⍵}");
+
+    Value* result = eval(machine, "⍳ID 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+}
+
+TEST_F(OperatorsTest, DefinedDyadicOperatorPowerCompose) {
+    // Compose with power: F^n
+    eval(machine, "(F POW N) ← {N=0: ⍵ ⋄ F (F POW (N-1)) ⍵}");
+
+    // -POW 3 applied to 5 = ---5 = -5
+    Value* result = eval(machine, "-POW 3 ⊢ 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
 }
 
 int main(int argc, char** argv) {

@@ -193,6 +193,31 @@ protected:
     void invoke(Machine* machine) override;
 };
 
+// DefinedOperatorLiteralK - Parse-time continuation for operator definitions
+// Created from: (FF OP) ← {body} or (FF OP GG) ← {body}
+// At runtime, creates DEFINED_OPERATOR value and assigns to operator name
+class DefinedOperatorLiteralK : public Continuation {
+public:
+    Continuation* body;              // The operator body
+    const char* operator_name;       // OP - the name being defined
+    const char* left_operand_name;   // FF - left operand parameter
+    const char* right_operand_name;  // GG - right operand (nullptr for monadic)
+
+    DefinedOperatorLiteralK(Continuation* b, const char* op_name,
+                            const char* left_op, const char* right_op = nullptr)
+        : body(b), operator_name(op_name),
+          left_operand_name(left_op), right_operand_name(right_op) {}
+
+    ~DefinedOperatorLiteralK() override {}
+
+    bool is_dyadic_operator() const { return right_operand_name != nullptr; }
+
+    void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
 // LookupK - Parse-time continuation for variable lookups
 // Stores the variable name (interned pointer from StringPool)
 // At runtime, looks up the variable in the environment
@@ -370,8 +395,9 @@ protected:
 class FinalizeK : public Continuation {
 public:
     Continuation* inner;  // The expression to evaluate and finalize
+    bool finalize_gprime;  // If false, only finalize DYADIC_CURRY, not G_PRIME (for parentheses)
 
-    FinalizeK(Continuation* expr) : inner(expr) {}
+    FinalizeK(Continuation* expr, bool gprime = true) : inner(expr), finalize_gprime(gprime) {}
 
     ~FinalizeK() override {}
 
@@ -384,7 +410,9 @@ protected:
 // PerformFinalizeK - Auxiliary that checks result after inner evaluates
 class PerformFinalizeK : public Continuation {
 public:
-    PerformFinalizeK() {}
+    bool finalize_gprime;  // If false, only finalize DYADIC_CURRY, not G_PRIME
+
+    PerformFinalizeK(bool gprime = true) : finalize_gprime(gprime) {}
 
     void mark(Heap* heap) override;
 
@@ -1437,6 +1465,37 @@ public:
     ~PerformIndexedAssignK() override {}
 
     void mark(Heap* heap) override;
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// InvokeDefinedOperatorK - Invoke a user-defined operator
+// ============================================================================
+// Binds operands and arguments in a new environment, then executes the body
+// Used when a DERIVED_OPERATOR (with defined_op) is applied to arguments
+
+class InvokeDefinedOperatorK : public Continuation {
+public:
+    Value::DefinedOperatorData* op;  // The defined operator
+    Value* operator_value;            // The DEFINED_OPERATOR Value (for ∇ binding)
+    Value* left_operand;              // Always present (FF)
+    Value* right_operand;             // For dyadic operators (GG), or axis value
+    Value* left_arg;                  // For dyadic application (⍺)
+    Value* right_arg;                 // Always present (⍵)
+
+    InvokeDefinedOperatorK(Value::DefinedOperatorData* defined_op,
+                           Value* op_value,
+                           Value* left_op, Value* right_op,
+                           Value* left, Value* right)
+        : op(defined_op), operator_value(op_value), left_operand(left_op), right_operand(right_op),
+          left_arg(left), right_arg(right) {}
+
+    ~InvokeDefinedOperatorK() override {}
+
+    void mark(Heap* heap) override;
+    bool is_function_boundary() const override { return true; }
 
 protected:
     void invoke(Machine* machine) override;

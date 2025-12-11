@@ -89,8 +89,12 @@ public:
     Value* allocate_operator(PrimitiveOp* op);
     Value* allocate_closure(Continuation* body);
 
+    // Defined operator allocation
+    Value* allocate_defined_operator(Value::DefinedOperatorData* op_data);
+
     // G2 grammar allocation helpers
     Value* allocate_derived_operator(PrimitiveOp* op, Value* first_operand);
+    Value* allocate_derived_operator(Value::DefinedOperatorData* op, Value* first_operand, Value* operator_value = nullptr);
     Value* allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type);
     // Template-based allocation interface (unified allocation)
     template<typename T, typename... Args>

@@ -864,6 +864,49 @@ TEST_F(LexerTest, QuadNameInExpression) {
     EXPECT_EQ(tokens[2].type, TOK_NUMBER);
 }
 
+// =============================================================================
+// Defined operator tokens (⍺⍺ and ⍵⍵)
+// =============================================================================
+
+TEST_F(LexerTest, AlphaAlphaToken) {
+    auto tokens = tokenize("⍺⍺");
+    ASSERT_EQ(tokens.size(), 2);  // ⍺⍺ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_ALPHA_ALPHA);
+}
+
+TEST_F(LexerTest, OmegaOmegaToken) {
+    auto tokens = tokenize("⍵⍵");
+    ASSERT_EQ(tokens.size(), 2);  // ⍵⍵ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_OMEGA_OMEGA);
+}
+
+TEST_F(LexerTest, AlphaAlphaDistinctFromAlpha) {
+    // ⍺⍺ should be tokenized as single token, not two ⍺ tokens
+    auto tokens = tokenize("⍺⍺ ⍺");
+    ASSERT_EQ(tokens.size(), 3);  // ⍺⍺ ⍺ EOF
+    EXPECT_EQ(tokens[0].type, TOK_ALPHA_ALPHA);
+    EXPECT_EQ(tokens[1].type, TOK_ALPHA);
+}
+
+TEST_F(LexerTest, OmegaOmegaDistinctFromOmega) {
+    // ⍵⍵ should be tokenized as single token, not two ⍵ tokens
+    auto tokens = tokenize("⍵⍵ ⍵");
+    ASSERT_EQ(tokens.size(), 3);  // ⍵⍵ ⍵ EOF
+    EXPECT_EQ(tokens[0].type, TOK_OMEGA_OMEGA);
+    EXPECT_EQ(tokens[1].type, TOK_OMEGA);
+}
+
+TEST_F(LexerTest, OperandTokensInDfnBody) {
+    // Test operand tokens in context of a dfn body
+    auto tokens = tokenize("{⍺⍺ ⍵⍵ ⍵}");
+    ASSERT_EQ(tokens.size(), 6);  // { ⍺⍺ ⍵⍵ ⍵ } EOF
+    EXPECT_EQ(tokens[0].type, TOK_LBRACE);
+    EXPECT_EQ(tokens[1].type, TOK_ALPHA_ALPHA);
+    EXPECT_EQ(tokens[2].type, TOK_OMEGA_OMEGA);
+    EXPECT_EQ(tokens[3].type, TOK_OMEGA);
+    EXPECT_EQ(tokens[4].type, TOK_RBRACE);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
