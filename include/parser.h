@@ -44,9 +44,6 @@ private:
     Continuation* led(Continuation* left, const Token& token);  // Left denotation (infix)
     Continuation* led_juxtapose(Continuation* left, int bp);  // Juxtaposition (strand formation)
 
-    // Statement parsing
-    Continuation* parse_statement();  // Parse statement or expression
-
     // Binding power lookup
     int get_binding_power(const Token& token);
 
@@ -58,6 +55,8 @@ private:
     Continuation* parse_for_statement();     // Parse :For/:In/:EndFor
     Continuation* parse_return_statement();  // Parse :Return
     Continuation* parse_leave_statement();   // Parse :Leave
+    Continuation* parse_continue_statement(); // Parse :Continue
+    Continuation* parse_branch_statement();  // Parse → (branch/goto)
 
     // Token stream helpers (unified with lexer)
     const Token& current() const { return current_token_; }

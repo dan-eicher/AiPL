@@ -1043,6 +1043,198 @@ TEST_F(ParserTest, NestedParenthesesWithFinalizeK) {
     ASSERT_NE(inner, nullptr) << "Inner parens should also be FinalizeK";
 }
 
+// ============================================================================
+// Source Location Tracking Tests
+// ============================================================================
+
+TEST_F(ParserTest, LiteralKHasSourceLocation) {
+    Continuation* k = parser->parse("42");
+    ASSERT_NE(k, nullptr);
+
+    LiteralK* lit = dynamic_cast<LiteralK*>(k);
+    ASSERT_NE(lit, nullptr);
+    EXPECT_TRUE(lit->has_location());
+    EXPECT_EQ(lit->line(), 1);
+    EXPECT_EQ(lit->column(), 1);
+}
+
+TEST_F(ParserTest, LookupKHasSourceLocation) {
+    Continuation* k = parser->parse("xyz");
+    ASSERT_NE(k, nullptr);
+
+    LookupK* lookup = dynamic_cast<LookupK*>(k);
+    ASSERT_NE(lookup, nullptr);
+    EXPECT_TRUE(lookup->has_location());
+    EXPECT_EQ(lookup->line(), 1);
+    EXPECT_EQ(lookup->column(), 1);
+}
+
+TEST_F(ParserTest, PrimitiveFunctionLookupKHasSourceLocation) {
+    // Primitive function tokens (like +) become LookupK
+    Continuation* k = parser->parse("+");
+    ASSERT_NE(k, nullptr);
+
+    LookupK* lookup = dynamic_cast<LookupK*>(k);
+    ASSERT_NE(lookup, nullptr);
+    EXPECT_TRUE(lookup->has_location());
+    EXPECT_EQ(lookup->line(), 1);
+    EXPECT_EQ(lookup->column(), 1);
+}
+
+TEST_F(ParserTest, StrandKHasSourceLocation) {
+    // Vector literal creates StrandK
+    Continuation* k = parser->parse("1 2 3");
+    ASSERT_NE(k, nullptr);
+
+    StrandK* strand = dynamic_cast<StrandK*>(k);
+    ASSERT_NE(strand, nullptr);
+    EXPECT_TRUE(strand->has_location());
+    EXPECT_EQ(strand->line(), 1);
+    EXPECT_EQ(strand->column(), 1);
+}
+
+TEST_F(ParserTest, DerivedOperatorKHasSourceLocation) {
+    // +/ creates DerivedOperatorK
+    Continuation* k = parser->parse("+/");
+    ASSERT_NE(k, nullptr);
+
+    DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
+    ASSERT_NE(derived, nullptr);
+    EXPECT_TRUE(derived->has_location());
+    // The location is where / appears (column 2)
+    EXPECT_EQ(derived->line(), 1);
+    EXPECT_EQ(derived->column(), 2);
+}
+
+TEST_F(ParserTest, JuxtaposeKHasSourceLocation) {
+    // "2 + 3" creates JuxtaposeK at top level
+    Continuation* k = parser->parse("2 + 3");
+    ASSERT_NE(k, nullptr);
+
+    JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(jux, nullptr);
+    EXPECT_TRUE(jux->has_location());
+    // Location is where the right operand starts (the +)
+    EXPECT_EQ(jux->line(), 1);
+    EXPECT_EQ(jux->column(), 3);
+}
+
+TEST_F(ParserTest, AssignKHasSourceLocation) {
+    // "x ← 5" creates AssignK
+    Continuation* k = parser->parse("x ← 5");
+    ASSERT_NE(k, nullptr);
+
+    // Assignment from NAME followed by ← creates AssignK in nud
+    AssignK* assign = dynamic_cast<AssignK*>(k);
+    ASSERT_NE(assign, nullptr);
+    EXPECT_TRUE(assign->has_location());
+    EXPECT_EQ(assign->line(), 1);
+    EXPECT_EQ(assign->column(), 1);  // Location of the variable name
+}
+
+TEST_F(ParserTest, FinalizeKHasSourceLocation) {
+    // Parentheses create FinalizeK
+    Continuation* k = parser->parse("(42)");
+    ASSERT_NE(k, nullptr);
+
+    FinalizeK* finalize = dynamic_cast<FinalizeK*>(k);
+    ASSERT_NE(finalize, nullptr);
+    EXPECT_TRUE(finalize->has_location());
+    EXPECT_EQ(finalize->line(), 1);
+    EXPECT_EQ(finalize->column(), 1);  // Location of (
+}
+
+TEST_F(ParserTest, ClosureLiteralKHasSourceLocation) {
+    // Dfn creates ClosureLiteralK
+    Continuation* k = parser->parse("{⍵}");
+    ASSERT_NE(k, nullptr);
+
+    ClosureLiteralK* closure = dynamic_cast<ClosureLiteralK*>(k);
+    ASSERT_NE(closure, nullptr);
+    EXPECT_TRUE(closure->has_location());
+    EXPECT_EQ(closure->line(), 1);
+    EXPECT_EQ(closure->column(), 1);  // Location of {
+}
+
+TEST_F(ParserTest, SourceLocationWithMultipleTokens) {
+    // Test that different continuations in same expression have correct locations
+    // "x + y" should have:
+    // - Top JuxtaposeK at column 3 (where + is)
+    // - Left LookupK(x) at column 1
+    // - Inner JuxtaposeK for "+ y" somewhere inside
+    Continuation* k = parser->parse("x + y");
+    ASSERT_NE(k, nullptr);
+
+    JuxtaposeK* top_jux = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(top_jux, nullptr);
+
+    // Left is x
+    LookupK* x_lookup = dynamic_cast<LookupK*>(top_jux->left);
+    ASSERT_NE(x_lookup, nullptr);
+    EXPECT_EQ(x_lookup->column(), 1);
+
+    // Right is JuxtaposeK(+, y)
+    JuxtaposeK* inner = dynamic_cast<JuxtaposeK*>(top_jux->right);
+    ASSERT_NE(inner, nullptr);
+
+    // Inner left is +
+    LookupK* plus_lookup = dynamic_cast<LookupK*>(inner->left);
+    ASSERT_NE(plus_lookup, nullptr);
+    EXPECT_EQ(plus_lookup->column(), 3);
+
+    // Inner right is y
+    LookupK* y_lookup = dynamic_cast<LookupK*>(inner->right);
+    ASSERT_NE(y_lookup, nullptr);
+    EXPECT_EQ(y_lookup->column(), 5);
+}
+
+TEST_F(ParserTest, ZildeHasSourceLocation) {
+    // ⍬ creates StrandK with empty vector
+    Continuation* k = parser->parse("⍬");
+    ASSERT_NE(k, nullptr);
+
+    StrandK* strand = dynamic_cast<StrandK*>(k);
+    ASSERT_NE(strand, nullptr);
+    EXPECT_TRUE(strand->has_location());
+    EXPECT_EQ(strand->line(), 1);
+    EXPECT_EQ(strand->column(), 1);
+}
+
+TEST_F(ParserTest, DfnArgumentsHaveSourceLocation) {
+    // ⍺ and ⍵ create LookupK
+    Continuation* k = parser->parse("⍵");
+    ASSERT_NE(k, nullptr);
+
+    LookupK* omega = dynamic_cast<LookupK*>(k);
+    ASSERT_NE(omega, nullptr);
+    EXPECT_TRUE(omega->has_location());
+    EXPECT_EQ(omega->line(), 1);
+    EXPECT_EQ(omega->column(), 1);
+}
+
+TEST_F(ParserTest, BracketIndexingHasSourceLocation) {
+    // A[1] creates nested JuxtaposeK structure with location tracking
+    machine->env->define("A", machine->heap->allocate_scalar(42.0));
+    Continuation* k = parser->parse("A[1]");
+    ASSERT_NE(k, nullptr);
+
+    // Top level is JuxtaposeK
+    JuxtaposeK* top = dynamic_cast<JuxtaposeK*>(k);
+    ASSERT_NE(top, nullptr);
+    EXPECT_TRUE(top->has_location());
+    // Location should be at the [ bracket
+    EXPECT_EQ(top->line(), 1);
+    EXPECT_EQ(top->column(), 2);
+}
+
+TEST_F(ParserTest, NoSourceLocationReturnsZero) {
+    // Manually created continuation without set_location should return 0,0
+    LiteralK* lit = machine->heap->allocate<LiteralK>(42.0);
+    EXPECT_FALSE(lit->has_location());
+    EXPECT_EQ(lit->line(), 0);
+    EXPECT_EQ(lit->column(), 0);
+}
+
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

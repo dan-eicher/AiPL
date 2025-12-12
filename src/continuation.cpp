@@ -61,16 +61,16 @@ void PropagateCompletionK::invoke(Machine* machine) {
             return;
         }
 
-        if (completion->is_break() && k->is_loop_boundary()) {
-            // Found a loop boundary - pop it and we're done unwinding
+        if (completion->is_break() && k->is_break_boundary()) {
+            // Found a break boundary (CatchBreakK) - pop it and we're done unwinding
             // The :Leave exits the loop, value is in result
             machine->pop_kont();
             return;
         }
 
-        if (completion->is_continue() && k->is_loop_boundary()) {
-            // Found a loop boundary for continue - need to re-execute loop
-            // For now, just pop and return (continue not fully implemented)
+        if (completion->is_continue() && k->is_continue_boundary()) {
+            // Found a continue boundary (CatchContinueK) - pop it and we're done unwinding
+            // Execution continues with what's next on stack (condition re-evaluation)
             machine->pop_kont();
             return;
         }
@@ -157,11 +157,12 @@ void CatchBreakK::mark(Heap* heap) {
 void CatchContinueK::invoke(Machine* machine) {
     // Check if next item on stack is propagating a CONTINUE completion
     if (!machine->kont_stack.empty()) {
-        Completion* comp = machine->kont_stack.back()->get_propagating_completion();
+        Continuation* next = machine->kont_stack.back();
+        Completion* comp = next->get_propagating_completion();
         if (comp && comp->is_continue()) {
             // Pop the propagating continuation - we're handling the continue
             machine->pop_kont();
-            // Re-push the loop continuation to restart the loop
+            // Re-push the loop continuation to restart the loop condition check
             if (loop_cont) {
                 machine->push_kont(loop_cont);
             }
@@ -169,8 +170,7 @@ void CatchContinueK::invoke(Machine* machine) {
         }
     }
 
-    // VM bug: CatchContinueK invoked without a continue completion on stack
-    throw std::runtime_error("VM BUG: CatchContinueK::invoke called without CONTINUE completion");
+    // Normal body completion - just continue to next iteration (already set up on stack)
 }
 
 void CatchContinueK::mark(Heap* heap) {
@@ -1916,6 +1916,10 @@ void CheckWhileCondK::invoke(Machine* machine) {
         // Push condition to evaluate after body
         machine->push_kont(condition);
 
+        // Push CatchContinueK to handle :Continue - it will restart the loop
+        auto* catch_continue = machine->heap->allocate<CatchContinueK>(check_k);
+        machine->push_kont(catch_continue);
+
         // Push body to execute now
         if (body) {
             machine->push_kont(body);
@@ -1923,8 +1927,6 @@ void CheckWhileCondK::invoke(Machine* machine) {
     }
     // If false, just exit - loop is done
     // Result remains the condition value
-
-    // Phase 3.1: No return needed
 }
 
 void CheckWhileCondK::mark(Heap* heap) {
@@ -2005,12 +2007,14 @@ void ForIterateK::invoke(Machine* machine) {
     auto* next_k = machine->heap->allocate<ForIterateK>(var_name, array, body, index + 1);
     machine->push_kont(next_k);
 
+    // Push CatchContinueK to handle :Continue - it will skip to next iteration
+    auto* catch_continue = machine->heap->allocate<CatchContinueK>(next_k);
+    machine->push_kont(catch_continue);
+
     // Push body to execute
     if (body) {
         machine->push_kont(body);
     }
-
-    // Phase 3.1: No return needed
 }
 
 void ForIterateK::mark(Heap* heap) {
@@ -2037,6 +2041,27 @@ void LeaveK::invoke(Machine* machine) {
 
 void LeaveK::mark(Heap* heap) {
     // LeaveK has no references
+    (void)heap;
+}
+
+// ContinueK implementation - skip to next loop iteration
+void ContinueK::invoke(Machine* machine) {
+    // Create CONTINUE completion and propagate it up the stack
+    // This will unwind until we hit a CatchContinueK at a loop boundary
+
+    Completion* continue_comp = machine->heap->allocate<Completion>(
+        CompletionType::CONTINUE,
+        machine->result,  // Preserve current value
+        nullptr  // No label for now
+    );
+
+    // Push PropagateCompletionK to unwind the stack
+    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(continue_comp);
+    machine->push_kont(prop);
+}
+
+void ContinueK::mark(Heap* heap) {
+    // ContinueK has no references
     (void)heap;
 }
 
@@ -2095,6 +2120,69 @@ void CreateReturnK::mark(Heap* heap) {
     (void)heap;
 }
 
+// BranchK implementation - evaluate target, then check if we should exit
+void BranchK::invoke(Machine* machine) {
+    // Save current result before evaluating branch target
+    // This will be the return value if we exit (→0 returns the last computed value)
+    Value* saved_result = machine->result;
+
+    // Push CheckBranchK to process the result
+    CheckBranchK* check_k = machine->heap->allocate<CheckBranchK>(saved_result);
+    machine->push_kont(check_k);
+
+    // Evaluate the target expression
+    machine->push_kont(target_expr);
+}
+
+void BranchK::mark(Heap* heap) {
+    heap->mark(target_expr);
+}
+
+// CheckBranchK implementation - check branch target and exit if 0 or empty
+void CheckBranchK::invoke(Machine* machine) {
+    Value* target = machine->result;
+
+    if (!target) {
+        machine->throw_error("VALUE ERROR: Branch target evaluated to null", this);
+        return;
+    }
+
+    // Check if target is 0 or empty - these mean "exit function"
+    bool should_exit = false;
+
+    if (target->is_scalar()) {
+        // →0 means exit
+        should_exit = (target->as_scalar() == 0.0);
+    } else if (target->is_vector() || target->is_matrix()) {
+        // →⍬ (empty array) means exit
+        const Eigen::MatrixXd* mat = target->as_matrix();
+        should_exit = (mat->size() == 0);
+    }
+
+    if (should_exit) {
+        // Exit function - create RETURN completion with saved result (not the branch target)
+        // Use saved_result if available, otherwise use a default scalar 0
+        Value* return_value = saved_result ? saved_result : machine->heap->allocate_scalar(0.0);
+
+        Completion* return_comp = machine->heap->allocate<Completion>(
+            CompletionType::RETURN,
+            return_value,
+            nullptr
+        );
+
+        PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(return_comp);
+        machine->push_kont(prop);
+    } else {
+        // Non-zero, non-empty target - this would be a line number branch
+        // We don't support line numbers, so report an error
+        machine->throw_error("DOMAIN ERROR: Branch to line numbers not supported (use →0 or →⍬ to exit)", this);
+    }
+}
+
+void CheckBranchK::mark(Heap* heap) {
+    heap->mark(saved_result);
+}
+
 // ============================================================================
 // Function Call Continuations (Phase 4.3)
 // ============================================================================
@@ -2137,10 +2225,12 @@ void FunctionCallK::invoke(Machine* machine) {
     RestoreEnvK* restore_k = machine->heap->allocate<RestoreEnvK>(saved_env);
     machine->push_kont(restore_k);
 
+    // Push CatchReturnK to establish function boundary for →0 and :Return
+    CatchReturnK* catch_k = machine->heap->allocate<CatchReturnK>("dfn");
+    machine->push_kont(catch_k);
+
     // Execute function body
     machine->push_kont(body);
-
-    // Phase 3.1: No return needed
 }
 
 void FunctionCallK::mark(Heap* heap) {

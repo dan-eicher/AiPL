@@ -301,6 +301,151 @@ TEST_F(StatementTest, IfMultipleStatements) {
 }
 
 // ============================================================================
+// ElseIf Tests
+// ============================================================================
+
+// Test simple :ElseIf - first condition true
+TEST_F(StatementTest, ElseIfFirstTrue) {
+    Continuation* k = parser->parse(
+        "x ← 1\n"
+        ":If x = 1\n"
+        "  result ← 100\n"
+        ":ElseIf x = 2\n"
+        "  result ← 200\n"
+        ":Else\n"
+        "  result ← 300\n"
+        ":EndIf\n"
+        "result"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
+}
+
+// Test :ElseIf - second condition true
+TEST_F(StatementTest, ElseIfSecondTrue) {
+    Continuation* k = parser->parse(
+        "x ← 2\n"
+        ":If x = 1\n"
+        "  result ← 100\n"
+        ":ElseIf x = 2\n"
+        "  result ← 200\n"
+        ":Else\n"
+        "  result ← 300\n"
+        ":EndIf\n"
+        "result"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 200.0);
+}
+
+// Test :ElseIf - falls through to :Else
+TEST_F(StatementTest, ElseIfFallsToElse) {
+    Continuation* k = parser->parse(
+        "x ← 5\n"
+        ":If x = 1\n"
+        "  result ← 100\n"
+        ":ElseIf x = 2\n"
+        "  result ← 200\n"
+        ":Else\n"
+        "  result ← 300\n"
+        ":EndIf\n"
+        "result"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 300.0);
+}
+
+// Test multiple :ElseIf clauses
+TEST_F(StatementTest, MultipleElseIf) {
+    Continuation* k = parser->parse(
+        "x ← 3\n"
+        ":If x = 1\n"
+        "  result ← 100\n"
+        ":ElseIf x = 2\n"
+        "  result ← 200\n"
+        ":ElseIf x = 3\n"
+        "  result ← 300\n"
+        ":ElseIf x = 4\n"
+        "  result ← 400\n"
+        ":Else\n"
+        "  result ← 500\n"
+        ":EndIf\n"
+        "result"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 300.0);
+}
+
+// Test :ElseIf without final :Else
+TEST_F(StatementTest, ElseIfNoFinalElse) {
+    Continuation* k = parser->parse(
+        "x ← 2\n"
+        "result ← 0\n"
+        ":If x = 1\n"
+        "  result ← 100\n"
+        ":ElseIf x = 2\n"
+        "  result ← 200\n"
+        ":EndIf\n"
+        "result"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 200.0);
+}
+
+// Test :ElseIf without final :Else - no match
+TEST_F(StatementTest, ElseIfNoFinalElseNoMatch) {
+    Continuation* k = parser->parse(
+        "x ← 5\n"
+        "result ← 0\n"
+        ":If x = 1\n"
+        "  result ← 100\n"
+        ":ElseIf x = 2\n"
+        "  result ← 200\n"
+        ":EndIf\n"
+        "result"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // result should remain 0 since no branch was taken
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// ============================================================================
 // While Loop Tests
 // ============================================================================
 
@@ -618,6 +763,257 @@ TEST_F(StatementTest, LeaveFromNested) {
     // Total: 1, 3, 4 → final count=4
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+}
+
+// ============================================================================
+// Continue Tests
+// ============================================================================
+
+// Test :Continue in While loop - skip even numbers
+TEST_F(StatementTest, ContinueInWhile) {
+    Continuation* k = parser->parse(
+        "i ← 0\n"
+        "sum ← 0\n"
+        ":While i < 10\n"
+        "  i ← i + 1\n"
+        "  :If 0 = 2 | i\n"
+        "    :Continue\n"
+        "  :EndIf\n"
+        "  sum ← sum + i\n"
+        ":EndWhile\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // sum of odd numbers 1-10: 1+3+5+7+9 = 25
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 25.0);
+}
+
+// Test :Continue in For loop - skip specific values
+TEST_F(StatementTest, ContinueInFor) {
+    Continuation* k = parser->parse(
+        "sum ← 0\n"
+        ":For x :In 1 2 3 4 5\n"
+        "  :If x = 3\n"
+        "    :Continue\n"
+        "  :EndIf\n"
+        "  sum ← sum + x\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // sum = 1+2+4+5 = 12 (skips 3)
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+// Test :Continue at start of loop body
+TEST_F(StatementTest, ContinueAtStart) {
+    Continuation* k = parser->parse(
+        "count ← 0\n"
+        "sum ← 0\n"
+        ":For x :In 1 2 3 4 5\n"
+        "  count ← count + 1\n"
+        "  :If x < 4\n"
+        "    :Continue\n"
+        "  :EndIf\n"
+        "  sum ← sum + x\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // Only adds x=4 and x=5: sum = 4+5 = 9
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 9.0);
+}
+
+// Test :Continue in nested loops (only affects innermost)
+TEST_F(StatementTest, ContinueInNested) {
+    Continuation* k = parser->parse(
+        "sum ← 0\n"
+        ":For i :In 1 2 3\n"
+        "  :For j :In 1 2 3\n"
+        "    :If j = 2\n"
+        "      :Continue\n"
+        "    :EndIf\n"
+        "    sum ← sum + (i × j)\n"
+        "  :EndFor\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // For each i, sum j=1 and j=3 (skip j=2):
+    // i=1: 1*1 + 1*3 = 4
+    // i=2: 2*1 + 2*3 = 8
+    // i=3: 3*1 + 3*3 = 12
+    // Total: 4+8+12 = 24
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 24.0);
+}
+
+// Test :Continue combined with :Leave
+TEST_F(StatementTest, ContinueAndLeave) {
+    Continuation* k = parser->parse(
+        "sum ← 0\n"
+        ":For x :In 1 2 3 4 5 6 7 8 9 10\n"
+        "  :If x = 8\n"
+        "    :Leave\n"
+        "  :EndIf\n"
+        "  :If 0 = 2 | x\n"
+        "    :Continue\n"
+        "  :EndIf\n"
+        "  sum ← sum + x\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // Odd numbers until 8: 1+3+5+7 = 16
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);
+}
+
+// Test multiple :Continue in same loop
+TEST_F(StatementTest, MultipleContinue) {
+    Continuation* k = parser->parse(
+        "sum ← 0\n"
+        ":For x :In 1 2 3 4 5 6\n"
+        "  :If x = 2\n"
+        "    :Continue\n"
+        "  :EndIf\n"
+        "  :If x = 4\n"
+        "    :Continue\n"
+        "  :EndIf\n"
+        "  sum ← sum + x\n"
+        ":EndFor\n"
+        "sum"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // Skips 2 and 4: 1+3+5+6 = 15
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+// ============================================================================
+// Branch (→) Tests
+// ============================================================================
+
+// Test →0 exits from dfn
+TEST_F(StatementTest, BranchZeroExitsDfn) {
+    Continuation* k = parser->parse(
+        "f ← { x ← 10 ⋄ →0 ⋄ x ← 20 ⋄ x }\n"
+        "f 1"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // →0 exits early, x stays at 10
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
+}
+
+// Test →⍬ exits from dfn
+TEST_F(StatementTest, BranchZildeExitsDfn) {
+    Continuation* k = parser->parse(
+        "f ← { x ← 100 ⋄ →⍬ ⋄ x ← 200 ⋄ x }\n"
+        "f 1"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // →⍬ exits early, x stays at 100
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
+}
+
+// Test conditional branch with →0
+TEST_F(StatementTest, BranchConditional) {
+    Continuation* k = parser->parse(
+        "f ← { :If ⍵ < 5 ⋄ ⍵ ⋄ →0 ⋄ :EndIf ⋄ ⍵ × 2 }\n"
+        "a ← f 3\n"
+        "b ← f 7\n"
+        "a + b"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // f 3: condition true, ⍵ evaluates to 3, →0 exits with 3
+    // f 7: condition false, ⍵ × 2 = 14
+    // a=3, b=14, sum=17
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 17.0);
+}
+
+// Test branch with expression that evaluates to 0
+TEST_F(StatementTest, BranchExpressionZero) {
+    Continuation* k = parser->parse(
+        "f ← { x ← 5 ⋄ →(⍵ - ⍵) ⋄ x ← 99 ⋄ x }\n"
+        "f 10"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+    Value* result = machine->execute();
+
+    // ⍵ - ⍵ = 0, so →0 exits early
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Test branch with non-zero target throws error
+TEST_F(StatementTest, BranchNonZeroError) {
+    Continuation* k = parser->parse(
+        "f ← { →5 ⋄ 10 }\n"
+        "f 1"
+    );
+
+    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
+
+    machine->push_kont(k);
+
+    // Should throw an error for non-zero branch target
+    EXPECT_THROW({
+        machine->execute();
+    }, apl::APLError);
 }
 
 // Main function

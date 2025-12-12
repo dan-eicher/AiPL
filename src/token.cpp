@@ -85,6 +85,7 @@ const char* token_type_name(TokenType type) {
         case TOK_IN: return ":In";
         case TOK_ENDFOR: return ":EndFor";
         case TOK_LEAVE: return ":Leave";
+        case TOK_CONTINUE: return ":Continue";
         case TOK_RETURN: return ":Return";
         case TOK_GOTO: return "→";
         case TOK_LBRACE: return "{";

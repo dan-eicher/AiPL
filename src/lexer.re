@@ -67,7 +67,7 @@ Lexer::Lexer(const char* input)
     , marker_(input)
     , limit_(input + std::strlen(input))
     , line_(1)
-    , column_(0)
+    , column_(1)  // 1-based column indexing (standard for error messages)
 {
     // arena_ is initialized by its default constructor
 }
@@ -195,7 +195,7 @@ Token Lexer::next_token() {
             // Newline
             nl {
                 line_++;
-                column_ = 0;
+                column_ = 1;  // Reset to 1 for 1-based column indexing
                 return Token(TOK_NEWLINE, token_line, token_column);
             }
 
@@ -250,6 +250,7 @@ Token Lexer::next_token() {
         ":In" { column_ += 3; return Token(TOK_IN, token_line, token_column); }
         ":EndFor" { column_ += 7; return Token(TOK_ENDFOR, token_line, token_column); }
         ":Leave" { column_ += 6; return Token(TOK_LEAVE, token_line, token_column); }
+        ":Continue" { column_ += 9; return Token(TOK_CONTINUE, token_line, token_column); }
         ":Return" { column_ += 7; return Token(TOK_RETURN, token_line, token_column); }
 
         // String literals (must come before names to avoid conflict)

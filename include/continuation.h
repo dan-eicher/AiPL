@@ -73,6 +73,12 @@ public:
     // Used by BREAK/CONTINUE to find loop context
     virtual bool is_loop_boundary() const { return false; }
 
+    // Is this a boundary that catches BREAK (:Leave)?
+    virtual bool is_break_boundary() const { return false; }
+
+    // Is this a boundary that catches CONTINUE (:Continue)?
+    virtual bool is_continue_boundary() const { return false; }
+
     // Get completion being propagated (if any)
     // Used by catch handlers to check for completions without dynamic_cast
     virtual Completion* get_propagating_completion() const { return nullptr; }
@@ -144,6 +150,7 @@ public:
     void mark(Heap* heap) override;
     std::string describe() const override { return "CatchBreakK" + location_suffix(); }
     bool is_loop_boundary() const override { return true; }
+    bool is_break_boundary() const override { return true; }
 
 protected:
     void invoke(Machine* machine) override;
@@ -159,7 +166,7 @@ public:
 
     void mark(Heap* heap) override;
     std::string describe() const override { return "CatchContinueK" + location_suffix(); }
-    bool is_loop_boundary() const override { return true; }
+    bool is_continue_boundary() const override { return true; }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1001,6 +1008,22 @@ protected:
     void invoke(Machine* machine) override;
 };
 
+// ContinueK - Skip to next iteration of loop (Phase 3.3.5)
+// Syntax: :Continue
+// Creates CONTINUE completion record to jump to next loop iteration
+class ContinueK : public Continuation {
+public:
+    ContinueK() {}
+
+    ~ContinueK() override {}
+
+    void mark(Heap* heap) override;
+    std::string describe() const override { return "ContinueK" + location_suffix(); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
 // ReturnK - Return from function (Phase 3.3.5)
 // Syntax: :Return [value]
 // Creates RETURN completion record to unwind to function boundary
@@ -1031,6 +1054,42 @@ public:
 
     void mark(Heap* heap) override;
     std::string describe() const override { return "CreateReturnK" + location_suffix(); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// BranchK - Traditional APL branch (→)
+// Syntax: →target
+// If target is 0 or empty (⍬), exit function (like :Return)
+// Non-zero targets are not supported (would require line numbers)
+class BranchK : public Continuation {
+public:
+    Continuation* target_expr;    // Expression that produces the branch target
+
+    BranchK(Continuation* target)
+        : target_expr(target) {}
+
+    ~BranchK() override {}
+
+    void mark(Heap* heap) override;
+    std::string describe() const override { return "BranchK" + location_suffix(); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// Auxiliary continuation for BranchK - checks target and decides whether to exit
+class CheckBranchK : public Continuation {
+public:
+    Value* saved_result;  // Result value from before branch target was evaluated
+
+    CheckBranchK(Value* result) : saved_result(result) {}
+
+    ~CheckBranchK() override {}
+
+    void mark(Heap* heap) override;
+    std::string describe() const override { return "CheckBranchK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;

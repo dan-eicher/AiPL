@@ -129,6 +129,7 @@ enum TokenType {
     TOK_IN,             // :In
     TOK_ENDFOR,         // :EndFor
     TOK_LEAVE,          // :Leave
+    TOK_CONTINUE,       // :Continue
     TOK_RETURN,         // :Return
     TOK_GOTO,           // →
 

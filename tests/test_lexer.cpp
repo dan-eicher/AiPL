@@ -284,14 +284,15 @@ TEST_F(LexerTest, Diamond) {
 TEST_F(LexerTest, UTF8ColumnTracking) {
     auto tokens = tokenize("× ÷ ⍴");
 
-    // × is at column 0 (2 bytes in UTF-8)
-    // space at byte 2
-    // ÷ is at column 2 (should account for × being 1 char, not 2 bytes)
-    // space at byte 5
-    // ⍴ is at column 4
-    EXPECT_EQ(tokens[0].column, 0);  // ×
-    EXPECT_EQ(tokens[1].column, 2);  // ÷ (× took 1 column + 1 space)
-    EXPECT_EQ(tokens[2].column, 4);  // ⍴ (× ÷ took 2 columns + 2 spaces)
+    // 1-based column indexing
+    // × is at column 1 (2 bytes in UTF-8 but 1 character)
+    // space at column 2
+    // ÷ is at column 3 (× took 1 column + 1 space)
+    // space at column 4
+    // ⍴ is at column 5 (× ÷ took 2 columns + 2 spaces)
+    EXPECT_EQ(tokens[0].column, 1);  // ×
+    EXPECT_EQ(tokens[1].column, 3);  // ÷
+    EXPECT_EQ(tokens[2].column, 5);  // ⍴
     EXPECT_EQ(tokens[3].type, TOK_EOF);
 }
 
@@ -299,29 +300,31 @@ TEST_F(LexerTest, UTF8ColumnTracking) {
 TEST_F(LexerTest, KeywordColumnTracking) {
     auto tokens = tokenize(":EndWhile x");
 
-    // :EndWhile is 9 characters
-    // space at 9
-    // x at column 10
-    EXPECT_EQ(tokens[0].column, 0);   // :EndWhile
-    EXPECT_EQ(tokens[1].column, 10);  // x (after :EndWhile + space)
+    // 1-based column indexing
+    // :EndWhile is 9 characters starting at column 1
+    // space at column 10
+    // x at column 11
+    EXPECT_EQ(tokens[0].column, 1);   // :EndWhile
+    EXPECT_EQ(tokens[1].column, 11);  // x (after :EndWhile + space)
 }
 
 // Test column tracking after comments
 TEST_F(LexerTest, CommentColumnTracking) {
     auto tokens = tokenize("x ⍝ comment\ny");
 
-    // x at column 0, line 1
+    // 1-based column indexing
+    // x at column 1, line 1
     // newline after comment
-    // y at column 0, line 2
+    // y at column 1, line 2
     EXPECT_EQ(tokens[0].type, TOK_NAME);
-    EXPECT_EQ(tokens[0].column, 0);
+    EXPECT_EQ(tokens[0].column, 1);
     EXPECT_EQ(tokens[0].line, 1);
 
     EXPECT_EQ(tokens[1].type, TOK_NEWLINE);
     EXPECT_EQ(tokens[1].line, 1);
 
     EXPECT_EQ(tokens[2].type, TOK_NAME);
-    EXPECT_EQ(tokens[2].column, 0);
+    EXPECT_EQ(tokens[2].column, 1);
     EXPECT_EQ(tokens[2].line, 2);
 }
 

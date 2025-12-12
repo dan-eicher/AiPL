@@ -53,11 +53,11 @@ Continuation* Parser::parse(const std::string& input) {
     // Parse statements until EOF
     while (!at_end()) {
         // Parse one statement (control flow or expression)
-        Continuation* stmt = parse_statement();
+        Continuation* stmt = parse_expression(BP_NONE);
 
         if (!stmt) {
             if (error_message_.empty()) {
-                set_error("failed to parse statement");
+                set_error("failed to parse expression");
             }
             delete lexer_;
             lexer_ = nullptr;
@@ -122,17 +122,21 @@ Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
 
         if (needs_second_operand) {
             // Dyadic operator's derived form: parse right with high BP to get just the operand
+            Token jux_token = current_token_;  // Save location before parsing
             Continuation* right = parse_expression(BP_POSTFIX_OP);
             if (!right) {
                 return nullptr;
             }
-            return machine->heap->allocate<JuxtaposeK>(left, right);
+            JuxtaposeK* jux = machine->heap->allocate<JuxtaposeK>(left, right);
+            jux->set_location(jux_token.line, jux_token.column);
+            return jux;
         }
     }
 
     // Parse the right operand
     // APL is right-associative: use bp (not bp+1) to continue parsing to the right
     // This builds right-associative structures for proper APL evaluation order
+    Token jux_token = current_token_;  // Save location before parsing
     Continuation* right = parse_expression(bp);
     if (!right) {
         return nullptr;
@@ -140,7 +144,9 @@ Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
 
     // G2 juxtaposition: fbn-term ::= fb-term fbn-term
     // Semantics: if type(x₁)=bas then x₂(x₁) else x₁(x₂)
-    return machine->heap->allocate<JuxtaposeK>(left, right);
+    JuxtaposeK* jux = machine->heap->allocate<JuxtaposeK>(left, right);
+    jux->set_location(jux_token.line, jux_token.column);
+    return jux;
 }
 
 // Core Pratt parsing algorithm
@@ -299,6 +305,7 @@ Continuation* Parser::nud(const Token& token) {
             // Single number - create LiteralK
             double value = token.number;
             LiteralK* lit = machine->heap->allocate<LiteralK>(value);
+            lit->set_location(token.line, token.column);
             return lit;
         }
 
@@ -310,6 +317,7 @@ Continuation* Parser::nud(const Token& token) {
             Value* vec_val = machine->heap->allocate_vector(vec);
             // Create StrandK that holds this vector Value
             StrandK* strand = machine->heap->allocate<StrandK>(vec_val);
+            strand->set_location(token.line, token.column);
             return strand;
         }
 
@@ -317,6 +325,7 @@ Continuation* Parser::nud(const Token& token) {
             // String literal: 'hello' → string value
             Value* str_val = machine->heap->allocate_string(token.name);
             StrandK* strand = machine->heap->allocate<StrandK>(str_val);
+            strand->set_location(token.line, token.column);
             return strand;
         }
 
@@ -338,6 +347,7 @@ Continuation* Parser::nud(const Token& token) {
             // This finalizes DYADIC_CURRY (like +/1 2 3) to values, but preserves
             // G_PRIME partial applications (like 2×) per ISO 13751 semantics
             FinalizeK* finalize = machine->heap->allocate<FinalizeK>(inner, false);
+            finalize->set_location(token.line, token.column);
             return finalize;
         }
 
@@ -359,11 +369,13 @@ Continuation* Parser::nud(const Token& token) {
                 // axis_cont is the first (and only) operand
                 const char* interned_name = machine->string_pool.intern(",⌷");
                 DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(axis_cont, interned_name);
+                derived->set_location(token.line, token.column);
                 return derived;
             }
             // No axis - fall through to normal comma handling
             const char* interned_name = machine->string_pool.intern(",");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -419,6 +431,7 @@ Continuation* Parser::nud(const Token& token) {
 
             const char* interned_name = machine->string_pool.intern(token_type_name(token.type));
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -437,11 +450,13 @@ Continuation* Parser::nud(const Token& token) {
                     return nullptr;
                 }
                 AssignK* assign = machine->heap->allocate<AssignK>(interned_name, value);
+                assign->set_location(token.line, token.column);
                 return assign;
             }
 
             // Just a variable reference
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -449,6 +464,7 @@ Continuation* Parser::nud(const Token& token) {
             // ⍺ (alpha) - left argument in dfn
             const char* interned_name = machine->string_pool.intern("⍺");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -456,6 +472,7 @@ Continuation* Parser::nud(const Token& token) {
             // ⍵ (omega) - right argument in dfn
             const char* interned_name = machine->string_pool.intern("⍵");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -463,6 +480,7 @@ Continuation* Parser::nud(const Token& token) {
             // ⍺⍺ - left operand in defined operator
             const char* interned_name = machine->string_pool.intern("⍺⍺");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -470,6 +488,7 @@ Continuation* Parser::nud(const Token& token) {
             // ⍵⍵ - right operand in defined operator
             const char* interned_name = machine->string_pool.intern("⍵⍵");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -477,6 +496,7 @@ Continuation* Parser::nud(const Token& token) {
             // ∇ (del) - self-reference in recursive dfn
             const char* interned_name = machine->string_pool.intern("∇");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
             return lookup;
         }
 
@@ -485,6 +505,7 @@ Continuation* Parser::nud(const Token& token) {
             Eigen::VectorXd empty_vec(0);
             Value* empty_val = machine->heap->allocate_vector(empty_vec);
             StrandK* strand = machine->heap->allocate<StrandK>(empty_val);
+            strand->set_location(token.line, token.column);
             return strand;
         }
 
@@ -504,11 +525,13 @@ Continuation* Parser::nud(const Token& token) {
                     return nullptr;
                 }
                 SysVarAssignK* assign = machine->heap->allocate<SysVarAssignK>(var_id, value);
+                assign->set_location(token.line, token.column);
                 return assign;
             }
 
             // Just a system variable read
             SysVarReadK* read = machine->heap->allocate<SysVarReadK>(var_id);
+            read->set_location(token.line, token.column);
             return read;
         }
 
@@ -522,6 +545,7 @@ Continuation* Parser::nud(const Token& token) {
 
             // Create ClosureLiteralK with the body
             ClosureLiteralK* closure_lit = machine->heap->allocate<ClosureLiteralK>(body);
+            closure_lit->set_location(token.line, token.column);
             return closure_lit;
         }
 
@@ -536,7 +560,58 @@ Continuation* Parser::nud(const Token& token) {
 
             const char* interned_name = machine->string_pool.intern("∘.");
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
+            derived->set_location(token.line, token.column);
             return derived;
+        }
+
+        case TOK_GOTO: {
+            // Branch operator: →target
+            // →0 or →⍬ exits the function
+            Continuation* target = parse_expression(BP_NONE);
+            if (!target) {
+                set_error("branch operator requires a target expression", token);
+                return nullptr;
+            }
+            BranchK* branch = machine->heap->allocate<BranchK>(target);
+            branch->set_location(token.line, token.column);
+            return branch;
+        }
+
+        // Control flow keywords can appear in dfn bodies too
+        case TOK_IF: {
+            Continuation* result = parse_if_statement();
+            if (result) result->set_location(token.line, token.column);
+            return result;
+        }
+
+        case TOK_WHILE: {
+            Continuation* result = parse_while_statement();
+            if (result) result->set_location(token.line, token.column);
+            return result;
+        }
+
+        case TOK_FOR: {
+            Continuation* result = parse_for_statement();
+            if (result) result->set_location(token.line, token.column);
+            return result;
+        }
+
+        case TOK_RETURN: {
+            Continuation* result = parse_return_statement();
+            if (result) result->set_location(token.line, token.column);
+            return result;
+        }
+
+        case TOK_LEAVE: {
+            Continuation* result = parse_leave_statement();
+            if (result) result->set_location(token.line, token.column);
+            return result;
+        }
+
+        case TOK_CONTINUE: {
+            Continuation* result = parse_continue_statement();
+            if (result) result->set_location(token.line, token.column);
+            return result;
         }
 
         default:
@@ -577,6 +652,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                         // outer->left is the index, inner->right is the array variable
                         IndexedAssignK* indexed_assign = machine->heap->allocate<IndexedAssignK>(
                             var_lookup->var_name, outer->left, right);
+                        indexed_assign->set_location(token.line, token.column);
                         return indexed_assign;
                     }
                 }
@@ -614,6 +690,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                         // Create DefinedOperatorLiteralK for dyadic operator
                         DefinedOperatorLiteralK* def_op = machine->heap->allocate<DefinedOperatorLiteralK>(
                             closure->body, op_name->var_name, ff->var_name, gg->var_name);
+                        def_op->set_location(token.line, token.column);
                         return def_op;
                     }
                 }
@@ -631,6 +708,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                     // Create DefinedOperatorLiteralK for monadic operator
                     DefinedOperatorLiteralK* def_op = machine->heap->allocate<DefinedOperatorLiteralK>(
                         closure->body, op_name->var_name, ff->var_name);
+                    def_op->set_location(token.line, token.column);
                     return def_op;
                 }
             }
@@ -644,6 +722,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 
             // Create AssignK continuation (var_name is already interned from LookupK)
             AssignK* assign = machine->heap->allocate<AssignK>(lookup->var_name, right);
+            assign->set_location(token.line, token.column);
             return assign;
         }
 
@@ -657,6 +736,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 
             // Create ClosureLiteralK for the dfn
             ClosureLiteralK* closure_lit = machine->heap->allocate<ClosureLiteralK>(body);
+            closure_lit->set_location(token.line, token.column);
 
             // Parse the right argument
             int bp = get_binding_power(token);  // Use operator binding power for dfns
@@ -668,6 +748,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 
             // Create ApplyFunctionK for dyadic application: left {dfn} right
             ApplyFunctionK* apply = machine->heap->allocate<ApplyFunctionK>(closure_lit, left, right);
+            apply->set_location(token.line, token.column);
             return apply;
         }
 
@@ -713,6 +794,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Create DerivedOperatorK: evaluate operand (left), then apply operator
             // If axis_cont is present, it will be evaluated and applied via OPERATOR_CURRY
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name, axis_cont);
+            derived->set_location(token.line, token.column);
             return derived;
         }
 
@@ -729,10 +811,12 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 
             // Create derived operator from ∘. and the function
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
+            derived->set_location(token.line, token.column);
 
             // Now create juxtaposition: left (∘.f)
             // This applies ∘.f monadically to left, which will curry waiting for right argument
             JuxtaposeK* jux = machine->heap->allocate<JuxtaposeK>(left, derived);
+            jux->set_location(token.line, token.column);
             return jux;
         }
 
@@ -742,6 +826,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // The second operand will be delivered via juxtaposition (Rule 3: derived-operator fb → fb-term)
             const char* interned_name = machine->string_pool.intern(".");
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
+            derived->set_location(token.line, token.column);
             return derived;
         }
 
@@ -751,6 +836,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Dyadic operator: first operand is function, second is rank specification
             const char* interned_name = machine->string_pool.intern("⍤");
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
+            derived->set_location(token.line, token.column);
             return derived;
         }
 
@@ -759,6 +845,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // At this point we already checked it's a defined operator in the parsing loop
             const char* interned_name = machine->string_pool.intern(token.name);
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
+            derived->set_location(token.line, token.column);
             return derived;
         }
 
@@ -780,8 +867,11 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // This goes through DispatchFunctionK which handles curry finalization
             const char* squad_name = machine->string_pool.intern("⌷");
             LookupK* squad_lookup = machine->heap->allocate<LookupK>(squad_name);
+            squad_lookup->set_location(token.line, token.column);
             JuxtaposeK* squad_array = machine->heap->allocate<JuxtaposeK>(squad_lookup, left);
+            squad_array->set_location(token.line, token.column);
             JuxtaposeK* full_expr = machine->heap->allocate<JuxtaposeK>(index_cont, squad_array);
+            full_expr->set_location(token.line, token.column);
             return full_expr;
         }
 
@@ -880,7 +970,7 @@ std::vector<Continuation*> Parser::parse_block_until(TokenType terminator) {
     std::vector<Continuation*> statements;
 
     while (!at_end() && current().type != terminator) {
-        Continuation* stmt = parse_statement();
+        Continuation* stmt = parse_expression(BP_NONE);
         if (!stmt) {
             // Return empty vector on parse failure
             return std::vector<Continuation*>();
@@ -897,7 +987,7 @@ std::vector<Continuation*> Parser::parse_block_until(TokenType terminator) {
 // ============================================================================
 
 Continuation* Parser::parse_if_statement() {
-    // :If has already been consumed by parse_statement()
+    // :If has already been consumed by nud()
     skip_separators();
     Continuation* condition = parse_expression(BP_NONE);
     if (!condition) {
@@ -906,11 +996,11 @@ Continuation* Parser::parse_if_statement() {
 
     skip_separators();
 
-    // Parse then-branch (statements until :Else or :EndIf)
-    // Can't use parse_block_until here because we need to stop at TWO different tokens
+    // Parse then-branch (statements until :Else, :ElseIf, or :EndIf)
     std::vector<Continuation*> then_stmts;
-    while (!at_end() && current().type != TOK_ELSE && current().type != TOK_ENDIF) {
-        Continuation* stmt = parse_statement();
+    while (!at_end() && current().type != TOK_ELSE &&
+           current().type != TOK_ELSEIF && current().type != TOK_ENDIF) {
+        Continuation* stmt = parse_expression(BP_NONE);
         if (!stmt) {
             return nullptr;
         }
@@ -923,9 +1013,21 @@ Continuation* Parser::parse_if_statement() {
         then_branch = machine->heap->allocate<SeqK>(then_stmts);
     }
 
-    // Check for :Else
+    // Check for :ElseIf or :Else
     Continuation* else_branch = nullptr;
-    if (!at_end() && current().type == TOK_ELSE) {
+    if (!at_end() && current().type == TOK_ELSEIF) {
+        // :ElseIf is syntactic sugar for :Else :If ... :EndIf
+        // Recursively parse as nested if statement
+        Token elseif_token = current();
+        advance();  // consume :ElseIf
+        Continuation* nested_if = parse_if_statement();
+        if (!nested_if) {
+            return nullptr;
+        }
+        nested_if->set_location(elseif_token.line, elseif_token.column);
+        else_branch = nested_if;
+        // The recursive call consumes :EndIf, so we're done
+    } else if (!at_end() && current().type == TOK_ELSE) {
         advance();  // consume :Else
         skip_separators();
 
@@ -939,14 +1041,21 @@ Continuation* Parser::parse_if_statement() {
         if (!else_stmts.empty()) {
             else_branch = machine->heap->allocate<SeqK>(else_stmts);
         }
-    }
 
-    // Expect :EndIf
-    if (at_end() || current().type != TOK_ENDIF) {
-        set_error("expected ':EndIf'");
-        return nullptr;
+        // Expect :EndIf
+        if (at_end() || current().type != TOK_ENDIF) {
+            set_error("expected ':EndIf'");
+            return nullptr;
+        }
+        advance();  // consume :EndIf
+    } else {
+        // Just :EndIf (no else branch)
+        if (at_end() || current().type != TOK_ENDIF) {
+            set_error("expected ':EndIf', ':Else', or ':ElseIf'");
+            return nullptr;
+        }
+        advance();  // consume :EndIf
     }
-    advance();  // consume :EndIf
 
     // Create IfK continuation
     IfK* if_k = machine->heap->allocate<IfK>(condition, then_branch, else_branch);
@@ -955,7 +1064,7 @@ Continuation* Parser::parse_if_statement() {
 
 // Parse :While statement
 Continuation* Parser::parse_while_statement() {
-    // :While has already been consumed by parse_statement()
+    // :While has already been consumed by nud()
     skip_separators();
     Continuation* condition = parse_expression(BP_NONE);
     if (!condition) {
@@ -990,7 +1099,7 @@ Continuation* Parser::parse_while_statement() {
 
 // Parse :For statement
 Continuation* Parser::parse_for_statement() {
-    // :For has already been consumed by parse_statement()
+    // :For has already been consumed by nud()
     skip_separators();
 
     // Expect variable name
@@ -1047,7 +1156,7 @@ Continuation* Parser::parse_for_statement() {
 
 // Parse :Return statement
 Continuation* Parser::parse_return_statement() {
-    // :Return has already been consumed by parse_statement()
+    // :Return has already been consumed by nud()
     skip_separators();
 
     // Check if there's a return value
@@ -1067,40 +1176,34 @@ Continuation* Parser::parse_return_statement() {
 
 // Parse :Leave statement
 Continuation* Parser::parse_leave_statement() {
-    // :Leave has already been consumed by parse_statement()
+    // :Leave has already been consumed by nud()
     // Create LeaveK continuation
     LeaveK* leave_k = machine->heap->allocate<LeaveK>();
     return leave_k;
 }
 
-// Parse statement: checks for control flow keywords, otherwise falls through to parse_expression
-Continuation* Parser::parse_statement() {
-    // Check if current token is a control flow keyword
-    switch (current().type) {
-        case TOK_IF:
-            advance();  // consume :If
-            return parse_if_statement();
+// Parse :Continue statement
+Continuation* Parser::parse_continue_statement() {
+    // :Continue has already been consumed by nud()
+    // Create ContinueK continuation
+    ContinueK* continue_k = machine->heap->allocate<ContinueK>();
+    return continue_k;
+}
 
-        case TOK_WHILE:
-            advance();  // consume :While
-            return parse_while_statement();
-
-        case TOK_FOR:
-            advance();  // consume :For
-            return parse_for_statement();
-
-        case TOK_RETURN:
-            advance();  // consume :Return
-            return parse_return_statement();
-
-        case TOK_LEAVE:
-            advance();  // consume :Leave
-            return parse_leave_statement();
-
-        default:
-            // Not a statement keyword - parse as expression
-            return parse_expression(BP_NONE);
+// Parse → (branch) statement
+// →0 or →⍬ means exit function (like :Return)
+// →N where N>0 is not supported (would require line numbers)
+Continuation* Parser::parse_branch_statement() {
+    // → has already been consumed by nud()
+    // Parse the target expression
+    Continuation* target_expr = parse_expression(BP_NONE);
+    if (!target_expr) {
+        return nullptr;
     }
+
+    // Create BranchK continuation that will evaluate target and decide
+    BranchK* branch_k = machine->heap->allocate<BranchK>(target_expr);
+    return branch_k;
 }
 
 // ============================================================================
