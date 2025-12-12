@@ -31,7 +31,7 @@ void op_outer_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 
     // Validate that f is a function
     if (!f || !f->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: outer product requires a function operand"));
+        m->throw_error("SYNTAX ERROR: outer product requires a function operand");
         return;
     }
 
@@ -59,13 +59,13 @@ void op_outer_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     // Validate that both f and g are functions
     if (!f || !f->is_function() || !g || !g->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: inner product requires two function operands"));
+        m->throw_error("SYNTAX ERROR: inner product requires two function operands");
         return;
     }
 
     // Validate that lhs and rhs are data values (not functions or other non-data values)
     if (!lhs->is_basic_value() || !rhs->is_basic_value()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: inner product requires array arguments"));
+        m->throw_error("DOMAIN ERROR: inner product requires array arguments");
         return;
     }
 
@@ -110,7 +110,7 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     if (lhs->is_vector() && rhs->is_vector()) {
         // For vectors, check that lengths match
         if (lhs_rows != rhs_rows) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+            m->throw_error("LENGTH ERROR: inner product dimension mismatch");
             return;
         }
         int n = lhs_rows;  // Common dimension
@@ -119,7 +119,7 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
         if (n == 0) {
             double identity = get_identity_for_function(f);
             if (std::isnan(identity)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: no identity element for empty inner product"));
+                m->throw_error("DOMAIN ERROR: no identity element for empty inner product");
                 return;
             }
             m->result = m->heap->allocate_scalar(identity);
@@ -139,7 +139,7 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     if (lhs->is_vector() && rhs->is_matrix()) {
         // Vector length must match matrix rows
         if (lhs_rows != rhs_rows) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+            m->throw_error("LENGTH ERROR: inner product dimension mismatch");
             return;
         }
         // Result is a vector of length rhs_cols
@@ -152,7 +152,7 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     if (lhs->is_matrix() && rhs->is_vector()) {
         // Matrix cols must match vector length
         if (lhs_cols != rhs_rows) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+            m->throw_error("LENGTH ERROR: inner product dimension mismatch");
             return;
         }
         // Result is a vector of length lhs_rows
@@ -164,7 +164,7 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     // General case: matrix × matrix inner product
     // LENGTH constraint: last dimension of A must equal first dimension of B
     if (lhs_cols != rhs_rows) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: inner product dimension mismatch"));
+        m->throw_error("LENGTH ERROR: inner product dimension mismatch");
         return;
     }
 
@@ -182,7 +182,7 @@ void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 
 void op_each(Machine* m, Value* f, Value* omega) {
     if (!f || !f->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: each operator requires a function operand"));
+        m->throw_error("SYNTAX ERROR: each operator requires a function operand");
         return;
     }
 
@@ -210,7 +210,7 @@ void op_each(Machine* m, Value* f, Value* omega) {
 void op_each_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     (void)g;  // Each only uses one function operand
     if (!f || !f->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: each operator requires a function operand"));
+        m->throw_error("SYNTAX ERROR: each operator requires a function operand");
         return;
     }
 
@@ -257,7 +257,7 @@ void op_each_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     int rhs_cols = rhs->cols();
 
     if (lhs_rows != rhs_rows || lhs_cols != rhs_cols) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: each requires matching shapes or scalar"));
+        m->throw_error("LENGTH ERROR: each requires matching shapes or scalar");
         return;
     }
 
@@ -279,7 +279,7 @@ void op_commute(Machine* m, Value* f, Value* omega) {
     // Semantics: f⍨B → B f B
     // Validate that f is a function
     if (!f || !f->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: duplicate operator requires a function operand"));
+        m->throw_error("SYNTAX ERROR: duplicate operator requires a function operand");
         return;
     }
 
@@ -300,7 +300,7 @@ void op_commute(Machine* m, Value* f, Value* omega) {
 
     // Handle primitive functions
     if (!f->is_primitive()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: duplicate operator requires primitive, curried, or derived function"));
+        m->throw_error("DOMAIN ERROR: duplicate operator requires primitive, curried, or derived function");
         return;
     }
 
@@ -308,7 +308,7 @@ void op_commute(Machine* m, Value* f, Value* omega) {
 
     // f must have dyadic form for duplicate
     if (!fn->dyadic) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: duplicate operator requires function with dyadic form"));
+        m->throw_error("DOMAIN ERROR: duplicate operator requires function with dyadic form");
         return;
     }
 
@@ -326,7 +326,7 @@ void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
     (void)g;  // Commute only uses one function operand
     // Validate that f is a function
     if (!f || !f->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: commute operator requires a function operand"));
+        m->throw_error("SYNTAX ERROR: commute operator requires a function operand");
         return;
     }
 
@@ -346,7 +346,7 @@ void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 
     // Handle primitive functions
     if (!f->is_primitive()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: commute operator requires primitive, curried, or derived function"));
+        m->throw_error("DOMAIN ERROR: commute operator requires primitive, curried, or derived function");
         return;
     }
 
@@ -354,7 +354,7 @@ void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
 
     // f must have dyadic form
     if (!fn->dyadic) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: commute operator requires function with dyadic form"));
+        m->throw_error("DOMAIN ERROR: commute operator requires function with dyadic form");
         return;
     }
 
@@ -422,7 +422,7 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
     }
 
     if (!func->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a function"));
+        m->throw_error("DOMAIN ERROR: reduce requires a function");
         return;
     }
 
@@ -444,7 +444,7 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
             // Empty vector: return identity element (ISO-13751 Table 5)
             double identity = get_identity_for_function(func);
             if (std::isnan(identity)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
                 return;
             }
             m->result = m->heap->allocate_scalar(identity);
@@ -471,7 +471,7 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
         // Empty dimension: return vector of identity elements
         double identity = get_identity_for_function(func);
         if (std::isnan(identity)) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+            m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
             return;
         }
         Eigen::VectorXd result = Eigen::VectorXd::Constant(rows, identity);
@@ -493,7 +493,7 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
 // Uses CellIterK FOLD_RIGHT for continuation-based execution
 void fn_reduce_first(Machine* m, Value* func, Value* omega) {
     if (!func->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce-first requires a function"));
+        m->throw_error("DOMAIN ERROR: reduce-first requires a function");
         return;
     }
 
@@ -518,7 +518,7 @@ void fn_reduce_first(Machine* m, Value* func, Value* omega) {
         // Empty dimension: return row vector of identity elements
         double identity = get_identity_for_function(func);
         if (std::isnan(identity)) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+            m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
             return;
         }
         Eigen::VectorXd result = Eigen::VectorXd::Constant(cols, identity);
@@ -549,7 +549,7 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
     }
 
     if (!func->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
+        m->throw_error("DOMAIN ERROR: scan requires a function");
         return;
     }
 
@@ -608,7 +608,7 @@ void fn_scan_first(Machine* m, Value* func, Value* omega) {
     }
 
     if (!func->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan-first requires a function"));
+        m->throw_error("DOMAIN ERROR: scan-first requires a function");
         return;
     }
 
@@ -660,7 +660,7 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
     }
 
     if (!axis->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis must be a scalar"));
+        m->throw_error("DOMAIN ERROR: axis must be a scalar");
         return -1;
     }
 
@@ -669,7 +669,7 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
     int io = m->io;
 
     if (axis_val != static_cast<double>(k) || k < io || k > max_rank - 1 + io) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis out of range"));
+        m->throw_error("DOMAIN ERROR: axis out of range");
         return -1;
     }
 
@@ -680,7 +680,7 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
 // Returns validated N, or INT_MIN on error (since 0 is a valid N value)
 static int validate_nwise(Machine* m, Value* n_val, int axis_len) {
     if (!n_val->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: N must be a scalar"));
+        m->throw_error("RANK ERROR: N must be a scalar");
         return INT_MIN;
     }
 
@@ -688,7 +688,7 @@ static int validate_nwise(Machine* m, Value* n_val, int axis_len) {
     int n = static_cast<int>(n_double);
 
     if (n_double != static_cast<double>(n)) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N must be an integer"));
+        m->throw_error("DOMAIN ERROR: N must be an integer");
         return INT_MIN;
     }
 
@@ -696,7 +696,7 @@ static int validate_nwise(Machine* m, Value* n_val, int axis_len) {
     int abs_n = n < 0 ? -n : n;
 
     if (abs_n > axis_len + 1) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for array"));
+        m->throw_error("DOMAIN ERROR: N too large for array");
         return INT_MIN;
     }
 
@@ -710,7 +710,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
     // Handle replicate: if "func" is actually an array, this is invalid with axis/N-wise
     if (func->is_array() || func->is_scalar()) {
         if (n_val || axis) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: replicate does not support axis or N-wise"));
+            m->throw_error("SYNTAX ERROR: replicate does not support axis or N-wise");
             return;
         }
         // Plain replicate without axis - delegate to fn_replicate
@@ -719,7 +719,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
     }
 
     if (!func->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reduce requires a function"));
+        m->throw_error("DOMAIN ERROR: reduce requires a function");
         return;
     }
 
@@ -730,14 +730,14 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
             if (n == INT_MIN) return;
             int abs_n = n < 0 ? -n : n;
             if (abs_n > 2) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for scalar"));
+                m->throw_error("DOMAIN ERROR: N too large for scalar");
                 return;
             }
             if (abs_n == 0) {
                 // 0 f/ scalar → 2-element result with identity
                 double identity = get_identity_for_function(func);
                 if (std::isnan(identity)) {
-                    m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element"));
+                    m->throw_error("DOMAIN ERROR: function has no identity element");
                     return;
                 }
                 Eigen::VectorXd result(2);
@@ -779,7 +779,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
                 // 0 f/ vec → (1+len) copies of identity
                 double identity = get_identity_for_function(func);
                 if (std::isnan(identity)) {
-                    m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element"));
+                    m->throw_error("DOMAIN ERROR: function has no identity element");
                     return;
                 }
                 Eigen::VectorXd result = Eigen::VectorXd::Constant(len + 1, identity);
@@ -790,7 +790,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
             // Result length = len - abs_n + 1
             int result_len = len - abs_n + 1;
             if (result_len < 0) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: N too large for vector"));
+                m->throw_error("DOMAIN ERROR: N too large for vector");
                 return;
             }
             if (result_len == 0) {
@@ -809,7 +809,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
         if (len == 0) {
             double identity = get_identity_for_function(func);
             if (std::isnan(identity)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
                 return;
             }
             m->result = m->heap->allocate_scalar(identity);
@@ -841,7 +841,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
             // 0 f/[k] matrix → expand axis by 1, fill with identity
             double identity = get_identity_for_function(func);
             if (std::isnan(identity)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element"));
+                m->throw_error("DOMAIN ERROR: function has no identity element");
                 return;
             }
             if (k == 1) {
@@ -865,7 +865,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
         if (rows == 0) {
             double identity = get_identity_for_function(func);
             if (std::isnan(identity)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
                 return;
             }
             Eigen::VectorXd result = Eigen::VectorXd::Constant(cols, identity);
@@ -882,7 +882,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
         if (cols == 0) {
             double identity = get_identity_for_function(func);
             if (std::isnan(identity)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: function has no identity element for empty reduction"));
+                m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
                 return;
             }
             Eigen::VectorXd result = Eigen::VectorXd::Constant(rows, identity);
@@ -914,12 +914,12 @@ void fn_scan_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs) 
 
     // Handle expand: if "func" is actually an array, this is invalid
     if (func->is_array() || func->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: expand does not support axis specification"));
+        m->throw_error("SYNTAX ERROR: expand does not support axis specification");
         return;
     }
 
     if (!func->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
+        m->throw_error("DOMAIN ERROR: scan requires a function");
         return;
     }
 
@@ -988,12 +988,12 @@ void fn_scan_first_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value*
 
     // Handle expand: if "func" is actually an array, this is invalid
     if (func->is_array() || func->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: expand does not support axis specification"));
+        m->throw_error("SYNTAX ERROR: expand does not support axis specification");
         return;
     }
 
     if (!func->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: scan requires a function"));
+        m->throw_error("DOMAIN ERROR: scan requires a function");
         return;
     }
 
@@ -1256,20 +1256,20 @@ static int count_cells(Value* arr, int k) {
 // Monadic rank operator - shouldn't be called directly
 void op_rank_monadic(Machine* m, Value* f, Value* omega) {
     (void)f; (void)omega;
-    m->push_kont(m->heap->allocate<ThrowErrorK>("SYNTAX ERROR: rank operator requires rank specification"));
+    m->throw_error("SYNTAX ERROR: rank operator requires rank specification");
 }
 
 // Dyadic rank: A f⍤k B (or monadic f⍤k B where lhs is nullptr)
 void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs) {
     // Validate function operand
     if (!f || !f->is_function()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: rank operator requires function operand"));
+        m->throw_error("DOMAIN ERROR: rank operator requires function operand");
         return;
     }
 
     // Validate rank specification
     if (!rank_spec) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: rank operator requires rank specification"));
+        m->throw_error("DOMAIN ERROR: rank operator requires rank specification");
         return;
     }
 
@@ -1279,7 +1279,7 @@ void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs) {
     int monadic_r, left_r, right_r;
 
     if (!parse_rank_spec(rank_spec, std::max(lhs_rank, rhs_rank), &monadic_r, &left_r, &right_r)) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid rank specification"));
+        m->throw_error("DOMAIN ERROR: invalid rank specification");
         return;
     }
 
@@ -1327,7 +1327,7 @@ void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs) {
 
         // Cell counts must match (or one must be 1 for scalar extension)
         if (left_cells != right_cells && left_cells != 1 && right_cells != 1) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: rank operator cell count mismatch"));
+            m->throw_error("LENGTH ERROR: rank operator cell count mismatch");
             return;
         }
 
@@ -1358,7 +1358,7 @@ static bool is_near_integer(double x) {
 
 void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
     if (!axis->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis must be scalar"));
+        m->throw_error("DOMAIN ERROR: axis must be scalar");
         return;
     }
 
@@ -1374,7 +1374,7 @@ void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
 
     if (omega->is_vector()) {
         if (axis_idx != 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: axis out of range for vector"));
+            m->throw_error("RANK ERROR: axis out of range for vector");
             return;
         }
         m->result = m->heap->allocate_vector(omega->as_matrix()->col(0), omega->is_char_data());
@@ -1386,7 +1386,7 @@ void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
     int cols = mat->cols();
 
     if (axis_idx < 0 || axis_idx > 1) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: axis out of range for matrix"));
+        m->throw_error("RANK ERROR: axis out of range for matrix");
         return;
     }
 
@@ -1413,7 +1413,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
     (void)unused;
 
     if (!axis->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: axis must be scalar"));
+        m->throw_error("DOMAIN ERROR: axis must be scalar");
         return;
     }
 
@@ -1434,7 +1434,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
     if (laminate) {
         if (lhs->is_vector() && rhs->is_vector()) {
             if (lrows != rrows) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: vectors must have same length for laminate"));
+                m->throw_error("LENGTH ERROR: vectors must have same length for laminate");
                 return;
             }
             if (axis_idx < 0) {
@@ -1459,7 +1459,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
             return;
         }
 
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: laminate for matrices not yet implemented"));
+        m->throw_error("RANK ERROR: laminate for matrices not yet implemented");
         return;
     }
 
@@ -1491,7 +1491,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
 
     if (lhs->is_vector() && rhs->is_vector()) {
         if (cat_axis != 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: vectors only have axis 1"));
+            m->throw_error("RANK ERROR: vectors only have axis 1");
             return;
         }
         Eigen::VectorXd result(lrows + rrows);
@@ -1503,7 +1503,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
 
     if (cat_axis == 0) {
         if (lcols != rcols) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: column counts must match for vertical catenation"));
+            m->throw_error("LENGTH ERROR: column counts must match for vertical catenation");
             return;
         }
         Eigen::MatrixXd result(lrows + rrows, lcols);
@@ -1512,7 +1512,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
         m->result = m->heap->allocate_matrix(result);
     } else if (cat_axis == 1) {
         if (lrows != rrows) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: row counts must match for horizontal catenation"));
+            m->throw_error("LENGTH ERROR: row counts must match for horizontal catenation");
             return;
         }
         Eigen::MatrixXd result(lrows, lcols + rcols);
@@ -1520,7 +1520,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
         result.rightCols(rcols) = *rmat;
         m->result = m->heap->allocate_matrix(result);
     } else {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: axis out of range"));
+        m->throw_error("RANK ERROR: axis out of range");
     }
 }
 

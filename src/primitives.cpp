@@ -142,7 +142,7 @@ void fn_add(Machine* m, Value* lhs, Value* rhs) {
 
     // Shape checking
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in addition"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in addition");
         return;
     }
 
@@ -197,7 +197,7 @@ void fn_subtract(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in subtraction"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in subtraction");
         return;
     }
 
@@ -252,7 +252,7 @@ void fn_multiply(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in multiplication"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in multiplication");
         return;
     }
 
@@ -285,7 +285,7 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
         double result;
         if (!safe_divide(lhs->data.scalar, rhs->data.scalar, result)) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            m->throw_error("DOMAIN ERROR: division by zero");
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -303,7 +303,7 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
         double lval = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
             if (!safe_divide(lval, rmat->data()[i], result(i))) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+                m->throw_error("DOMAIN ERROR: division by zero");
                 return;
             }
         }
@@ -323,7 +323,7 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
             if (!safe_divide(lmat->data()[i], rval, result(i))) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+                m->throw_error("DOMAIN ERROR: division by zero");
                 return;
             }
         }
@@ -341,14 +341,14 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in division"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in division");
         return;
     }
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
         if (!safe_divide(lmat->data()[i], rmat->data()[i], result(i))) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            m->throw_error("DOMAIN ERROR: division by zero");
             return;
         }
     }
@@ -407,7 +407,7 @@ void fn_power(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in power"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in power");
         return;
     }
 
@@ -468,7 +468,7 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in equality"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in equality");
         return;
     }
 
@@ -532,7 +532,7 @@ void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in not-equal"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in not-equal");
         return;
     }
 
@@ -601,7 +601,7 @@ void fn_less(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in less-than"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in less-than");
         return;
     }
 
@@ -671,7 +671,7 @@ void fn_greater(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in greater-than"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in greater-than");
         return;
     }
 
@@ -741,7 +741,7 @@ void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in less-or-equal"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in less-or-equal");
         return;
     }
 
@@ -811,7 +811,7 @@ void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in greater-or-equal"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in greater-or-equal");
         return;
     }
 
@@ -869,7 +869,7 @@ void fn_maximum(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in maximum"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in maximum");
         return;
     }
 
@@ -919,7 +919,7 @@ void fn_minimum(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in minimum"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in minimum");
         return;
     }
 
@@ -1099,7 +1099,7 @@ void fn_and(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in and"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in and");
         return;
     }
 
@@ -1174,7 +1174,7 @@ void fn_or(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in or"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in or");
         return;
     }
 
@@ -1196,7 +1196,7 @@ void fn_not(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         double d = omega->data.scalar;
         if (!is_near_boolean(d)) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ~ requires boolean argument"));
+            m->throw_error("DOMAIN ERROR: ~ requires boolean argument");
             return;
         }
         // Round to nearest integer (0 or 1) then complement
@@ -1213,7 +1213,7 @@ void fn_not(Machine* m, Value* omega) {
     // Check all elements are near-boolean
     for (int i = 0; i < mat->size(); ++i) {
         if (!is_near_boolean(mat->data()[i])) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ~ requires boolean argument"));
+            m->throw_error("DOMAIN ERROR: ~ requires boolean argument");
             return;
         }
     }
@@ -1253,7 +1253,7 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
         double result = nand_bool(lhs->data.scalar, rhs->data.scalar, error);
         if (error) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -1270,7 +1270,7 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = nand_bool(lhs->data.scalar, rmat->data()[i], error);
             if (error) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
                 return;
             }
         }
@@ -1288,7 +1288,7 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = nand_bool(lmat->data()[i], rhs->data.scalar, error);
             if (error) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
                 return;
             }
         }
@@ -1304,7 +1304,7 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in nand"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in nand");
         return;
     }
 
@@ -1312,7 +1312,7 @@ void fn_nand(Machine* m, Value* lhs, Value* rhs) {
     for (int i = 0; i < lmat->size(); ++i) {
         result(i) = nand_bool(lmat->data()[i], rmat->data()[i], error);
         if (error) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍲ requires boolean arguments"));
+            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
             return;
         }
     }
@@ -1344,7 +1344,7 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
         double result = nor_bool(lhs->data.scalar, rhs->data.scalar, error);
         if (error) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -1361,7 +1361,7 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = nor_bool(lhs->data.scalar, rmat->data()[i], error);
             if (error) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
                 return;
             }
         }
@@ -1379,7 +1379,7 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = nor_bool(lmat->data()[i], rhs->data.scalar, error);
             if (error) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
                 return;
             }
         }
@@ -1395,7 +1395,7 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in nor"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in nor");
         return;
     }
 
@@ -1403,7 +1403,7 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
     for (int i = 0; i < lmat->size(); ++i) {
         result(i) = nor_bool(lmat->data()[i], rmat->data()[i], error);
         if (error) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⍱ requires boolean arguments"));
+            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
             return;
         }
     }
@@ -1494,7 +1494,7 @@ void fn_residue(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in residue"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in residue");
         return;
     }
 
@@ -1515,7 +1515,7 @@ void fn_natural_log(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         if (val <= 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: logarithm of non-positive number"));
+            m->throw_error("DOMAIN ERROR: logarithm of non-positive number");
             return;
         }
         m->result = m->heap->allocate_scalar(std::log(val));
@@ -1528,7 +1528,7 @@ void fn_natural_log(Machine* m, Value* omega) {
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for non-positive values
     if ((mat->array() <= 0.0).any()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: logarithm of non-positive number"));
+        m->throw_error("DOMAIN ERROR: logarithm of non-positive number");
         return;
     }
     Eigen::MatrixXd result = mat->array().log();
@@ -1546,11 +1546,11 @@ void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
     // Domain errors: base <= 0, base == 1, value <= 0
     auto check_domain = [m](double base, double val) -> bool {
         if (base <= 0.0 || base == 1.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid logarithm base"));
+            m->throw_error("DOMAIN ERROR: invalid logarithm base");
             return false;
         }
         if (val <= 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: logarithm of non-positive number"));
+            m->throw_error("DOMAIN ERROR: logarithm of non-positive number");
             return false;
         }
         return true;
@@ -1601,7 +1601,7 @@ void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in logarithm"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in logarithm");
         return;
     }
 
@@ -1629,7 +1629,7 @@ void fn_factorial(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         if (is_negative_int(val)) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: factorial of negative integer"));
+            m->throw_error("DOMAIN ERROR: factorial of negative integer");
             return;
         }
         m->result = m->heap->allocate_scalar(std::tgamma(val + 1.0));
@@ -1643,7 +1643,7 @@ void fn_factorial(Machine* m, Value* omega) {
     // Check for negative integers
     for (int i = 0; i < mat->size(); ++i) {
         if (is_negative_int(mat->data()[i])) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: factorial of negative integer"));
+            m->throw_error("DOMAIN ERROR: factorial of negative integer");
             return;
         }
     }
@@ -1709,7 +1709,7 @@ void fn_binomial(Machine* m, Value* lhs, Value* rhs) {
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: mismatched shapes in binomial"));
+        m->throw_error("LENGTH ERROR: mismatched shapes in binomial");
         return;
     }
 
@@ -1776,7 +1776,7 @@ static double circular_function(int fn_code, double x) {
 void fn_circular(Machine* m, Value* lhs, Value* rhs) {
     // Left argument must be scalar integer in range -12 to 12
     if (!lhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: circular function code must be scalar"));
+        m->throw_error("RANK ERROR: circular function code must be scalar");
         return;
     }
 
@@ -1784,13 +1784,13 @@ void fn_circular(Machine* m, Value* lhs, Value* rhs) {
     int fn_code = static_cast<int>(std::round(fn_val));
 
     if (std::abs(fn_val - fn_code) > 1e-10) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: circular function code must be integer"));
+        m->throw_error("DOMAIN ERROR: circular function code must be integer");
         return;
     }
 
     if (fn_code < -7 || fn_code > 7) {
         // We only support -7 to 7 (no complex number support)
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: circular function code must be -7 to 7"));
+        m->throw_error("DOMAIN ERROR: circular function code must be -7 to 7");
         return;
     }
 
@@ -1798,7 +1798,7 @@ void fn_circular(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         double result = circular_function(fn_code, rhs->data.scalar);
         if (std::isnan(result)) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid argument for circular function"));
+            m->throw_error("DOMAIN ERROR: invalid argument for circular function");
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -1814,7 +1814,7 @@ void fn_circular(Machine* m, Value* lhs, Value* rhs) {
     for (int i = 0; i < mat->size(); ++i) {
         result(i) = circular_function(fn_code, mat->data()[i]);
         if (std::isnan(result(i))) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid argument for circular function"));
+            m->throw_error("DOMAIN ERROR: invalid argument for circular function");
             return;
         }
     }
@@ -1903,7 +1903,7 @@ void fn_signum(Machine* m, Value* omega) {
 void fn_reciprocal(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         if (omega->data.scalar == 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reciprocal of zero"));
+            m->throw_error("DOMAIN ERROR: reciprocal of zero");
             return;
         }
         m->result = m->heap->allocate_scalar(1.0 / omega->data.scalar);
@@ -1916,7 +1916,7 @@ void fn_reciprocal(Machine* m, Value* omega) {
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for zeros
     if ((mat->array() == 0.0).any()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reciprocal of zero"));
+        m->throw_error("DOMAIN ERROR: reciprocal of zero");
         return;
     }
 
@@ -1985,7 +1985,7 @@ void fn_shape(Machine* m, Value* omega) {
 void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
     // lhs must be a scalar or vector specifying new shape
     if (!lhs->is_scalar() && !lhs->is_vector()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: left argument to reshape must be scalar or vector"));
+        m->throw_error("RANK ERROR: left argument to reshape must be scalar or vector");
         return;
     }
 
@@ -1997,11 +1997,11 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
         double dim = lhs->as_scalar();
         // Validate: must be non-negative integer
         if (dim < 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be non-negative"));
+            m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative");
             return;
         }
         if (dim != std::floor(dim)) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be an integer"));
+            m->throw_error("DOMAIN ERROR: reshape dimension must be an integer");
             return;
         }
         target_rows = static_cast<int>(dim);
@@ -2020,7 +2020,7 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
                 const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
                 scalar_val = (*rhs_mat)(0, 0);
             } else {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot reshape empty array to scalar"));
+                m->throw_error("DOMAIN ERROR: cannot reshape empty array to scalar");
                 return;
             }
             m->result = m->heap->allocate_scalar(scalar_val);
@@ -2030,11 +2030,11 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
             double dim = (*shape_mat)(0, 0);
             // Validate: must be non-negative integer
             if (dim < 0.0) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be non-negative"));
+                m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative");
                 return;
             }
             if (dim != std::floor(dim)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimension must be an integer"));
+                m->throw_error("DOMAIN ERROR: reshape dimension must be an integer");
                 return;
             }
             target_rows = static_cast<int>(dim);
@@ -2045,17 +2045,17 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
             double dim2 = (*shape_mat)(1, 0);
             // Validate: must be non-negative integers
             if (dim1 < 0.0 || dim2 < 0.0) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimensions must be non-negative"));
+                m->throw_error("DOMAIN ERROR: reshape dimensions must be non-negative");
                 return;
             }
             if (dim1 != std::floor(dim1) || dim2 != std::floor(dim2)) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: reshape dimensions must be integers"));
+                m->throw_error("DOMAIN ERROR: reshape dimensions must be integers");
                 return;
             }
             target_rows = static_cast<int>(dim1);
             target_cols = static_cast<int>(dim2);
         } else {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: reshape shape must have 1 or 2 elements"));
+            m->throw_error("RANK ERROR: reshape shape must have 1 or 2 elements");
             return;
         }
     }
@@ -2083,7 +2083,7 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
 
     // APL reshape cycles through source data; empty source with non-empty target is an error
     if (source.size() == 0 && target_size > 0) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot reshape empty array to non-empty shape"));
+        m->throw_error("DOMAIN ERROR: cannot reshape empty array to non-empty shape");
         return;
     }
 
@@ -2143,7 +2143,7 @@ void fn_catenate(Machine* m, Value* lhs, Value* rhs) {
 
     // For vectors or compatible matrices, concatenate along first dimension
     if (lmat->cols() != rmat->cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: incompatible shapes for catenation"));
+        m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
         return;
     }
 
@@ -2212,7 +2212,7 @@ void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
 
     if (rhs->is_vector()) {
         if (perm.size() != 1 || perm(0) != 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: invalid axis permutation for vector"));
+            m->throw_error("RANK ERROR: invalid axis permutation for vector");
             return;
         }
         m->result = m->heap->allocate_vector(rhs->as_matrix()->col(0));
@@ -2221,7 +2221,7 @@ void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
 
     // Matrix: permutation must be 0 1 (identity) or 1 0 (transpose)
     if (perm.size() != 2) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: permutation must match array rank"));
+        m->throw_error("LENGTH ERROR: permutation must match array rank");
         return;
     }
 
@@ -2233,7 +2233,7 @@ void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
     } else if (p0 == 1 && p1 == 0) {
         m->result = m->heap->allocate_matrix(rhs->as_matrix()->transpose());
     } else {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: invalid axis permutation"));
+        m->throw_error("DOMAIN ERROR: invalid axis permutation");
     }
 }
 
@@ -2242,7 +2242,7 @@ void fn_matrix_inverse(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->as_scalar();
         if (val == 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot invert zero"));
+            m->throw_error("DOMAIN ERROR: cannot invert zero");
             return;
         }
         m->result = m->heap->allocate_scalar(1.0 / val);
@@ -2265,7 +2265,7 @@ void fn_matrix_divide(Machine* m, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         double divisor = rhs->as_scalar();
         if (divisor == 0.0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: division by zero"));
+            m->throw_error("DOMAIN ERROR: division by zero");
             return;
         }
         if (lhs->is_scalar()) {
@@ -2301,7 +2301,7 @@ void fn_matrix_divide(Machine* m, Value* lhs, Value* rhs) {
 // Iota (⍳) - monadic: generate indices from 0 to n-1
 void fn_iota(Machine* m, Value* omega) {
     if (!omega->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: iota argument must be scalar"));
+        m->throw_error("RANK ERROR: iota argument must be scalar");
         return;
     }
 
@@ -2309,11 +2309,11 @@ void fn_iota(Machine* m, Value* omega) {
 
     // Validate: must be non-negative integer
     if (val < 0.0) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: iota argument must be non-negative"));
+        m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
         return;
     }
     if (val != std::floor(val)) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: iota argument must be an integer"));
+        m->throw_error("DOMAIN ERROR: iota argument must be an integer");
         return;
     }
 
@@ -2357,7 +2357,7 @@ void fn_first(Machine* m, Value* omega) {
 // Take (↑) - dyadic: take first n elements
 void fn_take(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: take count must be scalar"));
+        m->throw_error("RANK ERROR: take count must be scalar");
         return;
     }
 
@@ -2428,7 +2428,7 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
 // Drop (↓) - dyadic: drop first n elements
 void fn_drop(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: drop count must be scalar"));
+        m->throw_error("RANK ERROR: drop count must be scalar");
         return;
     }
 
@@ -2584,7 +2584,7 @@ void fn_tally(Machine* m, Value* omega) {
 // Rotate (⌽) - dyadic: rotate elements along last axis
 void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: rotate count must be scalar"));
+        m->throw_error("RANK ERROR: rotate count must be scalar");
         return;
     }
 
@@ -2635,7 +2635,7 @@ void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
 // Rotate First (⊖) - dyadic: rotate elements along first axis
 void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: rotate count must be scalar"));
+        m->throw_error("RANK ERROR: rotate count must be scalar");
         return;
     }
 
@@ -2804,7 +2804,7 @@ void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
 void fn_grade_up(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         // RANK ERROR: grade requires array, not scalar
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: grade requires array"));
+        m->throw_error("RANK ERROR: grade requires array");
         return;
     }
 
@@ -2837,7 +2837,7 @@ void fn_grade_up(Machine* m, Value* omega) {
 void fn_grade_down(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         // RANK ERROR: grade requires array, not scalar
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: grade requires array"));
+        m->throw_error("RANK ERROR: grade requires array");
         return;
     }
 
@@ -2874,17 +2874,17 @@ void fn_grade_down(Machine* m, Value* omega) {
 void fn_grade_up_dyadic(Machine* m, Value* lhs, Value* rhs) {
     // Validate A (collating sequence) is character array with rank > 0
     if (lhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: collating sequence must have rank > 0"));
+        m->throw_error("RANK ERROR: collating sequence must have rank > 0");
         return;
     }
     if (!lhs->is_char_data() && !lhs->is_string()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: collating sequence must be character"));
+        m->throw_error("DOMAIN ERROR: collating sequence must be character");
         return;
     }
 
     // Validate B is character array
     if (!rhs->is_char_data() && !rhs->is_string()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: right argument must be character"));
+        m->throw_error("DOMAIN ERROR: right argument must be character");
         return;
     }
 
@@ -3004,17 +3004,17 @@ void fn_grade_up_dyadic(Machine* m, Value* lhs, Value* rhs) {
 void fn_grade_down_dyadic(Machine* m, Value* lhs, Value* rhs) {
     // Validate A (collating sequence) is character array with rank > 0
     if (lhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: collating sequence must have rank > 0"));
+        m->throw_error("RANK ERROR: collating sequence must have rank > 0");
         return;
     }
     if (!lhs->is_char_data() && !lhs->is_string()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: collating sequence must be character"));
+        m->throw_error("DOMAIN ERROR: collating sequence must be character");
         return;
     }
 
     // Validate B is character array
     if (!rhs->is_char_data() && !rhs->is_string()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: right argument must be character"));
+        m->throw_error("DOMAIN ERROR: right argument must be character");
         return;
     }
 
@@ -3159,7 +3159,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
         int cols = mat->cols();
 
         if (counts.size() != cols) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: replicate count must match array length"));
+            m->throw_error("LENGTH ERROR: replicate count must match array length");
             return;
         }
 
@@ -3168,7 +3168,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
         for (int i = 0; i < counts.size(); ++i) {
             int c = static_cast<int>(counts(i));
             if (c < 0) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: replicate count must be non-negative"));
+                m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
                 return;
             }
             total_cols += c;
@@ -3198,7 +3198,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
     Eigen::VectorXd data = flatten_value(rhs);
 
     if (counts.size() != data.size()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: replicate count must match array length"));
+        m->throw_error("LENGTH ERROR: replicate count must match array length");
         return;
     }
 
@@ -3207,7 +3207,7 @@ void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
     for (int i = 0; i < counts.size(); ++i) {
         int c = static_cast<int>(counts(i));
         if (c < 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: replicate count must be non-negative"));
+            m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
             return;
         }
         total += c;
@@ -3404,7 +3404,7 @@ void fn_roll(Machine* m, Value* omega) {
     if (omega->is_scalar()) {
         int n = static_cast<int>(omega->data.scalar);
         if (n <= 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
+            m->throw_error("DOMAIN ERROR: roll argument must be positive");
             return;
         }
         std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
@@ -3418,7 +3418,7 @@ void fn_roll(Machine* m, Value* omega) {
     for (int i = 0; i < mat->size(); ++i) {
         int n = static_cast<int>(mat->data()[i]);
         if (n <= 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: roll argument must be positive"));
+            m->throw_error("DOMAIN ERROR: roll argument must be positive");
             return;
         }
         std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
@@ -3436,7 +3436,7 @@ void fn_roll(Machine* m, Value* omega) {
 // A?B returns A unique random integers from [1, B] (1-based per ISO 13751)
 void fn_deal(Machine* m, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar() || !rhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: deal arguments must be scalars"));
+        m->throw_error("DOMAIN ERROR: deal arguments must be scalars");
         return;
     }
 
@@ -3444,12 +3444,12 @@ void fn_deal(Machine* m, Value* lhs, Value* rhs) {
     int b = static_cast<int>(rhs->data.scalar);
 
     if (a < 0 || b <= 0) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: deal arguments must be positive"));
+        m->throw_error("DOMAIN ERROR: deal arguments must be positive");
         return;
     }
 
     if (a > b) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot deal more values than range"));
+        m->throw_error("DOMAIN ERROR: cannot deal more values than range");
         return;
     }
 
@@ -3499,7 +3499,7 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
     for (int i = 0; i < mask.size(); ++i) {
         int val = static_cast<int>(mask(i));
         if (val != 0 && val != 1) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: expand mask must be boolean"));
+            m->throw_error("DOMAIN ERROR: expand mask must be boolean");
             return;
         }
         if (val == 1) ones_count++;
@@ -3528,7 +3528,7 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
         int cols = mat->cols();
 
         if (ones_count != cols) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
+            m->throw_error("LENGTH ERROR: expand mask ones must match array length");
             return;
         }
 
@@ -3550,7 +3550,7 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
     Eigen::VectorXd data = flatten_value(rhs);
 
     if (ones_count != data.size()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
+        m->throw_error("LENGTH ERROR: expand mask ones must match array length");
         return;
     }
 
@@ -3584,7 +3584,7 @@ void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
     for (int i = 0; i < mask.size(); ++i) {
         int val = static_cast<int>(mask(i));
         if (val != 0 && val != 1) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: expand mask must be boolean"));
+            m->throw_error("DOMAIN ERROR: expand mask must be boolean");
             return;
         }
         if (val == 1) ones_count++;
@@ -3617,7 +3617,7 @@ void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
     int cols = mat->cols();
 
     if (ones_count != rows) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: expand mask ones must match array length"));
+        m->throw_error("LENGTH ERROR: expand mask ones must match array length");
         return;
     }
 
@@ -3668,7 +3668,7 @@ void fn_decode(Machine* m, Value* lhs, Value* rhs) {
 
     // Radix and digits must have same length after extension
     if (radix.size() != n) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: decode radix and digits must have same length"));
+        m->throw_error("LENGTH ERROR: decode radix and digits must have same length");
         return;
     }
 
@@ -3772,7 +3772,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
 
     // Handle array indexing
     if (!array->is_array() && !array->is_scalar()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot index non-array value"));
+        m->throw_error("DOMAIN ERROR: cannot index non-array value");
         return;
     }
 
@@ -3785,7 +3785,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
         int idx = static_cast<int>(indices->as_scalar()) - m->io;  // ⎕IO
         if (is_vec) {
             if (idx < 0 || idx >= rows) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                m->throw_error("INDEX ERROR: index out of bounds");
                 return;
             }
             m->result = m->heap->allocate_scalar((*arr)(idx, 0));
@@ -3793,7 +3793,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
             // Linear indexing into matrix (row-major order)
             int size = rows * cols;
             if (idx < 0 || idx >= size) {
-                m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                m->throw_error("INDEX ERROR: index out of bounds");
                 return;
             }
             int row = idx / cols;
@@ -3809,7 +3809,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
             for (int i = 0; i < n; i++) {
                 int idx = static_cast<int>((*idx_mat)(i, 0)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
-                    m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                    m->throw_error("INDEX ERROR: index out of bounds");
                     return;
                 }
                 result(i) = (*arr)(idx, 0);
@@ -3820,7 +3820,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
             for (int i = 0; i < n; i++) {
                 int idx = static_cast<int>((*idx_mat)(i, 0)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
-                    m->push_kont(m->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                    m->throw_error("INDEX ERROR: index out of bounds");
                     return;
                 }
                 result.row(i) = arr->row(idx);
@@ -3828,7 +3828,7 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
             m->result = m->heap->allocate_matrix(result, is_char);
         }
     } else {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: index must be numeric"));
+        m->throw_error("DOMAIN ERROR: index must be numeric");
     }
 }
 
@@ -4034,7 +4034,7 @@ void fn_catenate_first(Machine* m, Value* alpha, Value* omega) {
 
     // Check column compatibility (must match for first-axis catenation)
     if (mat_a.cols() != mat_b.cols()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: incompatible shapes for ⍪"));
+        m->throw_error("LENGTH ERROR: incompatible shapes for ⍪");
         return;
     }
 
@@ -4059,7 +4059,7 @@ void fn_execute(Machine* m, Value* omega) {
     } else if (omega->is_array() && omega->is_char_data()) {
         str_val = omega->to_string_value(m->heap);
     } else {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: execute requires a string"));
+        m->throw_error("DOMAIN ERROR: execute requires a string");
         return;
     }
 
@@ -4075,8 +4075,7 @@ void fn_execute(Machine* m, Value* omega) {
 
     if (!k) {
         // Parse error
-        const char* msg = m->string_pool.intern(m->parser->get_error().c_str());
-        m->push_kont(m->heap->allocate<ThrowErrorK>(msg));
+        m->throw_error(m->parser->get_error().c_str());
         return;
     }
 
@@ -4282,19 +4281,19 @@ void fn_format_monadic(Machine* m, Value* omega) {
 void fn_format_dyadic(Machine* m, Value* alpha, Value* omega) {
     // A must be numeric
     if (alpha->is_string() || (alpha->is_array() && alpha->is_char_data())) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format left argument must be numeric"));
+        m->throw_error("DOMAIN ERROR: format left argument must be numeric");
         return;
     }
 
     // B must be numeric
     if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format right argument must be numeric"));
+        m->throw_error("DOMAIN ERROR: format right argument must be numeric");
         return;
     }
 
     // A must be a vector (rank <= 1)
     if (alpha->is_matrix()) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("RANK ERROR: format left argument must be a vector"));
+        m->throw_error("RANK ERROR: format left argument must be a vector");
         return;
     }
 
@@ -4310,7 +4309,7 @@ void fn_format_dyadic(Machine* m, Value* alpha, Value* omega) {
         int a_size = a_mat->rows();
 
         if (a_size % 2 != 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: format left argument must have even length"));
+            m->throw_error("LENGTH ERROR: format left argument must have even length");
             return;
         }
 
@@ -4324,7 +4323,7 @@ void fn_format_dyadic(Machine* m, Value* alpha, Value* omega) {
     // Validate width is positive
     for (const auto& spec : specs) {
         if (spec.first <= 0) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format width must be positive"));
+            m->throw_error("DOMAIN ERROR: format width must be positive");
             return;
         }
     }
@@ -4365,7 +4364,7 @@ void fn_format_dyadic(Machine* m, Value* alpha, Value* omega) {
         }
 
         if (char_count > width) {
-            m->push_kont(m->heap->allocate<ThrowErrorK>("DOMAIN ERROR: format width too narrow"));
+            m->throw_error("DOMAIN ERROR: format width too narrow");
             return;
         }
 
@@ -4395,7 +4394,7 @@ void fn_format_dyadic(Machine* m, Value* alpha, Value* omega) {
 
     // Check we have right number of specs
     if ((int)specs.size() != cols) {
-        m->push_kont(m->heap->allocate<ThrowErrorK>("LENGTH ERROR: format specs must match number of columns"));
+        m->throw_error("LENGTH ERROR: format specs must match number of columns");
         return;
     }
 

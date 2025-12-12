@@ -341,11 +341,19 @@ void Heap::mark_from_roots(Machine* machine) {
         mark(scalar_cache[i]);
     }
 
-    // Mark value in control register
+    // Mark result value
     mark(machine->result);
+
+    // Mark control register (currently executing continuation)
+    mark(machine->control);
 
     // Mark continuations on kont_stack
     for (Continuation* k : machine->kont_stack) {
+        mark(k);
+    }
+
+    // Mark continuations in error_stack (preserved for error traces)
+    for (Continuation* k : machine->error_stack) {
         mark(k);
     }
 

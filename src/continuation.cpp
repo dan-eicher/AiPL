@@ -6,12 +6,19 @@
 #include "operators.h"
 #include <algorithm>
 #include <stdexcept>
+#include <typeinfo>
 
 namespace apl {
 
 // Forward declaration of Heap for now
 // Will be implemented in Phase 1.6
 class Heap;
+
+// Default describe() implementation using typeid
+// Derived classes can override for more detail (e.g., showing variable names)
+std::string Continuation::describe() const {
+    return std::string(typeid(*this).name()) + location_suffix();
+}
 
 // ============================================================================
 // Terminal and Completion Continuations
@@ -38,6 +45,8 @@ void PropagateCompletionK::invoke(Machine* machine) {
     if (completion && completion->value) {
         machine->result = completion->value;
     }
+
+    // Note: error_stack is captured in ThrowErrorK before unwinding starts
 
     // Unwind the stack until we hit a boundary continuation
     // Pop continuations until we find one that can handle this completion type
@@ -73,6 +82,7 @@ void PropagateCompletionK::invoke(Machine* machine) {
             if (catch_err) {
                 // Found an error boundary - pop it and we're done unwinding
                 // The error is "caught" - execution continues normally
+                machine->error_stack.clear();  // Discard trace, error was handled
                 machine->pop_kont();
                 return;
             }
@@ -181,6 +191,7 @@ void CatchErrorK::mark(Heap* heap) {
 }
 
 // ThrowErrorK - Creates and propagates THROW completion (Phase 5.2)
+// Note: error_stack is captured by Machine::throw_error() before ThrowErrorK is created
 void ThrowErrorK::invoke(Machine* machine) {
     // Create a THROW completion with the error message
     Completion* throw_comp = machine->heap->allocate<Completion>(
@@ -318,10 +329,9 @@ void LookupK::invoke(Machine* machine) {
     Value* val = machine->env->lookup(var_name);
 
     if (!val) {
-        // Variable not found - push THROW completion
+        // Variable not found - throw error with our location
         std::string msg = std::string("VALUE ERROR: Undefined variable: ") + var_name;
-        const char* interned_msg = machine->string_pool.intern(msg.c_str());
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        machine->throw_error(msg.c_str(), this);
         return;
     }
 
@@ -404,7 +414,7 @@ void SysVarReadK::invoke(Machine* machine) {
             machine->result = machine->heap->allocate_scalar(static_cast<double>(machine->rl));
             break;
         default:
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYSTEM ERROR: unknown system variable"));
+            machine->throw_error("SYSTEM ERROR: unknown system variable", this);
             break;
     }
 }
@@ -431,7 +441,7 @@ void PerformSysVarAssignK::invoke(Machine* machine) {
 
     // System variables require scalar values
     if (!val || !val->is_scalar()) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: system variable requires scalar value"));
+        machine->throw_error("DOMAIN ERROR: system variable requires scalar value", this);
         return;
     }
 
@@ -441,7 +451,7 @@ void PerformSysVarAssignK::invoke(Machine* machine) {
         case SysVarId::IO: {
             int int_val = static_cast<int>(dbl_val);
             if (dbl_val != int_val || (int_val != 0 && int_val != 1)) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕IO must be 0 or 1"));
+                machine->throw_error("DOMAIN ERROR: ⎕IO must be 0 or 1", this);
                 return;
             }
             machine->io = int_val;
@@ -450,7 +460,7 @@ void PerformSysVarAssignK::invoke(Machine* machine) {
         case SysVarId::PP: {
             int int_val = static_cast<int>(dbl_val);
             if (dbl_val != int_val || int_val < 1 || int_val > 17) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕PP must be 1-17"));
+                machine->throw_error("DOMAIN ERROR: ⎕PP must be 1-17", this);
                 return;
             }
             machine->pp = int_val;
@@ -458,7 +468,7 @@ void PerformSysVarAssignK::invoke(Machine* machine) {
         }
         case SysVarId::CT:
             if (dbl_val < 0) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕CT must be nonnegative"));
+                machine->throw_error("DOMAIN ERROR: ⎕CT must be nonnegative", this);
                 return;
             }
             machine->ct = dbl_val;
@@ -466,7 +476,7 @@ void PerformSysVarAssignK::invoke(Machine* machine) {
         case SysVarId::RL: {
             // RL must be a positive integer
             if (dbl_val < 1 || dbl_val != static_cast<double>(static_cast<uint64_t>(dbl_val))) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: ⎕RL must be a positive integer"));
+                machine->throw_error("DOMAIN ERROR: ⎕RL must be a positive integer", this);
                 return;
             }
             machine->rl = static_cast<uint64_t>(dbl_val);
@@ -474,7 +484,7 @@ void PerformSysVarAssignK::invoke(Machine* machine) {
             break;
         }
         default:
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYSTEM ERROR: unknown system variable"));
+            machine->throw_error("SYSTEM ERROR: unknown system variable", this);
             return;
     }
 
@@ -548,6 +558,14 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
     // Extension to G2: when both values are basic, form a strand (vector)
     // This handles cases like {⍵ ⍵}5 which should return 5 5
     if (left_val->is_basic_value() && right_val->is_basic_value()) {
+        // Convert strings to character vectors (strings are just lazy char vectors)
+        if (left_val->is_string()) {
+            left_val = left_val->to_char_vector(machine->heap);
+        }
+        if (right_val->is_string()) {
+            right_val = right_val->to_char_vector(machine->heap);
+        }
+
         // Concatenate left and right into a vector
         size_t left_size = left_val->is_scalar() ? 1 : left_val->size();
         size_t right_size = right_val->is_scalar() ? 1 : right_val->size();
@@ -616,7 +634,7 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
             machine->result = curried;
         } else {
             // Monadic operator doesn't take a value as operand - this is an error
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Monadic operator cannot take value as operand"));
+            machine->throw_error("SYNTAX ERROR: Monadic operator cannot take value as operand", this);
             return;
         }
     } else if (left_val->is_function() && right_val->tag == ValueType::CURRIED_FN &&
@@ -640,7 +658,7 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
             machine->result = left_val;
             machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, right_val));
         } else {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: Invalid OPERATOR_CURRY structure"));
+            machine->throw_error("VALUE ERROR: Invalid OPERATOR_CURRY structure", this);
             return;
         }
     } else {
@@ -830,8 +848,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
         std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
-        const char* interned_msg = machine->string_pool.intern(msg.c_str());
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        machine->throw_error(msg.c_str(), this);
         return;
     }
 
@@ -839,8 +856,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
 
     if (!prim_fn->monadic) {
         std::string msg = std::string("SYNTAX ERROR: Operator has no monadic form: ") + op_name;
-        const char* interned_msg = machine->string_pool.intern(msg.c_str());
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        machine->throw_error(msg.c_str(), this);
         return;
     }
 
@@ -895,8 +911,7 @@ void ApplyDyadicK::invoke(Machine* machine) {
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
         std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
-        const char* interned_msg = machine->string_pool.intern(msg.c_str());
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        machine->throw_error(msg.c_str(), this);
         return;
     }
 
@@ -904,12 +919,11 @@ void ApplyDyadicK::invoke(Machine* machine) {
 
     if (!prim_fn->dyadic) {
         std::string msg = std::string("SYNTAX ERROR: Operator has no dyadic form: ") + op_name;
-        const char* interned_msg = machine->string_pool.intern(msg.c_str());
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        machine->throw_error(msg.c_str(), this);
         return;
     }
 
-    // Apply the dyadic function (sets machine->result directly or pushes ThrowErrorK)
+    // Apply the dyadic function
     prim_fn->dyadic(machine, left_val, right_val);
 
     // Phase 3.1: No return needed, trampoline continues
@@ -1016,7 +1030,7 @@ void BuildStrandK::invoke(Machine* machine) {
             Value* arg = values[1];
 
             if (!prim->monadic) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no monadic form"));
+                machine->throw_error("SYNTAX ERROR: Function has no monadic form", this);
                 return;
             }
 
@@ -1031,7 +1045,7 @@ void BuildStrandK::invoke(Machine* machine) {
             Value* right_arg = values[2];
 
             if (!prim->dyadic) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no dyadic form"));
+                machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this);
                 return;
             }
 
@@ -1046,7 +1060,7 @@ void BuildStrandK::invoke(Machine* machine) {
             Value* right_arg = values[2];
 
             if (!prim->dyadic) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no dyadic form"));
+                machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this);
                 return;
             }
 
@@ -1057,24 +1071,43 @@ void BuildStrandK::invoke(Machine* machine) {
 
         // TODO: Higher-order operators and other patterns
         // For now, fall through to regular vector formation (or error)
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Unsupported function application pattern in strand"));
+        machine->throw_error("SYNTAX ERROR: Unsupported function application pattern in strand", this);
         return;
     }
 
     // Regular vector formation (no function application)
-    // Create a vector to hold the values
-    size_t count = values.size();
-    Eigen::VectorXd vec(count);
+    // First pass: convert strings to char vectors and calculate total size
+    size_t total_size = 0;
+    for (size_t i = 0; i < values.size(); i++) {
+        Value* val = values[i];
+        if (val->is_string()) {
+            // Convert string to char vector (lazy conversion)
+            values[i] = val->to_char_vector(machine->heap);
+            val = values[i];
+        }
+        if (val->is_scalar()) {
+            total_size += 1;
+        } else if (val->is_array()) {
+            total_size += val->size();
+        } else {
+            machine->throw_error("RANK ERROR: Strand elements must be scalars or arrays", this);
+            return;
+        }
+    }
 
-    for (size_t i = 0; i < count; i++) {
+    // Second pass: build the result vector
+    Eigen::VectorXd vec(total_size);
+    size_t idx = 0;
+    for (size_t i = 0; i < values.size(); i++) {
         Value* val = values[i];
         if (val->is_scalar()) {
-            vec(i) = val->as_scalar();
+            vec(idx++) = val->as_scalar();
         } else {
-            // For now, if element is not a scalar, we have a problem
-            // APL allows nested arrays, but we haven't implemented that yet
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("RANK ERROR: Strand elements must be scalars (nested arrays not yet implemented)"));
-            return;
+            // Array - copy all elements
+            const Eigen::MatrixXd* mat = val->as_matrix();
+            for (int j = 0; j < mat->size(); j++) {
+                vec(idx++) = (*mat)(j);
+            }
         }
     }
 
@@ -1271,7 +1304,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             // For rank: first_arg is rank specification (a value)
             // inner_fn = DERIVED_OPERATOR(op, first_operand)
             if (inner_fn->tag != ValueType::DERIVED_OPERATOR) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: OPERATOR_CURRY expected DERIVED_OPERATOR"));
+                machine->throw_error("VALUE ERROR: OPERATOR_CURRY expected DERIVED_OPERATOR", this);
                 return;
             }
             Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
@@ -1342,7 +1375,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     machine->result = curried;
                 }
             } else {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator curry expects array argument"));
+                machine->throw_error("VALUE ERROR: operator curry expects array argument", this);
             }
             return;
         } else {
@@ -1380,7 +1413,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                         right_val = machine->result;
                         // Fall through to apply y to the result
                     } else {
-                        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: G_PRIME requires monadic form"));
+                        machine->throw_error("VALUE ERROR: G_PRIME requires monadic form", this);
                         return;
                     }
                 } else {
@@ -1465,7 +1498,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
                 machine->result = curried;
             } else {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires operands"));
+                machine->throw_error("VALUE ERROR: operator requires operands", this);
             }
             return;
         }
@@ -1537,7 +1570,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     machine->result = curried;
                 }
             } else {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires argument"));
+                machine->throw_error("VALUE ERROR: operator requires argument", this);
             }
             return;
         }
@@ -1601,7 +1634,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             return;
         }
 
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires operands"));
+        machine->throw_error("VALUE ERROR: operator requires operands", this);
         return;
     }
 
@@ -1614,13 +1647,13 @@ void DispatchFunctionK::invoke(Machine* machine) {
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::OPERATOR_CURRY);
             machine->result = curried;
         } else {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: operator requires argument"));
+            machine->throw_error("VALUE ERROR: operator requires argument", this);
         }
         return;
     }
 
     if (!fn_val->is_primitive()) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: expected function value"));
+        machine->throw_error("VALUE ERROR: expected function value", this);
         return;
     }
 
@@ -1644,13 +1677,13 @@ void DispatchFunctionK::invoke(Machine* machine) {
             machine->result = curried;
         } else {
             // No forms available
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no forms"));
+            machine->throw_error("SYNTAX ERROR: Function has no forms", this);
             return;
         }
     } else {
         // Dyadic case: both arguments
         if (!prim_fn->dyadic) {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Function has no dyadic form"));
+            machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this);
             return;
         }
 
@@ -1665,6 +1698,23 @@ void DispatchFunctionK::mark(Heap* heap) {
     heap->mark(fn_val);
     heap->mark(left_val);
     heap->mark(right_val);
+}
+
+std::string DispatchFunctionK::describe() const {
+    std::string result = "DispatchFunctionK";
+    if (fn_val) {
+        if (fn_val->tag == ValueType::PRIMITIVE && fn_val->data.primitive_fn) {
+            result += "(";
+            result += fn_val->data.primitive_fn->name;
+            result += ")";
+        } else if (fn_val->tag == ValueType::DERIVED_OPERATOR && fn_val->data.derived_op) {
+            // Show the operator and operand if available
+            result += "(derived)";
+        } else if (fn_val->tag == ValueType::CLOSURE) {
+            result += "(dfn)";
+        }
+    }
+    return result + location_suffix();
 }
 
 // DeferredDispatchK implementation - continues dispatch with result as right_val
@@ -1773,7 +1823,7 @@ void SelectBranchK::invoke(Machine* machine) {
 
     if (!cond_val) {
         // Error: no condition value
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: If condition evaluated to null"));
+        machine->throw_error("VALUE ERROR: If condition evaluated to null", this);
         return;
     }
 
@@ -1840,7 +1890,7 @@ void CheckWhileCondK::invoke(Machine* machine) {
 
     if (!cond_val) {
         // Error: no condition value
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: While condition evaluated to null"));
+        machine->throw_error("VALUE ERROR: While condition evaluated to null", this);
         return;
     }
 
@@ -1909,7 +1959,7 @@ void ForIterateK::invoke(Machine* machine) {
     if (array == nullptr) {
         array = machine->result;
         if (!array) {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: For loop array evaluated to null"));
+            machine->throw_error("VALUE ERROR: For loop array evaluated to null", this);
             return;
         }
     }
@@ -2053,14 +2103,14 @@ void CreateReturnK::mark(Heap* heap) {
 void FunctionCallK::invoke(Machine* machine) {
     // fn_value should be a CLOSURE
     if (!fn_value || fn_value->tag != ValueType::CLOSURE) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: Attempted to call non-function value"));
+        machine->throw_error("VALUE ERROR: Attempted to call non-function value", this);
         return;
     }
 
     // Get the function body continuation graph
     Continuation* body = fn_value->data.closure;
     if (!body) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: Function has no body"));
+        machine->throw_error("VALUE ERROR: Function has no body", this);
         return;
     }
 
@@ -2138,8 +2188,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val) {
         std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
-        const char* interned_msg = machine->string_pool.intern(msg.c_str());
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        machine->throw_error(msg.c_str(), this);
         return;
     }
 
@@ -2161,8 +2210,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
 
     if (op_val->tag != ValueType::OPERATOR) {
         std::string msg = std::string("VALUE ERROR: Not an operator: ") + op_name;
-        const char* interned_msg = machine->string_pool.intern(msg.c_str());
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>(interned_msg));
+        machine->throw_error(msg.c_str(), this);
         return;
     }
 
@@ -2186,7 +2234,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
             machine->result = derived;
         }
     } else {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("SYNTAX ERROR: Operator has neither monadic nor dyadic form"));
+        machine->throw_error("SYNTAX ERROR: Operator has neither monadic nor dyadic form", this);
     }
 }
 
@@ -2368,7 +2416,7 @@ void CellIterK::invoke(Machine* machine) {
         Value* right_cell = extract_cell(machine, rhs, right_rank, current_cell);
 
         if (!right_cell) {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: cell extraction failed"));
+            machine->throw_error("INDEX ERROR: cell extraction failed", this);
             return;
         }
 
@@ -2773,7 +2821,7 @@ void ReduceResultK::invoke(Machine* machine) {
     // Handle empty vector - would need identity element, for now error
     int len = vec->rows();
     if (len == 0) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("DOMAIN ERROR: cannot reduce empty vector"));
+        machine->throw_error("DOMAIN ERROR: cannot reduce empty vector", this);
         return;
     }
 
@@ -3079,7 +3127,7 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
     // Lookup the array variable
     Value* arr = machine->env->lookup(var_name);
     if (!arr) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("VALUE ERROR: undefined variable in indexed assignment"));
+        machine->throw_error("VALUE ERROR: undefined variable in indexed assignment", this);
         return;
     }
 
@@ -3091,7 +3139,7 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
 
     // Numeric array indexed assignment
     if (!arr->is_array()) {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: cannot index non-array value"));
+        machine->throw_error("INDEX ERROR: cannot index non-array value", this);
         return;
     }
 
@@ -3106,12 +3154,12 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
         int idx = static_cast<int>(index_val->as_scalar()) - machine->io;  // ⎕IO
 
         if (idx < 0 || idx >= size) {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+            machine->throw_error("INDEX ERROR: index out of bounds", this);
             return;
         }
 
         if (!value_val->is_scalar()) {
-            machine->push_kont(machine->heap->allocate<ThrowErrorK>("LENGTH ERROR: scalar index requires scalar value"));
+            machine->throw_error("LENGTH ERROR: scalar index requires scalar value", this);
             return;
         }
         double new_val = value_val->as_scalar();
@@ -3136,12 +3184,12 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
         const Eigen::MatrixXd* val_mat = nullptr;
         if (!scalar_value) {
             if (!value_val->is_vector()) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("RANK ERROR: value must be scalar or vector for vector index"));
+                machine->throw_error("RANK ERROR: value must be scalar or vector for vector index", this);
                 return;
             }
             val_mat = value_val->as_matrix();
             if (static_cast<int>(val_mat->size()) != num_indices) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("LENGTH ERROR: index and value lengths must match"));
+                machine->throw_error("LENGTH ERROR: index and value lengths must match", this);
                 return;
             }
         }
@@ -3150,7 +3198,7 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
         for (int i = 0; i < num_indices; i++) {
             int idx = static_cast<int>((*idx_mat)(i, 0)) - machine->io;  // ⎕IO
             if (idx < 0 || idx >= size) {
-                machine->push_kont(machine->heap->allocate<ThrowErrorK>("INDEX ERROR: index out of bounds"));
+                machine->throw_error("INDEX ERROR: index out of bounds", this);
                 return;
             }
 
@@ -3162,7 +3210,7 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
             new_mat(row, col) = new_val;
         }
     } else {
-        machine->push_kont(machine->heap->allocate<ThrowErrorK>("RANK ERROR: index must be scalar or vector"));
+        machine->throw_error("RANK ERROR: index must be scalar or vector", this);
         return;
     }
 

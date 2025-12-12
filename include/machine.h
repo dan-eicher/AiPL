@@ -32,10 +32,12 @@ class Parser;
 // Machine - The CEK machine execution engine
 class Machine {
 public:
-    // Machine state
+    // Machine state (CEK machine)
+    Continuation* control;                  // C: Current continuation being executed
+    Environment* env;                       // E: Environment (variable bindings)
+    std::vector<Continuation*> kont_stack;  // K: Continuation stack
     Value* result;                          // Result of last continuation
-    Environment* env;                       // Environment (variable bindings)
-    std::vector<Continuation*> kont_stack;  // Continuation stack
+    std::vector<Continuation*> error_stack; // Stack snapshot at last error (for traces)
     int io = 1;                             // Index origin (⎕IO): 0 or 1
     int pp = 10;                            // Print precision (⎕PP): 1-17, default 10
     double ct = 0.0;                        // Comparison tolerance (⎕CT): 0 = exact (Eigen fast path)
@@ -92,6 +94,15 @@ public:
     bool should_continue() const {
         return !kont_stack.empty();
     }
+
+    // Format the error stack trace for display
+    // Returns empty string if no error stack captured
+    std::string format_stack_trace() const;
+
+    // Throw an error: captures stack trace, creates ThrowErrorK, and pushes it
+    // source: the continuation where the error originated (for location info)
+    // msg: the error message (will be interned)
+    void throw_error(const char* msg, Continuation* source = nullptr);
 
     // Trigger GC if needed
     void maybe_gc() {

@@ -1994,6 +1994,98 @@ TEST_F(ContinuationTest, DerivedOperatorKWithDefinedOperatorName) {
     EXPECT_NE(result->data.derived_op->defined_op, nullptr);
 }
 
+// =============================================================================
+// Error Stack Trace Tests
+// =============================================================================
+
+TEST_F(ContinuationTest, ErrorStackTracePopulatedOnError) {
+    // Trigger an error by looking up undefined variable
+    EXPECT_THROW(machine->eval("undefined_var"), apl::APLError);
+
+    // After error, error_stack should be populated
+    EXPECT_FALSE(machine->error_stack.empty());
+}
+
+TEST_F(ContinuationTest, ErrorStackTraceContainsContinuationsWithLocations) {
+    // Define a dfn that will error
+    machine->eval("f ← {undefined}");
+
+    // Now call the function to trigger error
+    EXPECT_THROW(machine->eval("f 1"), apl::APLError);
+
+    // Check that error_stack has continuations
+    EXPECT_FALSE(machine->error_stack.empty());
+
+    // At least one continuation should have a source location
+    bool found_location = false;
+    for (Continuation* cont : machine->error_stack) {
+        if (cont->has_location()) {
+            found_location = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_location) << "No continuation in error stack has source location";
+}
+
+TEST_F(ContinuationTest, FormatStackTraceReturnsNonEmptyOnError) {
+    // Trigger an error
+    EXPECT_THROW(machine->eval("bad_var"), apl::APLError);
+
+    // format_stack_trace should return something
+    std::string trace = machine->format_stack_trace();
+    EXPECT_FALSE(trace.empty());
+    EXPECT_NE(trace.find("Stack trace"), std::string::npos);
+}
+
+TEST_F(ContinuationTest, FormatStackTraceIncludesContinuationDescriptions) {
+    // Trigger an error via undefined variable
+    EXPECT_THROW(machine->eval("unknown"), apl::APLError);
+
+    std::string trace = machine->format_stack_trace();
+
+    // Should contain continuation type names
+    // LookupK is created for variable lookup
+    EXPECT_NE(trace.find("LookupK"), std::string::npos)
+        << "Stack trace should show LookupK for variable lookup. Trace:\n" << trace;
+}
+
+TEST_F(ContinuationTest, DescribeMethodReturnsReadableNames) {
+    // Test that describe() gives human-readable names
+    LiteralK* lit = heap->allocate<LiteralK>(42.0);
+    lit->set_location(1, 5);
+    std::string desc = lit->describe();
+
+    // Should contain "LiteralK" not some mangled name
+    EXPECT_NE(desc.find("LiteralK"), std::string::npos);
+    // Should contain the location
+    EXPECT_NE(desc.find("[1:5]"), std::string::npos);
+}
+
+TEST_F(ContinuationTest, DescribeMethodShowsVariableNames) {
+    // LookupK should show variable name
+    LookupK* lookup = heap->allocate<LookupK>(
+        machine->string_pool.intern("myvar"));
+    lookup->set_location(2, 10);
+    std::string desc = lookup->describe();
+
+    EXPECT_NE(desc.find("LookupK"), std::string::npos);
+    EXPECT_NE(desc.find("myvar"), std::string::npos);
+    EXPECT_NE(desc.find("[2:10]"), std::string::npos);
+}
+
+TEST_F(ContinuationTest, DescribeMethodShowsOperatorNames) {
+    // MonadicK should show operator name
+    MonadicK* mon = heap->allocate<MonadicK>(
+        machine->string_pool.intern("⍳"),
+        heap->allocate<LiteralK>(5.0));
+    mon->set_location(3, 1);
+    std::string desc = mon->describe();
+
+    EXPECT_NE(desc.find("MonadicK"), std::string::npos);
+    EXPECT_NE(desc.find("⍳"), std::string::npos);
+    EXPECT_NE(desc.find("[3:1]"), std::string::npos);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

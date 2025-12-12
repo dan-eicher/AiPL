@@ -350,6 +350,9 @@ int main(int argc, char** argv) {
             }
         } catch (const apl::APLError& e) {
             std::cout << e.what() << "\n";
+            if (!machine.error_stack.empty()) {
+                std::cout << machine.format_stack_trace();
+            }
         } catch (const std::exception& e) {
             std::cout << "ERROR: " << e.what() << "\n";
         }

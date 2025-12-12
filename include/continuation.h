@@ -29,10 +29,37 @@ protected:
     // Protected delete allows derived class destructors to work
     void operator delete(void* ptr) { ::operator delete(ptr); }
 
+    // Source location for error reporting (0,0 = no location)
+    int src_line = 0;
+    int src_column = 0;
+
     Continuation() : GCObject() {}
+    Continuation(int line, int col) : GCObject(), src_line(line), src_column(col) {}
     virtual ~Continuation() {}
 
 public:
+    // Source location accessors
+    int line() const { return src_line; }
+    int column() const { return src_column; }
+    bool has_location() const { return src_line > 0 || src_column > 0; }
+    void set_location(int line, int col) { src_line = line; src_column = col; }
+
+    // Description for debugging/stack traces
+    // Returns something like: LookupK("X") [1:5] or JuxtaposeK [1:3]
+    // Default uses typeid, derived classes can override for more detail
+    virtual std::string describe() const;
+
+protected:
+    // Helper to format location suffix: " [line:col]" or "" if no location
+    std::string location_suffix() const {
+        if (has_location()) {
+            return " [" + std::to_string(src_line) + ":" + std::to_string(src_column) + "]";
+        }
+        return "";
+    }
+
+public:
+
     // Mark all Values and Continuations referenced by this continuation for GC
     virtual void mark(Heap* heap) = 0;
 
@@ -64,6 +91,7 @@ protected:
 class HaltK : public Continuation {
 public:
     void mark(Heap* heap) override;
+    std::string describe() const override { return "HaltK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -82,6 +110,7 @@ public:
     PropagateCompletionK(Completion* comp) : completion(comp) {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "PropagateCompletionK" + location_suffix(); }
     Completion* get_propagating_completion() const override { return completion; }
 
 protected:
@@ -97,6 +126,9 @@ public:
     CatchReturnK(const char* name = nullptr) : function_name(name) {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("CatchReturnK") + (function_name ? std::string("(\"") + function_name + "\")" : "") + location_suffix();
+    }
     bool is_function_boundary() const override { return true; }
 
 protected:
@@ -110,6 +142,7 @@ public:
     CatchBreakK() = default;
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "CatchBreakK" + location_suffix(); }
     bool is_loop_boundary() const override { return true; }
 
 protected:
@@ -125,6 +158,7 @@ public:
     CatchContinueK(Continuation* loop) : loop_cont(loop) {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "CatchContinueK" + location_suffix(); }
     bool is_loop_boundary() const override { return true; }
 
 protected:
@@ -138,6 +172,7 @@ public:
     CatchErrorK() {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "CatchErrorK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -152,6 +187,9 @@ public:
     ThrowErrorK(const char* msg) : error_message(msg) {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("ThrowErrorK(\"") + (error_message ? error_message : "") + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -170,6 +208,9 @@ public:
     ~LiteralK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return "LiteralK(" + std::to_string(literal_value) + ")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -188,6 +229,7 @@ public:
     ~ClosureLiteralK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "ClosureLiteralK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -213,6 +255,9 @@ public:
     bool is_dyadic_operator() const { return right_operand_name != nullptr; }
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("DefinedOperatorLiteralK(\"") + operator_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -231,6 +276,9 @@ public:
     ~LookupK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("LookupK(\"") + var_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -252,6 +300,9 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("AssignK(\"") + var_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -268,6 +319,9 @@ public:
     ~PerformAssignK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("PerformAssignK(\"") + var_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -282,6 +336,7 @@ public:
     ~SysVarReadK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "SysVarReadK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -297,6 +352,7 @@ public:
     ~SysVarAssignK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "SysVarAssignK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -311,6 +367,7 @@ public:
     ~PerformSysVarAssignK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "PerformSysVarAssignK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -330,6 +387,7 @@ public:
     ~StrandK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "StrandK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -351,6 +409,7 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "JuxtaposeK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -368,6 +427,7 @@ public:
     ~EvalJuxtaposeLeftK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "EvalJuxtaposeLeftK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -384,6 +444,7 @@ public:
     ~PerformJuxtaposeK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "PerformJuxtaposeK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -402,6 +463,7 @@ public:
     ~FinalizeK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "FinalizeK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -415,6 +477,7 @@ public:
     PerformFinalizeK(bool gprime = true) : finalize_gprime(gprime) {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "PerformFinalizeK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -435,6 +498,9 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("MonadicK(\"") + op_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -456,6 +522,9 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("DyadicK(\"") + op_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -474,6 +543,9 @@ public:
     ~EvalDyadicLeftK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("EvalDyadicLeftK(\"") + op_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -490,6 +562,9 @@ public:
     ~ApplyMonadicK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("ApplyMonadicK(\"") + op_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -507,6 +582,9 @@ public:
     ~ApplyDyadicK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("ApplyDyadicK(\"") + op_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -528,6 +606,7 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "ArgK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -547,6 +626,7 @@ public:
     ~EvalStrandElementK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "EvalStrandElementK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -564,6 +644,7 @@ public:
     ~BuildStrandK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "BuildStrandK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -584,6 +665,9 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("FrameK(\"") + (function_name ? function_name : "") + "\")" + location_suffix();
+    }
 
     // FrameK marks function boundaries
     bool is_function_boundary() const override { return true; }
@@ -614,6 +698,7 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "ApplyFunctionK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -632,6 +717,7 @@ public:
     ~EvalApplyFunctionLeftK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "EvalApplyFunctionLeftK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -649,6 +735,7 @@ public:
     ~EvalApplyFunctionMonadicK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "EvalApplyFunctionMonadicK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -667,6 +754,7 @@ public:
     ~EvalApplyFunctionDyadicK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "EvalApplyFunctionDyadicK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -686,6 +774,7 @@ public:
     ~DispatchFunctionK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override;
 
 protected:
     void invoke(Machine* machine) override;
@@ -706,6 +795,7 @@ public:
     ~DeferredDispatchK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "DeferredDispatchK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -726,6 +816,7 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "SeqK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -744,6 +835,7 @@ public:
     ~ExecNextStatementK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "ExecNextStatementK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -770,6 +862,7 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "IfK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -787,6 +880,7 @@ public:
     ~SelectBranchK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "SelectBranchK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -808,6 +902,7 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "WhileK" + location_suffix(); }
 
     // WhileK marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -828,6 +923,7 @@ public:
     ~CheckWhileCondK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "CheckWhileCondK" + location_suffix(); }
 
     // CheckWhileCondK also marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -853,6 +949,9 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("ForK(\"") + var_name + "\")" + location_suffix();
+    }
 
     // ForK marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -875,6 +974,9 @@ public:
     ~ForIterateK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("ForIterateK(\"") + var_name + "\")" + location_suffix();
+    }
 
     // ForIterateK also marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -893,6 +995,7 @@ public:
     ~LeaveK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "LeaveK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -913,6 +1016,7 @@ public:
     }
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "ReturnK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -926,6 +1030,7 @@ public:
     ~CreateReturnK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "CreateReturnK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -949,6 +1054,7 @@ public:
     ~FunctionCallK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "FunctionCallK" + location_suffix(); }
 
     // FunctionCallK marks function boundaries for :Return
     bool is_function_boundary() const override { return true; }
@@ -967,6 +1073,7 @@ public:
     ~RestoreEnvK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "RestoreEnvK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -994,6 +1101,9 @@ public:
     ~DerivedOperatorK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("DerivedOperatorK(\"") + op_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1012,6 +1122,9 @@ public:
     ~ApplyDerivedOperatorK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("ApplyDerivedOperatorK(\"") + op_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1028,6 +1141,7 @@ public:
     ~ApplyAxisK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "ApplyAxisK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1098,6 +1212,7 @@ public:
     ~CellIterK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "CellIterK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1113,6 +1228,7 @@ public:
     ~CellCollectK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "CellCollectK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1142,6 +1258,7 @@ public:
     ~RowReduceK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "RowReduceK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1157,6 +1274,7 @@ public:
     ~RowReduceCollectK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "RowReduceCollectK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1188,6 +1306,7 @@ public:
     ~NwiseReduceK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "NwiseReduceK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1203,6 +1322,7 @@ public:
     ~NwiseCollectK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "NwiseCollectK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1235,6 +1355,7 @@ public:
     ~NwiseMatrixReduceK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "NwiseMatrixReduceK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1250,6 +1371,7 @@ public:
     ~NwiseMatrixCollectK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "NwiseMatrixCollectK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1277,6 +1399,7 @@ public:
     ~PrefixScanK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "PrefixScanK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1292,6 +1415,7 @@ public:
     ~PrefixScanCollectK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "PrefixScanCollectK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1321,6 +1445,7 @@ public:
     ~RowScanK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "RowScanK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1336,6 +1461,7 @@ public:
     ~RowScanCollectK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "RowScanCollectK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1356,6 +1482,7 @@ public:
     ~ReduceResultK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "ReduceResultK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1391,6 +1518,7 @@ public:
     ~InnerProductIterK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "InnerProductIterK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1406,6 +1534,7 @@ public:
     ~InnerProductCollectK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "InnerProductCollectK" + location_suffix(); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1429,6 +1558,9 @@ public:
     ~IndexedAssignK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("IndexedAssignK(\"") + var_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1447,6 +1579,9 @@ public:
     ~IndexedAssignIndexK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("IndexedAssignIndexK(\"") + var_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1465,6 +1600,9 @@ public:
     ~PerformIndexedAssignK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override {
+        return std::string("PerformIndexedAssignK(\"") + var_name + "\")" + location_suffix();
+    }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1495,6 +1633,7 @@ public:
     ~InvokeDefinedOperatorK() override {}
 
     void mark(Heap* heap) override;
+    std::string describe() const override { return "InvokeDefinedOperatorK" + location_suffix(); }
     bool is_function_boundary() const override { return true; }
 
 protected:

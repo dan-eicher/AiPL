@@ -7,11 +7,13 @@
 #include "primitives.h"
 #include "operators.h"
 #include <stdexcept>
+#include <sstream>
 
 namespace apl {
 
 // Constructor
 Machine::Machine() {
+    control = nullptr;
     result = nullptr;
     heap = new Heap();
     heap->set_machine(this);  // Give heap back-pointer for GC
@@ -110,10 +112,10 @@ Value* Machine::eval(const std::string& input) {
 
     if (!k) {
         // Parse error - route through the same error mechanism as runtime errors
-        const char* msg = string_pool.intern(parser->get_error().c_str());
-        k = heap->allocate<ThrowErrorK>(msg);
+        throw_error(parser->get_error().c_str());
+    } else {
+        push_kont(k);
     }
-    push_kont(k);
     return execute();
 }
 
@@ -122,16 +124,23 @@ Value* Machine::eval(const std::string& input) {
 Value* Machine::execute() {
     // Main evaluation loop
     while (!kont_stack.empty()) {
-        Continuation* k = kont_stack.back();
+        Continuation* prev = control;
+        control = kont_stack.back();
         kont_stack.pop_back();
 
-        if (!k) {
+        if (!control) {
             throw std::runtime_error("VM BUG: null continuation on stack");
         }
 
-        k->invoke(this);
+        // Propagate source location from parser continuations to runtime continuations
+        if (!control->has_location() && prev && prev->has_location()) {
+            control->set_location(prev->line(), prev->column());
+        }
+
+        control->invoke(this);
         maybe_gc();
     }
+    control = nullptr;
 
     // Finalize curries at top level via continuation graph
     while (result && result->tag == ValueType::CURRIED_FN) {
@@ -141,11 +150,19 @@ Value* Machine::execute() {
 
         // Run the finalization
         while (!kont_stack.empty()) {
-            Continuation* k = kont_stack.back();
+            Continuation* prev = control;
+            control = kont_stack.back();
             kont_stack.pop_back();
-            k->invoke(this);
+
+            // Propagate source location here too
+            if (!control->has_location() && prev && prev->has_location()) {
+                control->set_location(prev->line(), prev->column());
+            }
+
+            control->invoke(this);
             maybe_gc();
         }
+        control = nullptr;
 
         // If result unchanged, curry can't be finalized (valid partial application)
         if (result == result_before) {
@@ -160,5 +177,49 @@ Value* Machine::execute() {
 // - PropagateCompletionK handles stack unwinding
 // - CatchReturnK/CatchBreakK handle boundaries
 // - No imperative completion handling needed
+
+// Format the error stack trace for display
+std::string Machine::format_stack_trace() const {
+    if (error_stack.empty()) {
+        return "";
+    }
+
+    std::ostringstream oss;
+    oss << "Stack trace (most recent first):\n";
+
+    // Walk the error stack from top (most recent) to bottom
+    for (auto it = error_stack.rbegin(); it != error_stack.rend(); ++it) {
+        Continuation* k = *it;
+        oss << "  " << k->describe() << "\n";
+    }
+
+    return oss.str();
+}
+
+// Throw an error: captures stack trace, creates ThrowErrorK, and pushes it
+void Machine::throw_error(const char* msg, Continuation* source) {
+    // Use control (the currently executing continuation) as fallback
+    // This allows primitives to get location info from their calling continuation
+    Continuation* error_source = source ? source : control;
+
+    // Capture the current stack for error traces
+    error_stack = kont_stack;
+
+    // If we have a source, add it to the error stack (it has the error location)
+    if (error_source) {
+        error_stack.push_back(error_source);
+    }
+
+    // Create and push ThrowErrorK
+    const char* interned_msg = string_pool.intern(msg);
+    ThrowErrorK* err = heap->allocate<ThrowErrorK>(interned_msg);
+
+    // Copy source location to ThrowErrorK if available
+    if (error_source && error_source->has_location()) {
+        err->set_location(error_source->line(), error_source->column());
+    }
+
+    push_kont(err);
+}
 
 } // namespace apl

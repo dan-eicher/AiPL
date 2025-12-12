@@ -850,6 +850,105 @@ TEST_F(StringTest, FormatExecuteRoundTripVector) {
     EXPECT_EQ(result->size(), 3);
 }
 
+// ============================================================================
+// Mixed Numeric/String Strands (Characters are just codepoints)
+// ============================================================================
+
+TEST_F(StringTest, MixedStrandSingleChar) {
+    // 'a' is codepoint 97, so 1 2 'a' should be 1 2 97
+    Value* result = eval("1 2 'a'");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ((*mat)(0), 1);
+    EXPECT_EQ((*mat)(1), 2);
+    EXPECT_EQ((*mat)(2), 97);  // 'a' = 97
+}
+
+TEST_F(StringTest, MixedStrandMultiChar) {
+    // 'ab' expands to 97 98, so 1 'ab' 2 should be 1 97 98 2
+    Value* result = eval("1 'ab' 2");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ((*mat)(0), 1);
+    EXPECT_EQ((*mat)(1), 97);  // 'a'
+    EXPECT_EQ((*mat)(2), 98);  // 'b'
+    EXPECT_EQ((*mat)(3), 2);
+}
+
+TEST_F(StringTest, MixedStrandCharFirst) {
+    // 'x' 1 2 should be 120 1 2
+    Value* result = eval("'x' 1 2");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ((*mat)(0), 120);  // 'x'
+    EXPECT_EQ((*mat)(1), 1);
+    EXPECT_EQ((*mat)(2), 2);
+}
+
+TEST_F(StringTest, MixedStrandAllChars) {
+    // 'a' 'b' 'c' should be 97 98 99
+    Value* result = eval("'a' 'b' 'c'");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ((*mat)(0), 97);
+    EXPECT_EQ((*mat)(1), 98);
+    EXPECT_EQ((*mat)(2), 99);
+}
+
+TEST_F(StringTest, ReduceOverMixedStrand) {
+    // +/1 2 'a' should be 1+2+97 = 100
+    Value* result = eval("+/1 2 'a'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_EQ(result->as_scalar(), 100);
+}
+
+TEST_F(StringTest, JuxtaposeMixedBasicValues) {
+    // Two basic values next to each other form a strand
+    // 1 'a' should be 1 97
+    Value* result = eval("1 'a'");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ((*mat)(0), 1);
+    EXPECT_EQ((*mat)(1), 97);
+}
+
+TEST_F(StringTest, JuxtaposeStringAndVector) {
+    // 'ab' 1 2 should be 97 98 1 2
+    Value* result = eval("'ab' 1 2");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ((*mat)(0), 97);
+    EXPECT_EQ((*mat)(1), 98);
+    EXPECT_EQ((*mat)(2), 1);
+    EXPECT_EQ((*mat)(3), 2);
+}
+
+TEST_F(StringTest, JuxtaposeVectorAndString) {
+    // 1 2 'ab' should be 1 2 97 98
+    Value* result = eval("1 2 'ab'");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ((*mat)(0), 1);
+    EXPECT_EQ((*mat)(1), 2);
+    EXPECT_EQ((*mat)(2), 97);
+    EXPECT_EQ((*mat)(3), 98);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
