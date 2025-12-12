@@ -2,6 +2,7 @@
 // Generates lexer.cpp with C++ Lexer class
 
 #include "lexer.h"
+#include "machine.h"  // For MAX_IDENTIFIER_LENGTH
 #include <cstdlib>
 #include <cstring>
 
@@ -303,6 +304,11 @@ Token Lexer::next_token() {
         // Names (must come after keywords, strings, and quad names)
         name {
             size_t len = cursor_ - token_start;
+            // Check implementation limit (ISO 13751 §A.3)
+            if (len > MAX_IDENTIFIER_LENGTH) {
+                column_ += len;
+                return Token(TOK_ERROR, "LIMIT ERROR: identifier too long", token_line, token_column);
+            }
             char* str = arena_.allocate_string(token_start, len);
             column_ += len;
             return Token(TOK_NAME, str, token_line, token_column);

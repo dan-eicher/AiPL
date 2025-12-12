@@ -660,7 +660,7 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
     }
 
     if (!axis->is_scalar()) {
-        m->throw_error("DOMAIN ERROR: axis must be a scalar");
+        m->throw_error("AXIS ERROR: axis must be a scalar");
         return -1;
     }
 
@@ -669,7 +669,7 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
     int io = m->io;
 
     if (axis_val != static_cast<double>(k) || k < io || k > max_rank - 1 + io) {
-        m->throw_error("DOMAIN ERROR: axis out of range");
+        m->throw_error("AXIS ERROR: axis out of range");
         return -1;
     }
 
@@ -1358,7 +1358,7 @@ static bool is_near_integer(double x) {
 
 void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
     if (!axis->is_scalar()) {
-        m->throw_error("DOMAIN ERROR: axis must be scalar");
+        m->throw_error("AXIS ERROR: axis must be scalar");
         return;
     }
 
@@ -1374,7 +1374,7 @@ void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
 
     if (omega->is_vector()) {
         if (axis_idx != 0) {
-            m->throw_error("RANK ERROR: axis out of range for vector");
+            m->throw_error("AXIS ERROR: axis out of range");
             return;
         }
         m->result = m->heap->allocate_vector(omega->as_matrix()->col(0), omega->is_char_data());
@@ -1386,7 +1386,7 @@ void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
     int cols = mat->cols();
 
     if (axis_idx < 0 || axis_idx > 1) {
-        m->throw_error("RANK ERROR: axis out of range for matrix");
+        m->throw_error("AXIS ERROR: axis out of range");
         return;
     }
 
@@ -1413,7 +1413,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
     (void)unused;
 
     if (!axis->is_scalar()) {
-        m->throw_error("DOMAIN ERROR: axis must be scalar");
+        m->throw_error("AXIS ERROR: axis must be scalar");
         return;
     }
 
@@ -1491,7 +1491,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
 
     if (lhs->is_vector() && rhs->is_vector()) {
         if (cat_axis != 0) {
-            m->throw_error("RANK ERROR: vectors only have axis 1");
+            m->throw_error("AXIS ERROR: axis out of range");
             return;
         }
         Eigen::VectorXd result(lrows + rrows);
@@ -1520,7 +1520,7 @@ void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused,
         result.rightCols(rcols) = *rmat;
         m->result = m->heap->allocate_matrix(result);
     } else {
-        m->throw_error("RANK ERROR: axis out of range");
+        m->throw_error("AXIS ERROR: axis out of range");
     }
 }
 

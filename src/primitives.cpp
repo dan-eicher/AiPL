@@ -2062,6 +2062,12 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
 
     int target_size = target_rows * target_cols;
 
+    // Check implementation limit (ISO 13751 §A.3)
+    if (static_cast<size_t>(target_size) > MAX_ARRAY_SIZE) {
+        m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+        return;
+    }
+
     // String → char vector conversion for array operations
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -2212,7 +2218,7 @@ void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
 
     if (rhs->is_vector()) {
         if (perm.size() != 1 || perm(0) != 0.0) {
-            m->throw_error("RANK ERROR: invalid axis permutation for vector");
+            m->throw_error("AXIS ERROR: invalid axis permutation");
             return;
         }
         m->result = m->heap->allocate_vector(rhs->as_matrix()->col(0));
@@ -2233,7 +2239,7 @@ void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
     } else if (p0 == 1 && p1 == 0) {
         m->result = m->heap->allocate_matrix(rhs->as_matrix()->transpose());
     } else {
-        m->throw_error("DOMAIN ERROR: invalid axis permutation");
+        m->throw_error("AXIS ERROR: invalid axis permutation");
     }
 }
 
@@ -2318,6 +2324,12 @@ void fn_iota(Machine* m, Value* omega) {
     }
 
     int n = static_cast<int>(val);
+
+    // Check implementation limit (ISO 13751 §A.3)
+    if (static_cast<size_t>(n) > MAX_ARRAY_SIZE) {
+        m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+        return;
+    }
 
     Eigen::VectorXd result(n);
     for (int i = 0; i < n; ++i) {
