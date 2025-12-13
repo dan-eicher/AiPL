@@ -14,12 +14,6 @@ namespace apl {
 // Will be implemented in Phase 1.6
 class Heap;
 
-// Default describe() implementation using typeid
-// Derived classes can override for more detail (e.g., showing variable names)
-std::string Continuation::describe() const {
-    return std::string(typeid(*this).name()) + location_suffix();
-}
-
 // ============================================================================
 // Terminal and Completion Continuations
 // ============================================================================
@@ -1722,23 +1716,6 @@ void DispatchFunctionK::mark(Heap* heap) {
     heap->mark(fn_val);
     heap->mark(left_val);
     heap->mark(right_val);
-}
-
-std::string DispatchFunctionK::describe() const {
-    std::string result = "DispatchFunctionK";
-    if (fn_val) {
-        if (fn_val->tag == ValueType::PRIMITIVE && fn_val->data.primitive_fn) {
-            result += "(";
-            result += fn_val->data.primitive_fn->name;
-            result += ")";
-        } else if (fn_val->tag == ValueType::DERIVED_OPERATOR && fn_val->data.derived_op) {
-            // Show the operator and operand if available
-            result += "(derived)";
-        } else if (fn_val->tag == ValueType::CLOSURE) {
-            result += "(dfn)";
-        }
-    }
-    return result + location_suffix();
 }
 
 // DeferredDispatchK implementation - continues dispatch with result as right_val

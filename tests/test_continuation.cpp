@@ -2049,43 +2049,6 @@ TEST_F(ContinuationTest, FormatStackTraceIncludesContinuationDescriptions) {
         << "Stack trace should show LookupK for variable lookup. Trace:\n" << trace;
 }
 
-TEST_F(ContinuationTest, DescribeMethodReturnsReadableNames) {
-    // Test that describe() gives human-readable names
-    LiteralK* lit = heap->allocate<LiteralK>(42.0);
-    lit->set_location(1, 5);
-    std::string desc = lit->describe();
-
-    // Should contain "LiteralK" not some mangled name
-    EXPECT_NE(desc.find("LiteralK"), std::string::npos);
-    // Should contain the location
-    EXPECT_NE(desc.find("[1:5]"), std::string::npos);
-}
-
-TEST_F(ContinuationTest, DescribeMethodShowsVariableNames) {
-    // LookupK should show variable name
-    LookupK* lookup = heap->allocate<LookupK>(
-        machine->string_pool.intern("myvar"));
-    lookup->set_location(2, 10);
-    std::string desc = lookup->describe();
-
-    EXPECT_NE(desc.find("LookupK"), std::string::npos);
-    EXPECT_NE(desc.find("myvar"), std::string::npos);
-    EXPECT_NE(desc.find("[2:10]"), std::string::npos);
-}
-
-TEST_F(ContinuationTest, DescribeMethodShowsOperatorNames) {
-    // MonadicK should show operator name
-    MonadicK* mon = heap->allocate<MonadicK>(
-        machine->string_pool.intern("⍳"),
-        heap->allocate<LiteralK>(5.0));
-    mon->set_location(3, 1);
-    std::string desc = mon->describe();
-
-    EXPECT_NE(desc.find("MonadicK"), std::string::npos);
-    EXPECT_NE(desc.find("⍳"), std::string::npos);
-    EXPECT_NE(desc.find("[3:1]"), std::string::npos);
-}
-
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

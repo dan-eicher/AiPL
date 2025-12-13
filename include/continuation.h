@@ -13,7 +13,172 @@ namespace apl {
 class Machine;
 class Heap;
 class Environment;
-struct Completion;  // Forward declaration for completion records
+struct Completion;
+
+// Forward declare all continuation types for visitor pattern
+class Continuation;
+class HaltK;
+class PropagateCompletionK;
+class CatchReturnK;
+class CatchBreakK;
+class CatchContinueK;
+class CatchErrorK;
+class ThrowErrorK;
+class LiteralK;
+class ClosureLiteralK;
+class DefinedOperatorLiteralK;
+class LookupK;
+class AssignK;
+class PerformAssignK;
+class SysVarReadK;
+class SysVarAssignK;
+class PerformSysVarAssignK;
+class StrandK;
+class JuxtaposeK;
+class EvalJuxtaposeLeftK;
+class PerformJuxtaposeK;
+class FinalizeK;
+class PerformFinalizeK;
+class MonadicK;
+class DyadicK;
+class EvalDyadicLeftK;
+class ApplyMonadicK;
+class ApplyDyadicK;
+class ArgK;
+class EvalStrandElementK;
+class BuildStrandK;
+class FrameK;
+class ApplyFunctionK;
+class EvalApplyFunctionLeftK;
+class EvalApplyFunctionMonadicK;
+class EvalApplyFunctionDyadicK;
+class DispatchFunctionK;
+class DeferredDispatchK;
+class SeqK;
+class ExecNextStatementK;
+class IfK;
+class SelectBranchK;
+class WhileK;
+class CheckWhileCondK;
+class ForK;
+class ForIterateK;
+class LeaveK;
+class ContinueK;
+class ReturnK;
+class CreateReturnK;
+class BranchK;
+class CheckBranchK;
+class FunctionCallK;
+class RestoreEnvK;
+class DerivedOperatorK;
+class ApplyDerivedOperatorK;
+class ApplyAxisK;
+class CellIterK;
+class CellCollectK;
+class RowReduceK;
+class RowReduceCollectK;
+class NwiseReduceK;
+class NwiseCollectK;
+class NwiseMatrixReduceK;
+class NwiseMatrixCollectK;
+class PrefixScanK;
+class PrefixScanCollectK;
+class RowScanK;
+class RowScanCollectK;
+class ReduceResultK;
+class InnerProductIterK;
+class InnerProductCollectK;
+class IndexedAssignK;
+class IndexedAssignIndexK;
+class PerformIndexedAssignK;
+class InvokeDefinedOperatorK;
+
+// ============================================================================
+// ContinuationVisitor - Visitor pattern for operations on continuations
+// ============================================================================
+// Enables external operations (printing, optimization, etc.) without
+// modifying continuation classes.
+
+class ContinuationVisitor {
+public:
+    virtual ~ContinuationVisitor() = default;
+
+    virtual void visit(HaltK*) = 0;
+    virtual void visit(PropagateCompletionK*) = 0;
+    virtual void visit(CatchReturnK*) = 0;
+    virtual void visit(CatchBreakK*) = 0;
+    virtual void visit(CatchContinueK*) = 0;
+    virtual void visit(CatchErrorK*) = 0;
+    virtual void visit(ThrowErrorK*) = 0;
+    virtual void visit(LiteralK*) = 0;
+    virtual void visit(ClosureLiteralK*) = 0;
+    virtual void visit(DefinedOperatorLiteralK*) = 0;
+    virtual void visit(LookupK*) = 0;
+    virtual void visit(AssignK*) = 0;
+    virtual void visit(PerformAssignK*) = 0;
+    virtual void visit(SysVarReadK*) = 0;
+    virtual void visit(SysVarAssignK*) = 0;
+    virtual void visit(PerformSysVarAssignK*) = 0;
+    virtual void visit(StrandK*) = 0;
+    virtual void visit(JuxtaposeK*) = 0;
+    virtual void visit(EvalJuxtaposeLeftK*) = 0;
+    virtual void visit(PerformJuxtaposeK*) = 0;
+    virtual void visit(FinalizeK*) = 0;
+    virtual void visit(PerformFinalizeK*) = 0;
+    virtual void visit(MonadicK*) = 0;
+    virtual void visit(DyadicK*) = 0;
+    virtual void visit(EvalDyadicLeftK*) = 0;
+    virtual void visit(ApplyMonadicK*) = 0;
+    virtual void visit(ApplyDyadicK*) = 0;
+    virtual void visit(ArgK*) = 0;
+    virtual void visit(EvalStrandElementK*) = 0;
+    virtual void visit(BuildStrandK*) = 0;
+    virtual void visit(FrameK*) = 0;
+    virtual void visit(ApplyFunctionK*) = 0;
+    virtual void visit(EvalApplyFunctionLeftK*) = 0;
+    virtual void visit(EvalApplyFunctionMonadicK*) = 0;
+    virtual void visit(EvalApplyFunctionDyadicK*) = 0;
+    virtual void visit(DispatchFunctionK*) = 0;
+    virtual void visit(DeferredDispatchK*) = 0;
+    virtual void visit(SeqK*) = 0;
+    virtual void visit(ExecNextStatementK*) = 0;
+    virtual void visit(IfK*) = 0;
+    virtual void visit(SelectBranchK*) = 0;
+    virtual void visit(WhileK*) = 0;
+    virtual void visit(CheckWhileCondK*) = 0;
+    virtual void visit(ForK*) = 0;
+    virtual void visit(ForIterateK*) = 0;
+    virtual void visit(LeaveK*) = 0;
+    virtual void visit(ContinueK*) = 0;
+    virtual void visit(ReturnK*) = 0;
+    virtual void visit(CreateReturnK*) = 0;
+    virtual void visit(BranchK*) = 0;
+    virtual void visit(CheckBranchK*) = 0;
+    virtual void visit(FunctionCallK*) = 0;
+    virtual void visit(RestoreEnvK*) = 0;
+    virtual void visit(DerivedOperatorK*) = 0;
+    virtual void visit(ApplyDerivedOperatorK*) = 0;
+    virtual void visit(ApplyAxisK*) = 0;
+    virtual void visit(CellIterK*) = 0;
+    virtual void visit(CellCollectK*) = 0;
+    virtual void visit(RowReduceK*) = 0;
+    virtual void visit(RowReduceCollectK*) = 0;
+    virtual void visit(NwiseReduceK*) = 0;
+    virtual void visit(NwiseCollectK*) = 0;
+    virtual void visit(NwiseMatrixReduceK*) = 0;
+    virtual void visit(NwiseMatrixCollectK*) = 0;
+    virtual void visit(PrefixScanK*) = 0;
+    virtual void visit(PrefixScanCollectK*) = 0;
+    virtual void visit(RowScanK*) = 0;
+    virtual void visit(RowScanCollectK*) = 0;
+    virtual void visit(ReduceResultK*) = 0;
+    virtual void visit(InnerProductIterK*) = 0;
+    virtual void visit(InnerProductCollectK*) = 0;
+    virtual void visit(IndexedAssignK*) = 0;
+    virtual void visit(IndexedAssignIndexK*) = 0;
+    virtual void visit(PerformIndexedAssignK*) = 0;
+    virtual void visit(InvokeDefinedOperatorK*) = 0;
+};
 
 // Abstract Continuation base class
 // Represents "what to do next" in the CEK machine
@@ -44,24 +209,13 @@ public:
     bool has_location() const { return src_line > 0 || src_column > 0; }
     void set_location(int line, int col) { src_line = line; src_column = col; }
 
-    // Description for debugging/stack traces
-    // Returns something like: LookupK("X") [1:5] or JuxtaposeK [1:3]
-    // Default uses typeid, derived classes can override for more detail
-    virtual std::string describe() const;
-
-protected:
-    // Helper to format location suffix: " [line:col]" or "" if no location
-    std::string location_suffix() const {
-        if (has_location()) {
-            return " [" + std::to_string(src_line) + ":" + std::to_string(src_column) + "]";
-        }
-        return "";
-    }
-
 public:
 
     // Mark all Values and Continuations referenced by this continuation for GC
     virtual void mark(Heap* heap) = 0;
+
+    // Visitor pattern - enables external operations on continuations
+    virtual void accept(ContinuationVisitor& visitor) = 0;
 
     // Query methods for control flow handling
 
@@ -97,7 +251,7 @@ protected:
 class HaltK : public Continuation {
 public:
     void mark(Heap* heap) override;
-    std::string describe() const override { return "HaltK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -116,7 +270,7 @@ public:
     PropagateCompletionK(Completion* comp) : completion(comp) {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "PropagateCompletionK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
     Completion* get_propagating_completion() const override { return completion; }
 
 protected:
@@ -132,9 +286,7 @@ public:
     CatchReturnK(const char* name = nullptr) : function_name(name) {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("CatchReturnK") + (function_name ? std::string("(\"") + function_name + "\")" : "") + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
     bool is_function_boundary() const override { return true; }
 
 protected:
@@ -148,7 +300,7 @@ public:
     CatchBreakK() = default;
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CatchBreakK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
     bool is_loop_boundary() const override { return true; }
     bool is_break_boundary() const override { return true; }
 
@@ -165,7 +317,7 @@ public:
     CatchContinueK(Continuation* loop) : loop_cont(loop) {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CatchContinueK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
     bool is_continue_boundary() const override { return true; }
 
 protected:
@@ -179,7 +331,7 @@ public:
     CatchErrorK() {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CatchErrorK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -194,9 +346,7 @@ public:
     ThrowErrorK(const char* msg) : error_message(msg) {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("ThrowErrorK(\"") + (error_message ? error_message : "") + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -215,9 +365,7 @@ public:
     ~LiteralK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return "LiteralK(" + std::to_string(literal_value) + ")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -236,7 +384,7 @@ public:
     ~ClosureLiteralK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ClosureLiteralK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -262,9 +410,7 @@ public:
     bool is_dyadic_operator() const { return right_operand_name != nullptr; }
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("DefinedOperatorLiteralK(\"") + operator_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -283,9 +429,7 @@ public:
     ~LookupK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("LookupK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -307,9 +451,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("AssignK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -326,9 +468,7 @@ public:
     ~PerformAssignK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("PerformAssignK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -343,7 +483,7 @@ public:
     ~SysVarReadK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "SysVarReadK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -359,7 +499,7 @@ public:
     ~SysVarAssignK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "SysVarAssignK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -374,7 +514,7 @@ public:
     ~PerformSysVarAssignK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "PerformSysVarAssignK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -394,7 +534,7 @@ public:
     ~StrandK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "StrandK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -416,7 +556,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "JuxtaposeK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -434,7 +574,7 @@ public:
     ~EvalJuxtaposeLeftK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "EvalJuxtaposeLeftK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -451,7 +591,7 @@ public:
     ~PerformJuxtaposeK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "PerformJuxtaposeK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -470,7 +610,7 @@ public:
     ~FinalizeK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "FinalizeK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -484,7 +624,7 @@ public:
     PerformFinalizeK(bool gprime = true) : finalize_gprime(gprime) {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "PerformFinalizeK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -505,9 +645,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("MonadicK(\"") + op_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -529,9 +667,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("DyadicK(\"") + op_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -550,9 +686,7 @@ public:
     ~EvalDyadicLeftK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("EvalDyadicLeftK(\"") + op_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -569,9 +703,7 @@ public:
     ~ApplyMonadicK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("ApplyMonadicK(\"") + op_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -589,9 +721,7 @@ public:
     ~ApplyDyadicK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("ApplyDyadicK(\"") + op_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -613,7 +743,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ArgK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -633,7 +763,7 @@ public:
     ~EvalStrandElementK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "EvalStrandElementK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -651,7 +781,7 @@ public:
     ~BuildStrandK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "BuildStrandK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -672,9 +802,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("FrameK(\"") + (function_name ? function_name : "") + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
     // FrameK marks function boundaries
     bool is_function_boundary() const override { return true; }
@@ -705,7 +833,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ApplyFunctionK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -724,7 +852,7 @@ public:
     ~EvalApplyFunctionLeftK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "EvalApplyFunctionLeftK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -742,7 +870,7 @@ public:
     ~EvalApplyFunctionMonadicK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "EvalApplyFunctionMonadicK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -761,7 +889,7 @@ public:
     ~EvalApplyFunctionDyadicK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "EvalApplyFunctionDyadicK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -781,7 +909,7 @@ public:
     ~DispatchFunctionK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -802,7 +930,7 @@ public:
     ~DeferredDispatchK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "DeferredDispatchK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -823,7 +951,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "SeqK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -842,7 +970,7 @@ public:
     ~ExecNextStatementK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ExecNextStatementK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -869,7 +997,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "IfK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -887,7 +1015,7 @@ public:
     ~SelectBranchK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "SelectBranchK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -909,7 +1037,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "WhileK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
     // WhileK marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -930,7 +1058,7 @@ public:
     ~CheckWhileCondK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CheckWhileCondK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
     // CheckWhileCondK also marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -956,9 +1084,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("ForK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
     // ForK marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -981,9 +1107,7 @@ public:
     ~ForIterateK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("ForIterateK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
     // ForIterateK also marks loop boundaries for :Leave
     bool is_loop_boundary() const override { return true; }
@@ -1002,7 +1126,7 @@ public:
     ~LeaveK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "LeaveK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1018,7 +1142,7 @@ public:
     ~ContinueK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ContinueK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1039,7 +1163,7 @@ public:
     }
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ReturnK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1053,7 +1177,7 @@ public:
     ~CreateReturnK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CreateReturnK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1073,7 +1197,7 @@ public:
     ~BranchK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "BranchK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1089,7 +1213,7 @@ public:
     ~CheckBranchK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CheckBranchK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1113,7 +1237,7 @@ public:
     ~FunctionCallK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "FunctionCallK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
     // FunctionCallK marks function boundaries for :Return
     bool is_function_boundary() const override { return true; }
@@ -1132,7 +1256,7 @@ public:
     ~RestoreEnvK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "RestoreEnvK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1160,9 +1284,7 @@ public:
     ~DerivedOperatorK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("DerivedOperatorK(\"") + op_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1181,9 +1303,7 @@ public:
     ~ApplyDerivedOperatorK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("ApplyDerivedOperatorK(\"") + op_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1200,7 +1320,7 @@ public:
     ~ApplyAxisK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ApplyAxisK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1271,7 +1391,7 @@ public:
     ~CellIterK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CellIterK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1287,7 +1407,7 @@ public:
     ~CellCollectK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "CellCollectK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1317,7 +1437,7 @@ public:
     ~RowReduceK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "RowReduceK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1333,7 +1453,7 @@ public:
     ~RowReduceCollectK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "RowReduceCollectK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1365,7 +1485,7 @@ public:
     ~NwiseReduceK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "NwiseReduceK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1381,7 +1501,7 @@ public:
     ~NwiseCollectK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "NwiseCollectK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1414,7 +1534,7 @@ public:
     ~NwiseMatrixReduceK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "NwiseMatrixReduceK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1430,7 +1550,7 @@ public:
     ~NwiseMatrixCollectK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "NwiseMatrixCollectK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1458,7 +1578,7 @@ public:
     ~PrefixScanK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "PrefixScanK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1474,7 +1594,7 @@ public:
     ~PrefixScanCollectK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "PrefixScanCollectK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1504,7 +1624,7 @@ public:
     ~RowScanK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "RowScanK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1520,7 +1640,7 @@ public:
     ~RowScanCollectK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "RowScanCollectK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1541,7 +1661,7 @@ public:
     ~ReduceResultK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "ReduceResultK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1577,7 +1697,7 @@ public:
     ~InnerProductIterK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "InnerProductIterK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1593,7 +1713,7 @@ public:
     ~InnerProductCollectK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "InnerProductCollectK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1617,9 +1737,7 @@ public:
     ~IndexedAssignK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("IndexedAssignK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1638,9 +1756,7 @@ public:
     ~IndexedAssignIndexK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("IndexedAssignIndexK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1659,9 +1775,7 @@ public:
     ~PerformIndexedAssignK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override {
-        return std::string("PerformIndexedAssignK(\"") + var_name + "\")" + location_suffix();
-    }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
@@ -1692,7 +1806,7 @@ public:
     ~InvokeDefinedOperatorK() override {}
 
     void mark(Heap* heap) override;
-    std::string describe() const override { return "InvokeDefinedOperatorK" + location_suffix(); }
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
     bool is_function_boundary() const override { return true; }
 
 protected:

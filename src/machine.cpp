@@ -6,6 +6,7 @@
 #include "parser.h"
 #include "primitives.h"
 #include "operators.h"
+#include "kont_print.h"
 #include <stdexcept>
 #include <sstream>
 
@@ -184,16 +185,8 @@ std::string Machine::format_stack_trace() const {
         return "";
     }
 
-    std::ostringstream oss;
-    oss << "Stack trace (most recent first):\n";
-
-    // Walk the error stack from top (most recent) to bottom
-    for (auto it = error_stack.rbegin(); it != error_stack.rend(); ++it) {
-        Continuation* k = *it;
-        oss << "  " << k->describe() << "\n";
-    }
-
-    return oss.str();
+    ContinuationPrinter printer;
+    return "Stack trace (most recent first):\n" + printer.print_stack(error_stack);
 }
 
 // Throw an error: captures stack trace, creates ThrowErrorK, and pushes it
