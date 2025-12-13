@@ -159,10 +159,12 @@ Value* Heap::allocate_operator(PrimitiveOp* op) {
 }
 
 // Allocate a closure (user-defined function)
-Value* Heap::allocate_closure(Continuation* body) {
+Value* Heap::allocate_closure(Continuation* body, bool is_niladic) {
     Value* val = new Value();
     val->tag = ValueType::CLOSURE;
-    val->data.closure = body;
+    val->data.closure = new Value::ClosureData();
+    val->data.closure->body = body;
+    val->data.closure->is_niladic = is_niladic;
     return allocate(val);
 }
 
@@ -199,13 +201,14 @@ Value* Heap::allocate_derived_operator(Value::DefinedOperatorData* op, Value* fi
 }
 
 // G2 grammar: Allocate a curried function (result of applying function to first argument)
-Value* Heap::allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type) {
+Value* Heap::allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type, Value* axis) {
     Value* val = new Value();
     val->tag = ValueType::CURRIED_FN;
     val->data.curried_fn = new Value::CurriedFnData();
     val->data.curried_fn->fn = fn;
     val->data.curried_fn->first_arg = first_arg;
     val->data.curried_fn->curry_type = curry_type;
+    val->data.curried_fn->axis = axis;
     return allocate(val);
 }
 

@@ -1336,6 +1336,395 @@ TEST_F(GrammarTest, GPrimeStrandFormationInDfn) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
 }
 
+// ============================================================================
+// ISO 13751 Section 6 Compliance Tests
+// ============================================================================
+
+// Section 6.3.3: Evaluate-Niladic-Function (Pattern N)
+TEST_F(GrammarTest, NiladicDfnBasic) {
+    // Niladic dfn: no ⍵ or ⍺ references, just returns a value
+    Value* result = eval("F←{42} ⋄ F");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(GrammarTest, NiladicDfnExpression) {
+    // Niladic dfn with expression inside
+    Value* result = eval("F←{2+3} ⋄ F");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(GrammarTest, NiladicDfnWithReduce) {
+    // Niladic dfn that uses reduction
+    Value* result = eval("F←{+/⍳10} ⋄ F");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 55.0);
+}
+
+// Section 6.3.2: Remove-Parentheses - error cases
+TEST_F(GrammarTest, ParenthesesWithValue) {
+    // (B) where B is a value - should work
+    Value* result = eval("(5)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+
+    result = eval("(1 2 3)");
+    EXPECT_EQ(result->size(), 3);
+}
+
+TEST_F(GrammarTest, ParenthesesWithExpression) {
+    // ((2+3)) nested parens
+    Value* result = eval("((2+3))");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Section 6.3.4: Evaluate-Monadic-Function with axis (X F[C] B)
+TEST_F(GrammarTest, MonadicFunctionWithAxis) {
+    // Reverse with axis on matrix
+    machine->eval("M←2 3⍴⍳6");
+    Value* result = eval("⌽[1]M");  // Reverse along first axis (rows)
+    ASSERT_NE(result, nullptr);
+    // Original: 1 2 3 / 4 5 6, reversed rows: 4 5 6 / 1 2 3
+    const auto* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);
+}
+
+TEST_F(GrammarTest, ReverseWithAxis) {
+    machine->eval("M←2 3⍴⍳6");  // [[1,2,3],[4,5,6]]
+
+    // ⌽[1] reverses along first axis (rows)
+    Value* r1 = eval("⌽[1]M");
+    ASSERT_NE(r1, nullptr);
+    const auto* m1 = r1->as_matrix();
+    EXPECT_DOUBLE_EQ((*m1)(0, 0), 4.0);  // First row is now [4,5,6]
+    EXPECT_DOUBLE_EQ((*m1)(1, 0), 1.0);  // Second row is now [1,2,3]
+
+    // ⌽[2] reverses along second axis (columns)
+    Value* r2 = eval("⌽[2]M");
+    ASSERT_NE(r2, nullptr);
+    const auto* m2 = r2->as_matrix();
+    EXPECT_DOUBLE_EQ((*m2)(0, 0), 3.0);  // [3,2,1]
+    EXPECT_DOUBLE_EQ((*m2)(0, 2), 1.0);
+    EXPECT_DOUBLE_EQ((*m2)(1, 0), 6.0);  // [6,5,4]
+
+    // ⊖[1] is same as ⌽[1] for reverse first
+    Value* r3 = eval("⊖[1]M");
+    ASSERT_NE(r3, nullptr);
+    const auto* m3 = r3->as_matrix();
+    EXPECT_DOUBLE_EQ((*m3)(0, 0), 4.0);
+
+    // ⊖[2] reverses along second axis
+    Value* r4 = eval("⊖[2]M");
+    ASSERT_NE(r4, nullptr);
+    const auto* m4 = r4->as_matrix();
+    EXPECT_DOUBLE_EQ((*m4)(0, 0), 3.0);
+}
+
+TEST_F(GrammarTest, TakeWithAxis) {
+    machine->eval("M←3 4⍴⍳12");  // [[1,2,3,4],[5,6,7,8],[9,10,11,12]]
+
+    // 2↑[1]M takes 2 rows
+    Value* t1 = eval("2↑[1]M");
+    ASSERT_NE(t1, nullptr);
+    const auto* m1 = t1->as_matrix();
+    EXPECT_EQ(m1->rows(), 2);
+    EXPECT_EQ(m1->cols(), 4);
+    EXPECT_DOUBLE_EQ((*m1)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m1)(1, 0), 5.0);
+
+    // 2↑[2]M takes 2 columns
+    Value* t2 = eval("2↑[2]M");
+    ASSERT_NE(t2, nullptr);
+    const auto* m2 = t2->as_matrix();
+    EXPECT_EQ(m2->rows(), 3);
+    EXPECT_EQ(m2->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m2)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m2)(0, 1), 2.0);
+
+    // Negative take: ¯2↑[1]M takes last 2 rows
+    Value* t3 = eval("¯2↑[1]M");
+    ASSERT_NE(t3, nullptr);
+    const auto* m3 = t3->as_matrix();
+    EXPECT_EQ(m3->rows(), 2);
+    EXPECT_DOUBLE_EQ((*m3)(0, 0), 5.0);   // Second row
+    EXPECT_DOUBLE_EQ((*m3)(1, 0), 9.0);   // Third row
+}
+
+TEST_F(GrammarTest, DropWithAxis) {
+    machine->eval("M←3 4⍴⍳12");  // [[1,2,3,4],[5,6,7,8],[9,10,11,12]]
+
+    // 1↓[1]M drops 1 row
+    Value* d1 = eval("1↓[1]M");
+    ASSERT_NE(d1, nullptr);
+    const auto* m1 = d1->as_matrix();
+    EXPECT_EQ(m1->rows(), 2);
+    EXPECT_EQ(m1->cols(), 4);
+    EXPECT_DOUBLE_EQ((*m1)(0, 0), 5.0);  // Starts at row 2
+
+    // 1↓[2]M drops 1 column
+    Value* d2 = eval("1↓[2]M");
+    ASSERT_NE(d2, nullptr);
+    const auto* m2 = d2->as_matrix();
+    EXPECT_EQ(m2->rows(), 3);
+    EXPECT_EQ(m2->cols(), 3);
+    EXPECT_DOUBLE_EQ((*m2)(0, 0), 2.0);  // Starts at column 2
+
+    // Negative drop: ¯1↓[2]M drops last column
+    Value* d3 = eval("¯1↓[2]M");
+    ASSERT_NE(d3, nullptr);
+    const auto* m3 = d3->as_matrix();
+    EXPECT_EQ(m3->cols(), 3);
+    EXPECT_DOUBLE_EQ((*m3)(0, 2), 3.0);  // Last col is now 3,7,11
+}
+
+TEST_F(GrammarTest, LaminateWithAxis) {
+    // ,[0.5] creates new first axis (vectors become rows)
+    Value* l1 = eval("1 2 3 ,[0.5] 4 5 6");
+    ASSERT_NE(l1, nullptr);
+    const auto* m1 = l1->as_matrix();
+    EXPECT_EQ(m1->rows(), 2);
+    EXPECT_EQ(m1->cols(), 3);
+    EXPECT_DOUBLE_EQ((*m1)(0, 0), 1.0);  // First row: 1 2 3
+    EXPECT_DOUBLE_EQ((*m1)(1, 0), 4.0);  // Second row: 4 5 6
+
+    // ,[1.5] creates new second axis (vectors become columns)
+    Value* l2 = eval("1 2 3 ,[1.5] 4 5 6");
+    ASSERT_NE(l2, nullptr);
+    const auto* m2 = l2->as_matrix();
+    EXPECT_EQ(m2->rows(), 3);
+    EXPECT_EQ(m2->cols(), 2);
+    EXPECT_DOUBLE_EQ((*m2)(0, 0), 1.0);  // First col: 1,2,3
+    EXPECT_DOUBLE_EQ((*m2)(0, 1), 4.0);  // Second col: 4,5,6
+}
+
+// Section 6.3.6: Evaluate-Dyadic-Function with axis (A F[C] B)
+TEST_F(GrammarTest, DyadicFunctionWithAxisCatenate) {
+    // ,[1] on vectors catenates along axis 1 (the only axis) = regular catenate
+    Value* result = eval("1 2 3 ,[1] 4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 6);
+
+    // Laminate requires fractional axis (ISO 13751): ,[0.5] creates new first axis
+    Value* laminated = eval("1 2 3 ,[0.5] 4 5 6");
+    ASSERT_NE(laminated, nullptr);
+    EXPECT_TRUE(laminated->is_matrix());
+    const auto* m = laminated->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+
+    // Matrix catenation with axis
+    machine->eval("A←2 3⍴⍳6");   // [[1,2,3],[4,5,6]]
+    machine->eval("B←2 3⍴7+⍳6"); // [[8,9,10],[11,12,13]]
+
+    // ,[1] catenates along first axis (rows) - same as ⍪
+    Value* cat1 = eval("A,[1]B");
+    ASSERT_NE(cat1, nullptr);
+    EXPECT_TRUE(cat1->is_matrix());
+    const auto* m1 = cat1->as_matrix();
+    EXPECT_EQ(m1->rows(), 4);
+    EXPECT_EQ(m1->cols(), 3);
+
+    // ,[2] catenates along second axis (columns)
+    Value* cat2 = eval("A,[2]B");
+    ASSERT_NE(cat2, nullptr);
+    EXPECT_TRUE(cat2->is_matrix());
+    const auto* m2 = cat2->as_matrix();
+    EXPECT_EQ(m2->rows(), 2);
+    EXPECT_EQ(m2->cols(), 6);
+}
+
+TEST_F(GrammarTest, DyadicFunctionWithAxisCatenateFirst) {
+    // Catenate along first axis
+    machine->eval("A←2 3⍴⍳6");
+    machine->eval("B←2 3⍴7+⍳6");
+    Value* result = eval("A⍪B");  // First-axis catenate
+    ASSERT_NE(result, nullptr);
+    const auto* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 4);
+    EXPECT_EQ(m->cols(), 3);
+}
+
+// Section 6.3.5: Evaluate-Monadic-Operator with axis (F M[C] B)
+TEST_F(GrammarTest, MonadicOperatorWithAxisReduce) {
+    // +/[1] reduces along first axis (columns)
+    machine->eval("M←2 3⍴⍳6");  // [[1,2,3],[4,5,6]]
+    Value* result = eval("+/[1]M");  // Sum columns: 5 7 9
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const auto* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 9.0);
+}
+
+TEST_F(GrammarTest, MonadicOperatorWithAxisScan) {
+    // +\[1] scans along first axis
+    machine->eval("M←2 3⍴⍳6");  // [[1,2,3],[4,5,6]]
+    Value* result = eval("+\\[1]M");  // Running sum down columns
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+}
+
+// Section 6.3.7: Evaluate-Dyadic-Operator tests
+TEST_F(GrammarTest, DyadicOperatorInnerProduct) {
+    // Inner product A +.× B
+    Value* result = eval("1 2 3 +.× 4 5 6");
+    ASSERT_NE(result, nullptr);
+    // 1*4 + 2*5 + 3*6 = 4 + 10 + 18 = 32
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 32.0);
+}
+
+TEST_F(GrammarTest, DyadicOperatorOuterProduct) {
+    // Outer product A ∘.× B
+    Value* result = eval("1 2 ∘.× 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const auto* m = result->as_matrix();
+    EXPECT_EQ(m->rows(), 2);
+    EXPECT_EQ(m->cols(), 3);
+    // [[3,4,5],[6,8,10]]
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 10.0);
+}
+
+// Section 6.3.8: Evaluate-Indexed-Reference (A[K])
+TEST_F(GrammarTest, IndexedReferenceScalar) {
+    // Simple scalar index
+    machine->eval("A←10 20 30 40 50");
+    Value* result = eval("A[3]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
+}
+
+TEST_F(GrammarTest, IndexedReferenceVector) {
+    // Vector index returns vector
+    machine->eval("A←10 20 30 40 50");
+    Value* result = eval("A[2 4]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+}
+
+TEST_F(GrammarTest, IndexedReferenceExpression) {
+    // Index can be an expression
+    machine->eval("A←10 20 30 40 50");
+    Value* result = eval("A[1+2]");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
+}
+
+// Section 6.3.9: Evaluate-Assignment (V←B)
+TEST_F(GrammarTest, AssignmentReturnsValue) {
+    // Assignment returns the assigned value (as committed-value)
+    Value* result = eval("A←42");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(GrammarTest, AssignmentChain) {
+    // Chained assignment: A←B←5
+    Value* result = eval("A←B←5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+
+    result = eval("A");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+
+    result = eval("B");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Section 6.3.10: Evaluate-Indexed-Assignment (V[K]←B)
+TEST_F(GrammarTest, IndexedAssignmentBasic) {
+    machine->eval("A←1 2 3 4 5");
+    Value* result = eval("A[3]←99");
+    ASSERT_NE(result, nullptr);
+
+    result = eval("A");
+    const auto* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(2, 0), 99.0);  // 3rd element (0-indexed: 2)
+}
+
+TEST_F(GrammarTest, IndexedAssignmentMultiple) {
+    // Assign to multiple indices
+    machine->eval("A←1 2 3 4 5");
+    eval("A[2 4]←10 20");
+
+    Value* result = eval("A");
+    const auto* v = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(1, 0), 10.0);  // A[2]
+    EXPECT_DOUBLE_EQ((*v)(3, 0), 20.0);  // A[4]
+}
+
+// Section 6.3.11: Evaluate-Variable (V)
+TEST_F(GrammarTest, VariableLookup) {
+    machine->eval("X←123");
+    Value* result = eval("X");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 123.0);
+}
+
+TEST_F(GrammarTest, UndefinedVariableError) {
+    // Undefined variable should error
+    EXPECT_THROW(eval("UNDEFINED_VAR"), APLError);
+}
+
+// Section 6.3.13: Process-End-of-Statement
+TEST_F(GrammarTest, EmptyStatementReturnsNil) {
+    // Empty line/statement handling
+    // The diamond separator creates multiple statements
+    Value* result = eval("1 ⋄ 2 ⋄ 3");
+    ASSERT_NE(result, nullptr);
+    // Last statement's result
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(GrammarTest, BranchToZeroExitsFunction) {
+    // →0 exits function, returning previous result
+    Value* result = eval("{5 ⋄ →0 ⋄ 99}0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(GrammarTest, BranchToEmptyExitsFunction) {
+    // →⍬ exits function (empty vector target)
+    Value* result = eval("{5 ⋄ →⍬ ⋄ 99}0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Section 6 Error Cases
+TEST_F(GrammarTest, IndexErrorOutOfBounds) {
+    machine->eval("A←1 2 3");
+    EXPECT_THROW(eval("A[10]"), APLError);  // INDEX ERROR
+}
+
+TEST_F(GrammarTest, RankErrorScalarIndexing) {
+    // Scalars cannot be indexed (rank mismatch)
+    machine->eval("S←42");
+    EXPECT_THROW(eval("S[1]"), APLError);  // RANK ERROR
+}
+
+TEST_F(GrammarTest, DomainErrorNonIntegerIndex) {
+    machine->eval("A←1 2 3");
+    EXPECT_THROW(eval("A[1.5]"), APLError);  // DOMAIN ERROR (non-integer)
+}
+
+TEST_F(GrammarTest, AxisErrorUnsupportedFunction) {
+    // Functions that don't support axis should signal AXIS ERROR
+    EXPECT_THROW(eval("+[1] 5"), APLError);      // + doesn't support axis
+    EXPECT_THROW(eval("×[2] 3 4"), APLError);    // × doesn't support axis
+    EXPECT_THROW(eval("-[1] 10"), APLError);     // - doesn't support axis
+    EXPECT_THROW(eval("⍳[1] 5"), APLError);      // ⍳ doesn't support axis
+    EXPECT_THROW(eval("⍴[1] 3 4"), APLError);    // ⍴ doesn't support axis
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

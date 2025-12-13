@@ -51,7 +51,11 @@ void Value::cleanup() {
         data.matrix = nullptr;
     }
     // Note: PRIMITIVE and OPERATOR values point to static globals (prim_plus, op_reduce, etc.)
-    // CLOSURE values point to GC-managed Continuations (marked via mark(), not deleted here)
+    // CLOSURE body points to GC-managed Continuation (marked via mark(), not deleted here)
+    if (tag == ValueType::CLOSURE) {
+        delete data.closure;  // ClosureData struct, not the Continuation inside
+        data.closure = nullptr;
+    }
 
     // Clean up G2 grammar structures (heap-allocated)
     if (tag == ValueType::DEFINED_OPERATOR) {
@@ -145,9 +149,9 @@ const Eigen::MatrixXd* Value::as_matrix() const {
 }
 
 void Value::mark(Heap* heap) {
-    // If this is a CLOSURE, mark the continuation graph
+    // If this is a CLOSURE, mark the continuation graph body
     if (tag == ValueType::CLOSURE && data.closure) {
-        heap->mark(data.closure);
+        heap->mark(data.closure->body);
     }
 
     // DEFINED_OPERATOR: mark body and lexical environment
@@ -167,6 +171,7 @@ void Value::mark(Heap* heap) {
     if (tag == ValueType::CURRIED_FN && data.curried_fn) {
         heap->mark(data.curried_fn->fn);
         heap->mark(data.curried_fn->first_arg);
+        heap->mark(data.curried_fn->axis);
     }
 
     // PRIMITIVEs and OPERATORs point to static globals, not GC objects

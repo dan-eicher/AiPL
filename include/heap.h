@@ -87,7 +87,7 @@ public:
     Value* allocate_string(const char* s);  // s must be interned (stable pointer)
     Value* allocate_primitive(PrimitiveFn* fn);
     Value* allocate_operator(PrimitiveOp* op);
-    Value* allocate_closure(Continuation* body);
+    Value* allocate_closure(Continuation* body, bool is_niladic = false);
 
     // Defined operator allocation
     Value* allocate_defined_operator(Value::DefinedOperatorData* op_data);
@@ -95,7 +95,7 @@ public:
     // G2 grammar allocation helpers
     Value* allocate_derived_operator(PrimitiveOp* op, Value* first_operand);
     Value* allocate_derived_operator(Value::DefinedOperatorData* op, Value* first_operand, Value* operator_value = nullptr);
-    Value* allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type);
+    Value* allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type, Value* axis = nullptr);
     // Template-based allocation interface (unified allocation)
     template<typename T, typename... Args>
     T* allocate(Args&&... args) {

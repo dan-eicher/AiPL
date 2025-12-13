@@ -31,10 +31,11 @@ public:
 
 // Primitive function - can have both monadic and dyadic forms
 // Functions set machine->ctrl.value on success or push ThrowErrorK on error
+// Axis is passed to support F[k] syntax; nullptr means no axis specified
 struct PrimitiveFn {
     const char* name;  // For debugging
-    void (*monadic)(Machine* m, Value* omega);           // Monadic form (can be nullptr)
-    void (*dyadic)(Machine* m, Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
+    void (*monadic)(Machine* m, Value* axis, Value* omega);           // Monadic form (can be nullptr)
+    void (*dyadic)(Machine* m, Value* axis, Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
 };
 
 // Operator structures - operators take functions and return derived functions
@@ -112,6 +113,13 @@ public:
         Value* fn;                 // The function being curried (can be PRIMITIVE, CLOSURE, or DERIVED_OPERATOR)
         Value* first_arg;          // The first argument (or second operand for OPERATOR_CURRY)
         CurryType curry_type;      // Type of curry determines unwrapping behavior
+        Value* axis;               // Optional axis specification (from F[k] syntax), nullptr if none
+    };
+
+    // Closure data - user-defined function with niladic tracking
+    struct ClosureData {
+        Continuation* body;        // The function body (continuation graph)
+        bool is_niladic;           // True if function doesn't reference ⍵ or ⍺
     };
 
     // Union for value storage
@@ -120,7 +128,7 @@ public:
         Eigen::MatrixXd* matrix;    // For VECTOR and MATRIX (vectors stored as n×1)
         const char* string;         // For STRING (interned pointer, not owned)
         PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
-        Continuation* closure;      // For CLOSURE (user-defined function body)
+        ClosureData* closure;       // For CLOSURE (user-defined function with niladic flag)
         PrimitiveOp* op;            // For OPERATOR (primitive)
         DefinedOperatorData* defined_op_data;  // For DEFINED_OPERATOR (user-defined)
         DerivedOperatorData* derived_op;  // For DERIVED_OPERATOR

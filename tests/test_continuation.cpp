@@ -2007,8 +2007,8 @@ TEST_F(ContinuationTest, ErrorStackTracePopulatedOnError) {
 }
 
 TEST_F(ContinuationTest, ErrorStackTraceContainsContinuationsWithLocations) {
-    // Define a dfn that will error
-    machine->eval("f ← {undefined}");
+    // Define a dfn that will error (must use ⍵ to avoid niladic auto-invocation)
+    machine->eval("f ← {⍵+undefined}");
 
     // Now call the function to trigger error
     EXPECT_THROW(machine->eval("f 1"), apl::APLError);

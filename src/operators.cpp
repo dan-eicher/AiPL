@@ -312,8 +312,8 @@ void op_commute(Machine* m, Value* f, Value* omega) {
         return;
     }
 
-    // Apply: omega f omega
-    fn->dyadic(m, omega, omega);
+    // Apply: omega f omega (no axis from operator context)
+    fn->dyadic(m, nullptr, omega, omega);
 }
 
 // ========================================================================
@@ -358,8 +358,8 @@ void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs) {
         return;
     }
 
-    // Apply: rhs f lhs (swapped)
-    fn->dyadic(m, rhs, lhs);
+    // Apply: rhs f lhs (swapped, no axis from operator context)
+    fn->dyadic(m, nullptr, rhs, lhs);
 }
 
 // ========================================================================
@@ -417,7 +417,7 @@ void fn_reduce(Machine* m, Value* func, Value* omega) {
     // Handle replicate: if "func" is actually an array, this is A / B (replicate)
     // Note: use is_array()/is_scalar() not is_basic_value() to exclude strings
     if (func->is_array() || func->is_scalar()) {
-        fn_replicate(m, func, omega);
+        fn_replicate(m, nullptr, func, omega);
         return;
     }
 
@@ -544,7 +544,7 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
     // Handle expand: if "func" is actually an array, this is A \ B (expand)
     // Note: use is_array()/is_scalar() not is_basic_value() to exclude strings
     if (func->is_array() || func->is_scalar()) {
-        fn_expand(m, func, omega);
+        fn_expand(m, nullptr, func, omega);
         return;
     }
 
@@ -603,7 +603,7 @@ void fn_scan(Machine* m, Value* func, Value* omega) {
 void fn_scan_first(Machine* m, Value* func, Value* omega) {
     // Handle expand-first: if "func" is actually an array, this is A ⍀ B (expand-first)
     if (func->is_array() || func->is_scalar()) {
-        fn_expand_first(m, func, omega);
+        fn_expand_first(m, nullptr, func, omega);
         return;
     }
 
@@ -725,7 +725,7 @@ static void fn_reduce_axis_impl(Machine* m, Value* n_val, Value* func, Value* ax
             return;
         }
         // Plain replicate without axis - delegate to fn_replicate
-        fn_replicate(m, func, rhs);
+        fn_replicate(m, nullptr, func, rhs);
         return;
     }
 

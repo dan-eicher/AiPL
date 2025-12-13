@@ -171,6 +171,38 @@ Value* Machine::execute() {
         }
     }
 
+    // Auto-invoke niladic closures at top level
+    // A niladic function (one that doesn't reference ⍵) should execute when referenced
+    while (result && result->tag == ValueType::CLOSURE &&
+           result->data.closure && result->data.closure->is_niladic) {
+        Value* result_before = result;
+
+        // Invoke the niladic closure with no arguments
+        // Also finalize any CURRIED_FN that results (e.g., {-5} returns G_PRIME curry)
+        push_kont(heap->allocate<PerformFinalizeK>());
+        push_kont(heap->allocate<FunctionCallK>(result, nullptr, nullptr));
+
+        // Run the invocation
+        while (!kont_stack.empty()) {
+            Continuation* prev = control;
+            control = kont_stack.back();
+            kont_stack.pop_back();
+
+            if (!control->has_location() && prev && prev->has_location()) {
+                control->set_location(prev->line(), prev->column());
+            }
+
+            control->invoke(this);
+            maybe_gc();
+        }
+        control = nullptr;
+
+        // If result unchanged (shouldn't happen for niladic), break to avoid infinite loop
+        if (result == result_before) {
+            break;
+        }
+    }
+
     return result;
 }
 

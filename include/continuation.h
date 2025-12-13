@@ -377,9 +377,10 @@ protected:
 class ClosureLiteralK : public Continuation {
 public:
     Continuation* body;         // The function body continuation graph
+    bool is_niladic;            // True if dfn doesn't use ⍵ (auto-invokes when called without args)
 
-    ClosureLiteralK(Continuation* b)
-        : body(b) {}
+    ClosureLiteralK(Continuation* b, bool niladic = false)
+        : body(b), is_niladic(niladic) {}
 
     ~ClosureLiteralK() override {}
 

@@ -464,6 +464,7 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_ALPHA: {
             // ⍺ (alpha) - left argument in dfn
+            dfn_uses_alpha = true;  // Track for niladic detection
             const char* interned_name = machine->string_pool.intern("⍺");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
@@ -472,6 +473,7 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_OMEGA: {
             // ⍵ (omega) - right argument in dfn
+            dfn_uses_omega = true;  // Track for niladic detection
             const char* interned_name = machine->string_pool.intern("⍵");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
@@ -540,13 +542,10 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_LBRACE: {
             // Dfn definition: {body}
             // NOTE: { has already been consumed by parse_expression before calling nud()
-            Continuation* body = parse_dfn_body();
-            if (!body) {
+            ClosureLiteralK* closure_lit = parse_dfn();
+            if (!closure_lit) {
                 return nullptr;
             }
-
-            // Create ClosureLiteralK with the body
-            ClosureLiteralK* closure_lit = machine->heap->allocate<ClosureLiteralK>(body);
             closure_lit->set_location(token.line, token.column);
             return closure_lit;
         }
@@ -731,13 +730,10 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         case TOK_LBRACE: {
             // Handle dfn application (e.g., "3 {⍺+⍵} 5")
             // NOTE: { has already been consumed by parse_expression before calling led()
-            Continuation* body = parse_dfn_body();
-            if (!body) {
+            ClosureLiteralK* closure_lit = parse_dfn();
+            if (!closure_lit) {
                 return nullptr;
             }
-
-            // Create ClosureLiteralK for the dfn
-            ClosureLiteralK* closure_lit = machine->heap->allocate<ClosureLiteralK>(body);
             closure_lit->set_location(token.line, token.column);
 
             // Parse the right argument
@@ -890,7 +886,13 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 // Dfn and Statement Parsing
 // ============================================================================
 
-Continuation* Parser::parse_dfn_body() {
+ClosureLiteralK* Parser::parse_dfn() {
+    // Save outer dfn's tracking state (for nested dfns)
+    bool outer_uses_omega = dfn_uses_omega;
+    bool outer_uses_alpha = dfn_uses_alpha;
+    dfn_uses_omega = false;
+    dfn_uses_alpha = false;
+
     skip_separators();
 
     // Parse statements until } (dfns use expressions, not statements)
@@ -905,6 +907,9 @@ Continuation* Parser::parse_dfn_body() {
     while (!at_end() && current().type != TOK_RBRACE) {
         Continuation* expr = parse_expression(BP_NONE);
         if (!expr) {
+            // Restore on error path
+            dfn_uses_omega = outer_uses_omega;
+            dfn_uses_alpha = outer_uses_alpha;
             return nullptr;
         }
 
@@ -913,6 +918,8 @@ Continuation* Parser::parse_dfn_body() {
             advance();  // consume :
             Continuation* result = parse_expression(BP_NONE);
             if (!result) {
+                dfn_uses_omega = outer_uses_omega;
+                dfn_uses_alpha = outer_uses_alpha;
                 return nullptr;
             }
             guarded_exprs.push_back({expr, result});
@@ -926,6 +933,8 @@ Continuation* Parser::parse_dfn_body() {
     // Expect closing brace
     if (current().type != TOK_RBRACE) {
         set_error("expected '}' to close dfn");
+        dfn_uses_omega = outer_uses_omega;
+        dfn_uses_alpha = outer_uses_alpha;
         return nullptr;
     }
     advance();  // consume }
@@ -964,7 +973,15 @@ Continuation* Parser::parse_dfn_body() {
         }
     }
 
-    return body;
+    // A dfn is niladic if it uses neither ⍵ nor ⍺
+    bool is_niladic = !(dfn_uses_omega || dfn_uses_alpha);
+
+    // Restore outer dfn's state
+    dfn_uses_omega = outer_uses_omega;
+    dfn_uses_alpha = outer_uses_alpha;
+
+    // Create and return the complete ClosureLiteralK
+    return machine->heap->allocate<ClosureLiteralK>(body, is_niladic);
 }
 
 // Parse a block of statements until reaching a terminator token

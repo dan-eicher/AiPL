@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
 TEST_F(PrimitivesTest, AddScalarScalar) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(4.0);
-    fn_add(machine, a, b);
+    fn_add(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -48,7 +48,7 @@ TEST_F(PrimitivesTest, AddScalarVector) {
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_add(machine, scalar, vec);
+    fn_add(machine, nullptr, scalar, vec);
 
 
     Value* result = machine->result;
@@ -69,7 +69,7 @@ TEST_F(PrimitivesTest, AddVectorScalar) {
     Value* vec = machine->heap->allocate_vector(v);
     Value* scalar = machine->heap->allocate_scalar(10.0);
 
-    fn_add(machine, vec, scalar);
+    fn_add(machine, nullptr, vec, scalar);
 
 
     Value* result = machine->result;
@@ -91,7 +91,7 @@ TEST_F(PrimitivesTest, AddVectorVector) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_add(machine, vec1, vec2);
+    fn_add(machine, nullptr, vec1, vec2);
 
 
     Value* result = machine->result;
@@ -107,7 +107,7 @@ TEST_F(PrimitivesTest, AddVectorVector) {
 TEST_F(PrimitivesTest, SubtractScalars) {
     Value* a = machine->heap->allocate_scalar(10.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_subtract(machine, a, b);
+    fn_subtract(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -119,7 +119,7 @@ TEST_F(PrimitivesTest, SubtractScalars) {
 TEST_F(PrimitivesTest, MultiplyScalars) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(4.0);
-    fn_multiply(machine, a, b);
+    fn_multiply(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -134,7 +134,7 @@ TEST_F(PrimitivesTest, MultiplyScalarVector) {
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_multiply(machine, scalar, vec);
+    fn_multiply(machine, nullptr, scalar, vec);
 
 
     Value* result = machine->result;
@@ -149,7 +149,7 @@ TEST_F(PrimitivesTest, MultiplyScalarVector) {
 TEST_F(PrimitivesTest, DivideScalars) {
     Value* a = machine->heap->allocate_scalar(12.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_divide(machine, a, b);
+    fn_divide(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -163,7 +163,7 @@ TEST_F(PrimitivesTest, DivideByZeroError) {
     Value* b = machine->heap->allocate_scalar(0.0);
 
     // Primitives now push ThrowErrorK instead of throwing C++ exceptions
-    fn_divide(machine, a, b);
+    fn_divide(machine, nullptr, a, b);
 
     // Should have pushed a ThrowErrorK
     EXPECT_EQ(machine->kont_stack.size(), 1);
@@ -174,7 +174,7 @@ TEST_F(PrimitivesTest, DivideByZeroError) {
 TEST_F(PrimitivesTest, PowerScalars) {
     Value* a = machine->heap->allocate_scalar(2.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_power(machine, a, b);
+    fn_power(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -186,7 +186,7 @@ TEST_F(PrimitivesTest, PowerScalars) {
 TEST_F(PrimitivesTest, EqualScalars) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_equal(machine, a, b);
+    fn_equal(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -198,7 +198,7 @@ TEST_F(PrimitivesTest, EqualScalars) {
 TEST_F(PrimitivesTest, NotEqualScalars) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_equal(machine, a, b);
+    fn_equal(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -215,7 +215,7 @@ TEST_F(PrimitivesTest, EqualVectors) {
 
     Value* a = machine->heap->allocate_vector(vec_a);
     Value* b = machine->heap->allocate_vector(vec_b);
-    fn_equal(machine, a, b);
+    fn_equal(machine, nullptr, a, b);
 
     Value* result = machine->result;
 
@@ -234,7 +234,7 @@ TEST_F(PrimitivesTest, EqualVectors) {
 
 TEST_F(PrimitivesTest, IdentityScalar) {
     Value* a = machine->heap->allocate_scalar(5.0);
-    fn_conjugate(machine, a);
+    fn_conjugate(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -248,7 +248,7 @@ TEST_F(PrimitivesTest, IdentityVector) {
     Eigen::VectorXd v(4);
     v << 1.0, -2.0, 0.0, 3.5;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_conjugate(machine, vec);
+    fn_conjugate(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -260,7 +260,7 @@ TEST_F(PrimitivesTest, IdentityVector) {
 
 TEST_F(PrimitivesTest, NegateScalar) {
     Value* a = machine->heap->allocate_scalar(5.0);
-    fn_negate(machine, a);
+    fn_negate(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -274,7 +274,7 @@ TEST_F(PrimitivesTest, NegateVector) {
     v << 1.0, -2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_negate(machine, vec);
+    fn_negate(machine, nullptr, vec);
 
 
     Value* result = machine->result;
@@ -288,7 +288,7 @@ TEST_F(PrimitivesTest, NegateVector) {
 
 TEST_F(PrimitivesTest, SignPositive) {
     Value* a = machine->heap->allocate_scalar(5.0);
-    fn_signum(machine, a);
+    fn_signum(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -299,7 +299,7 @@ TEST_F(PrimitivesTest, SignPositive) {
 
 TEST_F(PrimitivesTest, SignNegative) {
     Value* a = machine->heap->allocate_scalar(-5.0);
-    fn_signum(machine, a);
+    fn_signum(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -310,7 +310,7 @@ TEST_F(PrimitivesTest, SignNegative) {
 
 TEST_F(PrimitivesTest, SignZero) {
     Value* a = machine->heap->allocate_scalar(0.0);
-    fn_signum(machine, a);
+    fn_signum(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -321,7 +321,7 @@ TEST_F(PrimitivesTest, SignZero) {
 
 TEST_F(PrimitivesTest, ReciprocalScalar) {
     Value* a = machine->heap->allocate_scalar(4.0);
-    fn_reciprocal(machine, a);
+    fn_reciprocal(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -333,7 +333,7 @@ TEST_F(PrimitivesTest, ReciprocalScalar) {
 TEST_F(PrimitivesTest, ReciprocalZeroError) {
     Value* a = machine->heap->allocate_scalar(0.0);
 
-    fn_reciprocal(machine, a);
+    fn_reciprocal(machine, nullptr, a);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -341,7 +341,7 @@ TEST_F(PrimitivesTest, ReciprocalZeroError) {
 
 TEST_F(PrimitivesTest, ExponentialScalar) {
     Value* a = machine->heap->allocate_scalar(1.0);
-    fn_exponential(machine, a);
+    fn_exponential(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -352,7 +352,7 @@ TEST_F(PrimitivesTest, ExponentialScalar) {
 
 TEST_F(PrimitivesTest, ExponentialZero) {
     Value* a = machine->heap->allocate_scalar(0.0);
-    fn_exponential(machine, a);
+    fn_exponential(machine, nullptr, a);
 
     Value* result = machine->result;
 
@@ -376,7 +376,7 @@ TEST_F(PrimitivesTest, AddMatrices) {
     Value* mat1 = machine->heap->allocate_matrix(m1);
     Value* mat2 = machine->heap->allocate_matrix(m2);
 
-    fn_add(machine, mat1, mat2);
+    fn_add(machine, nullptr, mat1, mat2);
 
 
     Value* result = machine->result;
@@ -398,7 +398,7 @@ TEST_F(PrimitivesTest, MismatchedShapeError) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_add(machine, vec1, vec2);
+    fn_add(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -410,7 +410,7 @@ TEST_F(PrimitivesTest, MismatchedShapeError) {
 
 TEST_F(PrimitivesTest, ShapeScalar) {
     Value* scalar = machine->heap->allocate_scalar(5.0);
-    fn_shape(machine, scalar);
+    fn_shape(machine, nullptr, scalar);
 
     Value* result = machine->result;
 
@@ -423,7 +423,7 @@ TEST_F(PrimitivesTest, ShapeVector) {
     Eigen::VectorXd v(5);
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_shape(machine, vec);
+    fn_shape(machine, nullptr, vec);
 
     Value* result = machine->result;
 
@@ -446,7 +446,7 @@ TEST_F(PrimitivesTest, ReshapeVector) {
     new_shape << 2.0, 3.0;
     Value* shape = machine->heap->allocate_vector(new_shape);
 
-    fn_reshape(machine, shape, vec);
+    fn_reshape(machine, nullptr, shape, vec);
 
     Value* result = machine->result;
 
@@ -477,7 +477,7 @@ TEST_F(PrimitivesTest, ReshapeRowMajorOrder) {
     new_shape << 3.0, 2.0;
     Value* shape = machine->heap->allocate_vector(new_shape);
 
-    fn_reshape(machine, shape, vec);
+    fn_reshape(machine, nullptr, shape, vec);
 
     Value* result = machine->result;
 
@@ -513,7 +513,7 @@ TEST_F(PrimitivesTest, ReshapeMatrixToMatrix) {
     new_shape << 3.0, 2.0;
     Value* shape = machine->heap->allocate_vector(new_shape);
 
-    fn_reshape(machine, shape, mat);
+    fn_reshape(machine, nullptr, shape, mat);
 
     Value* result = machine->result;
 
@@ -540,7 +540,7 @@ TEST_F(PrimitivesTest, Ravel) {
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_ravel(machine, mat);
+    fn_ravel(machine, nullptr, mat);
 
     Value* result = machine->result;
 
@@ -565,7 +565,7 @@ TEST_F(PrimitivesTest, Catenate) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_catenate(machine, vec1, vec2);
+    fn_catenate(machine, nullptr, vec1, vec2);
 
 
     Value* result = machine->result;
@@ -584,7 +584,7 @@ TEST_F(PrimitivesTest, Transpose) {
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_transpose(machine, mat);
+    fn_transpose(machine, nullptr, mat);
 
 
     Value* result = machine->result;
@@ -600,7 +600,7 @@ TEST_F(PrimitivesTest, Transpose) {
 
 TEST_F(PrimitivesTest, Iota) {
     Value* n = machine->heap->allocate_scalar(5.0);
-    fn_iota(machine, n);
+    fn_iota(machine, nullptr, n);
 
     Value* result = machine->result;
 
@@ -619,7 +619,7 @@ TEST_F(PrimitivesTest, Take) {
     Value* vec = machine->heap->allocate_vector(v);
 
     Value* count = machine->heap->allocate_scalar(3.0);
-    fn_take(machine, count, vec);
+    fn_take(machine, nullptr, count, vec);
 
     Value* result = machine->result;
 
@@ -637,7 +637,7 @@ TEST_F(PrimitivesTest, Drop) {
     Value* vec = machine->heap->allocate_vector(v);
 
     Value* count = machine->heap->allocate_scalar(2.0);
-    fn_drop(machine, count, vec);
+    fn_drop(machine, nullptr, count, vec);
 
     Value* result = machine->result;
 
@@ -683,7 +683,7 @@ TEST_F(PrimitivesTest, PrimitiveLookupAndApply) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(4.0);
     PrimitiveFn* fn = plus->data.primitive_fn;
-    fn->dyadic(machine, a, b);
+    fn->dyadic(machine, nullptr, a, b);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_scalar());
@@ -751,22 +751,22 @@ TEST_F(PrimitivesTest, ErrorShapeMismatchVectorVector) {
     Value* vec2 = machine->heap->allocate_vector(v2);
 
     // Should push ThrowErrorK on shape mismatch
-    fn_add(machine, vec1, vec2);
+    fn_add(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_subtract(machine, vec1, vec2);
+    fn_subtract(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_multiply(machine, vec1, vec2);
+    fn_multiply(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_divide(machine, vec1, vec2);
+    fn_divide(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -782,17 +782,17 @@ TEST_F(PrimitivesTest, ErrorShapeMismatchMatrixMatrix) {
     Value* mat2 = machine->heap->allocate_matrix(m2);
 
     // Should push ThrowErrorK on shape mismatch
-    fn_add(machine, mat1, mat2);
+    fn_add(machine, nullptr, mat1, mat2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_subtract(machine, mat1, mat2);
+    fn_subtract(machine, nullptr, mat1, mat2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_multiply(machine, mat1, mat2);
+    fn_multiply(machine, nullptr, mat1, mat2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -808,7 +808,7 @@ TEST_F(PrimitivesTest, ErrorDivideVectorByZeroVector) {
     Value* vec2 = machine->heap->allocate_vector(v2);
 
     // Should throw on division by zero
-    fn_divide(machine, vec1, vec2);
+    fn_divide(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -821,7 +821,7 @@ TEST_F(PrimitivesTest, ErrorReciprocalVector) {
     Value* vec = machine->heap->allocate_vector(v);
 
     // Should throw on reciprocal of zero
-    fn_reciprocal(machine, vec);
+    fn_reciprocal(machine, nullptr, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -838,7 +838,7 @@ TEST_F(PrimitivesTest, ReshapeWithCycling) {
     shape << 2.0, 3.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
 
-    fn_reshape(machine, shape_val, vec);
+    fn_reshape(machine, nullptr, shape_val, vec);
     EXPECT_EQ(machine->kont_stack.size(), 0);  // No error
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_matrix());
@@ -864,7 +864,7 @@ TEST_F(PrimitivesTest, ErrorReshapeEmptyToNonEmpty) {
     shape << 3.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
 
-    fn_reshape(machine, shape_val, vec);
+    fn_reshape(machine, nullptr, shape_val, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
@@ -879,7 +879,7 @@ TEST_F(PrimitivesTest, ErrorReshapeNonIntegerShape) {
     shape << 2.5, 3.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
 
-    fn_reshape(machine, shape_val, vec);
+    fn_reshape(machine, nullptr, shape_val, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -895,7 +895,7 @@ TEST_F(PrimitivesTest, ErrorReshapeNegativeShape) {
     shape << -2.0, 3.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
 
-    fn_reshape(machine, shape_val, vec);
+    fn_reshape(machine, nullptr, shape_val, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -913,7 +913,7 @@ TEST_F(PrimitivesTest, ErrorIotaNonScalar) {
     Value* vec = machine->heap->allocate_vector(v);
 
     // Iota requires scalar argument
-    fn_iota(machine, vec);
+    fn_iota(machine, nullptr, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -923,7 +923,7 @@ TEST_F(PrimitivesTest, ErrorIotaNegative) {
     Value* neg = machine->heap->allocate_scalar(-5.0);
 
     // Negative iota doesn't make sense
-    fn_iota(machine, neg);
+    fn_iota(machine, nullptr, neg);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -933,7 +933,7 @@ TEST_F(PrimitivesTest, ErrorIotaNonInteger) {
     Value* frac = machine->heap->allocate_scalar(3.5);
 
     // Fractional iota doesn't make sense
-    fn_iota(machine, frac);
+    fn_iota(machine, nullptr, frac);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -949,7 +949,7 @@ TEST_F(PrimitivesTest, ErrorTakeNonScalar) {
     Value* vec = machine->heap->allocate_vector(v);
 
     // Take requires scalar count
-    fn_take(machine, n_val, vec);
+    fn_take(machine, nullptr, n_val, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -965,7 +965,7 @@ TEST_F(PrimitivesTest, ErrorDropNonScalar) {
     Value* vec = machine->heap->allocate_vector(v);
 
     // Drop requires scalar count
-    fn_drop(machine, n_val, vec);
+    fn_drop(machine, nullptr, n_val, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -981,7 +981,7 @@ TEST_F(PrimitivesTest, ErrorCatenateIncompatibleShapes) {
     Value* mat2 = machine->heap->allocate_matrix(m2);
 
     // Cannot catenate vector with 2×2 matrix
-    fn_catenate(machine, vec1, mat2);
+    fn_catenate(machine, nullptr, vec1, mat2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 
@@ -998,7 +998,7 @@ TEST_F(PrimitivesTest, BroadcastScalarMatrix) {
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_add(machine, scalar, mat);
+    fn_add(machine, nullptr, scalar, mat);
 
 
     Value* result = machine->result;
@@ -1023,7 +1023,7 @@ TEST_F(PrimitivesTest, BroadcastMatrixScalar) {
     Value* mat = machine->heap->allocate_matrix(m);
     Value* scalar = machine->heap->allocate_scalar(3.0);
 
-    fn_multiply(machine, mat, scalar);
+    fn_multiply(machine, nullptr, mat, scalar);
 
 
     Value* result = machine->result;
@@ -1043,7 +1043,7 @@ TEST_F(PrimitivesTest, BroadcastScalarLargeMatrix) {
     m.setConstant(1.0);
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_add(machine, scalar, mat);
+    fn_add(machine, nullptr, scalar, mat);
 
 
     Value* result = machine->result;
@@ -1066,7 +1066,7 @@ TEST_F(PrimitivesTest, BroadcastWithNegativeScalar) {
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_add(machine, scalar, vec);
+    fn_add(machine, nullptr, scalar, vec);
 
 
     Value* result = machine->result;
@@ -1086,7 +1086,7 @@ TEST_F(PrimitivesTest, BroadcastZeroScalar) {
     v << 5.0, 10.0, 15.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_multiply(machine, zero, vec);
+    fn_multiply(machine, nullptr, zero, vec);
 
 
     Value* result = machine->result;
@@ -1105,7 +1105,7 @@ TEST_F(PrimitivesTest, BroadcastScalarDivideVector) {
     v << 2.0, 4.0, 5.0, 10.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_divide(machine, scalar, vec);
+    fn_divide(machine, nullptr, scalar, vec);
 
 
     Value* result = machine->result;
@@ -1125,7 +1125,7 @@ TEST_F(PrimitivesTest, BroadcastVectorDivideScalar) {
     Value* vec = machine->heap->allocate_vector(v);
     Value* scalar = machine->heap->allocate_scalar(2.0);
 
-    fn_divide(machine, vec, scalar);
+    fn_divide(machine, nullptr, vec, scalar);
 
 
     Value* result = machine->result;
@@ -1145,7 +1145,7 @@ TEST_F(PrimitivesTest, BroadcastScalarPower) {
     exponents << 0.0, 1.0, 2.0, 3.0, 4.0;
     Value* exp_vec = machine->heap->allocate_vector(exponents);
 
-    fn_power(machine, base, exp_vec);
+    fn_power(machine, nullptr, base, exp_vec);
 
 
     Value* result = machine->result;
@@ -1165,7 +1165,7 @@ TEST_F(PrimitivesTest, BroadcastEmptyVector) {
     Eigen::VectorXd v(0);
     Value* empty_vec = machine->heap->allocate_vector(v);
 
-    fn_add(machine, scalar, empty_vec);
+    fn_add(machine, nullptr, scalar, empty_vec);
 
 
     Value* result = machine->result;
@@ -1184,7 +1184,7 @@ TEST_F(PrimitivesTest, BroadcastEmptyVector) {
 TEST_F(PrimitivesTest, CompositionIotaReshape) {
     // ⍳12 → 1 2 3 4 5 6 7 8 9 10 11 12 (1-based per ISO 13751)
     Value* n = machine->heap->allocate_scalar(12.0);
-    fn_iota(machine, n);
+    fn_iota(machine, nullptr, n);
 
     Value* iota_result = machine->result;
 
@@ -1192,7 +1192,7 @@ TEST_F(PrimitivesTest, CompositionIotaReshape) {
     Eigen::VectorXd shape(2);
     shape << 3.0, 4.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
-    fn_reshape(machine, shape_val, iota_result);
+    fn_reshape(machine, nullptr, shape_val, iota_result);
 
     Value* reshaped = machine->result;
 
@@ -1216,7 +1216,7 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
     Eigen::VectorXd shape(2);
     shape << 2.0, 3.0;
     Value* shape_val = machine->heap->allocate_vector(shape);
-    fn_reshape(machine, shape_val, vec);
+    fn_reshape(machine, nullptr, shape_val, vec);
 
     Value* mat = machine->result;
 
@@ -1224,7 +1224,7 @@ TEST_F(PrimitivesTest, CompositionReshapeTranspose) {
     // 1 4
     // 2 5
     // 3 6
-    fn_transpose(machine, mat);
+    fn_transpose(machine, nullptr, mat);
 
     Value* transposed = machine->result;
 
@@ -1247,7 +1247,7 @@ TEST_F(PrimitivesTest, CompositionRavelCatenate) {
     Value* mat = machine->heap->allocate_matrix(m);
 
     // Ravel to vector
-    fn_ravel(machine, mat);
+    fn_ravel(machine, nullptr, mat);
 
     Value* raveled = machine->result;
 
@@ -1257,7 +1257,7 @@ TEST_F(PrimitivesTest, CompositionRavelCatenate) {
     Value* vec = machine->heap->allocate_vector(v);
 
     // Catenate
-    fn_catenate(machine, raveled, vec);
+    fn_catenate(machine, nullptr, raveled, vec);
 
     Value* result = machine->result;
 
@@ -1276,12 +1276,12 @@ TEST_F(PrimitivesTest, CompositionArithmeticChain) {
     // (5 + 3) × 2
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_add(machine, a, b);
+    fn_add(machine, nullptr, a, b);
 
     Value* sum = machine->result;
 
     Value* c = machine->heap->allocate_scalar(2.0);
-    fn_multiply(machine, sum, c);
+    fn_multiply(machine, nullptr, sum, c);
 
     Value* product = machine->result;
 
@@ -1296,7 +1296,7 @@ TEST_F(PrimitivesTest, CompositionShapeReshape) {
     Value* mat = machine->heap->allocate_matrix(m);
 
     // Get shape
-    fn_shape(machine, mat);
+    fn_shape(machine, nullptr, mat);
 
     Value* shape = machine->result;
 
@@ -1305,7 +1305,7 @@ TEST_F(PrimitivesTest, CompositionShapeReshape) {
     for (int i = 0; i < 12; i++) v(i) = i + 1.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_reshape(machine, shape, vec);
+    fn_reshape(machine, nullptr, shape, vec);
 
 
     Value* reshaped = machine->result;
@@ -1327,7 +1327,7 @@ TEST_F(PrimitivesTest, NegatePreservesVector) {
     v << 1, 2, 3;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_negate(machine, vec);
+    fn_negate(machine, nullptr, vec);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Negate should preserve vector status";
@@ -1339,7 +1339,7 @@ TEST_F(PrimitivesTest, NegatePreservesMatrix) {
     m << 1, 2, 3, 4, 5, 6;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_negate(machine, mat);
+    fn_negate(machine, nullptr, mat);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_matrix()) << "Negate should preserve matrix status";
@@ -1353,7 +1353,7 @@ TEST_F(PrimitivesTest, SignumPreservesVector) {
     v << -1, 0, 2;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_signum(machine, vec);
+    fn_signum(machine, nullptr, vec);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Signum should preserve vector status";
@@ -1364,7 +1364,7 @@ TEST_F(PrimitivesTest, ReciprocalPreservesVector) {
     v << 1, 2, 4;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_reciprocal(machine, vec);
+    fn_reciprocal(machine, nullptr, vec);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Reciprocal should preserve vector status";
@@ -1375,7 +1375,7 @@ TEST_F(PrimitivesTest, ExponentialPreservesVector) {
     v << 0, 1, 2;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_exponential(machine, vec);
+    fn_exponential(machine, nullptr, vec);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Exponential should preserve vector status";
@@ -1387,7 +1387,7 @@ TEST_F(PrimitivesTest, AddScalarVectorPreservesVector) {
     v << 1, 2, 3;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_add(machine, scalar, vec);
+    fn_add(machine, nullptr, scalar, vec);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Scalar + Vector should produce vector";
@@ -1399,7 +1399,7 @@ TEST_F(PrimitivesTest, AddVectorScalarPreservesVector) {
     Value* vec = machine->heap->allocate_vector(v);
     Value* scalar = machine->heap->allocate_scalar(10.0);
 
-    fn_add(machine, vec, scalar);
+    fn_add(machine, nullptr, vec, scalar);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector + Scalar should produce vector";
@@ -1412,7 +1412,7 @@ TEST_F(PrimitivesTest, AddVectorVectorPreservesVector) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_add(machine, vec1, vec2);
+    fn_add(machine, nullptr, vec1, vec2);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector + Vector should produce vector";
@@ -1425,7 +1425,7 @@ TEST_F(PrimitivesTest, SubtractPreservesVector) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_subtract(machine, vec1, vec2);
+    fn_subtract(machine, nullptr, vec1, vec2);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector - Vector should produce vector";
@@ -1438,7 +1438,7 @@ TEST_F(PrimitivesTest, MultiplyPreservesVector) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_multiply(machine, vec1, vec2);
+    fn_multiply(machine, nullptr, vec1, vec2);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector * Vector should produce vector";
@@ -1451,7 +1451,7 @@ TEST_F(PrimitivesTest, DividePreservesVector) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_divide(machine, vec1, vec2);
+    fn_divide(machine, nullptr, vec1, vec2);
     Value* result = machine->result;
 
     ASSERT_TRUE(result->is_vector()) << "Vector ÷ Vector should produce vector";
@@ -1464,7 +1464,7 @@ TEST_F(PrimitivesTest, DividePreservesVector) {
 TEST_F(PrimitivesTest, FnNotEqualScalarsDifferent) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_not_equal(machine, a, b);
+    fn_not_equal(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1474,7 +1474,7 @@ TEST_F(PrimitivesTest, FnNotEqualScalarsDifferent) {
 TEST_F(PrimitivesTest, FnNotEqualScalarsSame) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_not_equal(machine, a, b);
+    fn_not_equal(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1488,7 +1488,7 @@ TEST_F(PrimitivesTest, FnNotEqualVectors) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_not_equal(machine, vec1, vec2);
+    fn_not_equal(machine, nullptr, vec1, vec2);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_vector());
@@ -1501,7 +1501,7 @@ TEST_F(PrimitivesTest, FnNotEqualVectors) {
 TEST_F(PrimitivesTest, LessThanScalars) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_less(machine, a, b);
+    fn_less(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1511,7 +1511,7 @@ TEST_F(PrimitivesTest, LessThanScalars) {
 TEST_F(PrimitivesTest, LessThanScalarsFalse) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_less(machine, a, b);
+    fn_less(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1521,7 +1521,7 @@ TEST_F(PrimitivesTest, LessThanScalarsFalse) {
 TEST_F(PrimitivesTest, LessThanScalarsEqual) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_less(machine, a, b);
+    fn_less(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1535,7 +1535,7 @@ TEST_F(PrimitivesTest, LessThanVectors) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_less(machine, vec1, vec2);
+    fn_less(machine, nullptr, vec1, vec2);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_vector());
@@ -1549,7 +1549,7 @@ TEST_F(PrimitivesTest, LessThanVectors) {
 TEST_F(PrimitivesTest, GreaterThanScalars) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(3.0);
-    fn_greater(machine, a, b);
+    fn_greater(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1559,7 +1559,7 @@ TEST_F(PrimitivesTest, GreaterThanScalars) {
 TEST_F(PrimitivesTest, GreaterThanScalarsFalse) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_greater(machine, a, b);
+    fn_greater(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1573,7 +1573,7 @@ TEST_F(PrimitivesTest, GreaterThanVectors) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_greater(machine, vec1, vec2);
+    fn_greater(machine, nullptr, vec1, vec2);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_vector());
@@ -1587,7 +1587,7 @@ TEST_F(PrimitivesTest, GreaterThanVectors) {
 TEST_F(PrimitivesTest, LessOrEqualScalarsLess) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_less_eq(machine, a, b);
+    fn_less_eq(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1597,7 +1597,7 @@ TEST_F(PrimitivesTest, LessOrEqualScalarsLess) {
 TEST_F(PrimitivesTest, LessOrEqualScalarsEqual) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_less_eq(machine, a, b);
+    fn_less_eq(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1607,7 +1607,7 @@ TEST_F(PrimitivesTest, LessOrEqualScalarsEqual) {
 TEST_F(PrimitivesTest, LessOrEqualScalarsFalse) {
     Value* a = machine->heap->allocate_scalar(7.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_less_eq(machine, a, b);
+    fn_less_eq(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1621,7 +1621,7 @@ TEST_F(PrimitivesTest, LessOrEqualVectors) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_less_eq(machine, vec1, vec2);
+    fn_less_eq(machine, nullptr, vec1, vec2);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_vector());
@@ -1635,7 +1635,7 @@ TEST_F(PrimitivesTest, LessOrEqualVectors) {
 TEST_F(PrimitivesTest, GreaterOrEqualScalarsGreater) {
     Value* a = machine->heap->allocate_scalar(7.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_greater_eq(machine, a, b);
+    fn_greater_eq(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1645,7 +1645,7 @@ TEST_F(PrimitivesTest, GreaterOrEqualScalarsGreater) {
 TEST_F(PrimitivesTest, GreaterOrEqualScalarsEqual) {
     Value* a = machine->heap->allocate_scalar(5.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_greater_eq(machine, a, b);
+    fn_greater_eq(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1655,7 +1655,7 @@ TEST_F(PrimitivesTest, GreaterOrEqualScalarsEqual) {
 TEST_F(PrimitivesTest, GreaterOrEqualScalarsFalse) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_greater_eq(machine, a, b);
+    fn_greater_eq(machine, nullptr, a, b);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_scalar());
@@ -1669,7 +1669,7 @@ TEST_F(PrimitivesTest, GreaterOrEqualVectors) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_greater_eq(machine, vec1, vec2);
+    fn_greater_eq(machine, nullptr, vec1, vec2);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_vector());
@@ -1687,7 +1687,7 @@ TEST_F(PrimitivesTest, LessThanScalarVector) {
     v << 1.0, 3.0, 5.0, 2.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_less(machine, scalar, vec);
+    fn_less(machine, nullptr, scalar, vec);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_vector());
@@ -1704,7 +1704,7 @@ TEST_F(PrimitivesTest, GreaterThanVectorScalar) {
     Value* vec = machine->heap->allocate_vector(v);
     Value* scalar = machine->heap->allocate_scalar(3.0);
 
-    fn_greater(machine, vec, scalar);
+    fn_greater(machine, nullptr, vec, scalar);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_vector());
@@ -1723,27 +1723,27 @@ TEST_F(PrimitivesTest, ComparisonShapeMismatchError) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_less(machine, vec1, vec2);
+    fn_less(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_greater(machine, vec1, vec2);
+    fn_greater(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_less_eq(machine, vec1, vec2);
+    fn_less_eq(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_greater_eq(machine, vec1, vec2);
+    fn_greater_eq(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
     machine->kont_stack.clear();
 
-    fn_not_equal(machine, vec1, vec2);
+    fn_not_equal(machine, nullptr, vec1, vec2);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
@@ -1756,19 +1756,19 @@ TEST_F(PrimitivesTest, ComparisonPreservesVector) {
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
 
-    fn_less(machine, vec1, vec2);
+    fn_less(machine, nullptr, vec1, vec2);
     ASSERT_TRUE(machine->result->is_vector()) << "< should preserve vector status";
 
-    fn_greater(machine, vec1, vec2);
+    fn_greater(machine, nullptr, vec1, vec2);
     ASSERT_TRUE(machine->result->is_vector()) << "> should preserve vector status";
 
-    fn_less_eq(machine, vec1, vec2);
+    fn_less_eq(machine, nullptr, vec1, vec2);
     ASSERT_TRUE(machine->result->is_vector()) << "≤ should preserve vector status";
 
-    fn_greater_eq(machine, vec1, vec2);
+    fn_greater_eq(machine, nullptr, vec1, vec2);
     ASSERT_TRUE(machine->result->is_vector()) << "≥ should preserve vector status";
 
-    fn_not_equal(machine, vec1, vec2);
+    fn_not_equal(machine, nullptr, vec1, vec2);
     ASSERT_TRUE(machine->result->is_vector()) << "≠ should preserve vector status";
 }
 
@@ -1801,13 +1801,13 @@ TEST_F(PrimitivesTest, ComparisonPrimitivesRegistered) {
 
 TEST_F(PrimitivesTest, CeilingMonadicScalar) {
     Value* v = machine->heap->allocate_scalar(3.2);
-    fn_ceiling(machine, v);
+    fn_ceiling(machine, nullptr, v);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 4.0);
 }
 
 TEST_F(PrimitivesTest, CeilingMonadicNegative) {
     Value* v = machine->heap->allocate_scalar(-3.2);
-    fn_ceiling(machine, v);
+    fn_ceiling(machine, nullptr, v);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), -3.0);
 }
 
@@ -1815,7 +1815,7 @@ TEST_F(PrimitivesTest, CeilingMonadicVector) {
     Eigen::VectorXd v(3);
     v << 1.2, 2.7, -1.5;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_ceiling(machine, vec);
+    fn_ceiling(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* mat = machine->result->as_matrix();
@@ -1826,13 +1826,13 @@ TEST_F(PrimitivesTest, CeilingMonadicVector) {
 
 TEST_F(PrimitivesTest, FloorMonadicScalar) {
     Value* v = machine->heap->allocate_scalar(3.7);
-    fn_floor(machine, v);
+    fn_floor(machine, nullptr, v);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
 }
 
 TEST_F(PrimitivesTest, FloorMonadicNegative) {
     Value* v = machine->heap->allocate_scalar(-3.2);
-    fn_floor(machine, v);
+    fn_floor(machine, nullptr, v);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), -4.0);
 }
 
@@ -1840,7 +1840,7 @@ TEST_F(PrimitivesTest, FloorMonadicVector) {
     Eigen::VectorXd v(3);
     v << 1.2, 2.7, -1.5;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_floor(machine, vec);
+    fn_floor(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* mat = machine->result->as_matrix();
@@ -1852,7 +1852,7 @@ TEST_F(PrimitivesTest, FloorMonadicVector) {
 TEST_F(PrimitivesTest, MaximumDyadicScalars) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_maximum(machine, a, b);
+    fn_maximum(machine, nullptr, a, b);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
 }
 
@@ -1862,7 +1862,7 @@ TEST_F(PrimitivesTest, MaximumDyadicVectors) {
     v2 << 4.0, 2.0, 6.0;
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
-    fn_maximum(machine, vec1, vec2);
+    fn_maximum(machine, nullptr, vec1, vec2);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* mat = machine->result->as_matrix();
@@ -1874,7 +1874,7 @@ TEST_F(PrimitivesTest, MaximumDyadicVectors) {
 TEST_F(PrimitivesTest, MinimumDyadicScalars) {
     Value* a = machine->heap->allocate_scalar(3.0);
     Value* b = machine->heap->allocate_scalar(5.0);
-    fn_minimum(machine, a, b);
+    fn_minimum(machine, nullptr, a, b);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
 }
 
@@ -1884,7 +1884,7 @@ TEST_F(PrimitivesTest, MinimumDyadicVectors) {
     v2 << 4.0, 2.0, 6.0;
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
-    fn_minimum(machine, vec1, vec2);
+    fn_minimum(machine, nullptr, vec1, vec2);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* mat = machine->result->as_matrix();
@@ -1899,11 +1899,11 @@ TEST_F(PrimitivesTest, MinimumDyadicVectors) {
 
 TEST_F(PrimitivesTest, NotMonadicScalar) {
     Value* zero = machine->heap->allocate_scalar(0.0);
-    fn_not(machine, zero);
+    fn_not(machine, nullptr, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 
     Value* one = machine->heap->allocate_scalar(1.0);
-    fn_not(machine, one);
+    fn_not(machine, nullptr, one);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
 }
 
@@ -1911,7 +1911,7 @@ TEST_F(PrimitivesTest, NotMonadicVector) {
     Eigen::VectorXd v(4);
     v << 1.0, 0.0, 1.0, 0.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_not(machine, vec);
+    fn_not(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* mat = machine->result->as_matrix();
@@ -1949,13 +1949,13 @@ TEST_F(PrimitivesTest, AndDyadicScalars) {
     Value* one = machine->heap->allocate_scalar(1.0);
     Value* zero = machine->heap->allocate_scalar(0.0);
 
-    fn_and(machine, one, one);
+    fn_and(machine, nullptr, one, one);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 
-    fn_and(machine, one, zero);
+    fn_and(machine, nullptr, one, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
 
-    fn_and(machine, zero, zero);
+    fn_and(machine, nullptr, zero, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
 }
 
@@ -1965,7 +1965,7 @@ TEST_F(PrimitivesTest, AndDyadicVectors) {
     v2 << 1.0, 1.0, 0.0, 0.0;
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
-    fn_and(machine, vec1, vec2);
+    fn_and(machine, nullptr, vec1, vec2);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* mat = machine->result->as_matrix();
@@ -1979,13 +1979,13 @@ TEST_F(PrimitivesTest, OrDyadicScalars) {
     Value* one = machine->heap->allocate_scalar(1.0);
     Value* zero = machine->heap->allocate_scalar(0.0);
 
-    fn_or(machine, one, one);
+    fn_or(machine, nullptr, one, one);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 
-    fn_or(machine, one, zero);
+    fn_or(machine, nullptr, one, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 
-    fn_or(machine, zero, zero);
+    fn_or(machine, nullptr, zero, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
 }
 
@@ -1995,7 +1995,7 @@ TEST_F(PrimitivesTest, OrDyadicVectors) {
     v2 << 1.0, 1.0, 0.0, 0.0;
     Value* vec1 = machine->heap->allocate_vector(v1);
     Value* vec2 = machine->heap->allocate_vector(v2);
-    fn_or(machine, vec1, vec2);
+    fn_or(machine, nullptr, vec1, vec2);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* mat = machine->result->as_matrix();
@@ -2045,13 +2045,13 @@ TEST_F(PrimitivesTest, NandDyadicScalars) {
     Value* one = machine->heap->allocate_scalar(1.0);
     Value* zero = machine->heap->allocate_scalar(0.0);
 
-    fn_nand(machine, one, one);
+    fn_nand(machine, nullptr, one, one);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);  // ~(1∧1)
 
-    fn_nand(machine, one, zero);
+    fn_nand(machine, nullptr, one, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // ~(1∧0)
 
-    fn_nand(machine, zero, zero);
+    fn_nand(machine, nullptr, zero, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // ~(0∧0)
 }
 
@@ -2059,13 +2059,13 @@ TEST_F(PrimitivesTest, NorDyadicScalars) {
     Value* one = machine->heap->allocate_scalar(1.0);
     Value* zero = machine->heap->allocate_scalar(0.0);
 
-    fn_nor(machine, one, one);
+    fn_nor(machine, nullptr, one, one);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);  // ~(1∨1)
 
-    fn_nor(machine, one, zero);
+    fn_nor(machine, nullptr, one, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);  // ~(1∨0)
 
-    fn_nor(machine, zero, zero);
+    fn_nor(machine, nullptr, zero, zero);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // ~(0∨0)
 }
 
@@ -2112,19 +2112,19 @@ TEST_F(PrimitivesTest, LogicalPrimitivesRegistered) {
 // Magnitude/Absolute Value (| monadic)
 TEST_F(PrimitivesTest, MagnitudePositive) {
     Value* val = machine->heap->allocate_scalar(5.0);
-    fn_magnitude(machine, val);
+    fn_magnitude(machine, nullptr, val);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
 }
 
 TEST_F(PrimitivesTest, MagnitudeNegative) {
     Value* val = machine->heap->allocate_scalar(-5.0);
-    fn_magnitude(machine, val);
+    fn_magnitude(machine, nullptr, val);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
 }
 
 TEST_F(PrimitivesTest, MagnitudeZero) {
     Value* val = machine->heap->allocate_scalar(0.0);
-    fn_magnitude(machine, val);
+    fn_magnitude(machine, nullptr, val);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
 }
 
@@ -2132,7 +2132,7 @@ TEST_F(PrimitivesTest, MagnitudeVector) {
     Eigen::VectorXd v(4);
     v << -3.0, 4.0, -5.0, 0.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_magnitude(machine, vec);
+    fn_magnitude(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2147,7 +2147,7 @@ TEST_F(PrimitivesTest, ResidueBasic) {
     // 3 | 7 → 1 (7 mod 3)
     Value* lhs = machine->heap->allocate_scalar(3.0);
     Value* rhs = machine->heap->allocate_scalar(7.0);
-    fn_residue(machine, lhs, rhs);
+    fn_residue(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
@@ -2155,7 +2155,7 @@ TEST_F(PrimitivesTest, ResidueExact) {
     // 3 | 9 → 0
     Value* lhs = machine->heap->allocate_scalar(3.0);
     Value* rhs = machine->heap->allocate_scalar(9.0);
-    fn_residue(machine, lhs, rhs);
+    fn_residue(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
 }
 
@@ -2163,7 +2163,7 @@ TEST_F(PrimitivesTest, ResidueNegative) {
     // 3 | -7 → 2 (APL residue always non-negative for positive divisor)
     Value* lhs = machine->heap->allocate_scalar(3.0);
     Value* rhs = machine->heap->allocate_scalar(-7.0);
-    fn_residue(machine, lhs, rhs);
+    fn_residue(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 2.0);
 }
 
@@ -2173,7 +2173,7 @@ TEST_F(PrimitivesTest, ResidueVector) {
     Eigen::VectorXd v(5);
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* rhs = machine->heap->allocate_vector(v);
-    fn_residue(machine, lhs, rhs);
+    fn_residue(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2189,7 +2189,7 @@ TEST_F(PrimitivesTest, ResidueZeroLeft) {
     // 0 | 5 → 5
     Value* lhs = machine->heap->allocate_scalar(0.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
-    fn_residue(machine, lhs, rhs);
+    fn_residue(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
 }
 
@@ -2197,7 +2197,7 @@ TEST_F(PrimitivesTest, ResidueZeroLeftNegative) {
     // 0 | ¯7 → ¯7
     Value* lhs = machine->heap->allocate_scalar(0.0);
     Value* rhs = machine->heap->allocate_scalar(-7.0);
-    fn_residue(machine, lhs, rhs);
+    fn_residue(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), -7.0);
 }
 
@@ -2207,7 +2207,7 @@ TEST_F(PrimitivesTest, ResidueZeroLeftVector) {
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
     Value* rhs = machine->heap->allocate_vector(v);
-    fn_residue(machine, lhs, rhs);
+    fn_residue(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2220,14 +2220,14 @@ TEST_F(PrimitivesTest, ResidueZeroLeftVector) {
 TEST_F(PrimitivesTest, NaturalLogE) {
     // ⍟ e → 1
     Value* val = machine->heap->allocate_scalar(std::exp(1.0));
-    fn_natural_log(machine, val);
+    fn_natural_log(machine, nullptr, val);
     EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
 }
 
 TEST_F(PrimitivesTest, NaturalLogOne) {
     // ⍟ 1 → 0
     Value* val = machine->heap->allocate_scalar(1.0);
-    fn_natural_log(machine, val);
+    fn_natural_log(machine, nullptr, val);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
 }
 
@@ -2235,7 +2235,7 @@ TEST_F(PrimitivesTest, NaturalLogVector) {
     Eigen::VectorXd v(3);
     v << 1.0, std::exp(1.0), std::exp(2.0);
     Value* vec = machine->heap->allocate_vector(v);
-    fn_natural_log(machine, vec);
+    fn_natural_log(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2249,7 +2249,7 @@ TEST_F(PrimitivesTest, LogarithmBase10) {
     // 10 ⍟ 100 → 2
     Value* lhs = machine->heap->allocate_scalar(10.0);
     Value* rhs = machine->heap->allocate_scalar(100.0);
-    fn_logarithm(machine, lhs, rhs);
+    fn_logarithm(machine, nullptr, lhs, rhs);
     EXPECT_NEAR(machine->result->as_scalar(), 2.0, 1e-10);
 }
 
@@ -2257,7 +2257,7 @@ TEST_F(PrimitivesTest, LogarithmBase2) {
     // 2 ⍟ 8 → 3
     Value* lhs = machine->heap->allocate_scalar(2.0);
     Value* rhs = machine->heap->allocate_scalar(8.0);
-    fn_logarithm(machine, lhs, rhs);
+    fn_logarithm(machine, nullptr, lhs, rhs);
     EXPECT_NEAR(machine->result->as_scalar(), 3.0, 1e-10);
 }
 
@@ -2267,7 +2267,7 @@ TEST_F(PrimitivesTest, LogarithmVector) {
     Eigen::VectorXd v(4);
     v << 1.0, 2.0, 4.0, 8.0;
     Value* rhs = machine->heap->allocate_vector(v);
-    fn_logarithm(machine, lhs, rhs);
+    fn_logarithm(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2281,21 +2281,21 @@ TEST_F(PrimitivesTest, LogarithmVector) {
 TEST_F(PrimitivesTest, FactorialZero) {
     // ! 0 → 1
     Value* val = machine->heap->allocate_scalar(0.0);
-    fn_factorial(machine, val);
+    fn_factorial(machine, nullptr, val);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
 TEST_F(PrimitivesTest, FactorialOne) {
     // ! 1 → 1
     Value* val = machine->heap->allocate_scalar(1.0);
-    fn_factorial(machine, val);
+    fn_factorial(machine, nullptr, val);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
 TEST_F(PrimitivesTest, FactorialFive) {
     // ! 5 → 120
     Value* val = machine->heap->allocate_scalar(5.0);
-    fn_factorial(machine, val);
+    fn_factorial(machine, nullptr, val);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 120.0);
 }
 
@@ -2304,7 +2304,7 @@ TEST_F(PrimitivesTest, FactorialVector) {
     Eigen::VectorXd v(6);
     v << 0.0, 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_factorial(machine, vec);
+    fn_factorial(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2321,7 +2321,7 @@ TEST_F(PrimitivesTest, BinomialBasic) {
     // 2 ! 5 → 10 (5 choose 2)
     Value* lhs = machine->heap->allocate_scalar(2.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
-    fn_binomial(machine, lhs, rhs);
+    fn_binomial(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 10.0);
 }
 
@@ -2329,7 +2329,7 @@ TEST_F(PrimitivesTest, BinomialZeroK) {
     // 0 ! 5 → 1
     Value* lhs = machine->heap->allocate_scalar(0.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
-    fn_binomial(machine, lhs, rhs);
+    fn_binomial(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
@@ -2337,7 +2337,7 @@ TEST_F(PrimitivesTest, BinomialSame) {
     // 5 ! 5 → 1
     Value* lhs = machine->heap->allocate_scalar(5.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
-    fn_binomial(machine, lhs, rhs);
+    fn_binomial(machine, nullptr, lhs, rhs);
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
 }
 
@@ -2347,7 +2347,7 @@ TEST_F(PrimitivesTest, BinomialPascalsRow) {
     v << 0.0, 1.0, 2.0, 3.0, 4.0;
     Value* lhs = machine->heap->allocate_vector(v);
     Value* rhs = machine->heap->allocate_scalar(4.0);
-    fn_binomial(machine, lhs, rhs);
+    fn_binomial(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2373,7 +2373,7 @@ TEST_F(PrimitivesTest, ReverseVector) {
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_reverse(machine, vec);
+    fn_reverse(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2388,7 +2388,7 @@ TEST_F(PrimitivesTest, ReverseVector) {
 TEST_F(PrimitivesTest, ReverseScalar) {
     Value* scalar = machine->heap->allocate_scalar(42.0);
 
-    fn_reverse(machine, scalar);
+    fn_reverse(machine, nullptr, scalar);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 42.0);
@@ -2400,7 +2400,7 @@ TEST_F(PrimitivesTest, ReverseMatrix) {
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_reverse(machine, mat);
+    fn_reverse(machine, nullptr, mat);
 
     ASSERT_TRUE(machine->result->is_matrix());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2422,7 +2422,7 @@ TEST_F(PrimitivesTest, ReverseFirstMatrix) {
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_reverse_first(machine, mat);
+    fn_reverse_first(machine, nullptr, mat);
 
     ASSERT_TRUE(machine->result->is_matrix());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2443,7 +2443,7 @@ TEST_F(PrimitivesTest, RotateVectorPositive) {
     Value* vec = machine->heap->allocate_vector(v);
     Value* count = machine->heap->allocate_scalar(2.0);
 
-    fn_rotate(machine, count, vec);
+    fn_rotate(machine, nullptr, count, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2462,7 +2462,7 @@ TEST_F(PrimitivesTest, RotateVectorNegative) {
     Value* vec = machine->heap->allocate_vector(v);
     Value* count = machine->heap->allocate_scalar(-2.0);
 
-    fn_rotate(machine, count, vec);
+    fn_rotate(machine, nullptr, count, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2483,7 +2483,7 @@ TEST_F(PrimitivesTest, RotateFirstMatrix) {
     Value* mat = machine->heap->allocate_matrix(m);
     Value* count = machine->heap->allocate_scalar(1.0);
 
-    fn_rotate_first(machine, count, mat);
+    fn_rotate_first(machine, nullptr, count, mat);
 
     ASSERT_TRUE(machine->result->is_matrix());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2506,7 +2506,7 @@ TEST_F(PrimitivesTest, RotateWrapAround) {
     Value* vec = machine->heap->allocate_vector(v);
     Value* count = machine->heap->allocate_scalar(7.0);  // 7 mod 5 = 2
 
-    fn_rotate(machine, count, vec);
+    fn_rotate(machine, nullptr, count, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2524,7 +2524,7 @@ TEST_F(PrimitivesTest, RotateScalar) {
     Value* scalar = machine->heap->allocate_scalar(42.0);
     Value* count = machine->heap->allocate_scalar(5.0);
 
-    fn_rotate(machine, count, scalar);
+    fn_rotate(machine, nullptr, count, scalar);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 42.0);
@@ -2535,7 +2535,7 @@ TEST_F(PrimitivesTest, TallyVector) {
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_tally(machine, vec);
+    fn_tally(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
@@ -2544,7 +2544,7 @@ TEST_F(PrimitivesTest, TallyVector) {
 TEST_F(PrimitivesTest, TallyScalar) {
     Value* scalar = machine->heap->allocate_scalar(42.0);
 
-    fn_tally(machine, scalar);
+    fn_tally(machine, nullptr, scalar);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
@@ -2555,7 +2555,7 @@ TEST_F(PrimitivesTest, TallyMatrix) {
     m.setZero();
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_tally(machine, mat);
+    fn_tally(machine, nullptr, mat);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
@@ -2578,7 +2578,7 @@ TEST_F(PrimitivesTest, IndexOfFound) {
     Value* lhs = machine->heap->allocate_vector(haystack);
     Value* rhs = machine->heap->allocate_scalar(3.0);
 
-    fn_index_of(machine, lhs, rhs);
+    fn_index_of(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
@@ -2591,7 +2591,7 @@ TEST_F(PrimitivesTest, IndexOfNotFound) {
     Value* lhs = machine->heap->allocate_vector(haystack);
     Value* rhs = machine->heap->allocate_scalar(7.0);
 
-    fn_index_of(machine, lhs, rhs);
+    fn_index_of(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 4.0);
@@ -2606,7 +2606,7 @@ TEST_F(PrimitivesTest, IndexOfVector) {
     Value* lhs = machine->heap->allocate_vector(haystack);
     Value* rhs = machine->heap->allocate_vector(needles);
 
-    fn_index_of(machine, lhs, rhs);
+    fn_index_of(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2620,7 +2620,7 @@ TEST_F(PrimitivesTest, IndexOfScalarHaystack) {
     Value* lhs = machine->heap->allocate_scalar(5.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
 
-    fn_index_of(machine, lhs, rhs);
+    fn_index_of(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
@@ -2633,7 +2633,7 @@ TEST_F(PrimitivesTest, MemberOfFound) {
     set << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* rhs = machine->heap->allocate_vector(set);
 
-    fn_member_of(machine, lhs, rhs);
+    fn_member_of(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
@@ -2646,7 +2646,7 @@ TEST_F(PrimitivesTest, MemberOfNotFound) {
     set << 1.0, 2.0, 3.0;
     Value* rhs = machine->heap->allocate_vector(set);
 
-    fn_member_of(machine, lhs, rhs);
+    fn_member_of(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
@@ -2661,7 +2661,7 @@ TEST_F(PrimitivesTest, MemberOfVector) {
     Value* lhs = machine->heap->allocate_vector(query);
     Value* rhs = machine->heap->allocate_vector(set);
 
-    fn_member_of(machine, lhs, rhs);
+    fn_member_of(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2677,7 +2677,7 @@ TEST_F(PrimitivesTest, EnlistVector) {
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_enlist(machine, vec);
+    fn_enlist(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2691,7 +2691,7 @@ TEST_F(PrimitivesTest, EnlistScalar) {
     // ∊ 5 → 5 (1-element vector)
     Value* scalar = machine->heap->allocate_scalar(5.0);
 
-    fn_enlist(machine, scalar);
+    fn_enlist(machine, nullptr, scalar);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2706,7 +2706,7 @@ TEST_F(PrimitivesTest, EnlistMatrix) {
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_enlist(machine, mat);
+    fn_enlist(machine, nullptr, mat);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2732,7 +2732,7 @@ TEST_F(PrimitivesTest, EnlistEmptyVector) {
 TEST_F(PrimitivesTest, RavelScalar) {
     // ISO 8.2.1: ,5 → 1-element vector containing 5
     Value* scalar = machine->heap->allocate_scalar(5.0);
-    fn_ravel(machine, scalar);
+    fn_ravel(machine, nullptr, scalar);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2745,7 +2745,7 @@ TEST_F(PrimitivesTest, RavelVector) {
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_ravel(machine, vec);
+    fn_ravel(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2772,7 +2772,7 @@ TEST_F(PrimitivesTest, ShapeMatrix) {
 TEST_F(PrimitivesTest, DepthScalar) {
     // ISO 8.2.5: ≡5 → 0 (simple scalar)
     Value* scalar = machine->heap->allocate_scalar(5.0);
-    fn_depth(machine, scalar);
+    fn_depth(machine, nullptr, scalar);
 
     EXPECT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
@@ -2783,7 +2783,7 @@ TEST_F(PrimitivesTest, DepthVector) {
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_depth(machine, vec);
+    fn_depth(machine, nullptr, vec);
 
     EXPECT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
@@ -2795,7 +2795,7 @@ TEST_F(PrimitivesTest, DepthMatrix) {
     m << 1.0, 2.0, 3.0,
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
-    fn_depth(machine, mat);
+    fn_depth(machine, nullptr, mat);
 
     EXPECT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
@@ -2899,7 +2899,7 @@ TEST_F(PrimitivesTest, GradeUpVector) {
     v << 3.0, 1.0, 4.0, 1.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_grade_up(machine, vec);
+    fn_grade_up(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2917,7 +2917,7 @@ TEST_F(PrimitivesTest, GradeDownVector) {
     v << 3.0, 1.0, 4.0, 1.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_grade_down(machine, vec);
+    fn_grade_down(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2933,7 +2933,7 @@ TEST_F(PrimitivesTest, GradeUpScalarError) {
     // ⍋ 5 → RANK ERROR (grade requires array per ISO 13751)
     Value* scalar = machine->heap->allocate_scalar(5.0);
 
-    fn_grade_up(machine, scalar);
+    fn_grade_up(machine, nullptr, scalar);
 
     // Should have pushed ThrowErrorK
     ASSERT_EQ(machine->kont_stack.size(), 1);
@@ -2944,7 +2944,7 @@ TEST_F(PrimitivesTest, GradeDownScalarError) {
     // ⍒ 5 → RANK ERROR (grade requires array per ISO 13751)
     Value* scalar = machine->heap->allocate_scalar(5.0);
 
-    fn_grade_down(machine, scalar);
+    fn_grade_down(machine, nullptr, scalar);
 
     // Should have pushed ThrowErrorK
     ASSERT_EQ(machine->kont_stack.size(), 1);
@@ -2957,7 +2957,7 @@ TEST_F(PrimitivesTest, GradeUpAlreadySorted) {
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_grade_up(machine, vec);
+    fn_grade_up(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -2972,7 +2972,7 @@ TEST_F(PrimitivesTest, GradeDownReversed) {
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_grade_down(machine, vec);
+    fn_grade_down(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3062,7 +3062,7 @@ TEST_F(PrimitivesTest, CharGradeUpBasicVector) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_vec(machine, "CAB");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_vector());
@@ -3077,7 +3077,7 @@ TEST_F(PrimitivesTest, CharGradeUpAlreadySorted) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_vec(machine, "ABC");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
@@ -3089,7 +3089,7 @@ TEST_F(PrimitivesTest, CharGradeUpReversed) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_vec(machine, "CBA");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);
@@ -3103,7 +3103,7 @@ TEST_F(PrimitivesTest, CharGradeDownBasicVector) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_vec(machine, "CAB");
 
-    fn_grade_down_dyadic(machine, collating, data);
+    fn_grade_down_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // 'C' first (highest)
@@ -3115,7 +3115,7 @@ TEST_F(PrimitivesTest, CharGradeDownReversed) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_vec(machine, "CBA");
 
-    fn_grade_down_dyadic(machine, collating, data);
+    fn_grade_down_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // Already descending
@@ -3129,7 +3129,7 @@ TEST_F(PrimitivesTest, CharGradeUpUnknownCharsLast) {
     Value* collating = make_char_vec(machine, "AB");
     Value* data = make_char_vec(machine, "CBA");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);  // 'A' first (known, lowest)
@@ -3142,7 +3142,7 @@ TEST_F(PrimitivesTest, CharGradeDownUnknownCharsLast) {
     Value* collating = make_char_vec(machine, "AB");
     Value* data = make_char_vec(machine, "CBA");
 
-    fn_grade_down_dyadic(machine, collating, data);
+    fn_grade_down_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 'B' first (highest known)
@@ -3155,7 +3155,7 @@ TEST_F(PrimitivesTest, CharGradeUpMultipleUnknowns) {
     Value* collating = make_char_vec(machine, "A");
     Value* data = make_char_vec(machine, "XAYZ");  // X,Y,Z unknown
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 'A' first (only known)
@@ -3171,7 +3171,7 @@ TEST_F(PrimitivesTest, CharGradeUpStable) {
     Value* collating = make_char_vec(machine, "AB");
     Value* data = make_char_vec(machine, "ABBA");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // First 'A' at position 1
@@ -3184,7 +3184,7 @@ TEST_F(PrimitivesTest, CharGradeDownStable) {
     Value* collating = make_char_vec(machine, "AB");
     Value* data = make_char_vec(machine, "ABBA");
 
-    fn_grade_down_dyadic(machine, collating, data);
+    fn_grade_down_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // First 'B'
@@ -3197,7 +3197,7 @@ TEST_F(PrimitivesTest, CharGradeUpAllEqualPreservesOrder) {
     Value* collating = make_char_vec(machine, "A");
     Value* data = make_char_vec(machine, "AAA");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
@@ -3212,7 +3212,7 @@ TEST_F(PrimitivesTest, CharGradeUpEmptyCollating) {
     Value* collating = make_char_vec(machine, "");
     Value* data = make_char_vec(machine, "ABC");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
@@ -3225,7 +3225,7 @@ TEST_F(PrimitivesTest, CharGradeUpEmptyRight) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_vec(machine, "");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     EXPECT_TRUE(machine->result->is_vector());
     EXPECT_EQ(machine->result->size(), 0);
@@ -3236,7 +3236,7 @@ TEST_F(PrimitivesTest, CharGradeUpSingleElement) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_vec(machine, "X");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     EXPECT_EQ(machine->result->size(), 1);
     EXPECT_DOUBLE_EQ(machine->result->as_matrix()->operator()(0, 0), 1.0);
@@ -3246,7 +3246,7 @@ TEST_F(PrimitivesTest, CharGradeDownEmptyCollating) {
     Value* collating = make_char_vec(machine, "");
     Value* data = make_char_vec(machine, "CBA");
 
-    fn_grade_down_dyadic(machine, collating, data);
+    fn_grade_down_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
@@ -3260,7 +3260,7 @@ TEST_F(PrimitivesTest, CharGradeUpScalarCollatingError) {
     Value* scalar = machine->heap->allocate_scalar(static_cast<double>('A'));
     Value* data = make_char_vec(machine, "ABC");
 
-    fn_grade_up_dyadic(machine, scalar, data);
+    fn_grade_up_dyadic(machine, nullptr, scalar, data);
 
     ASSERT_EQ(machine->kont_stack.size(), 1);
     auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
@@ -3272,7 +3272,7 @@ TEST_F(PrimitivesTest, CharGradeDownScalarCollatingError) {
     Value* scalar = machine->heap->allocate_scalar(static_cast<double>('A'));
     Value* data = make_char_vec(machine, "ABC");
 
-    fn_grade_down_dyadic(machine, scalar, data);
+    fn_grade_down_dyadic(machine, nullptr, scalar, data);
 
     ASSERT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
@@ -3286,7 +3286,7 @@ TEST_F(PrimitivesTest, CharGradeUpNumericRightError) {
     nums << 1.0, 2.0, 3.0;
     Value* numeric = machine->heap->allocate_vector(nums);
 
-    fn_grade_up_dyadic(machine, collating, numeric);
+    fn_grade_up_dyadic(machine, nullptr, collating, numeric);
 
     ASSERT_EQ(machine->kont_stack.size(), 1);
     auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
@@ -3300,7 +3300,7 @@ TEST_F(PrimitivesTest, CharGradeUpNumericLeftError) {
     Value* numeric = machine->heap->allocate_vector(nums);
     Value* chars = make_char_vec(machine, "ABC");
 
-    fn_grade_up_dyadic(machine, numeric, chars);
+    fn_grade_up_dyadic(machine, nullptr, numeric, chars);
 
     ASSERT_EQ(machine->kont_stack.size(), 1);
     auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
@@ -3315,7 +3315,7 @@ TEST_F(PrimitivesTest, CharGradeUpDuplicateInCollating) {
     Value* collating = make_char_vec(machine, "AABB");
     Value* data = make_char_vec(machine, "BA");
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);  // 'A' first (pos 0)
@@ -3329,7 +3329,7 @@ TEST_F(PrimitivesTest, CharGradeUpMatrixRows) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_matrix(machine, {"CA", "AB", "BC"});
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     EXPECT_EQ(machine->result->size(), 3);
     const Eigen::MatrixXd* m = machine->result->as_matrix();
@@ -3343,7 +3343,7 @@ TEST_F(PrimitivesTest, CharGradeDownMatrixRows) {
     Value* collating = make_char_vec(machine, "ABC");
     Value* data = make_char_matrix(machine, {"CA", "AB", "BC"});
 
-    fn_grade_down_dyadic(machine, collating, data);
+    fn_grade_down_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     // Descending: "CA" > "BC" > "AB"
@@ -3357,7 +3357,7 @@ TEST_F(PrimitivesTest, CharGradeUpMatrixRowsStable) {
     Value* collating = make_char_vec(machine, "AB");
     Value* data = make_char_matrix(machine, {"AB", "AB", "AA"});
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     // "AA" < "AB" = "AB", stable keeps first "AB" before second
@@ -3371,7 +3371,7 @@ TEST_F(PrimitivesTest, CharGradeUpMatrixWithUnknowns) {
     Value* collating = make_char_vec(machine, "AB");
     Value* data = make_char_matrix(machine, {"XY", "AB", "BA"});
 
-    fn_grade_up_dyadic(machine, collating, data);
+    fn_grade_up_dyadic(machine, nullptr, collating, data);
 
     const Eigen::MatrixXd* m = machine->result->as_matrix();
     // "AB" < "BA" < "XY" (unknowns last)
@@ -3393,7 +3393,7 @@ TEST_F(PrimitivesTest, ReplicateBasic) {
     Value* lhs = machine->heap->allocate_vector(counts);
     Value* rhs = machine->heap->allocate_vector(data);
 
-    fn_replicate(machine, lhs, rhs);
+    fn_replicate(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3414,7 +3414,7 @@ TEST_F(PrimitivesTest, ReplicateCompress) {
     Value* lhs = machine->heap->allocate_vector(counts);
     Value* rhs = machine->heap->allocate_vector(data);
 
-    fn_replicate(machine, lhs, rhs);
+    fn_replicate(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3433,7 +3433,7 @@ TEST_F(PrimitivesTest, ReplicateAllZero) {
     Value* lhs = machine->heap->allocate_vector(counts);
     Value* rhs = machine->heap->allocate_vector(data);
 
-    fn_replicate(machine, lhs, rhs);
+    fn_replicate(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3445,7 +3445,7 @@ TEST_F(PrimitivesTest, ReplicateScalar) {
     Value* lhs = machine->heap->allocate_scalar(3.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
 
-    fn_replicate(machine, lhs, rhs);
+    fn_replicate(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3465,7 +3465,7 @@ TEST_F(PrimitivesTest, UniqueVector) {
     v << 1.0, 2.0, 2.0, 3.0, 1.0, 4.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_unique(machine, vec);
+    fn_unique(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3480,7 +3480,7 @@ TEST_F(PrimitivesTest, UniqueScalar) {
     // ∪ 5 → 5
     Value* val = machine->heap->allocate_scalar(5.0);
 
-    fn_unique(machine, val);
+    fn_unique(machine, nullptr, val);
 
     EXPECT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
@@ -3492,7 +3492,7 @@ TEST_F(PrimitivesTest, UniqueAllSame) {
     v << 3.0, 3.0, 3.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_unique(machine, vec);
+    fn_unique(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3506,7 +3506,7 @@ TEST_F(PrimitivesTest, UniqueAlreadyUnique) {
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_unique(machine, vec);
+    fn_unique(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3521,7 +3521,7 @@ TEST_F(PrimitivesTest, UnionBasic) {
     Value* lhs = machine->heap->allocate_vector(left);
     Value* rhs = machine->heap->allocate_vector(right);
 
-    fn_union(machine, lhs, rhs);
+    fn_union(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3541,7 +3541,7 @@ TEST_F(PrimitivesTest, UnionNoOverlap) {
     Value* lhs = machine->heap->allocate_vector(left);
     Value* rhs = machine->heap->allocate_vector(right);
 
-    fn_union(machine, lhs, rhs);
+    fn_union(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3556,7 +3556,7 @@ TEST_F(PrimitivesTest, UnionWithDuplicates) {
     Value* lhs = machine->heap->allocate_vector(left);
     Value* rhs = machine->heap->allocate_vector(right);
 
-    fn_union(machine, lhs, rhs);
+    fn_union(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3574,7 +3574,7 @@ TEST_F(PrimitivesTest, WithoutBasic) {
     Value* lhs = machine->heap->allocate_vector(left);
     Value* rhs = machine->heap->allocate_vector(right);
 
-    fn_without(machine, lhs, rhs);
+    fn_without(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3592,7 +3592,7 @@ TEST_F(PrimitivesTest, WithoutNoMatch) {
     Value* lhs = machine->heap->allocate_vector(left);
     Value* rhs = machine->heap->allocate_vector(right);
 
-    fn_without(machine, lhs, rhs);
+    fn_without(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3607,7 +3607,7 @@ TEST_F(PrimitivesTest, WithoutAllMatch) {
     Value* lhs = machine->heap->allocate_vector(left);
     Value* rhs = machine->heap->allocate_vector(right);
 
-    fn_without(machine, lhs, rhs);
+    fn_without(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3622,7 +3622,7 @@ TEST_F(PrimitivesTest, WithoutPreservesDuplicates) {
     Value* lhs = machine->heap->allocate_vector(left);
     Value* rhs = machine->heap->allocate_vector(right);
 
-    fn_without(machine, lhs, rhs);
+    fn_without(machine, nullptr, lhs, rhs);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3646,7 +3646,7 @@ TEST_F(PrimitivesTest, SetFunctionsRegistered) {
 TEST_F(PrimitivesTest, FirstScalar) {
     Value* scalar = machine->heap->allocate_scalar(42.0);
 
-    fn_first(machine, scalar);
+    fn_first(machine, nullptr, scalar);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 42.0);
@@ -3657,7 +3657,7 @@ TEST_F(PrimitivesTest, FirstVector) {
     v << 10.0, 20.0, 30.0, 40.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_first(machine, vec);
+    fn_first(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 10.0);
@@ -3669,7 +3669,7 @@ TEST_F(PrimitivesTest, FirstMatrix) {
          4, 5, 6;
     Value* mat = machine->heap->allocate_matrix(m);
 
-    fn_first(machine, mat);
+    fn_first(machine, nullptr, mat);
 
     // First of matrix returns first row as vector
     ASSERT_TRUE(machine->result->is_vector());
@@ -3684,7 +3684,7 @@ TEST_F(PrimitivesTest, FirstEmptyVector) {
     Eigen::VectorXd v(0);
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_first(machine, vec);
+    fn_first(machine, nullptr, vec);
 
     // First of empty returns 0 (prototype)
     ASSERT_TRUE(machine->result->is_scalar());
@@ -3696,7 +3696,7 @@ TEST_F(PrimitivesTest, FirstSingleElementVector) {
     v << 99.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_first(machine, vec);
+    fn_first(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 99.0);
@@ -3709,7 +3709,7 @@ TEST_F(PrimitivesTest, FirstSingleElementVector) {
 TEST_F(PrimitivesTest, PiTimesScalar) {
     Value* one = machine->heap->allocate_scalar(1.0);
 
-    fn_pi_times(machine, one);
+    fn_pi_times(machine, nullptr, one);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), M_PI, 1e-10);
@@ -3720,7 +3720,7 @@ TEST_F(PrimitivesTest, PiTimesVector) {
     v << 0.5, 1.0, 2.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_pi_times(machine, vec);
+    fn_pi_times(machine, nullptr, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3734,7 +3734,7 @@ TEST_F(PrimitivesTest, CircularSin) {
     Value* fn_code = machine->heap->allocate_scalar(1.0);
     Value* arg = machine->heap->allocate_scalar(M_PI / 2.0);  // sin(π/2) = 1
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
@@ -3745,7 +3745,7 @@ TEST_F(PrimitivesTest, CircularCos) {
     Value* fn_code = machine->heap->allocate_scalar(2.0);
     Value* arg = machine->heap->allocate_scalar(0.0);  // cos(0) = 1
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
@@ -3756,7 +3756,7 @@ TEST_F(PrimitivesTest, CircularTan) {
     Value* fn_code = machine->heap->allocate_scalar(3.0);
     Value* arg = machine->heap->allocate_scalar(M_PI / 4.0);  // tan(π/4) = 1
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
@@ -3767,7 +3767,7 @@ TEST_F(PrimitivesTest, CircularSqrt1MinusX2) {
     Value* fn_code = machine->heap->allocate_scalar(0.0);
     Value* arg = machine->heap->allocate_scalar(0.6);  // sqrt(1-0.36) = sqrt(0.64) = 0.8
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 0.8, 1e-10);
@@ -3778,7 +3778,7 @@ TEST_F(PrimitivesTest, CircularAsin) {
     Value* fn_code = machine->heap->allocate_scalar(-1.0);
     Value* arg = machine->heap->allocate_scalar(1.0);  // asin(1) = π/2
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), M_PI / 2.0, 1e-10);
@@ -3789,7 +3789,7 @@ TEST_F(PrimitivesTest, CircularAtan) {
     Value* fn_code = machine->heap->allocate_scalar(-3.0);
     Value* arg = machine->heap->allocate_scalar(1.0);  // atan(1) = π/4
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), M_PI / 4.0, 1e-10);
@@ -3800,7 +3800,7 @@ TEST_F(PrimitivesTest, CircularSinh) {
     Value* fn_code = machine->heap->allocate_scalar(5.0);
     Value* arg = machine->heap->allocate_scalar(0.0);  // sinh(0) = 0
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
@@ -3811,7 +3811,7 @@ TEST_F(PrimitivesTest, CircularCosh) {
     Value* fn_code = machine->heap->allocate_scalar(6.0);
     Value* arg = machine->heap->allocate_scalar(0.0);  // cosh(0) = 1
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 1.0, 1e-10);
@@ -3822,7 +3822,7 @@ TEST_F(PrimitivesTest, CircularTanh) {
     Value* fn_code = machine->heap->allocate_scalar(7.0);
     Value* arg = machine->heap->allocate_scalar(0.0);  // tanh(0) = 0
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
@@ -3833,7 +3833,7 @@ TEST_F(PrimitivesTest, CircularSqrt1PlusX2) {
     Value* fn_code = machine->heap->allocate_scalar(4.0);
     Value* arg = machine->heap->allocate_scalar(2.0);  // sqrt(1+4) = sqrt(5) ≈ 2.236
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), std::sqrt(5.0), 1e-10);
@@ -3844,7 +3844,7 @@ TEST_F(PrimitivesTest, CircularAcos) {
     Value* fn_code = machine->heap->allocate_scalar(-2.0);
     Value* arg = machine->heap->allocate_scalar(1.0);  // acos(1) = 0
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
@@ -3855,7 +3855,7 @@ TEST_F(PrimitivesTest, CircularAsinh) {
     Value* fn_code = machine->heap->allocate_scalar(-5.0);
     Value* arg = machine->heap->allocate_scalar(0.0);  // asinh(0) = 0
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
@@ -3866,7 +3866,7 @@ TEST_F(PrimitivesTest, CircularAcosh) {
     Value* fn_code = machine->heap->allocate_scalar(-6.0);
     Value* arg = machine->heap->allocate_scalar(1.0);  // acosh(1) = 0
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
@@ -3877,7 +3877,7 @@ TEST_F(PrimitivesTest, CircularAtanh) {
     Value* fn_code = machine->heap->allocate_scalar(-7.0);
     Value* arg = machine->heap->allocate_scalar(0.0);  // atanh(0) = 0
 
-    fn_circular(machine, fn_code, arg);
+    fn_circular(machine, nullptr, fn_code, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_NEAR(machine->result->as_scalar(), 0.0, 1e-10);
@@ -3890,7 +3890,7 @@ TEST_F(PrimitivesTest, CircularVector) {
     v << 0.0, M_PI / 6.0, M_PI / 2.0;  // sin: 0, 0.5, 1
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_circular(machine, fn_code, vec);
+    fn_circular(machine, nullptr, fn_code, vec);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3910,7 +3910,7 @@ TEST_F(PrimitivesTest, CircularRegistered) {
 TEST_F(PrimitivesTest, RollScalar) {
     // ?6 returns random integer in [1,6] (1-based per ISO 13751)
     Value* arg = machine->heap->allocate_scalar(6.0);
-    fn_roll(machine, arg);
+    fn_roll(machine, nullptr, arg);
 
     ASSERT_TRUE(machine->result->is_scalar());
     double result = machine->result->as_scalar();
@@ -3925,7 +3925,7 @@ TEST_F(PrimitivesTest, RollVector) {
     v << 3.0, 3.0, 3.0;
     Value* arg = machine->heap->allocate_vector(v);
 
-    fn_roll(machine, arg);
+    fn_roll(machine, nullptr, arg);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3940,7 +3940,7 @@ TEST_F(PrimitivesTest, RollVector) {
 TEST_F(PrimitivesTest, RollErrorZero) {
     // ?0 is an error
     Value* arg = machine->heap->allocate_scalar(0.0);
-    fn_roll(machine, arg);
+    fn_roll(machine, nullptr, arg);
 
     // Should push error continuation
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
@@ -3949,7 +3949,7 @@ TEST_F(PrimitivesTest, RollErrorZero) {
 TEST_F(PrimitivesTest, RollErrorNegative) {
     // ?¯5 is an error
     Value* arg = machine->heap->allocate_scalar(-5.0);
-    fn_roll(machine, arg);
+    fn_roll(machine, nullptr, arg);
 
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
@@ -3963,7 +3963,7 @@ TEST_F(PrimitivesTest, DealBasic) {
     Value* count = machine->heap->allocate_scalar(3.0);
     Value* range = machine->heap->allocate_scalar(10.0);
 
-    fn_deal(machine, count, range);
+    fn_deal(machine, nullptr, count, range);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -3989,7 +3989,7 @@ TEST_F(PrimitivesTest, DealEmpty) {
     Value* count = machine->heap->allocate_scalar(0.0);
     Value* range = machine->heap->allocate_scalar(5.0);
 
-    fn_deal(machine, count, range);
+    fn_deal(machine, nullptr, count, range);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4001,7 +4001,7 @@ TEST_F(PrimitivesTest, DealAll) {
     Value* count = machine->heap->allocate_scalar(5.0);
     Value* range = machine->heap->allocate_scalar(5.0);
 
-    fn_deal(machine, count, range);
+    fn_deal(machine, nullptr, count, range);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4025,7 +4025,7 @@ TEST_F(PrimitivesTest, DealErrorTooMany) {
     Value* count = machine->heap->allocate_scalar(6.0);
     Value* range = machine->heap->allocate_scalar(5.0);
 
-    fn_deal(machine, count, range);
+    fn_deal(machine, nullptr, count, range);
 
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
@@ -4044,7 +4044,7 @@ TEST_F(PrimitivesTest, ExpandBasic) {
     data << 1.0, 2.0, 3.0;
     Value* data_val = machine->heap->allocate_vector(data);
 
-    fn_expand(machine, mask_val, data_val);
+    fn_expand(machine, nullptr, mask_val, data_val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4065,7 +4065,7 @@ TEST_F(PrimitivesTest, ExpandAllOnes) {
     data << 1.0, 2.0, 3.0;
     Value* data_val = machine->heap->allocate_vector(data);
 
-    fn_expand(machine, mask_val, data_val);
+    fn_expand(machine, nullptr, mask_val, data_val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4085,7 +4085,7 @@ TEST_F(PrimitivesTest, ExpandLeadingZeros) {
     data << 1.0, 2.0;
     Value* data_val = machine->heap->allocate_vector(data);
 
-    fn_expand(machine, mask_val, data_val);
+    fn_expand(machine, nullptr, mask_val, data_val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4104,7 +4104,7 @@ TEST_F(PrimitivesTest, ExpandScalar) {
 
     Value* data_val = machine->heap->allocate_scalar(5.0);
 
-    fn_expand(machine, mask_val, data_val);
+    fn_expand(machine, nullptr, mask_val, data_val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4124,7 +4124,7 @@ TEST_F(PrimitivesTest, ExpandLengthError) {
     data << 1.0, 2.0, 3.0;
     Value* data_val = machine->heap->allocate_vector(data);
 
-    fn_expand(machine, mask_val, data_val);
+    fn_expand(machine, nullptr, mask_val, data_val);
 
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
@@ -4139,7 +4139,7 @@ TEST_F(PrimitivesTest, ExpandDomainError) {
     data << 1.0, 2.0;
     Value* data_val = machine->heap->allocate_vector(data);
 
-    fn_expand(machine, mask_val, data_val);
+    fn_expand(machine, nullptr, mask_val, data_val);
 
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
@@ -4151,7 +4151,7 @@ TEST_F(PrimitivesTest, ExpandAllZeros) {
     Value* mask_val = machine->heap->allocate_vector(mask);
     Value* data_val = machine->heap->allocate_scalar(5.0);
 
-    fn_expand(machine, mask_val, data_val);
+    fn_expand(machine, nullptr, mask_val, data_val);
 
     // +/0 0 = 0, so B must have 0 elements (scalar 5 is treated as 0-element vector)
     // Result should be empty (all zeros filled)
@@ -4173,7 +4173,7 @@ TEST_F(PrimitivesTest, ExpandFirstVector) {
     data << 1.0, 2.0;
     Value* data_val = machine->heap->allocate_vector(data);
 
-    fn_expand_first(machine, mask_val, data_val);
+    fn_expand_first(machine, nullptr, mask_val, data_val);
 
     ASSERT_TRUE(machine->result->is_vector());
     EXPECT_EQ(machine->result->size(), 3);
@@ -4194,7 +4194,7 @@ TEST_F(PrimitivesTest, ExpandFirstMatrix) {
            4, 5, 6;
     Value* data_val = machine->heap->allocate_matrix(mat);
 
-    fn_expand_first(machine, mask_val, data_val);
+    fn_expand_first(machine, nullptr, mask_val, data_val);
 
     ASSERT_TRUE(machine->result->is_matrix());
     EXPECT_EQ(machine->result->rows(), 3);
@@ -4221,7 +4221,7 @@ TEST_F(PrimitivesTest, ExpandFirstScalar) {
     Value* mask_val = machine->heap->allocate_vector(mask);
     Value* data_val = machine->heap->allocate_scalar(5.0);
 
-    fn_expand_first(machine, mask_val, data_val);
+    fn_expand_first(machine, nullptr, mask_val, data_val);
 
     ASSERT_TRUE(machine->result->is_vector());
     EXPECT_EQ(machine->result->size(), 3);
@@ -4251,7 +4251,7 @@ TEST_F(PrimitivesTest, DecodeBinary) {
     digits << 1.0, 0.0, 1.0, 1.0;
     Value* digits_val = machine->heap->allocate_vector(digits);
 
-    fn_decode(machine, radix, digits_val);
+    fn_decode(machine, nullptr, radix, digits_val);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 11.0);
@@ -4264,7 +4264,7 @@ TEST_F(PrimitivesTest, DecodeDecimal) {
     digits << 1.0, 2.0, 3.0;
     Value* digits_val = machine->heap->allocate_vector(digits);
 
-    fn_decode(machine, radix, digits_val);
+    fn_decode(machine, nullptr, radix, digits_val);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 123.0);
@@ -4280,7 +4280,7 @@ TEST_F(PrimitivesTest, DecodeMixedRadix) {
     digits << 1.0, 30.0, 45.0;
     Value* digits_val = machine->heap->allocate_vector(digits);
 
-    fn_decode(machine, radix_val, digits_val);
+    fn_decode(machine, nullptr, radix_val, digits_val);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5445.0);
@@ -4291,7 +4291,7 @@ TEST_F(PrimitivesTest, DecodeEmpty) {
     Value* radix = machine->heap->allocate_scalar(10.0);
     Value* digits_val = machine->heap->allocate_vector(Eigen::VectorXd(0));
 
-    fn_decode(machine, radix, digits_val);
+    fn_decode(machine, nullptr, radix, digits_val);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.0);
@@ -4308,7 +4308,7 @@ TEST_F(PrimitivesTest, EncodeBinary) {
     Value* radix_val = machine->heap->allocate_vector(radix);
     Value* val = machine->heap->allocate_scalar(11.0);
 
-    fn_encode(machine, radix_val, val);
+    fn_encode(machine, nullptr, radix_val, val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4326,7 +4326,7 @@ TEST_F(PrimitivesTest, EncodeDecimal) {
     Value* radix_val = machine->heap->allocate_vector(radix);
     Value* val = machine->heap->allocate_scalar(345.0);
 
-    fn_encode(machine, radix_val, val);
+    fn_encode(machine, nullptr, radix_val, val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4343,7 +4343,7 @@ TEST_F(PrimitivesTest, EncodeMixedRadix) {
     Value* radix_val = machine->heap->allocate_vector(radix);
     Value* val = machine->heap->allocate_scalar(5445.0);
 
-    fn_encode(machine, radix_val, val);
+    fn_encode(machine, nullptr, radix_val, val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4360,7 +4360,7 @@ TEST_F(PrimitivesTest, EncodeOverflow) {
     Value* radix_val = machine->heap->allocate_vector(radix);
     Value* val = machine->heap->allocate_scalar(15.0);  // 1111 in binary
 
-    fn_encode(machine, radix_val, val);
+    fn_encode(machine, nullptr, radix_val, val);
 
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
@@ -4378,11 +4378,11 @@ TEST_F(PrimitivesTest, DecodeEncodeRoundtrip) {
     Value* original = machine->heap->allocate_scalar(13.0);
 
     // Encode: 13 → 1 1 0 1
-    fn_encode(machine, radix_val, original);
+    fn_encode(machine, nullptr, radix_val, original);
     Value* encoded = machine->result;
 
     // Decode: 1 1 0 1 → 13
-    fn_decode(machine, machine->heap->allocate_scalar(2.0), encoded);
+    fn_decode(machine, nullptr, machine->heap->allocate_scalar(2.0), encoded);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 13.0);
@@ -4403,7 +4403,7 @@ TEST_F(PrimitivesTest, EncodeRegistered) {
 TEST_F(PrimitivesTest, MatrixInverseScalar) {
     // ⌹4 → 0.25 (reciprocal)
     Value* val = machine->heap->allocate_scalar(4.0);
-    fn_matrix_inverse(machine, val);
+    fn_matrix_inverse(machine, nullptr, val);
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 0.25);
 }
@@ -4411,7 +4411,7 @@ TEST_F(PrimitivesTest, MatrixInverseScalar) {
 TEST_F(PrimitivesTest, MatrixInverseScalarZeroError) {
     // ⌹0 → DOMAIN ERROR
     Value* val = machine->heap->allocate_scalar(0.0);
-    fn_matrix_inverse(machine, val);
+    fn_matrix_inverse(machine, nullptr, val);
     ASSERT_FALSE(machine->kont_stack.empty());
     auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(k, nullptr);
@@ -4422,7 +4422,7 @@ TEST_F(PrimitivesTest, MatrixInverse2x2) {
     Eigen::MatrixXd mat(2, 2);
     mat << 1, 2, 3, 4;
     Value* val = machine->heap->allocate_matrix(mat);
-    fn_matrix_inverse(machine, val);
+    fn_matrix_inverse(machine, nullptr, val);
     ASSERT_FALSE(machine->result->is_scalar());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 2);
@@ -4440,7 +4440,7 @@ TEST_F(PrimitivesTest, MatrixInverseVector) {
     Eigen::VectorXd vec(3);
     vec << 1, 2, 3;
     Value* val = machine->heap->allocate_vector(vec);
-    fn_matrix_inverse(machine, val);
+    fn_matrix_inverse(machine, nullptr, val);
     // Should return a matrix (1x3 pseudoinverse)
     ASSERT_FALSE(machine->result->is_scalar());
 }
@@ -4452,7 +4452,7 @@ TEST_F(PrimitivesTest, MatrixInverseSingular) {
     Eigen::MatrixXd mat(2, 2);
     mat << 1, 2, 2, 4;  // Row 2 = 2 * Row 1
     Value* val = machine->heap->allocate_matrix(mat);
-    fn_matrix_inverse(machine, val);
+    fn_matrix_inverse(machine, nullptr, val);
     // Pseudoinverse should succeed (not error)
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_matrix());
@@ -4466,7 +4466,7 @@ TEST_F(PrimitivesTest, MatrixDivideScalarScalar) {
     // 6 ⌹ 2 → 3
     Value* lhs = machine->heap->allocate_scalar(6.0);
     Value* rhs = machine->heap->allocate_scalar(2.0);
-    fn_matrix_divide(machine, lhs, rhs);
+    fn_matrix_divide(machine, nullptr, lhs, rhs);
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
 }
@@ -4475,7 +4475,7 @@ TEST_F(PrimitivesTest, MatrixDivideByZeroError) {
     // 6 ⌹ 0 → DOMAIN ERROR
     Value* lhs = machine->heap->allocate_scalar(6.0);
     Value* rhs = machine->heap->allocate_scalar(0.0);
-    fn_matrix_divide(machine, lhs, rhs);
+    fn_matrix_divide(machine, nullptr, lhs, rhs);
     ASSERT_FALSE(machine->kont_stack.empty());
     auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(k, nullptr);
@@ -4487,7 +4487,7 @@ TEST_F(PrimitivesTest, MatrixDivideVectorByScalar) {
     vec << 2, 4, 6;
     Value* lhs = machine->heap->allocate_vector(vec);
     Value* rhs = machine->heap->allocate_scalar(2.0);
-    fn_matrix_divide(machine, lhs, rhs);
+    fn_matrix_divide(machine, nullptr, lhs, rhs);
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
@@ -4504,7 +4504,7 @@ TEST_F(PrimitivesTest, MatrixDivideLinearSystem) {
     b << 3, 4;
     Value* lhs = machine->heap->allocate_vector(b);
     Value* rhs = machine->heap->allocate_matrix(A);
-    fn_matrix_divide(machine, lhs, rhs);
+    fn_matrix_divide(machine, nullptr, lhs, rhs);
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_NEAR((*res)(0, 0), 3.0, 1e-10);
@@ -4519,7 +4519,7 @@ TEST_F(PrimitivesTest, DyadicTransposeScalar) {
     // 0⍉5 → 5 (scalar unchanged)
     Value* lhs = machine->heap->allocate_scalar(0.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
-    fn_dyadic_transpose(machine, lhs, rhs);
+    fn_dyadic_transpose(machine, nullptr, lhs, rhs);
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
 }
@@ -4530,7 +4530,7 @@ TEST_F(PrimitivesTest, DyadicTransposeVectorIdentity) {
     Eigen::VectorXd vec(3);
     vec << 1, 2, 3;
     Value* rhs = machine->heap->allocate_vector(vec);
-    fn_dyadic_transpose(machine, lhs, rhs);
+    fn_dyadic_transpose(machine, nullptr, lhs, rhs);
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_DOUBLE_EQ((*res)(0, 0), 1.0);
@@ -4546,7 +4546,7 @@ TEST_F(PrimitivesTest, DyadicTransposeMatrixIdentity) {
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3, 4, 5, 6;
     Value* rhs = machine->heap->allocate_matrix(mat);
-    fn_dyadic_transpose(machine, lhs, rhs);
+    fn_dyadic_transpose(machine, nullptr, lhs, rhs);
     ASSERT_FALSE(machine->result->is_scalar());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 2);
@@ -4563,7 +4563,7 @@ TEST_F(PrimitivesTest, DyadicTransposeMatrixSwap) {
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3, 4, 5, 6;
     Value* rhs = machine->heap->allocate_matrix(mat);
-    fn_dyadic_transpose(machine, lhs, rhs);
+    fn_dyadic_transpose(machine, nullptr, lhs, rhs);
     ASSERT_FALSE(machine->result->is_scalar());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 3);
@@ -4582,7 +4582,7 @@ TEST_F(PrimitivesTest, DyadicTransposeInvalidPermError) {
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3, 4, 5, 6;
     Value* rhs = machine->heap->allocate_matrix(mat);
-    fn_dyadic_transpose(machine, lhs, rhs);
+    fn_dyadic_transpose(machine, nullptr, lhs, rhs);
     ASSERT_FALSE(machine->kont_stack.empty());
     auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(k, nullptr);
@@ -4599,7 +4599,7 @@ TEST_F(PrimitivesTest, DominoRegistered) {
 TEST_F(PrimitivesTest, ExecuteRequiresString) {
     // ⍎5 → DOMAIN ERROR (not a string)
     Value* val = machine->heap->allocate_scalar(5.0);
-    fn_execute(machine, val);
+    fn_execute(machine, nullptr, val);
     ASSERT_FALSE(machine->kont_stack.empty());
     auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(k, nullptr);
@@ -4609,7 +4609,7 @@ TEST_F(PrimitivesTest, ExecutePushesContination) {
     // ⍎'42' should push a continuation
     Value* str = machine->heap->allocate_string("42");
     size_t stack_before = machine->kont_stack.size();
-    fn_execute(machine, str);
+    fn_execute(machine, nullptr, str);
     EXPECT_GT(machine->kont_stack.size(), stack_before);
 }
 
@@ -4642,7 +4642,7 @@ TEST_F(PrimitivesTest, SquadVectorScalarIndex) {
     Value* idx = machine->heap->allocate_scalar(3.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, arr);
+    fn_squad(machine, nullptr, idx, arr);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
@@ -4659,7 +4659,7 @@ TEST_F(PrimitivesTest, SquadVectorVectorIndex) {
     Value* idx = machine->heap->allocate_vector(idx_v);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, arr);
+    fn_squad(machine, nullptr, idx, arr);
 
     ASSERT_TRUE(machine->result->is_vector());
     EXPECT_EQ(machine->result->data.matrix->size(), 2);
@@ -4675,7 +4675,7 @@ TEST_F(PrimitivesTest, SquadVectorFirstElement) {
     Value* idx = machine->heap->allocate_scalar(1.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, arr);
+    fn_squad(machine, nullptr, idx, arr);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
@@ -4689,7 +4689,7 @@ TEST_F(PrimitivesTest, SquadVectorLastElement) {
     Value* idx = machine->heap->allocate_scalar(3.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, arr);
+    fn_squad(machine, nullptr, idx, arr);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 7.0);
@@ -4703,7 +4703,7 @@ TEST_F(PrimitivesTest, SquadOutOfBoundsError) {
     Value* idx = machine->heap->allocate_scalar(5.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, arr);
+    fn_squad(machine, nullptr, idx, arr);
 
     // Should push ThrowErrorK
     ASSERT_FALSE(machine->kont_stack.empty());
@@ -4719,7 +4719,7 @@ TEST_F(PrimitivesTest, SquadZeroIndexError) {
     Value* idx = machine->heap->allocate_scalar(0.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, arr);
+    fn_squad(machine, nullptr, idx, arr);
 
     // Should push ThrowErrorK
     ASSERT_FALSE(machine->kont_stack.empty());
@@ -4737,7 +4737,7 @@ TEST_F(PrimitivesTest, SquadStringScalarIndex) {
     Value* idx = machine->heap->allocate_scalar(2.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, str);
+    fn_squad(machine, nullptr, idx, str);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 101.0);  // 'e'
@@ -4749,7 +4749,7 @@ TEST_F(PrimitivesTest, SquadStringFirstChar) {
     Value* idx = machine->heap->allocate_scalar(1.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, str);
+    fn_squad(machine, nullptr, idx, str);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 104.0);  // 'h'
@@ -4761,7 +4761,7 @@ TEST_F(PrimitivesTest, SquadStringLastChar) {
     Value* idx = machine->heap->allocate_scalar(5.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, str);
+    fn_squad(machine, nullptr, idx, str);
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 111.0);  // 'o'
@@ -4775,7 +4775,7 @@ TEST_F(PrimitivesTest, SquadStringVectorIndex) {
     Value* idx = machine->heap->allocate_vector(idx_v);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, str);
+    fn_squad(machine, nullptr, idx, str);
 
     ASSERT_TRUE(machine->result->is_vector());
     EXPECT_EQ(machine->result->size(), 3);
@@ -4791,7 +4791,7 @@ TEST_F(PrimitivesTest, SquadStringOutOfBoundsError) {
     Value* idx = machine->heap->allocate_scalar(5.0);
 
     // ISO 13751: I⌷A where indices are left, array is right
-    fn_squad(machine, idx, str);
+    fn_squad(machine, nullptr, idx, str);
 
     ASSERT_FALSE(machine->kont_stack.empty());
     auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
@@ -4878,7 +4878,7 @@ TEST_F(PrimitivesTest, BracketIndexChained) {
 TEST_F(PrimitivesTest, TableScalar) {
     // ⍪ 5 → 1×1 matrix containing 5
     Value* scalar = machine->heap->allocate_scalar(5.0);
-    fn_table(machine, scalar);
+    fn_table(machine, nullptr, scalar);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_matrix());
@@ -4894,7 +4894,7 @@ TEST_F(PrimitivesTest, TableVector) {
     Eigen::VectorXd v(4);
     v << 1.0, 2.0, 3.0, 4.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_table(machine, vec);
+    fn_table(machine, nullptr, vec);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_matrix());
@@ -4914,7 +4914,7 @@ TEST_F(PrimitivesTest, TableMatrix) {
     m << 1.0, 2.0, 3.0,
          4.0, 5.0, 6.0;
     Value* mat_val = machine->heap->allocate_matrix(m);
-    fn_table(machine, mat_val);
+    fn_table(machine, nullptr, mat_val);
 
     Value* result = machine->result;
     ASSERT_TRUE(result->is_matrix());
@@ -5756,7 +5756,7 @@ TEST_F(PrimitivesTest, RollIO1) {
 // Monadic Format - String Passthrough
 TEST_F(PrimitivesTest, FormatMonadicStringPassthrough) {
     Value* str = machine->heap->allocate_string("hello");
-    fn_format_monadic(machine, str);
+    fn_format_monadic(machine, nullptr, str);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5765,7 +5765,7 @@ TEST_F(PrimitivesTest, FormatMonadicStringPassthrough) {
 
 TEST_F(PrimitivesTest, FormatMonadicEmptyString) {
     Value* str = machine->heap->allocate_string("");
-    fn_format_monadic(machine, str);
+    fn_format_monadic(machine, nullptr, str);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5775,7 +5775,7 @@ TEST_F(PrimitivesTest, FormatMonadicEmptyString) {
 // Monadic Format - Scalar Formatting
 TEST_F(PrimitivesTest, FormatMonadicIntegerScalar) {
     Value* num = machine->heap->allocate_scalar(42.0);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5784,7 +5784,7 @@ TEST_F(PrimitivesTest, FormatMonadicIntegerScalar) {
 
 TEST_F(PrimitivesTest, FormatMonadicNegativeInteger) {
     Value* num = machine->heap->allocate_scalar(-5.0);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5793,7 +5793,7 @@ TEST_F(PrimitivesTest, FormatMonadicNegativeInteger) {
 
 TEST_F(PrimitivesTest, FormatMonadicZero) {
     Value* num = machine->heap->allocate_scalar(0.0);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5802,7 +5802,7 @@ TEST_F(PrimitivesTest, FormatMonadicZero) {
 
 TEST_F(PrimitivesTest, FormatMonadicFloat) {
     Value* num = machine->heap->allocate_scalar(3.14);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5812,7 +5812,7 @@ TEST_F(PrimitivesTest, FormatMonadicFloat) {
 
 TEST_F(PrimitivesTest, FormatMonadicNegativeFloat) {
     Value* num = machine->heap->allocate_scalar(-3.14);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5825,7 +5825,7 @@ TEST_F(PrimitivesTest, FormatMonadicIntegerVector) {
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_format_monadic(machine, vec);
+    fn_format_monadic(machine, nullptr, vec);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5836,7 +5836,7 @@ TEST_F(PrimitivesTest, FormatMonadicVectorWithNegatives) {
     Eigen::VectorXd v(3);
     v << -1.0, 2.0, -3.0;
     Value* vec = machine->heap->allocate_vector(v);
-    fn_format_monadic(machine, vec);
+    fn_format_monadic(machine, nullptr, vec);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5847,7 +5847,7 @@ TEST_F(PrimitivesTest, FormatMonadicVectorWithNegatives) {
 TEST_F(PrimitivesTest, FormatMonadicEmptyVector) {
     Eigen::VectorXd v(0);
     Value* vec = machine->heap->allocate_vector(v);
-    fn_format_monadic(machine, vec);
+    fn_format_monadic(machine, nullptr, vec);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5858,7 +5858,7 @@ TEST_F(PrimitivesTest, FormatMonadicEmptyVector) {
 TEST_F(PrimitivesTest, FormatMonadicPrintPrecision3) {
     machine->pp = 3;
     Value* num = machine->heap->allocate_scalar(3.14159265);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5869,7 +5869,7 @@ TEST_F(PrimitivesTest, FormatMonadicPrintPrecision3) {
 TEST_F(PrimitivesTest, FormatMonadicPrintPrecision10) {
     machine->pp = 10;
     Value* num = machine->heap->allocate_scalar(3.14159265);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5880,7 +5880,7 @@ TEST_F(PrimitivesTest, FormatMonadicPrintPrecision10) {
 // Monadic Format - Large/Small Numbers (Exponential)
 TEST_F(PrimitivesTest, FormatMonadicLargeNumber) {
     Value* num = machine->heap->allocate_scalar(1e15);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5890,7 +5890,7 @@ TEST_F(PrimitivesTest, FormatMonadicLargeNumber) {
 
 TEST_F(PrimitivesTest, FormatMonadicSmallNumber) {
     Value* num = machine->heap->allocate_scalar(1e-7);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5901,7 +5901,7 @@ TEST_F(PrimitivesTest, FormatMonadicSmallNumber) {
 // Monadic Format - Infinity
 TEST_F(PrimitivesTest, FormatMonadicInfinity) {
     Value* num = machine->heap->allocate_scalar(INFINITY);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5911,7 +5911,7 @@ TEST_F(PrimitivesTest, FormatMonadicInfinity) {
 
 TEST_F(PrimitivesTest, FormatMonadicNegativeInfinity) {
     Value* num = machine->heap->allocate_scalar(-INFINITY);
-    fn_format_monadic(machine, num);
+    fn_format_monadic(machine, nullptr, num);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5925,7 +5925,7 @@ TEST_F(PrimitivesTest, FormatMonadicMatrix) {
     m << 1.0, 2.0, 3.0,
          4.0, 5.0, 6.0;
     Value* mat = machine->heap->allocate_matrix(m);
-    fn_format_monadic(machine, mat);
+    fn_format_monadic(machine, nullptr, mat);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5939,7 +5939,7 @@ TEST_F(PrimitivesTest, FormatDyadicFixedBasic) {
     spec << 5.0, 2.0;
     Value* alpha = machine->heap->allocate_vector(spec);
     Value* omega = machine->heap->allocate_scalar(3.14159);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5953,7 +5953,7 @@ TEST_F(PrimitivesTest, FormatDyadicZeroDecimals) {
     spec << 5.0, 0.0;
     Value* alpha = machine->heap->allocate_vector(spec);
     Value* omega = machine->heap->allocate_scalar(42.7);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5967,7 +5967,7 @@ TEST_F(PrimitivesTest, FormatDyadicNegative) {
     spec << 6.0, 2.0;
     Value* alpha = machine->heap->allocate_vector(spec);
     Value* omega = machine->heap->allocate_scalar(-3.14);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5982,7 +5982,7 @@ TEST_F(PrimitivesTest, FormatDyadicExponential) {
     spec << 10.0, -3.0;  // Negative precision = exponential
     Value* alpha = machine->heap->allocate_vector(spec);
     Value* omega = machine->heap->allocate_scalar(3.14159);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -5998,7 +5998,7 @@ TEST_F(PrimitivesTest, FormatDyadicVector) {
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
     Value* omega = machine->heap->allocate_vector(v);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -6015,7 +6015,7 @@ TEST_F(PrimitivesTest, FormatMonadicCharVector) {
     // Create a character vector (array with char data)
     Value* cv = machine->eval("'ABC'");
     ASSERT_NE(cv, nullptr);
-    fn_format_monadic(machine, cv);
+    fn_format_monadic(machine, nullptr, cv);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     // Should return the character data (as string in our impl)
@@ -6027,7 +6027,7 @@ TEST_F(PrimitivesTest, FormatMonadicCharVector) {
 TEST_F(PrimitivesTest, FormatMonadicEmptyMatrix) {
     Value* em = machine->eval("0 3⍴0");  // 0x3 empty matrix
     ASSERT_NE(em, nullptr);
-    fn_format_monadic(machine, em);
+    fn_format_monadic(machine, nullptr, em);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -6071,7 +6071,7 @@ TEST_F(PrimitivesTest, FormatDyadicEmptyB) {
     Value* alpha = machine->heap->allocate_vector(spec);
     Eigen::VectorXd v(0);  // Empty vector
     Value* omega = machine->heap->allocate_vector(v);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -6087,7 +6087,7 @@ TEST_F(PrimitivesTest, FormatDyadicMatrixSingleSpec) {
     m << 1.1, 2.2, 3.3,
          4.4, 5.5, 6.6;
     Value* omega = machine->heap->allocate_matrix(m);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -6106,7 +6106,7 @@ TEST_F(PrimitivesTest, FormatDyadicMultipleSpecs) {
     Eigen::VectorXd v(3);
     v << 42.0, 3.14159, 1234.5;
     Value* omega = machine->heap->allocate_vector(v);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -6118,7 +6118,7 @@ TEST_F(PrimitivesTest, FormatDyadicMultipleSpecs) {
 TEST_F(PrimitivesTest, FormatDyadicScalarSpec) {
     Value* alpha = machine->heap->allocate_scalar(5.0);  // Just width
     Value* omega = machine->heap->allocate_scalar(42.7);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -6133,7 +6133,7 @@ TEST_F(PrimitivesTest, FormatDyadicExponentialHighPrecision) {
     spec << 15.0, -8.0;  // 8 significant digits in mantissa
     Value* alpha = machine->heap->allocate_vector(spec);
     Value* omega = machine->heap->allocate_scalar(3.141592653589793);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
@@ -6148,7 +6148,7 @@ TEST_F(PrimitivesTest, FormatDyadicExponentialNegative) {
     spec << 12.0, -3.0;
     Value* alpha = machine->heap->allocate_vector(spec);
     Value* omega = machine->heap->allocate_scalar(-0.00314159);
-    fn_format_dyadic(machine, alpha, omega);
+    fn_format_dyadic(machine, nullptr, alpha, omega);
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());

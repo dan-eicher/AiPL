@@ -224,7 +224,7 @@ void LiteralK::mark(Heap* heap) {
 // ClosureLiteralK implementation
 void ClosureLiteralK::invoke(Machine* machine) {
     // Convert the continuation body to a CLOSURE Value* at runtime
-    Value* heap_closure = machine->heap->allocate_closure(body);
+    Value* heap_closure = machine->heap->allocate_closure(body, is_niladic);
     machine->result = heap_closure;
 
     // Phase 3.1: No return needed, trampoline continues
@@ -719,6 +719,14 @@ void PerformFinalizeK::invoke(Machine* machine) {
         // Only finalize G_PRIME if finalize_gprime flag is true
         // Parentheses set this to false to preserve partial applications like (2×)
         if (cd->curry_type == Value::CurryType::G_PRIME && finalize_gprime) {
+            // If curry has axis and is primitive, apply directly with axis
+            if (cd->axis != nullptr && cd->fn->is_primitive()) {
+                PrimitiveFn* prim_fn = cd->fn->data.primitive_fn;
+                if (prim_fn->monadic) {
+                    prim_fn->monadic(machine, cd->axis, cd->first_arg);
+                    return;
+                }
+            }
             DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
                 cd->fn, nullptr, cd->first_arg);
             dispatch->force_monadic = true;
@@ -886,8 +894,8 @@ void ApplyMonadicK::invoke(Machine* machine) {
         Value* curried = machine->heap->allocate_curried_fn(op_val, operand_val, Value::CurryType::G_PRIME);
         machine->result = curried;
     } else {
-        // Monadic-only function - apply immediately
-        prim_fn->monadic(machine, operand_val);
+        // Monadic-only function - apply immediately (no axis from this path)
+        prim_fn->monadic(machine, nullptr, operand_val);
     }
 
     // Phase 3.1: No return needed, trampoline continues
@@ -941,8 +949,8 @@ void ApplyDyadicK::invoke(Machine* machine) {
         return;
     }
 
-    // Apply the dyadic function
-    prim_fn->dyadic(machine, left_val, right_val);
+    // Apply the dyadic function (no axis from this path)
+    prim_fn->dyadic(machine, nullptr, left_val, right_val);
 
     // Phase 3.1: No return needed, trampoline continues
 }
@@ -1053,7 +1061,7 @@ void BuildStrandK::invoke(Machine* machine) {
             }
 
             // Apply monadic function (sets machine->result directly or pushes ThrowErrorK)
-            prim->monadic(machine, arg);
+            prim->monadic(machine, nullptr, arg);
             return;  // Early exit after monadic application
         }
 
@@ -1068,7 +1076,7 @@ void BuildStrandK::invoke(Machine* machine) {
             }
 
             // Apply dyadic function: x f y (sets machine->result directly or pushes ThrowErrorK)
-            prim->dyadic(machine, left_arg, right_arg);
+            prim->dyadic(machine, nullptr, left_arg, right_arg);
             return;  // Early exit after dyadic application
         }
 
@@ -1083,7 +1091,7 @@ void BuildStrandK::invoke(Machine* machine) {
             }
 
             // Apply dyadic function: x f y (sets machine->result directly or pushes ThrowErrorK)
-            prim->dyadic(machine, left_arg, right_arg);
+            prim->dyadic(machine, nullptr, left_arg, right_arg);
             return;  // Early exit after dyadic application
         }
 
@@ -1342,8 +1350,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     if (lcd->curry_type == Value::CurryType::G_PRIME) {
                         Value* fn = lcd->fn;
                         Value* arg = lcd->first_arg;
+                        Value* axis = lcd->axis;
                         if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, arg);
+                            fn->data.primitive_fn->monadic(machine, axis, arg);
                             left_val = machine->result;
                         }
                     }
@@ -1353,8 +1362,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     if (rcd->curry_type == Value::CurryType::G_PRIME) {
                         Value* fn = rcd->fn;
                         Value* arg = rcd->first_arg;
+                        Value* axis = rcd->axis;
                         if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, arg);
+                            fn->data.primitive_fn->monadic(machine, axis, arg);
                             right_val = machine->result;
                         }
                     }
@@ -1377,8 +1387,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     if (rcd->curry_type == Value::CurryType::G_PRIME) {
                         Value* fn = rcd->fn;
                         Value* arg = rcd->first_arg;
+                        Value* axis = rcd->axis;
                         if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, arg);
+                            fn->data.primitive_fn->monadic(machine, axis, arg);
                             right_val = machine->result;
                         }
                     }
@@ -1401,8 +1412,34 @@ void DispatchFunctionK::invoke(Machine* machine) {
             // g' = λx . λy . if null(y) then g1(x)
             //                else if bas(y) then g2(x,y)
             //                else y(g1(x))
-            if (right_val == nullptr) {
+            //
+            // Special case: axis-only curry (first_arg is nullptr, axis is set)
+            // This represents F[k] waiting for its first operand
+            // Always curry the value - monadic vs dyadic decided at finalization
+            if (first_arg == nullptr && curried_data->axis != nullptr && right_val != nullptr && right_val->is_basic_value()) {
+                if (inner_fn->is_primitive()) {
+                    // Create G_PRIME curry of inner_fn with first_arg=B, preserving axis
+                    Value* curried = machine->heap->allocate_curried_fn(inner_fn, right_val, Value::CurryType::G_PRIME, curried_data->axis);
+                    machine->result = curried;
+                    return;
+                } else {
+                    // For closures, dispatch normally (closures don't support axis per ISO spec)
+                    machine->throw_error("SYNTAX ERROR: axis specification requires primitive function", this);
+                    return;
+                }
+            } else if (right_val == nullptr) {
                 // null(y): No second argument - apply monadically to first_arg
+                // For axis curries, apply monadically with axis now
+                if (curried_data->axis != nullptr && inner_fn->is_primitive()) {
+                    PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
+                    if (prim_fn->monadic) {
+                        prim_fn->monadic(machine, curried_data->axis, first_arg);
+                        return;
+                    } else {
+                        machine->throw_error("SYNTAX ERROR: Function has no monadic form", this);
+                        return;
+                    }
+                }
                 fn_val = inner_fn;
                 left_val = nullptr;
                 right_val = first_arg;
@@ -1412,6 +1449,17 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // bas(y): Second argument is a basic value - apply dyadically
                 // In G2 juxtaposition, first_arg is the RIGHT operand (captured)
                 // and right_val is the LEFT operand (newly applied)
+                // For axis curries (e.g., 2↑[1]M), call dyadic with axis now
+                if (curried_data->axis != nullptr && inner_fn->is_primitive()) {
+                    PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
+                    if (prim_fn->dyadic) {
+                        prim_fn->dyadic(machine, curried_data->axis, right_val, first_arg);
+                        return;
+                    } else {
+                        machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this);
+                        return;
+                    }
+                }
                 fn_val = inner_fn;
                 left_val = right_val;  // New argument is LEFT (alpha)
                 right_val = first_arg; // Captured argument is RIGHT (omega)
@@ -1423,7 +1471,8 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 if (inner_fn->is_primitive()) {
                     PrimitiveFn* prim_fn = inner_fn->data.primitive_fn;
                     if (prim_fn->monadic) {
-                        prim_fn->monadic(machine, first_arg);
+                        // Pass axis from curried function if present
+                        prim_fn->monadic(machine, curried_data->axis, first_arg);
                         // Now apply the function y to g1(x)
                         // right_val is the function y, machine->result is g1(x)
                         fn_val = right_val;
@@ -1688,7 +1737,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             machine->result = curried;
         } else if (prim_fn->monadic && force_monadic) {
             // Force immediate monadic evaluation (used by operators like each, rank)
-            prim_fn->monadic(machine, right_val);
+            prim_fn->monadic(machine, nullptr, right_val);
         } else if (prim_fn->dyadic) {
             // Pure dyadic function: simple currying (right arg captured, waiting for left)
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
@@ -1706,7 +1755,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
         }
 
         // Apply dyadic function (sets machine->result directly or pushes ThrowErrorK)
-        prim_fn->dyadic(machine, left_val, right_val);
+        prim_fn->dyadic(machine, nullptr, left_val, right_val);
     }
 
     // Phase 3.1: No return needed
@@ -2197,7 +2246,7 @@ void FunctionCallK::invoke(Machine* machine) {
     }
 
     // Get the function body continuation graph
-    Continuation* body = fn_value->data.closure;
+    Continuation* body = fn_value->data.closure->body;
     if (!body) {
         machine->throw_error("VALUE ERROR: Function has no body", this);
         return;

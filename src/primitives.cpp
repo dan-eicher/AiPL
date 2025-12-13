@@ -14,6 +14,17 @@
 namespace apl {
 
 // ============================================================================
+// Axis Validation Helper (ISO 13751)
+// ============================================================================
+
+// Reject axis specification for functions that don't support it
+#define REJECT_AXIS(m, axis) \
+    if ((axis) != nullptr) { \
+        (m)->throw_error("AXIS ERROR: function does not support axis"); \
+        return; \
+    }
+
+// ============================================================================
 // Tolerant Comparison Helpers (ISO 13751)
 // ============================================================================
 
@@ -100,7 +111,8 @@ PrimitiveFn prim_right     = { "⊢", fn_right, fn_right_dyadic }; // ISO 10.2.1
 // ============================================================================
 
 // Addition (+)
-void fn_add(Machine* m, Value* lhs, Value* rhs) {
+void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Fast path: scalar + scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar + rhs->data.scalar);
@@ -156,7 +168,8 @@ void fn_add(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Subtraction (-)
-void fn_subtract(Machine* m, Value* lhs, Value* rhs) {
+void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Fast path: scalar - scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar - rhs->data.scalar);
@@ -211,7 +224,8 @@ void fn_subtract(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Multiplication (×)
-void fn_multiply(Machine* m, Value* lhs, Value* rhs) {
+void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Fast path: scalar × scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(lhs->data.scalar * rhs->data.scalar);
@@ -280,7 +294,8 @@ static bool safe_divide(double a, double b, double& result) {
 
 // Division (÷)
 // ISO 13751 7.2.4: If B is zero and A is zero, return one; else if B is zero, domain-error
-void fn_divide(Machine* m, Value* lhs, Value* rhs) {
+void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Fast path: scalar ÷ scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
         double result;
@@ -361,7 +376,8 @@ void fn_divide(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Power (*)
-void fn_power(Machine* m, Value* lhs, Value* rhs) {
+void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Fast path: scalar * scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(std::pow(lhs->data.scalar, rhs->data.scalar));
@@ -421,7 +437,8 @@ void fn_power(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Equality (=)
-void fn_equal(Machine* m, Value* lhs, Value* rhs) {
+void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     // Fast path: scalar = scalar
@@ -485,7 +502,8 @@ void fn_equal(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Not Equal (≠)
-void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
+void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     // Fast path: scalar ≠ scalar
@@ -549,7 +567,8 @@ void fn_not_equal(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Less Than (<) - strictly less and not tolerantly equal
-void fn_less(Machine* m, Value* lhs, Value* rhs) {
+void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     // Fast path: scalar < scalar
@@ -619,7 +638,8 @@ void fn_less(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Greater Than (>) - strictly greater and not tolerantly equal
-void fn_greater(Machine* m, Value* lhs, Value* rhs) {
+void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     // Fast path: scalar > scalar
@@ -689,7 +709,8 @@ void fn_greater(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Less Than or Equal (≤) - less than or tolerantly equal
-void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
+void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     // Fast path: scalar ≤ scalar
@@ -759,7 +780,8 @@ void fn_less_eq(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Greater Than or Equal (≥) - greater than or tolerantly equal
-void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
+void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     // Fast path: scalar ≥ scalar
@@ -833,7 +855,8 @@ void fn_greater_eq(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Maximum (⌈) - dyadic
-void fn_maximum(Machine* m, Value* lhs, Value* rhs) {
+void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(std::max(lhs->data.scalar, rhs->data.scalar));
         return;
@@ -883,7 +906,8 @@ void fn_maximum(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Minimum (⌊) - dyadic
-void fn_minimum(Machine* m, Value* lhs, Value* rhs) {
+void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(std::min(lhs->data.scalar, rhs->data.scalar));
         return;
@@ -933,7 +957,8 @@ void fn_minimum(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Ceiling (⌈) - monadic
-void fn_ceiling(Machine* m, Value* omega) {
+void fn_ceiling(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     if (omega->is_scalar()) {
@@ -970,7 +995,8 @@ void fn_ceiling(Machine* m, Value* omega) {
 }
 
 // Floor (⌊) - monadic
-void fn_floor(Machine* m, Value* omega) {
+void fn_floor(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     double ct = m->ct;
 
     if (omega->is_scalar()) {
@@ -1055,7 +1081,8 @@ static double and_lcm(double a, double b) {
 
 // And/LCM (∧) - dyadic
 // ISO 13751 7.2.12: For near-boolean it's AND, otherwise LCM
-void fn_and(Machine* m, Value* lhs, Value* rhs) {
+void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(and_lcm(lhs->data.scalar, rhs->data.scalar));
         return;
@@ -1130,7 +1157,8 @@ static double or_gcd(double a, double b) {
 
 // Or/GCD (∨) - dyadic
 // ISO 13751 7.2.13: For near-boolean it's OR, otherwise GCD
-void fn_or(Machine* m, Value* lhs, Value* rhs) {
+void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(or_gcd(lhs->data.scalar, rhs->data.scalar));
         return;
@@ -1192,7 +1220,8 @@ void fn_or(Machine* m, Value* lhs, Value* rhs) {
 
 // Not (~) - monadic
 // ISO 13751 7.1.12: If B is not near-Boolean, signal domain-error
-void fn_not(Machine* m, Value* omega) {
+void fn_not(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         double d = omega->data.scalar;
         if (!is_near_boolean(d)) {
@@ -1247,7 +1276,8 @@ static double nand_bool(double a, double b, bool& error) {
 
 // Nand (⍲) - dyadic
 // ISO 13751 7.2.14: If either A or B is not near-Boolean, signal domain-error
-void fn_nand(Machine* m, Value* lhs, Value* rhs) {
+void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     bool error = false;
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
@@ -1338,7 +1368,8 @@ static double nor_bool(double a, double b, bool& error) {
 
 // Nor (⍱) - dyadic
 // ISO 13751 7.2.15: If either A or B is not near-Boolean, signal domain-error
-void fn_nor(Machine* m, Value* lhs, Value* rhs) {
+void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     bool error = false;
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
@@ -1420,7 +1451,8 @@ void fn_nor(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Magnitude (|) - monadic (absolute value)
-void fn_magnitude(Machine* m, Value* omega) {
+void fn_magnitude(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(std::abs(omega->data.scalar));
         return;
@@ -1442,7 +1474,8 @@ void fn_magnitude(Machine* m, Value* omega) {
 // Residue (|) - dyadic (modulo: lhs | rhs means rhs mod lhs)
 // APL semantics: A|B gives the remainder when B is divided by A
 // Result has the same sign as A (or 0)
-void fn_residue(Machine* m, Value* lhs, Value* rhs) {
+void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     auto residue = [](double a, double b) -> double {
         if (a == 0.0) return b;  // 0|B = B
         double r = std::fmod(b, a);
@@ -1511,7 +1544,8 @@ void fn_residue(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Natural Logarithm (⍟) - monadic
-void fn_natural_log(Machine* m, Value* omega) {
+void fn_natural_log(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         if (val <= 0.0) {
@@ -1541,7 +1575,8 @@ void fn_natural_log(Machine* m, Value* omega) {
 }
 
 // Logarithm (⍟) - dyadic (lhs ⍟ rhs = log base lhs of rhs)
-void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
+void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // log_a(b) = ln(b) / ln(a)
     // Domain errors: base <= 0, base == 1, value <= 0
     auto check_domain = [m](double base, double val) -> bool {
@@ -1620,7 +1655,8 @@ void fn_logarithm(Machine* m, Value* lhs, Value* rhs) {
 // Factorial (!) - monadic
 // Uses gamma function: n! = gamma(n+1)
 // DOMAIN ERROR for negative integers (gamma has poles at non-positive integers)
-void fn_factorial(Machine* m, Value* omega) {
+void fn_factorial(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     // Check if value is a negative integer (gamma undefined there)
     auto is_negative_int = [](double x) -> bool {
         return x < 0 && x == std::floor(x);
@@ -1662,7 +1698,8 @@ void fn_factorial(Machine* m, Value* omega) {
 
 // Binomial (!) - dyadic (lhs ! rhs = "rhs choose lhs" = C(rhs, lhs))
 // Uses gamma function: C(n,k) = n! / (k! * (n-k)!) = gamma(n+1) / (gamma(k+1) * gamma(n-k+1))
-void fn_binomial(Machine* m, Value* lhs, Value* rhs) {
+void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     auto binomial = [](double k, double n) -> double {
         // C(n,k) using gamma function for generalized binomial
         return std::tgamma(n + 1.0) / (std::tgamma(k + 1.0) * std::tgamma(n - k + 1.0));
@@ -1730,7 +1767,8 @@ void fn_binomial(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Pi Times (○) - monadic: multiply by pi
-void fn_pi_times(Machine* m, Value* omega) {
+void fn_pi_times(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(M_PI * omega->data.scalar);
         return;
@@ -1773,7 +1811,8 @@ static double circular_function(int fn_code, double x) {
 }
 
 // Circular Functions (○) - dyadic: A○B applies function A to B
-void fn_circular(Machine* m, Value* lhs, Value* rhs) {
+void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Left argument must be scalar integer in range -12 to 12
     if (!lhs->is_scalar()) {
         m->throw_error("RANK ERROR: circular function code must be scalar");
@@ -1831,7 +1870,8 @@ void fn_circular(Machine* m, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Conjugate/Identity (+)
-void fn_conjugate(Machine* m, Value* omega) {
+void fn_conjugate(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     // For real numbers, identity just returns the value
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(omega->data.scalar);
@@ -1850,7 +1890,8 @@ void fn_conjugate(Machine* m, Value* omega) {
 }
 
 // Negation (-)
-void fn_negate(Machine* m, Value* omega) {
+void fn_negate(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(-omega->data.scalar);
         return;
@@ -1869,7 +1910,8 @@ void fn_negate(Machine* m, Value* omega) {
 }
 
 // Signum/Sign (×)
-void fn_signum(Machine* m, Value* omega) {
+void fn_signum(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         double sign = (val > 0.0) ? 1.0 : (val < 0.0) ? -1.0 : 0.0;
@@ -1900,7 +1942,8 @@ void fn_signum(Machine* m, Value* omega) {
 }
 
 // Reciprocal (÷)
-void fn_reciprocal(Machine* m, Value* omega) {
+void fn_reciprocal(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         if (omega->data.scalar == 0.0) {
             m->throw_error("DOMAIN ERROR: reciprocal of zero");
@@ -1930,7 +1973,8 @@ void fn_reciprocal(Machine* m, Value* omega) {
 }
 
 // Exponential (*)
-void fn_exponential(Machine* m, Value* omega) {
+void fn_exponential(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(std::exp(omega->data.scalar));
         return;
@@ -1953,7 +1997,8 @@ void fn_exponential(Machine* m, Value* omega) {
 // ============================================================================
 
 // Shape (⍴) - monadic: returns shape as vector
-void fn_shape(Machine* m, Value* omega) {
+void fn_shape(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         // Scalar has empty shape
         Eigen::VectorXd shape(0);
@@ -1982,7 +2027,8 @@ void fn_shape(Machine* m, Value* omega) {
 }
 
 // Reshape (⍴) - dyadic: reshape rhs to shape given by lhs
-void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
+void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // lhs must be a scalar or vector specifying new shape
     if (!lhs->is_scalar() && !lhs->is_vector()) {
         m->throw_error("RANK ERROR: left argument to reshape must be scalar or vector");
@@ -2110,7 +2156,8 @@ void fn_reshape(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Ravel (,) - monadic: flatten to vector
-void fn_ravel(Machine* m, Value* omega) {
+void fn_ravel(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         Eigen::VectorXd v(1);
         v(0) = omega->as_scalar();
@@ -2134,8 +2181,10 @@ void fn_ravel(Machine* m, Value* omega) {
     m->result = m->heap->allocate_vector(result, is_char);
 }
 
-// Catenate (,) - dyadic: concatenate arrays
-void fn_catenate(Machine* m, Value* lhs, Value* rhs) {
+// Catenate (,) - dyadic: concatenate arrays (ISO 13751 Section 10.2.6)
+// Near-integer K: catenate along existing axis K
+// Non-integer K: laminate (create new axis at ⌊K)
+void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // String → char vector conversion for array operations
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
@@ -2143,28 +2192,135 @@ void fn_catenate(Machine* m, Value* lhs, Value* rhs) {
     // Preserve char data if both operands are char data
     bool is_char = lhs->is_char_data() && rhs->is_char_data();
 
+    // Handle scalar cases by promoting to 1-element vector
+    if (lhs->is_scalar() && rhs->is_scalar()) {
+        if (axis != nullptr) {
+            m->throw_error("AXIS ERROR: cannot catenate scalars with axis");
+            return;
+        }
+        Eigen::VectorXd result(2);
+        result(0) = lhs->as_scalar();
+        result(1) = rhs->as_scalar();
+        m->result = m->heap->allocate_vector(result, is_char);
+        return;
+    }
+
     // Convert both to matrices for uniform handling
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
-    // For vectors or compatible matrices, concatenate along first dimension
-    if (lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+    bool both_vectors = (lhs->is_scalar() || lhs->is_vector()) &&
+                        (rhs->is_scalar() || rhs->is_vector());
+
+    // Determine axis and whether this is catenate or laminate
+    double k_val = 0;
+    bool is_laminate = false;
+
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("RANK ERROR: axis must be scalar");
+            return;
+        }
+        k_val = axis->as_scalar();
+        // Check if K is a near-integer (catenate) or not (laminate)
+        double rounded = std::round(k_val);
+        is_laminate = std::abs(k_val - rounded) > 1e-10;
+    }
+
+    if (is_laminate) {
+        // Laminate: create new axis at ⌊K
+        int new_axis = static_cast<int>(std::floor(k_val));
+
+        // Both must have same shape for laminate
+        if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
+            m->throw_error("LENGTH ERROR: incompatible shapes for laminate");
+            return;
+        }
+
+        if (both_vectors) {
+            int len = lmat->rows();
+            if (new_axis == 0) {
+                // New axis at position 0: 2xN matrix (vectors become rows)
+                Eigen::MatrixXd result(2, len);
+                for (int i = 0; i < len; ++i) {
+                    result(0, i) = (*lmat)(i, 0);
+                    result(1, i) = (*rmat)(i, 0);
+                }
+                m->result = m->heap->allocate_matrix(result, is_char);
+            } else {
+                // New axis at position 1: Nx2 matrix (vectors become columns)
+                Eigen::MatrixXd result(len, 2);
+                for (int i = 0; i < len; ++i) {
+                    result(i, 0) = (*lmat)(i, 0);
+                    result(i, 1) = (*rmat)(i, 0);
+                }
+                m->result = m->heap->allocate_matrix(result, is_char);
+            }
+        } else {
+            // Laminate matrices - not yet supported
+            m->throw_error("RANK ERROR: laminate of matrices not supported");
+        }
         return;
     }
 
-    Eigen::MatrixXd result(lmat->rows() + rmat->rows(), lmat->cols());
-    result << *lmat, *rmat;
+    // Catenate along existing axis
+    if (both_vectors) {
+        // Vectors only have axis 1
+        if (axis != nullptr) {
+            int cat_axis = static_cast<int>(std::round(k_val));
+            if (cat_axis != 1) {
+                m->throw_error("AXIS ERROR: vectors only have axis 1");
+                return;
+            }
+        }
+        // Just concatenate
+        Eigen::VectorXd result(lmat->rows() + rmat->rows());
+        for (int i = 0; i < lmat->rows(); ++i) {
+            result(i) = (*lmat)(i, 0);
+        }
+        for (int i = 0; i < rmat->rows(); ++i) {
+            result(lmat->rows() + i) = (*rmat)(i, 0);
+        }
+        m->result = m->heap->allocate_vector(result, is_char);
+        return;
+    }
 
-    if (result.cols() == 1) {
-        m->result = m->heap->allocate_vector(result.col(0), is_char);
+    // Matrix catenation
+    int cat_axis = 2;  // Default: last axis (columns for matrices)
+    if (axis != nullptr) {
+        cat_axis = static_cast<int>(std::round(k_val));
+        if (cat_axis < 1 || cat_axis > 2) {
+            m->throw_error("AXIS ERROR: axis must be 1 or 2 for matrix");
+            return;
+        }
+    }
+
+    if (cat_axis == 1) {
+        // Catenate along first axis (rows)
+        if (lmat->cols() != rmat->cols()) {
+            m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+            return;
+        }
+
+        Eigen::MatrixXd result(lmat->rows() + rmat->rows(), lmat->cols());
+        result << *lmat, *rmat;
+        m->result = m->heap->allocate_matrix(result, is_char);
     } else {
+        // Catenate along second axis (columns)
+        if (lmat->rows() != rmat->rows()) {
+            m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+            return;
+        }
+
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols() + rmat->cols());
+        result << *lmat, *rmat;
         m->result = m->heap->allocate_matrix(result, is_char);
     }
 }
 
 // Transpose (⍉) - monadic: reverse dimensions
-void fn_transpose(Machine* m, Value* omega) {
+void fn_transpose(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         // Scalar transpose is identity
         m->result = m->heap->allocate_scalar(omega->as_scalar());
@@ -2188,7 +2344,8 @@ void fn_transpose(Machine* m, Value* omega) {
 
 // Dyadic Transpose (⍉) - reorder axes
 // For 2D: 1 0⍉M is transpose, 0 1⍉M is identity
-void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
+void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // String → char vector conversion for array operations
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -2244,7 +2401,8 @@ void fn_dyadic_transpose(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Matrix Inverse (⌹) - monadic
-void fn_matrix_inverse(Machine* m, Value* omega) {
+void fn_matrix_inverse(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         double val = omega->as_scalar();
         if (val == 0.0) {
@@ -2267,7 +2425,8 @@ void fn_matrix_inverse(Machine* m, Value* omega) {
 }
 
 // Matrix Divide (⌹) - dyadic: solve B×X = A for X
-void fn_matrix_divide(Machine* m, Value* lhs, Value* rhs) {
+void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (rhs->is_scalar()) {
         double divisor = rhs->as_scalar();
         if (divisor == 0.0) {
@@ -2305,7 +2464,8 @@ void fn_matrix_divide(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Iota (⍳) - monadic: generate indices from 0 to n-1
-void fn_iota(Machine* m, Value* omega) {
+void fn_iota(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (!omega->is_scalar()) {
         m->throw_error("RANK ERROR: iota argument must be scalar");
         return;
@@ -2339,7 +2499,8 @@ void fn_iota(Machine* m, Value* omega) {
 }
 
 // First (↑) - monadic: return first element
-void fn_first(Machine* m, Value* omega) {
+void fn_first(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         // First of scalar is the scalar itself
         m->result = m->heap->allocate_scalar(omega->as_scalar());
@@ -2368,8 +2529,9 @@ void fn_first(Machine* m, Value* omega) {
     m->result = m->heap->allocate_vector(first_row, omega->is_char_data());
 }
 
-// Take (↑) - dyadic: take first n elements
-void fn_take(Machine* m, Value* lhs, Value* rhs) {
+// Take (↑) - dyadic: take first n elements along specified axis
+// N↑B takes along first axis; N↑[K]B takes along axis K
+void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
         m->throw_error("RANK ERROR: take count must be scalar");
         return;
@@ -2389,14 +2551,30 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
+    // Determine which axis to take along
+    int rank = rhs->is_vector() ? 1 : 2;
+    int take_axis = 1;  // Default to first axis
+
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be a scalar");
+            return;
+        }
+        take_axis = static_cast<int>(axis->as_scalar());
+        if (take_axis < 1 || take_axis > rank) {
+            m->throw_error("AXIS ERROR: invalid axis for array rank");
+            return;
+        }
+    }
+
+    // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
+    double fill = is_char ? 32.0 : 0.0;
+
     if (rhs->is_vector()) {
         int len = mat->rows();
         int abs_n = std::abs(n);
 
         Eigen::VectorXd result(abs_n);
-
-        // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
-        double fill = is_char ? 32.0 : 0.0;
 
         if (n >= 0) {
             // Take from beginning
@@ -2414,39 +2592,62 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
-    // For matrices, take rows
+    // Matrix case
     int rows = mat->rows();
+    int cols = mat->cols();
     int abs_n = std::abs(n);
 
-    Eigen::MatrixXd result(abs_n, mat->cols());
+    if (take_axis == 1) {
+        // Take along first axis (rows)
+        Eigen::MatrixXd result(abs_n, cols);
 
-    // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
-    double fill = is_char ? 32.0 : 0.0;
-
-    if (n >= 0) {
-        for (int i = 0; i < abs_n; ++i) {
-            if (i < rows) {
-                result.row(i) = mat->row(i);
-            } else {
-                result.row(i).setConstant(fill);
+        if (n >= 0) {
+            for (int i = 0; i < abs_n; ++i) {
+                if (i < rows) {
+                    result.row(i) = mat->row(i);
+                } else {
+                    result.row(i).setConstant(fill);
+                }
+            }
+        } else {
+            for (int i = 0; i < abs_n; ++i) {
+                int src_idx = rows - abs_n + i;
+                if (src_idx >= 0) {
+                    result.row(i) = mat->row(src_idx);
+                } else {
+                    result.row(i).setConstant(fill);
+                }
             }
         }
+        m->result = m->heap->allocate_matrix(result, is_char);
     } else {
-        for (int i = 0; i < abs_n; ++i) {
-            int src_idx = rows - abs_n + i;
-            if (src_idx >= 0) {
-                result.row(i) = mat->row(src_idx);
-            } else {
-                result.row(i).setConstant(fill);
+        // Take along second axis (columns)
+        Eigen::MatrixXd result(rows, abs_n);
+
+        if (n >= 0) {
+            for (int j = 0; j < abs_n; ++j) {
+                if (j < cols) {
+                    result.col(j) = mat->col(j);
+                } else {
+                    result.col(j).setConstant(fill);
+                }
+            }
+        } else {
+            for (int j = 0; j < abs_n; ++j) {
+                int src_idx = cols - abs_n + j;
+                if (src_idx >= 0) {
+                    result.col(j) = mat->col(src_idx);
+                } else {
+                    result.col(j).setConstant(fill);
+                }
             }
         }
+        m->result = m->heap->allocate_matrix(result, is_char);
     }
-
-    m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // Drop (↓) - dyadic: drop first n elements
-void fn_drop(Machine* m, Value* lhs, Value* rhs) {
+void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
         m->throw_error("RANK ERROR: drop count must be scalar");
         return;
@@ -2494,35 +2695,72 @@ void fn_drop(Machine* m, Value* lhs, Value* rhs) {
         return;
     }
 
-    // For matrices, drop rows
+    // For matrices, determine which axis to drop along
+    // Default is axis 1 (first axis = rows)
+    // ↓[2] drops along second axis (columns)
+    int drop_axis = 1;  // Default: first axis (rows)
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("RANK ERROR: axis must be scalar");
+            return;
+        }
+        drop_axis = static_cast<int>(axis->as_scalar());
+        if (drop_axis < 1 || drop_axis > 2) {
+            m->throw_error("AXIS ERROR: axis must be 1 or 2 for matrix");
+            return;
+        }
+    }
+
     int rows = mat->rows();
+    int cols = mat->cols();
     int abs_n = std::abs(n);
 
-    if (abs_n >= rows) {
-        // Drop everything - return empty matrix
-        Eigen::MatrixXd result(0, mat->cols());
+    if (drop_axis == 1) {
+        // Drop along first axis (rows)
+        if (abs_n >= rows) {
+            Eigen::MatrixXd result(0, cols);
+            m->result = m->heap->allocate_matrix(result, is_char);
+            return;
+        }
+
+        int result_rows = rows - abs_n;
+        Eigen::MatrixXd result(result_rows, cols);
+
+        if (n >= 0) {
+            result = mat->bottomRows(result_rows);
+        } else {
+            result = mat->topRows(result_rows);
+        }
+
         m->result = m->heap->allocate_matrix(result, is_char);
-        return;
-    }
-
-    int result_rows = rows - abs_n;
-    Eigen::MatrixXd result(result_rows, mat->cols());
-
-    if (n >= 0) {
-        result = mat->bottomRows(result_rows);
     } else {
-        result = mat->topRows(result_rows);
-    }
+        // Drop along second axis (columns)
+        if (abs_n >= cols) {
+            Eigen::MatrixXd result(rows, 0);
+            m->result = m->heap->allocate_matrix(result, is_char);
+            return;
+        }
 
-    m->result = m->heap->allocate_matrix(result, is_char);
+        int result_cols = cols - abs_n;
+        Eigen::MatrixXd result(rows, result_cols);
+
+        if (n >= 0) {
+            result = mat->rightCols(result_cols);
+        } else {
+            result = mat->leftCols(result_cols);
+        }
+
+        m->result = m->heap->allocate_matrix(result, is_char);
+    }
 }
 
 // ============================================================================
 // Reverse/Rotate Functions
 // ============================================================================
 
-// Reverse (⌽) - monadic: reverse elements along last axis
-void fn_reverse(Machine* m, Value* omega) {
+// Reverse (⌽) - monadic: reverse elements along last axis (or specified axis)
+// ⌽B reverses along last axis; ⌽[K]B reverses along axis K
+void fn_reverse(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         // Scalar reversal is identity
         m->result = m->heap->allocate_scalar(omega->as_scalar());
@@ -2535,8 +2773,26 @@ void fn_reverse(Machine* m, Value* omega) {
     bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
+    // Determine which axis to reverse along
+    // Default: last axis (2 for matrix, 1 for vector)
+    int rank = omega->is_vector() ? 1 : 2;
+    int reverse_axis = rank;  // Default to last axis (1-indexed)
+
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be a scalar");
+            return;
+        }
+        reverse_axis = static_cast<int>(axis->as_scalar());
+        // Validate axis (1-indexed with ⎕IO=1)
+        if (reverse_axis < 1 || reverse_axis > rank) {
+            m->throw_error("AXIS ERROR: invalid axis for array rank");
+            return;
+        }
+    }
+
     if (omega->is_vector()) {
-        // Reverse vector elements
+        // Reverse vector elements (only axis 1 is valid)
         Eigen::VectorXd result(mat->rows());
         for (int i = 0; i < mat->rows(); ++i) {
             result(i) = (*mat)(mat->rows() - 1 - i, 0);
@@ -2545,18 +2801,30 @@ void fn_reverse(Machine* m, Value* omega) {
         return;
     }
 
-    // For matrices: reverse columns within each row (last axis)
+    // Matrix case
     Eigen::MatrixXd result(mat->rows(), mat->cols());
-    for (int i = 0; i < mat->rows(); ++i) {
-        for (int j = 0; j < mat->cols(); ++j) {
-            result(i, j) = (*mat)(i, mat->cols() - 1 - j);
+
+    if (reverse_axis == 1) {
+        // Reverse along first axis (rows): swap row order
+        for (int i = 0; i < mat->rows(); ++i) {
+            for (int j = 0; j < mat->cols(); ++j) {
+                result(i, j) = (*mat)(mat->rows() - 1 - i, j);
+            }
+        }
+    } else {
+        // Reverse along second/last axis (columns): reverse within each row
+        for (int i = 0; i < mat->rows(); ++i) {
+            for (int j = 0; j < mat->cols(); ++j) {
+                result(i, j) = (*mat)(i, mat->cols() - 1 - j);
+            }
         }
     }
     m->result = m->heap->allocate_matrix(result, is_char);
 }
 
-// Reverse First (⊖) - monadic: reverse elements along first axis
-void fn_reverse_first(Machine* m, Value* omega) {
+// Reverse First (⊖) - monadic: reverse elements along first axis (or specified axis)
+// ⊖B reverses along first axis; ⊖[K]B reverses along axis K
+void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         // Scalar reversal is identity
         m->result = m->heap->allocate_scalar(omega->as_scalar());
@@ -2566,6 +2834,24 @@ void fn_reverse_first(Machine* m, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    // Determine which axis to reverse along
+    // Default: first axis (1)
+    int rank = omega->is_vector() ? 1 : 2;
+    int reverse_axis = 1;  // Default to first axis (1-indexed)
+
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be a scalar");
+            return;
+        }
+        reverse_axis = static_cast<int>(axis->as_scalar());
+        // Validate axis (1-indexed with ⎕IO=1)
+        if (reverse_axis < 1 || reverse_axis > rank) {
+            m->throw_error("AXIS ERROR: invalid axis for array rank");
+            return;
+        }
+    }
 
     if (omega->is_vector()) {
         // For vectors, first axis is the only axis, so same as reverse
@@ -2577,16 +2863,28 @@ void fn_reverse_first(Machine* m, Value* omega) {
         return;
     }
 
-    // For matrices: reverse rows (first axis)
+    // Matrix case
     Eigen::MatrixXd result(mat->rows(), mat->cols());
-    for (int i = 0; i < mat->rows(); ++i) {
-        result.row(i) = mat->row(mat->rows() - 1 - i);
+
+    if (reverse_axis == 1) {
+        // Reverse along first axis (rows): swap row order
+        for (int i = 0; i < mat->rows(); ++i) {
+            result.row(i) = mat->row(mat->rows() - 1 - i);
+        }
+    } else {
+        // Reverse along second/last axis (columns): reverse within each row
+        for (int i = 0; i < mat->rows(); ++i) {
+            for (int j = 0; j < mat->cols(); ++j) {
+                result(i, j) = (*mat)(i, mat->cols() - 1 - j);
+            }
+        }
     }
     m->result = m->heap->allocate_matrix(result, is_char);
 }
 
 // Tally (≢) - monadic: count along first axis
-void fn_tally(Machine* m, Value* omega) {
+void fn_tally(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         // Scalar has no first axis, tally is 1
         m->result = m->heap->allocate_scalar(1.0);
@@ -2602,7 +2900,7 @@ void fn_tally(Machine* m, Value* omega) {
 }
 
 // Rotate (⌽) - dyadic: rotate elements along last axis
-void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
+void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
         m->throw_error("RANK ERROR: rotate count must be scalar");
         return;
@@ -2653,7 +2951,7 @@ void fn_rotate(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Rotate First (⊖) - dyadic: rotate elements along first axis
-void fn_rotate_first(Machine* m, Value* lhs, Value* rhs) {
+void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (!lhs->is_scalar()) {
         m->throw_error("RANK ERROR: rotate count must be scalar");
         return;
@@ -2724,7 +3022,8 @@ static Eigen::VectorXd flatten_value(Value* val) {
 
 // Index Of (⍳) - dyadic: find indices of rhs elements in lhs
 // Returns index of first occurrence of each element, or ⎕IO+≢lhs if not found
-void fn_index_of(Machine* m, Value* lhs, Value* rhs) {
+void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -2781,14 +3080,16 @@ void fn_index_of(Machine* m, Value* lhs, Value* rhs) {
 // flattens strands into simple vectors, which is incorrect for APL2-style
 // semantics but works until nested arrays are implemented.
 //
-void fn_enlist(Machine* m, Value* omega) {
+void fn_enlist(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     // Without nested arrays, enlist = ravel
-    fn_ravel(m, omega);
+    fn_ravel(m, axis, omega);
 }
 
 // Member Of (∊) - dyadic: check if elements of lhs are in rhs
 // Returns boolean array with 1 where element is found, 0 otherwise
-void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
+void fn_member_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -2834,7 +3135,8 @@ void fn_member_of(Machine* m, Value* lhs, Value* rhs) {
 
 // Grade Up (⍋) - monadic: return indices that would sort array in ascending order
 // ⍋ 3 1 4 1 5 → 2 4 1 3 5 (with ⎕IO=1)
-void fn_grade_up(Machine* m, Value* omega) {
+void fn_grade_up(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         // RANK ERROR: grade requires array, not scalar
         m->throw_error("RANK ERROR: grade requires array");
@@ -2867,7 +3169,8 @@ void fn_grade_up(Machine* m, Value* omega) {
 
 // Grade Down (⍒) - monadic: return indices that would sort array in descending order
 // ⍒ 3 1 4 1 5 → 5 3 1 2 4 (with ⎕IO=1)
-void fn_grade_down(Machine* m, Value* omega) {
+void fn_grade_down(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         // RANK ERROR: grade requires array, not scalar
         m->throw_error("RANK ERROR: grade requires array");
@@ -2904,7 +3207,8 @@ void fn_grade_down(Machine* m, Value* omega) {
 // B must be a character array
 // Result is a permutation of ⍳1↑⍴B that sorts B's subarrays along first axis
 // Uses stable sort; characters not in A sort after all characters in A
-void fn_grade_up_dyadic(Machine* m, Value* lhs, Value* rhs) {
+void fn_grade_up_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Validate A (collating sequence) is character array with rank > 0
     if (lhs->is_scalar()) {
         m->throw_error("RANK ERROR: collating sequence must have rank > 0");
@@ -3034,7 +3338,8 @@ void fn_grade_up_dyadic(Machine* m, Value* lhs, Value* rhs) {
 // Character Grade Down (A⍒B) - dyadic: sort B descending according to collating sequence A
 // ISO 13751 Section 10.2.20
 // Same as grade up but with reversed comparison
-void fn_grade_down_dyadic(Machine* m, Value* lhs, Value* rhs) {
+void fn_grade_down_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Validate A (collating sequence) is character array with rank > 0
     if (lhs->is_scalar()) {
         m->throw_error("RANK ERROR: collating sequence must have rank > 0");
@@ -3175,7 +3480,8 @@ void fn_grade_down_dyadic(Machine* m, Value* lhs, Value* rhs) {
 // 2 0 3 / 1 2 3 → 1 1 3 3 3
 // 1 1 1 / 4 5 6 → 4 5 6 (compress)
 // 0 1 0 / 4 5 6 → 5 (filter)
-void fn_replicate(Machine* m, Value* lhs, Value* rhs) {
+void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3280,7 +3586,8 @@ static bool value_in_array(double val, const Eigen::VectorXd& arr, int n) {
 
 // Unique (∪ monadic) - return unique elements in order of first appearance
 // ∪ 1 2 2 3 1 4 → 1 2 3 4
-void fn_unique(Machine* m, Value* omega) {
+void fn_unique(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         m->result = omega;
         return;
@@ -3322,7 +3629,8 @@ void fn_unique(Machine* m, Value* omega) {
 
 // Union (∪ dyadic) - unique elements from both arrays (left first, then unique from right)
 // 1 2 3 ∪ 3 4 5 → 1 2 3 4 5
-void fn_union(Machine* m, Value* lhs, Value* rhs) {
+void fn_union(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3381,7 +3689,8 @@ void fn_union(Machine* m, Value* lhs, Value* rhs) {
 
 // Without (~ dyadic) - elements of left that are not in right
 // 1 2 3 4 5 ~ 2 4 → 1 3 5
-void fn_without(Machine* m, Value* lhs, Value* rhs) {
+void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3432,7 +3741,8 @@ void fn_without(Machine* m, Value* lhs, Value* rhs) {
 // Roll (? monadic) - random integer from ⎕IO to N-1+⎕IO
 // ?N returns random integer in [⎕IO, N-1+⎕IO]
 // Uses machine's RNG seeded by ⎕RL for reproducibility
-void fn_roll(Machine* m, Value* omega) {
+void fn_roll(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     int io = m->io;
     if (omega->is_scalar()) {
         int n = static_cast<int>(omega->data.scalar);
@@ -3467,7 +3777,8 @@ void fn_roll(Machine* m, Value* omega) {
 
 // Deal (? dyadic) - A unique random values from 1 to B
 // A?B returns A unique random integers from [1, B] (1-based per ISO 13751)
-void fn_deal(Machine* m, Value* lhs, Value* rhs) {
+void fn_deal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (!lhs->is_scalar() || !rhs->is_scalar()) {
         m->throw_error("DOMAIN ERROR: deal arguments must be scalars");
         return;
@@ -3518,7 +3829,8 @@ void fn_deal(Machine* m, Value* lhs, Value* rhs) {
 // Where A is 1, take from B. Where A is 0, insert fill element (0)
 // 1 0 1 0 0 1 \ 'ABC' → 'A B  C' (with spaces being fill)
 // 1 0 1 1 \ 1 2 3 → 1 0 2 3
-void fn_expand(Machine* m, Value* lhs, Value* rhs) {
+void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3606,7 +3918,8 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
 // Expand-first (⍀ dyadic) - insert fill elements along first axis
 // A⍀B - A is boolean mask, B is data array
 // Expands along first axis (rows) for matrices
-void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
+void fn_expand_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3646,7 +3959,7 @@ void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
 
     // For vectors, expand-first is same as expand (only one axis)
     if (rhs->is_vector()) {
-        fn_expand(m, lhs, rhs);
+        fn_expand(m, axis, lhs, rhs);
         return;
     }
 
@@ -3682,7 +3995,8 @@ void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
 // 2⊥1 0 1 1 → 11 (binary to decimal)
 // 10⊥1 2 3 → 123 (decimal digits)
 // 24 60 60⊥1 30 45 → 5445 (hours:mins:secs to seconds)
-void fn_decode(Machine* m, Value* lhs, Value* rhs) {
+void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     // Fast path: scalar radix with scalar digit → just return the digit
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(rhs->as_scalar());
@@ -3730,7 +4044,8 @@ void fn_decode(Machine* m, Value* lhs, Value* rhs) {
 // 2 2 2 2⊤11 → 1 0 1 1 (decimal to binary)
 // 10 10 10⊤345 → 3 4 5 (decimal digits)
 // 24 60 60⊤5445 → 1 30 45 (seconds to hours:mins:secs)
-void fn_encode(Machine* m, Value* lhs, Value* rhs) {
+void fn_encode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3798,22 +4113,47 @@ void fn_encode(Machine* m, Value* lhs, Value* rhs) {
 // APL uses 1-based indexing (⎕IO=1)
 // I⌷A: I=indices (left), A=array (right)
 
-void fn_squad(Machine* m, Value* lhs, Value* rhs) {
+void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // ISO 13751: I⌷A where lhs=indices, rhs=array
     // Curry finalization is handled by DispatchFunctionK in the continuation graph
     Value* indices = lhs;
     Value* array = rhs;
+
+    // Function-with-axis: F[k] parses as k⌷F where lhs=axis, rhs=function
+    // Creates a curry with axis set - the function waits for its operand(s)
+    if (rhs->is_function()) {
+        Value* axis = lhs;
+        Value* fn = rhs;
+        // G_PRIME curry with no first_arg, but with axis set
+        Value* curried = m->heap->allocate_curried_fn(fn, nullptr, Value::CurryType::G_PRIME, axis);
+        m->result = curried;
+        return;
+    }
 
     // Convert STRING to char vector so all arrays use the same code path
     if (array->is_string()) array = array->to_char_vector(m->heap);
 
     bool is_char = array->is_char_data();
 
-    // Handle array indexing
-    if (!array->is_array() && !array->is_scalar()) {
+    // Handle array indexing - scalars cannot be indexed (ISO 13751)
+    if (array->is_scalar()) {
+        m->throw_error("RANK ERROR: cannot index scalar");
+        return;
+    }
+    if (!array->is_array()) {
         m->throw_error("DOMAIN ERROR: cannot index non-array value");
         return;
     }
+
+    // Helper lambda to validate index is near-integer
+    auto validate_index = [m](double val) -> bool {
+        double rounded = std::round(val);
+        if (std::abs(val - rounded) > 1e-10) {
+            m->throw_error("DOMAIN ERROR: index must be integer");
+            return false;
+        }
+        return true;
+    };
 
     const Eigen::MatrixXd* arr = array->as_matrix();
     int rows = arr->rows();
@@ -3821,7 +4161,9 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
     bool is_vec = (cols == 1);
 
     if (indices->is_scalar()) {
-        int idx = static_cast<int>(indices->as_scalar()) - m->io;  // ⎕IO
+        double idx_val = indices->as_scalar();
+        if (!validate_index(idx_val)) return;
+        int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
         if (is_vec) {
             if (idx < 0 || idx >= rows) {
                 m->throw_error("INDEX ERROR: index out of bounds");
@@ -3846,7 +4188,9 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
         if (is_vec) {
             Eigen::VectorXd result(n);
             for (int i = 0; i < n; i++) {
-                int idx = static_cast<int>((*idx_mat)(i, 0)) - m->io;  // ⎕IO
+                double idx_val = (*idx_mat)(i, 0);
+                if (!validate_index(idx_val)) return;
+                int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
                     m->throw_error("INDEX ERROR: index out of bounds");
                     return;
@@ -3857,7 +4201,9 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
         } else {
             Eigen::MatrixXd result(n, cols);
             for (int i = 0; i < n; i++) {
-                int idx = static_cast<int>((*idx_mat)(i, 0)) - m->io;  // ⎕IO
+                double idx_val = (*idx_mat)(i, 0);
+                if (!validate_index(idx_val)) return;
+                int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
                     m->throw_error("INDEX ERROR: index out of bounds");
                     return;
@@ -3880,7 +4226,8 @@ void fn_squad(Machine* m, Value* lhs, Value* rhs) {
 // - If B is a scalar, Z has shape 1 1
 // - If B is a vector (length n), Z has shape n 1
 // - If B has shape s1 s2 ... sk, Z has shape s1 (s2×s3×...×sk)
-void fn_table(Machine* m, Value* omega) {
+void fn_table(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         // Scalar → 1×1 matrix
         Eigen::MatrixXd result(1, 1);
@@ -3914,7 +4261,8 @@ void fn_table(Machine* m, Value* omega) {
 // Depth (≡ monadic) - nesting level of array
 // ISO 13751 Section 8.2.5: simple-scalar → 0, array → 1 + max depth of elements
 // Since we don't support nested arrays, depth is always 0 for scalars, 1 for arrays
-void fn_depth(Machine* m, Value* omega) {
+void fn_depth(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(0.0);
     } else {
@@ -3925,7 +4273,8 @@ void fn_depth(Machine* m, Value* omega) {
 
 // Match (≡ dyadic) - returns 1 if arguments are identical, 0 otherwise
 // ISO 13751 Section 10.2.53: A≡B returns 1 if A and B are identical
-void fn_match(Machine* m, Value* alpha, Value* omega) {
+void fn_match(Machine* m, Value* axis, Value* alpha, Value* omega) {
+    REJECT_AXIS(m, axis);
     // Different types never match
     if (alpha->tag != omega->tag) {
         m->result = m->heap->allocate_scalar(0.0);
@@ -3993,25 +4342,30 @@ void fn_match(Machine* m, Value* alpha, Value* omega) {
 // Right (⊢ monadic and ⊣ monadic) - identity function
 // ISO 13751 Section 10.2.18: ⊢B returns B
 // Also used for monadic ⊣ per spec (both monadic forms return the argument)
-void fn_right(Machine* m, Value* omega) {
+void fn_right(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     m->result = omega;
 }
 
 // Left (⊣ dyadic) - returns left argument
 // ISO 13751 Section 10.2.17: A⊣B returns A
-void fn_left(Machine* m, Value* alpha, Value* /* omega */) {
+void fn_left(Machine* m, Value* axis, Value* alpha, Value* /* omega */) {
+    REJECT_AXIS(m, axis);
+    (void)axis;  // Unused
     m->result = alpha;
 }
 
 // Right (⊢ dyadic) - returns right argument
 // ISO 13751 Section 10.2.18: A⊢B returns B
-void fn_right_dyadic(Machine* m, Value* /* alpha */, Value* omega) {
+void fn_right_dyadic(Machine* m, Value* axis, Value* /* alpha */, Value* omega) {
+    REJECT_AXIS(m, axis);
+    (void)axis;  // Unused
     m->result = omega;
 }
 
 // Catenate First (⍪ dyadic) - join along first axis
 // ISO 13751 Section 8.3.2: A⍪B is A,[1]B
-void fn_catenate_first(Machine* m, Value* alpha, Value* omega) {
+void fn_catenate_first(Machine* m, Value* axis, Value* alpha, Value* omega) {
     // String → char vector conversion
     if (alpha->is_string()) alpha = alpha->to_char_vector(m->heap);
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
@@ -4090,7 +4444,8 @@ void fn_catenate_first(Machine* m, Value* alpha, Value* omega) {
 // ============================================================================
 
 // Execute (⍎) - parse and evaluate a string as APL code
-void fn_execute(Machine* m, Value* omega) {
+void fn_execute(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     // Convert to STRING if needed (handles both STRING and char vectors)
     Value* str_val;
     if (omega->is_string()) {
@@ -4263,7 +4618,8 @@ static std::string format_number_exponential(double val, int width, int mantissa
 }
 
 // Monadic format: ⍕ B
-void fn_format_monadic(Machine* m, Value* omega) {
+void fn_format_monadic(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
     // Character input: return unchanged
     if (omega->is_string()) {
         m->result = omega;
@@ -4317,7 +4673,8 @@ void fn_format_monadic(Machine* m, Value* omega) {
 }
 
 // Dyadic format: A ⍕ B
-void fn_format_dyadic(Machine* m, Value* alpha, Value* omega) {
+void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
+    REJECT_AXIS(m, axis);
     // A must be numeric
     if (alpha->is_string() || (alpha->is_array() && alpha->is_char_data())) {
         m->throw_error("DOMAIN ERROR: format left argument must be numeric");

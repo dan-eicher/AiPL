@@ -38,6 +38,11 @@ private:
     Lexer* lexer_;
     Token current_token_;
 
+    // Dfn parsing state - tracks ⍵/⍺ usage for niladic detection
+    // Saved/restored in parse_dfn() for proper nesting
+    bool dfn_uses_omega = false;
+    bool dfn_uses_alpha = false;
+
     // Pratt parsing functions
     Continuation* parse_expression(int min_bp);
     Continuation* nud(const Token& token);  // Null denotation (prefix)
@@ -48,7 +53,7 @@ private:
     int get_binding_power(const Token& token);
 
     // Helper functions
-    Continuation* parse_dfn_body();  // Parse dfn body from { to }
+    ClosureLiteralK* parse_dfn();  // Parse complete dfn from { to }, returns ClosureLiteralK
     std::vector<Continuation*> parse_block_until(TokenType terminator);  // Parse statements until terminator
     Continuation* parse_if_statement();      // Parse :If/:Else/:EndIf
     Continuation* parse_while_statement();   // Parse :While/:EndWhile
