@@ -739,14 +739,13 @@ void PerformFinalizeK::invoke(Machine* machine) {
             Value* fn = cd->fn;
             Value* arg = cd->first_arg;
 
-            // Special case: DYADIC_CURRY wrapping OPERATOR_CURRY (axis-based reduce/scan)
-            // DYADIC_CURRY(OPERATOR_CURRY(DERIVED_OP(op, f), axis), array)
-            // → call op->dyadic(null, f, axis, array)
+            // DYADIC_CURRY wrapping OPERATOR_CURRY - finalize with axis passed through
             if (fn->tag == ValueType::CURRIED_FN &&
                 fn->data.curried_fn->curry_type == Value::CurryType::OPERATOR_CURRY) {
                 Value::CurriedFnData* oc = fn->data.curried_fn;
-                Value* derived = oc->fn;  // DERIVED_OPERATOR
-                Value* axis = oc->first_arg;  // axis specification
+                Value* derived = oc->fn;
+                Value* second_operand = oc->first_arg;
+                Value* axis = oc->axis;  // Just pass it through
 
                 if (derived->tag == ValueType::DERIVED_OPERATOR) {
                     PrimitiveOp* op = derived->data.derived_op->primitive_op;
@@ -755,12 +754,14 @@ void PerformFinalizeK::invoke(Machine* machine) {
                     Value* op_value = derived->data.derived_op->operator_value;
 
                     if (def_op) {
-                        // User-defined dyadic operator with axis as second operand
                         machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
-                            def_op, op_value, first_operand, axis, nullptr, arg));
+                            def_op, op_value, first_operand, second_operand, nullptr, arg));
                         return;
-                    } else if (op) {
-                        op->dyadic(machine, nullptr, first_operand, axis, arg);
+                    } else if (op && op->monadic) {
+                        op->monadic(machine, axis, first_operand, arg);
+                        return;
+                    } else if (op && op->dyadic) {
+                        op->dyadic(machine, axis, nullptr, first_operand, second_operand, arg);
                         return;
                     }
                 }
@@ -1325,10 +1326,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 return;
             }
         } else if (curried_data->curry_type == Value::CurryType::OPERATOR_CURRY) {
-            // Operator curry: inner_fn is DERIVED_OPERATOR, first_arg is second operand
-            // For inner product: first_arg is second function operand (×)
-            // For rank: first_arg is rank specification (a value)
-            // inner_fn = DERIVED_OPERATOR(op, first_operand)
+            // Operator curry: inner_fn is DERIVED_OPERATOR
+            // - first_arg is second operand (function for ., value for ⍤)
+            // - axis is axis spec from [k] syntax (or nullptr)
             if (inner_fn->tag != ValueType::DERIVED_OPERATOR) {
                 machine->throw_error("VALUE ERROR: OPERATOR_CURRY expected DERIVED_OPERATOR", this);
                 return;
@@ -1338,21 +1338,18 @@ void DispatchFunctionK::invoke(Machine* machine) {
             Value::DefinedOperatorData* def_op = derived_data->defined_op;
             Value* first_operand = derived_data->first_operand;
             Value* op_value = derived_data->operator_value;
-            Value* second_operand = first_arg;  // Second operand (function for ., value for ⍤)
+            Value* second_operand = first_arg;
+            Value* axis = curried_data->axis;  // Just pass it through
 
             if (left_val && right_val) {
-                // Have both array arguments - call dyadic operator
-                // For reduce/scan: left_val is N, second_operand is axis
-
                 // Finalize any G_PRIME curried functions in arguments first
                 if (left_val->tag == ValueType::CURRIED_FN) {
                     Value::CurriedFnData* lcd = left_val->data.curried_fn;
                     if (lcd->curry_type == Value::CurryType::G_PRIME) {
                         Value* fn = lcd->fn;
                         Value* arg = lcd->first_arg;
-                        Value* axis = lcd->axis;
                         if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, axis, arg);
+                            fn->data.primitive_fn->monadic(machine, lcd->axis, arg);
                             left_val = machine->result;
                         }
                     }
@@ -1362,20 +1359,18 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     if (rcd->curry_type == Value::CurryType::G_PRIME) {
                         Value* fn = rcd->fn;
                         Value* arg = rcd->first_arg;
-                        Value* axis = rcd->axis;
                         if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, axis, arg);
+                            fn->data.primitive_fn->monadic(machine, rcd->axis, arg);
                             right_val = machine->result;
                         }
                     }
                 }
 
                 if (def_op) {
-                    // User-defined dyadic operator with both operands and both args
                     machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, second_operand, left_val, right_val));
                 } else {
-                    op->dyadic(machine, left_val, first_operand, second_operand, right_val);
+                    op->dyadic(machine, axis, left_val, first_operand, second_operand, right_val);
                 }
             } else if (right_val) {
                 // Only have right array argument - curry to wait for potential left
@@ -1400,6 +1395,8 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, second_operand, nullptr, right_val));
                 } else {
+                    // Curry to wait for potential left array argument
+                    // When finalized, applies with lhs=nullptr (monadic) or the left arg (dyadic)
                     Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
                     machine->result = curried;
                 }
@@ -1549,16 +1546,17 @@ void DispatchFunctionK::invoke(Machine* machine) {
             }
 
             // G2 Universal Currying: curry all dyadic objects when applied with one argument
+            // No axis from this dispatch path (axis would come through curry system)
             if (op->dyadic && actual_left_array && actual_right_array) {
                 // Have both array arguments - apply dyadic form with both function operands
-                op->dyadic(machine, actual_left_array, first_operand, second_func_operand, actual_right_array);
+                op->dyadic(machine, nullptr, actual_left_array, first_operand, second_func_operand, actual_right_array);
             } else if (op->dyadic && left_val) {
                 // Have left array but arrays weren't extracted - use original values
-                op->dyadic(machine, left_val, first_operand, second_func_operand, right_val);
+                op->dyadic(machine, nullptr, left_val, first_operand, second_func_operand, right_val);
             } else if (op->monadic && !left_val) {
                 // Monadic operator application - prefer this over curry when available
                 // This handles cases like +/1 2 3 (reduce with no N argument)
-                op->monadic(machine, first_operand, right_val);
+                op->monadic(machine, nullptr, first_operand, right_val);
             } else if (op->dyadic && !left_val) {
                 // Only have right argument and no monadic form - curry for second operand
                 // Use OPERATOR_CURRY to capture it properly (not DYADIC_CURRY which is for array args)
@@ -1601,8 +1599,8 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     // Push DeferredDispatchK to continue after inner reduction completes
                     // It will read machine->result as the new right_val
                     machine->push_kont(machine->heap->allocate<DeferredDispatchK>(fn_val, left_val, force_monadic));
-                    // Evaluate inner reduction - result will become new right_val
-                    op->monadic(machine, first_operand, arg);
+                    // Evaluate inner reduction - result will become new right_val (no axis here)
+                    op->monadic(machine, nullptr, first_operand, arg);
                     return;
                 }
             }
@@ -1644,7 +1642,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
         // Force monadic: apply monadic form directly (used by each, rank operators)
         if (force_monadic && op->monadic && !left_val && right_val) {
-            op->monadic(machine, first_operand, right_val);
+            op->monadic(machine, nullptr, first_operand, right_val);
             return;
         }
 
@@ -1658,7 +1656,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 strcmp(op->name, "⌿") == 0 || strcmp(op->name, "⍀") == 0) {
                 // If operand is array (not function), this is replicate - apply immediately
                 if (!first_operand->is_function()) {
-                    op->monadic(machine, first_operand, right_val);
+                    op->monadic(machine, nullptr, first_operand, right_val);
                     return;
                 }
                 // Function operand: curry with DYADIC_CURRY to wait for potential N (N-wise reduction)
@@ -1674,13 +1672,13 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
         // Monadic-only operators apply immediately when given one argument
         if (op->monadic && !op->dyadic && !left_val && right_val) {
-            op->monadic(machine, first_operand, right_val);
+            op->monadic(machine, nullptr, first_operand, right_val);
             return;
         }
 
         // Dyadic operators with both arguments
         if (op->dyadic && left_val && right_val) {
-            op->dyadic(machine, left_val, first_operand, nullptr, right_val);
+            op->dyadic(machine, nullptr, left_val, first_operand, nullptr, right_val);
             return;
         }
 
@@ -2386,10 +2384,10 @@ void ApplyDerivedOperatorK::mark(Heap* heap) {
 void ApplyAxisK::invoke(Machine* machine) {
     Value* axis = machine->result;
 
-    // Create OPERATOR_CURRY: derived_op curried with axis as second operand
-    // When this is applied to omega, DispatchFunctionK will call op->dyadic
+    // Store axis in the axis field, not first_arg
+    // This keeps axis separate from operands, so dispatch doesn't need special cases
     Value* curried = machine->heap->allocate_curried_fn(
-        derived_op, axis, Value::CurryType::OPERATOR_CURRY);
+        derived_op, nullptr, Value::CurryType::OPERATOR_CURRY, axis);
     machine->result = curried;
 }
 

@@ -1228,8 +1228,8 @@ TEST_F(ContinuationTest, NwiseMatrixReduceKMarking) {
 // ApplyAxisK tests - for axis specification (f/[k])
 // ============================================================================
 
-// Test: ApplyAxisK creates OPERATOR_CURRY with axis
-TEST_F(ContinuationTest, ApplyAxisKCreatesOperatorCurry) {
+// Test: ApplyAxisK creates OPERATOR_CURRY with axis in axis field
+TEST_F(ContinuationTest, ApplyAxisKCreatesAxisCurry) {
     // Create a derived operator (+/)
     // First need a primitive function value for +
     Value* plus_prim = heap->allocate_primitive(&prim_plus);
@@ -1245,15 +1245,17 @@ TEST_F(ContinuationTest, ApplyAxisKCreatesOperatorCurry) {
     machine->push_kont(apply_axis);
     Value* result = machine->execute();
 
-    // Result should be an OPERATOR_CURRY
+    // Result should be an OPERATOR_CURRY with axis in axis field
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::CURRIED_FN);
     EXPECT_EQ(result->data.curried_fn->curry_type, Value::CurryType::OPERATOR_CURRY);
 
-    // The curried function should have the derived operator and axis
+    // The curried function should have the derived operator and axis in axis field
     EXPECT_EQ(result->data.curried_fn->fn, derived);
-    EXPECT_TRUE(result->data.curried_fn->first_arg->is_scalar());
-    EXPECT_DOUBLE_EQ(result->data.curried_fn->first_arg->as_scalar(), 1.0);
+    EXPECT_EQ(result->data.curried_fn->first_arg, nullptr);  // No second operand
+    ASSERT_NE(result->data.curried_fn->axis, nullptr);       // Axis is in axis field
+    EXPECT_TRUE(result->data.curried_fn->axis->is_scalar());
+    EXPECT_DOUBLE_EQ(result->data.curried_fn->axis->as_scalar(), 1.0);
 }
 
 // Test: ApplyAxisK marks derived_op during GC
@@ -1280,7 +1282,9 @@ TEST_F(ContinuationTest, ApplyAxisKWithScanOperator) {
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->tag, ValueType::CURRIED_FN);
     EXPECT_EQ(result->data.curried_fn->curry_type, Value::CurryType::OPERATOR_CURRY);
-    EXPECT_DOUBLE_EQ(result->data.curried_fn->first_arg->as_scalar(), 2.0);
+    EXPECT_EQ(result->data.curried_fn->first_arg, nullptr);  // No second operand
+    ASSERT_NE(result->data.curried_fn->axis, nullptr);       // Axis is in axis field
+    EXPECT_DOUBLE_EQ(result->data.curried_fn->axis->as_scalar(), 2.0);
 }
 
 // ============================================================================

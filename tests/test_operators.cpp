@@ -43,7 +43,7 @@ TEST_F(OperatorsTest, InnerProductDimensionMismatch) {
     Value* g = machine->heap->allocate_primitive(&prim_times);
 
     machine->kont_stack.clear();
-    op_inner_product(machine, lhs, f, g, rhs);
+    op_inner_product(machine, nullptr, lhs, f, g, rhs);
 
     // Should have pushed a ThrowErrorK
     ASSERT_EQ(machine->kont_stack.size(), 1);
@@ -59,7 +59,7 @@ TEST_F(OperatorsTest, DuplicateScalar) {
     Value* omega = machine->heap->allocate_scalar(3.0);
     Value* fn = machine->heap->allocate_primitive(&prim_plus);
 
-    op_commute(machine, fn, omega);
+    op_commute(machine, nullptr, fn, omega);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_scalar());
@@ -73,7 +73,7 @@ TEST_F(OperatorsTest, DuplicateVector) {
     Value* omega = machine->heap->allocate_vector(vec);
     Value* fn = machine->heap->allocate_primitive(&prim_times);
 
-    op_commute(machine, fn, omega);
+    op_commute(machine, nullptr, fn, omega);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_vector());
@@ -90,7 +90,7 @@ TEST_F(OperatorsTest, CommuteScalars) {
     Value* rhs = machine->heap->allocate_scalar(4.0);
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
 
-    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
+    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_scalar());
@@ -109,7 +109,7 @@ TEST_F(OperatorsTest, CommuteVectors) {
 
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
 
-    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
+    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_vector());
@@ -131,7 +131,7 @@ TEST_F(OperatorsTest, ReplicateViaReduce) {
     data << 4.0, 5.0, 6.0;
     Value* data_vec = machine->heap->allocate_vector(data);
 
-    fn_reduce(machine, count_vec, data_vec);
+    fn_reduce(machine, nullptr, count_vec, data_vec);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_vector());
@@ -150,7 +150,7 @@ TEST_F(OperatorsTest, ErrorScanNonFunction) {
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_scan(machine, vec, vec);
+    fn_scan(machine, nullptr, vec, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
@@ -164,7 +164,7 @@ TEST_F(OperatorsTest, DuplicateWithDivide) {
     Value* omega = machine->heap->allocate_scalar(4.0);
     Value* fn = machine->heap->allocate_primitive(&prim_divide);
 
-    op_commute(machine, fn, omega);
+    op_commute(machine, nullptr, fn, omega);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_scalar());
@@ -177,7 +177,7 @@ TEST_F(OperatorsTest, CommuteWithDivide) {
     Value* rhs = machine->heap->allocate_scalar(12.0);
     Value* fn = machine->heap->allocate_primitive(&prim_divide);
 
-    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
+    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_scalar());
@@ -195,7 +195,7 @@ TEST_F(OperatorsTest, CommuteMatrix) {
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
 
     // lhs -⍨ rhs → rhs - lhs = (1-10, 2-20, 3-30, 4-40) = (-9, -18, -27, -36)
-    op_commute_dyadic(machine, lhs, fn, nullptr, rhs);
+    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_matrix());
@@ -214,7 +214,7 @@ TEST_F(OperatorsTest, DuplicateMatrix) {
     Value* omega = machine->heap->allocate_matrix(mat);
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
 
-    op_commute(machine, fn, omega);
+    op_commute(machine, nullptr, fn, omega);
 
     ASSERT_NE(machine->result, nullptr);
     EXPECT_TRUE(machine->result->is_matrix());
@@ -260,7 +260,7 @@ TEST_F(OperatorsTest, RankRequiresFunction) {
     Value* rank_spec = machine->heap->allocate_scalar(0.0);
 
     machine->kont_stack.clear();
-    op_rank(machine, nullptr, not_fn, rank_spec, omega);
+    op_rank(machine, nullptr, nullptr, not_fn, rank_spec, omega);
 
     ASSERT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
@@ -280,7 +280,7 @@ TEST_F(OperatorsTest, RankCellCountMismatch) {
     Value* rank_spec = machine->heap->allocate_scalar(0.0);
 
     machine->kont_stack.clear();
-    op_rank(machine, lhs, fn, rank_spec, rhs);
+    op_rank(machine, nullptr, lhs, fn, rank_spec, rhs);
 
     ASSERT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);

@@ -10,30 +10,28 @@ namespace apl {
 class Machine;
 
 // PrimitiveOp is defined in value.h
+// All operator functions now take axis as first parameter after machine
+// This unifies axis handling across all operators
 
-// Dyadic operators
-void op_outer_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs);  // ∘. outer product
-void op_inner_product(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs);  // . inner product
+// Dyadic operators (axis, lhs, f, g, rhs)
+void op_outer_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Value* rhs);  // ∘. outer product
+void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Value* rhs);  // . inner product
+void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Value* rhs);    // ¨ each (dyadic)
+void op_commute_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Value* rhs); // ⍨ commute (dyadic)
 
-// Monadic operators
-void op_each(Machine* m, Value* f, Value* omega);       // ¨ each (apply to each element)
-void op_commute(Machine* m, Value* f, Value* omega);    // ⍨ duplicate (monadic)
+// Monadic operators (axis, f, omega)
+void op_each(Machine* m, Value* axis, Value* f, Value* omega);       // ¨ each (apply to each element)
+void op_commute(Machine* m, Value* axis, Value* f, Value* omega);    // ⍨ duplicate (monadic)
 
-// Helper for commute (dyadic form - not exposed as PrimitiveOp yet)
-void op_commute_dyadic(Machine* m, Value* lhs, Value* f, Value* g, Value* rhs);  // ⍨ commute (dyadic)
+// Reduction and Scan operators - unified with axis support
+void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega);       // f/B or f/[k]B
+void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega); // f⌿B or f⌿[k]B
+void fn_scan(Machine* m, Value* axis, Value* func, Value* omega);         // f\B or f\[k]B
+void fn_scan_first(Machine* m, Value* axis, Value* func, Value* omega);   // f⍀B or f⍀[k]B
 
-// Reduction and Scan operators
-// These are operators (not primitives) because they take functions as operands
-void fn_reduce(Machine* m, Value* func, Value* omega);         // / reduce along last axis
-void fn_reduce_first(Machine* m, Value* func, Value* omega);   // ⌿ reduce along first axis
-void fn_scan(Machine* m, Value* func, Value* omega);           // \ scan along last axis
-void fn_scan_first(Machine* m, Value* func, Value* omega);     // ⍀ scan along first axis
-
-// Axis-specified reduction and scan (dyadic operator forms)
-void fn_reduce_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);        // f/[k]B or N f/[k]B
-void fn_reduce_first_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);  // f⌿[k]B or N f⌿[k]B
-void fn_scan_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);          // f\[k]B
-void fn_scan_first_axis(Machine* m, Value* lhs, Value* func, Value* axis, Value* rhs);    // f⍀[k]B
+// N-wise reduction (dyadic forms) - unified with axis support
+void fn_reduce_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Value* g, Value* rhs);       // N f/B or N f/[k]B
+void fn_reduce_first_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Value* g, Value* rhs); // N f⌿B or N f⌿[k]B
 
 // PrimitiveOp structs that combine monadic and dyadic forms
 extern PrimitiveOp op_dot;           // . operator (inner product dyadic)
@@ -47,14 +45,14 @@ extern PrimitiveOp op_scan_first;    // ⍀ operator (scan first axis)
 extern PrimitiveOp op_rank_op;       // ⍤ operator (rank)
 
 // Rank operator functions
-void op_rank_monadic(Machine* m, Value* f, Value* omega);
-void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs);
+void op_rank_monadic(Machine* m, Value* axis, Value* f, Value* omega);
+void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Value* rhs);
 
 // Catenate/Laminate with axis (,[k])
 // When k is near-integer: catenate along axis k
 // When k is fractional: laminate (create new axis at ⌊k)
-void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega);
-void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused, Value* rhs);
+void fn_catenate_axis_monadic(Machine* m, Value* curry_axis, Value* axis_operand, Value* omega);
+void fn_catenate_axis_dyadic(Machine* m, Value* curry_axis, Value* lhs, Value* axis_operand, Value* unused, Value* rhs);
 extern PrimitiveOp op_catenate_axis;  // ,[k] operator
 
 } // namespace apl
