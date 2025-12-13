@@ -2350,8 +2350,10 @@ void fn_first(Machine* m, Value* omega) {
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (mat->size() == 0) {
-        // First of empty array - return 0 (prototype element)
-        m->result = m->heap->allocate_scalar(0.0);
+        // First of empty array - return typical element (ISO 13751 §5.3.2)
+        // Character arrays: blank ' ', Numeric arrays: zero
+        double typical = omega->is_char_data() ? 32.0 : 0.0;
+        m->result = m->heap->allocate_scalar(typical);
         return;
     }
 
@@ -2393,16 +2395,19 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
 
         Eigen::VectorXd result(abs_n);
 
+        // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
+        double fill = is_char ? 32.0 : 0.0;
+
         if (n >= 0) {
             // Take from beginning
             for (int i = 0; i < abs_n; ++i) {
-                result(i) = (i < len) ? (*mat)(i, 0) : 0.0;
+                result(i) = (i < len) ? (*mat)(i, 0) : fill;
             }
         } else {
             // Take from end
             for (int i = 0; i < abs_n; ++i) {
                 int src_idx = len - abs_n + i;
-                result(i) = (src_idx >= 0) ? (*mat)(src_idx, 0) : 0.0;
+                result(i) = (src_idx >= 0) ? (*mat)(src_idx, 0) : fill;
             }
         }
         m->result = m->heap->allocate_vector(result, is_char);
@@ -2415,12 +2420,15 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(abs_n, mat->cols());
 
+    // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
+    double fill = is_char ? 32.0 : 0.0;
+
     if (n >= 0) {
         for (int i = 0; i < abs_n; ++i) {
             if (i < rows) {
                 result.row(i) = mat->row(i);
             } else {
-                result.row(i).setZero();
+                result.row(i).setConstant(fill);
             }
         }
     } else {
@@ -2429,7 +2437,7 @@ void fn_take(Machine* m, Value* lhs, Value* rhs) {
             if (src_idx >= 0) {
                 result.row(i) = mat->row(src_idx);
             } else {
-                result.row(i).setZero();
+                result.row(i).setConstant(fill);
             }
         }
     }
@@ -2759,9 +2767,22 @@ void fn_index_of(Machine* m, Value* lhs, Value* rhs) {
 }
 
 // Enlist (∊) - monadic: flatten nested structure to simple vector
-// For simple arrays, this is equivalent to ravel (,)
+// ISO 13751 §10.2.25: Returns a simple vector containing all simple scalars in B
+//
+// TODO: NESTED ARRAYS NOT YET IMPLEMENTED
+// Currently this just calls ravel because we don't have nested arrays.
+// When nested arrays are implemented:
+//   - ∊ should recursively descend into nested structures
+//   - ∊(1 (2 3) 4) should return 1 2 3 4 (flatten the nested vector)
+//   - ∊ on a simple array should be equivalent to ravel
+//
+// Related: PerformJuxtaposeK in continuation.cpp is where stranding like
+// "1 (2 3) 4" or "{⍵ ⍵}(1 2 3)" would create nested arrays. Currently it
+// flattens strands into simple vectors, which is incorrect for APL2-style
+// semantics but works until nested arrays are implemented.
+//
 void fn_enlist(Machine* m, Value* omega) {
-    // For simple numeric arrays (our current implementation), enlist = ravel
+    // Without nested arrays, enlist = ravel
     fn_ravel(m, omega);
 }
 
@@ -3517,6 +3538,9 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
         if (val == 1) ones_count++;
     }
 
+    // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
+    double fill = is_char ? 32.0 : 0.0;
+
     // Handle scalar/vector rhs
     // ISO 10.2.6: "If B is a scalar, set B1 to (+/A1)µB" - extend scalar to ones_count copies
     if (rhs->is_scalar()) {
@@ -3526,10 +3550,10 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
             if (static_cast<int>(mask(i)) == 1) {
                 result(i) = val;  // Use scalar value for each 1
             } else {
-                result(i) = 0.0;  // Fill element for each 0
+                result(i) = fill;  // Fill element for each 0
             }
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
@@ -3550,7 +3574,7 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
             if (static_cast<int>(mask(j)) == 1) {
                 result.col(j) = mat->col(src_col++);
             } else {
-                result.col(j) = Eigen::VectorXd::Zero(rows);  // Fill column
+                result.col(j).setConstant(fill);  // Fill column
             }
         }
 
@@ -3572,7 +3596,7 @@ void fn_expand(Machine* m, Value* lhs, Value* rhs) {
         if (static_cast<int>(mask(i)) == 1) {
             result(i) = data(src_idx++);
         } else {
-            result(i) = 0.0;  // Fill element
+            result(i) = fill;  // Fill element
         }
     }
 
@@ -3602,6 +3626,9 @@ void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
         if (val == 1) ones_count++;
     }
 
+    // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
+    double fill = is_char ? 32.0 : 0.0;
+
     // Handle scalar rhs
     if (rhs->is_scalar()) {
         double val = rhs->data.scalar;
@@ -3610,10 +3637,10 @@ void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
             if (static_cast<int>(mask(i)) == 1) {
                 result(i) = val;
             } else {
-                result(i) = 0.0;
+                result(i) = fill;
             }
         }
-        m->result = m->heap->allocate_vector(result);
+        m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
@@ -3639,7 +3666,7 @@ void fn_expand_first(Machine* m, Value* lhs, Value* rhs) {
         if (static_cast<int>(mask(i)) == 1) {
             result.row(i) = mat->row(src_row++);
         } else {
-            result.row(i) = Eigen::RowVectorXd::Zero(cols);  // Fill row
+            result.row(i).setConstant(fill);  // Fill row
         }
     }
 

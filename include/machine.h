@@ -20,6 +20,9 @@ namespace apl {
 constexpr size_t MAX_ARRAY_SIZE = INT_MAX;    // Limited by int-based indexing throughout codebase
 constexpr size_t MAX_IDENTIFIER_LENGTH = 256; // Maximum identifier name length
 
+// Implementation parameters (ISO 13751 §5.2.5, §5.5)
+constexpr double INTEGER_TOLERANCE = 1e-10;   // Tolerance for near-integer checks
+
 // APLError - Exception for APL runtime errors (DOMAIN ERROR, etc.)
 // These are user-visible errors that should be caught and displayed.
 // Distinct from std::runtime_error which indicates VM bugs.

@@ -659,16 +659,27 @@ static int validate_axis(Machine* m, Value* axis, int max_rank) {
         return 0;  // Use default axis
     }
 
-    if (!axis->is_scalar()) {
-        m->throw_error("AXIS ERROR: axis must be a scalar");
+    // ISO 13751 §5.3.2: axis must be "scalar or one-element-vector"
+    double axis_val;
+    if (axis->is_scalar()) {
+        axis_val = axis->as_scalar();
+    } else if (axis->is_vector() && axis->size() == 1) {
+        axis_val = axis->as_matrix()->coeff(0, 0);
+    } else {
+        m->throw_error("AXIS ERROR: axis must be scalar or one-element vector");
         return -1;
     }
 
-    double axis_val = axis->as_scalar();
-    int k = static_cast<int>(axis_val);
+    // ISO 13751 §5.2.5: axis must be a "near-integer"
+    if (std::abs(axis_val - std::round(axis_val)) >= INTEGER_TOLERANCE) {
+        m->throw_error("AXIS ERROR: axis must be an integer");
+        return -1;
+    }
+
+    int k = static_cast<int>(std::round(axis_val));
     int io = m->io;
 
-    if (axis_val != static_cast<double>(k) || k < io || k > max_rank - 1 + io) {
+    if (k < io || k > max_rank - 1 + io) {
         m->throw_error("AXIS ERROR: axis out of range");
         return -1;
     }
@@ -1353,16 +1364,20 @@ void op_rank(Machine* m, Value* lhs, Value* f, Value* rank_spec, Value* rhs) {
 // ========================================================================
 
 static bool is_near_integer(double x) {
-    return std::abs(x - std::round(x)) < 1e-10;
+    return std::abs(x - std::round(x)) < INTEGER_TOLERANCE;
 }
 
 void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
-    if (!axis->is_scalar()) {
-        m->throw_error("AXIS ERROR: axis must be scalar");
+    // ISO 13751 §5.3.2: axis must be "scalar or one-element-vector"
+    double k;
+    if (axis->is_scalar()) {
+        k = axis->as_scalar();
+    } else if (axis->is_vector() && axis->size() == 1) {
+        k = axis->as_matrix()->coeff(0, 0);
+    } else {
+        m->throw_error("AXIS ERROR: axis must be scalar or one-element vector");
         return;
     }
-
-    double k = axis->as_scalar();
     int axis_idx = static_cast<int>(std::round(k)) - m->io;  // ⎕IO
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
@@ -1412,12 +1427,16 @@ void fn_catenate_axis_monadic(Machine* m, Value* axis, Value* omega) {
 void fn_catenate_axis_dyadic(Machine* m, Value* lhs, Value* axis, Value* unused, Value* rhs) {
     (void)unused;
 
-    if (!axis->is_scalar()) {
-        m->throw_error("AXIS ERROR: axis must be scalar");
+    // ISO 13751 §5.3.2: axis must be "scalar or one-element-vector"
+    double k;
+    if (axis->is_scalar()) {
+        k = axis->as_scalar();
+    } else if (axis->is_vector() && axis->size() == 1) {
+        k = axis->as_matrix()->coeff(0, 0);
+    } else {
+        m->throw_error("AXIS ERROR: axis must be scalar or one-element vector");
         return;
     }
-
-    double k = axis->as_scalar();
     bool laminate = !is_near_integer(k);
     int axis_idx = static_cast<int>(std::floor(k)) - m->io;  // ⎕IO
 

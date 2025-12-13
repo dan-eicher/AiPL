@@ -1870,6 +1870,112 @@ TEST_F(OperatorsTest, DefinedDyadicOperatorPowerCompose) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
 }
 
+// ========================================================================
+// ISO 13751 Error Type Tests
+// ========================================================================
+
+// AXIS ERROR: Invalid axis specification (ISO 13751 §5.3.4.1)
+TEST_F(OperatorsTest, AxisErrorReduceInvalidAxis) {
+    // Reduce with axis out of range for vector (vectors only have axis 1)
+    EXPECT_THROW(eval(machine, "+/[2] 1 2 3"), APLError);
+}
+
+TEST_F(OperatorsTest, AxisErrorReduceAxisTooHigh) {
+    // Axis 3 is out of range for a 2D matrix
+    EXPECT_THROW(eval(machine, "+/[3] 2 3⍴⍳6"), APLError);
+}
+
+TEST_F(OperatorsTest, AxisErrorCatenateInvalidAxis) {
+    // Catenate vectors with axis 2 (vectors only have axis 1)
+    EXPECT_THROW(eval(machine, "1 2 3 ,[2] 4 5 6"), APLError);
+}
+
+TEST_F(OperatorsTest, AxisErrorMonadicCatenateInvalidAxis) {
+    // Monadic catenate (ravel) with invalid axis
+    EXPECT_THROW(eval(machine, ",[3] 1 2 3"), APLError);
+}
+
+TEST_F(OperatorsTest, AxisErrorTransposeInvalidPerm) {
+    // Invalid axis permutation for transpose
+    EXPECT_THROW(eval(machine, "0 1⍉1 2 3"), APLError);  // Vector only has axis 0
+}
+
+TEST_F(OperatorsTest, AxisErrorNonScalarAxis) {
+    // Axis must be scalar
+    EXPECT_THROW(eval(machine, "+/[1 2] 2 3⍴⍳6"), APLError);
+}
+
+// LIMIT ERROR: Implementation limits exceeded (ISO 13751 §A.3)
+TEST_F(OperatorsTest, LimitErrorIotaTooLarge) {
+    // Iota with value exceeding INT_MAX
+    EXPECT_THROW(eval(machine, "⍳3000000000"), APLError);
+}
+
+TEST_F(OperatorsTest, LimitErrorReshapeTooLarge) {
+    // Reshape to size exceeding INT_MAX
+    EXPECT_THROW(eval(machine, "3000000000⍴1"), APLError);
+}
+
+// Valid-axis: one-element-vector as axis (ISO 13751 §5.3.2)
+// "K is a valid-axis of A... if K is a scalar or one-element-vector"
+TEST_F(OperatorsTest, ValidAxisOneElementVector) {
+    // Reduce with one-element-vector axis should work same as scalar
+    Value* result = eval(machine, "+/[(⍳1)] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    // Column sums: 1+4=5, 2+5=7, 3+6=9
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 9.0);
+}
+
+TEST_F(OperatorsTest, ValidAxisOneElementVectorLastAxis) {
+    // One-element-vector [2] should work as axis for reduce
+    Value* result = eval(machine, "+/[1⍴2] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    // Row sums: 1+2+3=6, 4+5+6=15
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 6.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 15.0);
+}
+
+// Near-integer axis (ISO 13751 §5.2.5, §5.3.2)
+// Axis must be "near-integer" - tolerantly close to an integer within INTEGER_TOLERANCE
+TEST_F(OperatorsTest, NearIntegerAxisAccepted) {
+    // 1.0 is exactly an integer - should work
+    Value* result = eval(machine, "+/[1.0] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+}
+
+TEST_F(OperatorsTest, NearIntegerAxisTolerance) {
+    // Values within INTEGER_TOLERANCE (1e-10) of an integer should be accepted
+    // 1+1e-11 is within tolerance of 1
+    Value* result = eval(machine, "+/[1.00000000001] 2 3⍴⍳6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    // Should reduce along axis 1 (first axis), giving 3 results
+    EXPECT_EQ(result->size(), 3);
+}
+
+TEST_F(OperatorsTest, NonIntegerAxisRejected) {
+    // 1.5 is NOT a near-integer - should fail
+    EXPECT_THROW(eval(machine, "+/[1.5] 2 3⍴⍳6"), APLError);
+}
+
+// Laminate vs Catenate distinguished by fractional axis (ISO 13751)
+TEST_F(OperatorsTest, LaminateWithFractionalAxis) {
+    // ,[0.5] is laminate (fractional axis creates new dimension)
+    Value* result = eval(machine, "1 2 3 ,[0.5] 4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    // Laminate creates 2×3 matrix
+    EXPECT_EQ(result->as_matrix()->rows(), 2);
+    EXPECT_EQ(result->as_matrix()->cols(), 3);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

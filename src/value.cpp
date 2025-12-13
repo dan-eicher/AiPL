@@ -429,4 +429,48 @@ std::ostream& operator<<(std::ostream& os, const Value& v) {
     return os;
 }
 
+// Return a human-readable type name for error messages and stack traces
+std::string Value::type_name() const {
+    switch (tag) {
+        case ValueType::SCALAR: return "scalar";
+        case ValueType::VECTOR: {
+            std::string result = "vector";
+            if (data.matrix) {
+                result += "[" + std::to_string(data.matrix->rows()) + "]";
+            }
+            return result;
+        }
+        case ValueType::MATRIX: {
+            std::string result = "matrix";
+            if (data.matrix) {
+                result += "[" + std::to_string(data.matrix->rows()) +
+                          "×" + std::to_string(data.matrix->cols()) + "]";
+            }
+            return result;
+        }
+        case ValueType::STRING: return "string";
+        case ValueType::PRIMITIVE:
+            return std::string("primitive<") +
+                   (data.primitive_fn && data.primitive_fn->name ? data.primitive_fn->name : "?") + ">";
+        case ValueType::CLOSURE: return "closure";
+        case ValueType::OPERATOR:
+            return std::string("operator<") +
+                   (data.op && data.op->name ? data.op->name : "?") + ">";
+        case ValueType::DEFINED_OPERATOR:
+            return std::string("defined-operator<") +
+                   (data.defined_op_data && data.defined_op_data->name ? data.defined_op_data->name : "?") + ">";
+        case ValueType::DERIVED_OPERATOR: return "derived-operator";
+        case ValueType::CURRIED_FN: {
+            if (!data.curried_fn) return "curried-fn";
+            switch (data.curried_fn->curry_type) {
+                case CurryType::G_PRIME: return "curried-fn<G_PRIME>";
+                case CurryType::DYADIC_CURRY: return "curried-fn<DYADIC_CURRY>";
+                case CurryType::OPERATOR_CURRY: return "curried-fn<OPERATOR_CURRY>";
+            }
+            return "curried-fn";
+        }
+        default: return "unknown";
+    }
+}
+
 } // namespace apl

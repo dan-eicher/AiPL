@@ -557,8 +557,27 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
 
     // Extension to G2: when both values are basic, form a strand (vector)
     // This handles cases like {⍵ ⍵}5 which should return 5 5
+    //
+    // ISO 13751 NOTE: The ISO spec has NO stranding rule in the Phrase Table -
+    // there's no "A B" pattern for adjacent values. Stranding like "1 2 3" works
+    // because it's parsed as a single numeric-literal token at the lexer level.
+    // But "1 (2 3) 4" cannot work that way since (2 3) is an evaluated expression.
+    //
+    // APL2-style stranding would create NESTED arrays here:
+    //   "1 (2 3) 4"    → 3-element nested vector: 1, (2 3), 4
+    //   "{⍵ ⍵}(1 2 3)" → 2-element nested vector: (1 2 3), (1 2 3)
+    //
+    // TODO: NESTED ARRAYS NOT YET IMPLEMENTED
+    // Until we have nested arrays, we only allow scalar stranding (which produces
+    // simple vectors) and reject non-scalar stranding with NONCE ERROR.
+    // When nested arrays are implemented, this code should create boxed/enclosed
+    // values instead of throwing an error.
+    //
+    // Related: fn_enlist (∊) in primitives.cpp will need to recursively flatten
+    // nested structures once they exist.
+    //
     if (left_val->is_basic_value() && right_val->is_basic_value()) {
-        // Convert strings to character vectors (strings are just lazy char vectors)
+        // Convert strings to character vectors for uniform handling
         if (left_val->is_string()) {
             left_val = left_val->to_char_vector(machine->heap);
         }
@@ -566,7 +585,12 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
             right_val = right_val->to_char_vector(machine->heap);
         }
 
-        // Concatenate left and right into a vector
+        // Concatenate left and right into a flat vector
+        // NOTE: This flattening is technically incorrect for APL2-style nested arrays.
+        // E.g., "1 (2 3) 4" SHOULD create a 3-element nested vector, but we produce
+        // a flat 4-element vector "1 2 3 4". This is acceptable until nested arrays
+        // are implemented, at which point this code should create boxed/enclosed
+        // values for non-scalar strand elements.
         size_t left_size = left_val->is_scalar() ? 1 : left_val->size();
         size_t right_size = right_val->is_scalar() ? 1 : right_val->size();
         size_t total = left_size + right_size;

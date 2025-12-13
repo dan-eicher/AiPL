@@ -180,6 +180,9 @@ public:
     // GC support - mark all objects this Value references (override from GCObject)
     void mark(Heap* heap) override;
 
+    // Description for error messages and stack traces
+    std::string type_name() const;
+
 private:
     // Helper for lazy scalar promotion
     mutable Eigen::MatrixXd* promoted_matrix_;  // Cached promoted matrix for scalars

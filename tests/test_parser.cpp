@@ -541,7 +541,7 @@ TEST_F(ParserTest, ReduceWithoutAxisHasNullAxis) {
     EXPECT_EQ(derived->axis_cont, nullptr) << "+/ should have no axis";
 }
 
-// Test: Reduce with axis [1] has non-null axis_cont
+// Test: Reduce with axis [1] has non-null axis_cont wrapped in FinalizeK
 TEST_F(ParserTest, ReduceWithAxisHasAxisCont) {
     Continuation* k = parser->parse("+/[1]");
     ASSERT_NE(k, nullptr) << "Parser error: " << parser->get_error();
@@ -551,9 +551,11 @@ TEST_F(ParserTest, ReduceWithAxisHasAxisCont) {
     EXPECT_STREQ(derived->op_name, "/");
     ASSERT_NE(derived->axis_cont, nullptr) << "+/[1] should have axis continuation";
 
-    // The axis should be a literal 1
-    LiteralK* axis_lit = dynamic_cast<LiteralK*>(derived->axis_cont);
-    ASSERT_NE(axis_lit, nullptr) << "Axis should be a literal";
+    // The axis should be wrapped in FinalizeK to ensure full evaluation
+    FinalizeK* finalize = dynamic_cast<FinalizeK*>(derived->axis_cont);
+    ASSERT_NE(finalize, nullptr) << "Axis should be wrapped in FinalizeK";
+    LiteralK* axis_lit = dynamic_cast<LiteralK*>(finalize->inner);
+    ASSERT_NE(axis_lit, nullptr) << "Inner should be a literal";
     EXPECT_DOUBLE_EQ(axis_lit->literal_value, 1.0);
 }
 

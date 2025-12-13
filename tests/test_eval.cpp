@@ -4808,6 +4808,100 @@ TEST_F(EvalTest, SysVarRLDealReproducibility) {
     }
 }
 
+// ============================================================================
+// ISO 13751 Section 5 - Defined Operations Tests
+// ============================================================================
+
+// Direction/Signum (ISO 13751 §5.2.5)
+// "Direction of A: returns zero if A is zero, otherwise -1, 0, or 1"
+TEST_F(EvalTest, DirectionPositive) {
+    Value* result = machine->eval("×42");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, DirectionNegative) {
+    Value* result = machine->eval("×¯42");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -1.0);
+}
+
+TEST_F(EvalTest, DirectionZero) {
+    Value* result = machine->eval("×0");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(EvalTest, DirectionSmallPositive) {
+    // Very small positive number still has direction 1
+    Value* result = machine->eval("×1E¯300");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, DirectionSmallNegative) {
+    // Very small negative number still has direction -1
+    Value* result = machine->eval("×¯1E¯300");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -1.0);
+}
+
+// Tolerant Equality edge cases (ISO 13751 §5.2.5)
+TEST_F(EvalTest, TolerantEqualitySameValue) {
+    // "If A equals B, then Z is one" - exact equality always true
+    machine->eval("⎕CT←0.1");
+    Value* result = machine->eval("5=5");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, TolerantEqualityWithinTolerance) {
+    // Values within CT×max(|A|,|B|) are equal
+    machine->eval("⎕CT←0.01");
+    Value* result = machine->eval("100=100.5");  // diff=0.5, tol=0.01×100=1
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, TolerantEqualityOutsideTolerance) {
+    // Values outside tolerance are not equal
+    machine->eval("⎕CT←0.001");
+    Value* result = machine->eval("100=101");  // diff=1, tol=0.001×100=0.1
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(EvalTest, TolerantEqualityZeroTolerance) {
+    // CT=0 means exact comparison only
+    machine->eval("⎕CT←0");
+    Value* r1 = machine->eval("1.0=1.0");
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    Value* r2 = machine->eval("1.0=1.0000000001");
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 0.0);
+}
+
+// Tolerant comparison affects relational operators (ISO 13751)
+TEST_F(EvalTest, TolerantLessThanNotEqualMeansLess) {
+    // With tolerance, tolerantly equal values are NOT less than
+    machine->eval("⎕CT←0.01");
+    Value* result = machine->eval("100<100.5");  // tolerantly equal
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(EvalTest, TolerantGreaterThanNotEqualMeansGreater) {
+    // With tolerance, tolerantly equal values are NOT greater than
+    machine->eval("⎕CT←0.01");
+    Value* result = machine->eval("100.5>100");  // tolerantly equal
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(EvalTest, TolerantLessEqualIncludesTolerantEqual) {
+    // ≤ includes tolerantly equal values
+    machine->eval("⎕CT←0.01");
+    Value* result = machine->eval("100≤100.5");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(EvalTest, TolerantGreaterEqualIncludesTolerantEqual) {
+    // ≥ includes tolerantly equal values
+    machine->eval("⎕CT←0.01");
+    Value* result = machine->eval("100.5≥100");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
 // Main function
 
 int main(int argc, char** argv) {

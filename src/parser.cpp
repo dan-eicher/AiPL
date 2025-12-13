@@ -355,8 +355,8 @@ Continuation* Parser::nud(const Token& token) {
             // Special handling for ,[k] (catenate/laminate with axis)
             if (current_token_.type == TOK_LBRACKET) {
                 advance();  // consume [
-                Continuation* axis_cont = parse_expression(0);
-                if (!axis_cont) {
+                Continuation* inner = parse_expression(0);
+                if (!inner) {
                     set_error("expected axis expression after '['");
                     return nullptr;
                 }
@@ -365,6 +365,8 @@ Continuation* Parser::nud(const Token& token) {
                     return nullptr;
                 }
                 advance();  // consume ]
+                // Wrap in FinalizeK to ensure the axis expression is fully evaluated
+                Continuation* axis_cont = machine->heap->allocate<FinalizeK>(inner, true);
                 // Create DerivedOperatorK with op_catenate_axis
                 // axis_cont is the first (and only) operand
                 const char* interned_name = machine->string_pool.intern(",⌷");
@@ -779,8 +781,8 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             Continuation* axis_cont = nullptr;
             if (supports_axis && current_token_.type == TOK_LBRACKET) {
                 advance();  // consume [
-                axis_cont = parse_expression(0);
-                if (!axis_cont) {
+                Continuation* inner = parse_expression(0);
+                if (!inner) {
                     set_error("expected axis expression after '['");
                     return nullptr;
                 }
@@ -789,6 +791,8 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                     return nullptr;
                 }
                 advance();  // consume ]
+                // Wrap in FinalizeK to ensure the axis expression is fully evaluated
+                axis_cont = machine->heap->allocate<FinalizeK>(inner, true);
             }
 
             // Create DerivedOperatorK: evaluate operand (left), then apply operator

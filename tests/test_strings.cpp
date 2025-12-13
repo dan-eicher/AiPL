@@ -949,6 +949,87 @@ TEST_F(StringTest, JuxtaposeVectorAndString) {
     EXPECT_EQ((*mat)(3), 98);
 }
 
+// ============================================================================
+// Typical Element Tests (ISO 13751 §5.3.2)
+// Character arrays use blank ' ' (32), numeric arrays use 0
+// ============================================================================
+
+TEST_F(StringTest, FirstOfEmptyCharArrayReturnsBlank) {
+    // First (↑) of empty character array returns typical element (blank)
+    Value* result = eval("↑0↑'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 32.0);  // blank = ASCII 32
+}
+
+TEST_F(StringTest, FirstOfEmptyNumericArrayReturnsZero) {
+    // First (↑) of empty numeric array returns typical element (zero)
+    Value* result = eval("↑0↑1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(StringTest, TakeExtendCharArrayWithBlanks) {
+    // Taking more than length pads with blanks for character data
+    Value* result = eval("5↑'AB'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+    EXPECT_EQ(result->size(), 5);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0), 65.0);  // 'A'
+    EXPECT_DOUBLE_EQ((*mat)(1), 66.0);  // 'B'
+    EXPECT_DOUBLE_EQ((*mat)(2), 32.0);  // blank
+    EXPECT_DOUBLE_EQ((*mat)(3), 32.0);  // blank
+    EXPECT_DOUBLE_EQ((*mat)(4), 32.0);  // blank
+}
+
+TEST_F(StringTest, TakeExtendNumericArrayWithZeros) {
+    // Taking more than length pads with zeros for numeric data
+    Value* result = eval("5↑1 2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_FALSE(result->is_char_data());
+    EXPECT_EQ(result->size(), 5);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(3), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(4), 0.0);
+}
+
+TEST_F(StringTest, ExpandCharArrayWithBlanks) {
+    // Expand (backslash) uses blank for character fill
+    Value* result = eval("1 0 1 0 1\\'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_TRUE(result->is_char_data());
+    EXPECT_EQ(result->size(), 5);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0), 65.0);  // 'A'
+    EXPECT_DOUBLE_EQ((*mat)(1), 32.0);  // blank
+    EXPECT_DOUBLE_EQ((*mat)(2), 66.0);  // 'B'
+    EXPECT_DOUBLE_EQ((*mat)(3), 32.0);  // blank
+    EXPECT_DOUBLE_EQ((*mat)(4), 67.0);  // 'C'
+}
+
+TEST_F(StringTest, ExpandNumericArrayWithZeros) {
+    // Expand (backslash) uses zero for numeric fill
+    Value* result = eval("1 0 1 0 1\\1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_FALSE(result->is_char_data());
+    EXPECT_EQ(result->size(), 5);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(2), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(3), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(4), 3.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
