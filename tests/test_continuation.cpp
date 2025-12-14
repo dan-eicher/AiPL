@@ -1085,12 +1085,12 @@ TEST_F(ContinuationTest, NwiseReduceKTriplets) {
 }
 
 TEST_F(ContinuationTest, NwiseReduceKReversed) {
-    // Negative N reverses the ORDER of results (not elements within windows)
+    // ISO 13751 §9.2.3: Negative N reverses EACH WINDOW before reduction
     // For subtraction: ¯2 -/ 1 2 4 7 11
-    // Windows: [1,2] [2,4] [4,7] [7,11]
-    // Reduces to: 1-2=-1, 2-4=-2, 4-7=-3, 7-11=-4
-    // Normal order: [-1, -2, -3, -4]
-    // Reversed: [-4, -3, -2, -1]
+    // Windows before reversal: [1,2] [2,4] [4,7] [7,11]
+    // Windows after reversal:  [2,1] [4,2] [7,4] [11,7]
+    // Right-to-left reduction: 2-1=1, 4-2=2, 7-4=3, 11-7=4
+    // Result: [1, 2, 3, 4]
     Eigen::VectorXd vec(5);
     vec << 1, 2, 4, 7, 11;
     Value* rhs = machine->heap->allocate_vector(vec);
@@ -1104,11 +1104,11 @@ TEST_F(ContinuationTest, NwiseReduceKReversed) {
     EXPECT_TRUE(result->is_vector());
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_EQ(m->rows(), 4);
-    // Results in reversed order
-    EXPECT_DOUBLE_EQ((*m)(0, 0), -4.0);   // 7-11 (last window)
-    EXPECT_DOUBLE_EQ((*m)(1, 0), -3.0);   // 4-7
-    EXPECT_DOUBLE_EQ((*m)(2, 0), -2.0);   // 2-4
-    EXPECT_DOUBLE_EQ((*m)(3, 0), -1.0);   // 1-2 (first window)
+    // Each window reversed, then reduced
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);   // [2,1] → 2-1=1
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);   // [4,2] → 4-2=2
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);   // [7,4] → 7-4=3
+    EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);   // [11,7] → 11-7=4
 }
 
 TEST_F(ContinuationTest, NwiseReduceKFullWindow) {

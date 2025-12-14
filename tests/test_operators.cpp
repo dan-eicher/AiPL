@@ -569,28 +569,29 @@ TEST_F(OperatorsTest, NwiseZeroMax) {
 }
 
 TEST_F(OperatorsTest, NwiseNegative) {
-    // ¯2+/1 2 3 → 5 3 (reverse, then reduce pairwise)
-    // Reversed: 3 2 1, then pairwise sums: 3+2=5, 2+1=3
+    // ISO 13751 §9.2.3: ¯2+/1 2 3 → 3 5 (reverse each window, then reduce)
+    // Windows: [1,2], [2,3] → Reversed: [2,1], [3,2]
+    // Reduced: 2+1=3, 3+2=5
     Value* result = eval(machine, "¯2+/1 2 3");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 2);
     auto* mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);
 }
 
 TEST_F(OperatorsTest, NwiseNegativeTriplets) {
-    // ¯3-/1 2 3 4 → result order reversed from positive N
-    // 3-/1 2 3 4 gives: -/1 2 3 = 1-(2-3) = 2, -/2 3 4 = 2-(3-4) = 3 → 2 3
-    // Negative N reverses: 3 2
+    // ISO 13751 §9.2.3: ¯3-/1 2 3 4 → 2 3 (reverse each window, then reduce)
+    // Windows: [1,2,3], [2,3,4] → Reversed: [3,2,1], [4,3,2]
+    // Reduced (right-to-left): 3-(2-1)=2, 4-(3-2)=3
     Value* result = eval(machine, "¯3-/1 2 3 4");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 2);
     auto* mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
 }
 
 TEST_F(OperatorsTest, NwiseTooLarge) {
@@ -1974,6 +1975,189 @@ TEST_F(OperatorsTest, LaminateWithFractionalAxis) {
     // Laminate creates 2×3 matrix
     EXPECT_EQ(result->as_matrix()->rows(), 2);
     EXPECT_EQ(result->as_matrix()->cols(), 3);
+}
+
+// ============================================================================
+// ISO 13751 Section 9: Additional Edge Cases
+// ============================================================================
+
+// --- 9.2.1 Reduction: Character vectors ---
+
+TEST_F(OperatorsTest, ReduceEqualSingleChar) {
+    // ISO 9.2.1: =/'A' → 'A' (single element returns that element)
+    Value* result = eval(machine, "=/'A'");
+    ASSERT_NE(result, nullptr);
+    // Single element reduce returns scalar
+    EXPECT_TRUE(result->is_scalar() || result->size() == 1);
+}
+
+TEST_F(OperatorsTest, ReduceEqualIdenticalChars) {
+    // ISO 9.2.1: =/'AA' → 1 (all identical)
+    Value* result = eval(machine, "=/'AA'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(OperatorsTest, ReduceEqualDifferentChars) {
+    // ISO 9.2.1: =/'AB' → 0 (not all identical)
+    Value* result = eval(machine, "=/'AB'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+TEST_F(OperatorsTest, ReduceEqualTripleChars) {
+    // ISO 9.2.1: =/'AAA' → 0 (right-to-left: 'A'=('A'='A') = 'A'=1 = 65=1 = 0)
+    Value* result = eval(machine, "=/'AAA'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// --- 9.2.2 Scan: Additional edge cases ---
+
+TEST_F(OperatorsTest, ScanNonCommutative) {
+    // ISO 9.2.2: -\1 1 1 → 1 0 1 (prefix reductions, right-to-left)
+    // -/1=1, -/1 1=0, -/1 1 1=1-(1-1)=1
+    Value* result = eval(machine, "-\\1 1 1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 1.0);
+}
+
+TEST_F(OperatorsTest, ScanDivide) {
+    // ÷\2 4 8 → 2, 0.5, 4 (prefix reductions, right-to-left)
+    // ÷/2=2, ÷/2 4=2÷4=0.5, ÷/2 4 8=2÷(4÷8)=2÷0.5=4
+    Value* result = eval(machine, "÷\\2 4 8");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 0.5);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 4.0);
+}
+
+TEST_F(OperatorsTest, ScanAndLogical) {
+    // ISO 9.2.2: ∧\1 1 1 0 0 0 1 1 1 → 1 1 1 0 0 0 0 0 0
+    Value* result = eval(machine, "∧\\1 1 1 0 0 0 1 1 1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 9);
+    // First three: 1 1 1, then all zeros after first 0
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(3, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(8, 0), 0.0);
+}
+
+// --- 9.2.3 N-wise: Spec examples ---
+
+TEST_F(OperatorsTest, NwiseSubtractionNegative) {
+    // ISO 9.2.3: ¯2-/1 4 9 16 25 → 3 5 7 9 (reversed pairs)
+    Value* result = eval(machine, "¯2-/1 4 9 16 25");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 7.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(3, 0), 9.0);
+}
+
+TEST_F(OperatorsTest, NwiseSubtractionPositive) {
+    // ISO 9.2.3: 2-/1 4 9 16 25 → ¯3 ¯5 ¯7 ¯9
+    Value* result = eval(machine, "2-/1 4 9 16 25");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), -3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), -5.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), -7.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(3, 0), -9.0);
+}
+
+// --- 9.2.4/9.2.5 Duplicate/Commute: Additional cases ---
+
+TEST_F(OperatorsTest, CommutePower) {
+    // ISO 9.2.5: 2*⍨3 → 3*2 = 9
+    Value* result = eval(machine, "2*⍨3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 9.0);
+}
+
+TEST_F(OperatorsTest, DuplicateMinus) {
+    // ISO 9.2.4: -⍨5 → 5-5 = 0
+    Value* result = eval(machine, "-⍨5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// --- 9.3.1 Outer Product: Spec examples ---
+
+TEST_F(OperatorsTest, OuterProductAdditionTable) {
+    // ISO 9.3.1: 10 20 30 ∘.+ 1 2 3 → addition table
+    Value* result = eval(machine, "10 20 30 ∘.+ 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 3);
+    // Check corners
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 11.0);  // 10+1
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 13.0);  // 10+3
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 31.0);  // 30+1
+    EXPECT_DOUBLE_EQ((*mat)(2, 2), 33.0);  // 30+3
+}
+
+// --- 9.3.2 Inner Product: Spec examples ---
+
+TEST_F(OperatorsTest, InnerProductSpecExample) {
+    // ISO 9.3.2: 4 2 1 +.× 1 0 1 → 5 (4×1 + 2×0 + 1×1)
+    Value* result = eval(machine, "4 2 1 +.× 1 0 1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+TEST_F(OperatorsTest, InnerProductDimensionError) {
+    // ISO 9.3.2: Inner dims must match
+    EXPECT_THROW(eval(machine, "(2 3⍴⍳6) +.× (2 3⍴⍳6)"), APLError);
+}
+
+// --- 9.3.3-5 Rank: Additional edge cases ---
+
+TEST_F(OperatorsTest, RankZeroCells) {
+    // f⍤0 applies f to each scalar (0-cells)
+    // -⍤0 (1 2 3) → ¯1 ¯2 ¯3
+    Value* result = eval(machine, "-⍤0 (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), -3.0);
+}
+
+TEST_F(OperatorsTest, RankTwoElementVector) {
+    // Two-element rank vector: left and right cell ranks
+    // 10 +⍤0 0 (1 2 3) → apply + to 0-cells of both (scalar extension)
+    Value* result = eval(machine, "10 +⍤0 0 (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 13.0);
+}
+
+TEST_F(OperatorsTest, RankThreeElementVector) {
+    // Three-element rank vector: monadic, left, right
+    // For dyadic use, elements 2 and 3 (second and third) are used
+    Value* result = eval(machine, "10 +⍤99 0 0 (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    // 0 0 means scalar cells for both, so 10+1, 10+2, 10+3
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 11.0);
 }
 
 int main(int argc, char** argv) {
