@@ -6487,3 +6487,287 @@ TEST_F(PrimitivesTest, OrGCDFloat) {
     ASSERT_NE(result, nullptr);
     EXPECT_NEAR(result->as_scalar(), 0.6, 1e-10);
 }
+
+// ============================================================================
+// ISO 13751 Section 8: Structural Primitive Functions
+// ============================================================================
+
+// --- 8.2.1 Ravel ---
+
+TEST_F(PrimitivesTest, RavelHigherRank) {
+    // ISO 8.2.1: Ravel flattens matrix in row-major order
+    // (Note: Implementation limited to rank ≤ 2, so testing with 3×4 matrix)
+    Value* result = machine->eval(",3 4⍴⍳12");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 12);
+    // Check first and last elements - row-major order
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(11, 0), 12.0);
+}
+
+TEST_F(PrimitivesTest, RavelEmpty) {
+    // Ravel of empty vector is empty vector
+    Value* result = machine->eval(",⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+// --- 8.2.2 Shape ---
+
+TEST_F(PrimitivesTest, ShapeOfShape) {
+    // ISO 8.2.2: ⍴⍴N34 → 2 (shape of 3×4 matrix is 2-element vector)
+    Value* result = machine->eval("⍴⍴3 4⍴⍳12");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 2.0);
+}
+
+TEST_F(PrimitivesTest, ShapeOfRavel) {
+    // ISO 8.2.2: ⍴,N → count of N (shape of ravel = element count)
+    // For 3×4 matrix, ⍴,N = 12
+    Value* result = machine->eval("⍴,3 4⍴⍳12");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 12.0);
+}
+
+TEST_F(PrimitivesTest, ShapeOfScalar) {
+    // ISO 8.2.2: ⍴5 → empty vector (scalar has no dimensions)
+    Value* result = machine->eval("⍴5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, ShapeOfEmptyVector) {
+    // ISO 8.2.2: ⍴⍳0 → 0 (1-element vector containing 0)
+    Value* result = machine->eval("⍴⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 0.0);
+}
+
+// --- 8.2.3 Index Generator ---
+
+TEST_F(PrimitivesTest, IotaZero) {
+    // ISO 8.2.3: ⍳0 → empty vector
+    Value* result = machine->eval("⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, IotaWithIO0) {
+    // ISO 8.2.3: With ⎕IO←0, ⍳4 → 0 1 2 3
+    machine->eval("⎕IO←0");
+    Value* result = machine->eval("⍳4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(3, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, IotaNearInteger) {
+    // ISO 8.2.3: ⍳3.0 should work (near-integer)
+    Value* result = machine->eval("⍳3.0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+TEST_F(PrimitivesTest, IotaRankError) {
+    // ISO 8.2.3: Rank > 1 → RANK ERROR
+    EXPECT_THROW(machine->eval("⍳2 3⍴⍳6"), APLError);
+}
+
+TEST_F(PrimitivesTest, IotaLengthError) {
+    // ISO 8.2.3: Count ≠ 1 → LENGTH ERROR
+    EXPECT_THROW(machine->eval("⍳1 2 3"), APLError);
+}
+
+// --- 8.2.4 Table ---
+
+TEST_F(PrimitivesTest, TableScalarShape) {
+    // ISO 8.2.4: ⍪0 → 1×1 matrix
+    Value* result = machine->eval("⍪0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 1);
+    EXPECT_EQ(mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+}
+
+TEST_F(PrimitivesTest, TableVectorShape) {
+    // ISO 8.2.4: ⍪1 2 3 4 → 4×1 matrix
+    Value* result = machine->eval("⍪1 2 3 4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 4);
+    EXPECT_EQ(mat->cols(), 1);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 4.0);
+}
+
+TEST_F(PrimitivesTest, TableMatrixShape) {
+    // ISO 8.2.4: ⍪ 2 2⍴⍳4 → 2×2 matrix (unchanged for 2D)
+    Value* result = machine->eval("⍪2 2⍴⍳4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 2);
+}
+
+TEST_F(PrimitivesTest, TableRectangularMatrix) {
+    // ISO 8.2.4: ⍪ on 2×4 matrix → 2×4 (unchanged, already 2D)
+    // (Note: Implementation limited to rank ≤ 2, so higher-rank test skipped)
+    Value* result = machine->eval("⍪2 4⍴⍳8");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 4);
+}
+
+TEST_F(PrimitivesTest, TableShapeCheck) {
+    // ISO 8.2.4: ⍴⍪0 → 1 1
+    Value* result = machine->eval("⍴⍪0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(1, 0), 1.0);
+}
+
+// --- 8.2.5 Depth (additional tests) ---
+
+TEST_F(PrimitivesTest, DepthCharVector) {
+    // ISO 8.2.5: ≡'ABC' → 1 (simple array)
+    Value* result = machine->eval("≡'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// --- 8.3.1 Reshape (additional tests) ---
+
+TEST_F(PrimitivesTest, ReshapeEmptyShape) {
+    // ISO 8.3.1: ''⍴X or (⍳0)⍴X produces scalar with first element of X
+    Value* result = machine->eval("(⍳0)⍴1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(PrimitivesTest, ReshapeCycling) {
+    // ISO 8.3.1: 6⍴1 2 3 → 1 2 3 1 2 3 (cyclic fill)
+    Value* result = machine->eval("6⍴1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 6);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(5, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, ReshapeSingleElement) {
+    // ISO 8.3.1: 5⍴42 → 42 42 42 42 42
+    Value* result = machine->eval("5⍴42");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    for (int i = 0; i < 5; ++i) {
+        EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(i, 0), 42.0);
+    }
+}
+
+TEST_F(PrimitivesTest, ReshapeLengthError) {
+    // ISO 8.3.1: Non-zero shape with empty source → LENGTH ERROR
+    EXPECT_THROW(machine->eval("5⍴⍳0"), APLError);
+}
+
+TEST_F(PrimitivesTest, ReshapeNearIntegerShape) {
+    // ISO 8.3.1: Near-integer shape should work
+    Value* result = machine->eval("3.0⍴1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+// --- 8.3.2 Join/Catenate (additional tests) ---
+
+TEST_F(PrimitivesTest, CatenateEmptyVectors) {
+    // ISO 8.3.2: (⍳0),(⍳0) → empty vector
+    Value* result = machine->eval("(⍳0),⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+TEST_F(PrimitivesTest, CatenateEmptyWithVector) {
+    // ISO 8.3.2: (⍳0),1 2 3 → 1 2 3
+    Value* result = machine->eval("(⍳0),1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+}
+
+TEST_F(PrimitivesTest, CatenateVectorWithEmpty) {
+    // ISO 8.3.2: 1 2 3,(⍳0) → 1 2 3
+    Value* result = machine->eval("1 2 3,⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(2, 0), 3.0);
+}
+
+TEST_F(PrimitivesTest, CatenateVectorVector) {
+    // ISO 8.3.2: 1 2 3,4 5 6 → 1 2 3 4 5 6
+    Value* result = machine->eval("1 2 3,4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 6);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(5, 0), 6.0);
+}
+
+TEST_F(PrimitivesTest, CatenateStrings) {
+    // ISO 8.3.2: 'ABC','DEF' → 'ABCDEF'
+    Value* result = machine->eval("'ABC','DEF'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string() || result->is_char_data());
+    EXPECT_EQ(result->size(), 6);
+}
+
+// --- First-axis catenate (⍪) dyadic ---
+
+TEST_F(PrimitivesTest, FirstAxisCatenateVectors) {
+    // ISO 8.3.2: 1 2 3⍪4 5 6 → 2×3 matrix
+    Value* result = machine->eval("1 2 3⍪4 5 6");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 6.0);
+}
+
+TEST_F(PrimitivesTest, FirstAxisCatenateScalars) {
+    // ISO 8.3.2: 1⍪2 → 2×1 matrix (column vector as matrix)
+    Value* result = machine->eval("1⍪2");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 1);
+}
