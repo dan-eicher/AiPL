@@ -56,6 +56,11 @@ inline double tolerant_ceiling(double x, double ct) {
     return c;
 }
 
+// Check if value is a negative integer (used by factorial and binomial)
+inline bool is_negative_int(double x) {
+    return x < 0 && x == std::floor(x);
+}
+
 // PrimitiveFn structs combining monadic and dyadic forms
 PrimitiveFn prim_plus    = { "+", fn_conjugate, fn_add };
 PrimitiveFn prim_minus   = { "-", fn_negate, fn_subtract };
@@ -376,11 +381,28 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 }
 
 // Power (*)
+// ISO 13751 7.2.7: Helper for power edge cases
+static double power_scalar(Machine* m, double base, double exp) {
+    // ISO 13751 7.2.7: If A is zero and B is zero, return one
+    if (base == 0.0 && exp == 0.0) {
+        return 1.0;
+    }
+    // ISO 13751 7.2.7: If A is zero and real-part of B is positive, return zero
+    if (base == 0.0 && exp > 0.0) {
+        return 0.0;
+    }
+    // ISO 13751 7.2.7: If A is zero and real-part of B is negative, signal domain-error
+    if (base == 0.0 && exp < 0.0) {
+        m->throw_error("DOMAIN ERROR: 0 raised to negative power");
+    }
+    return std::pow(base, exp);
+}
+
 void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     // Fast path: scalar * scalar
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(std::pow(lhs->data.scalar, rhs->data.scalar));
+        m->result = m->heap->allocate_scalar(power_scalar(m, lhs->data.scalar, rhs->data.scalar));
         return;
     }
 
@@ -394,7 +416,7 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = std::pow(lhs->data.scalar, rmat->data()[i]);
+            result(i) = power_scalar(m, lhs->data.scalar, rmat->data()[i]);
         }
         // Preserve vector/matrix distinction
         if (rhs->is_vector()) {
@@ -407,8 +429,11 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         // lhs is array of bases, rhs is scalar exponent
-        Eigen::MatrixXd result =
-            lhs->as_matrix()->array().pow(rhs->data.scalar);
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = power_scalar(m, lmat->data()[i], rhs->data.scalar);
+        }
         // Preserve vector/matrix distinction
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -427,7 +452,10 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    Eigen::MatrixXd result = lmat->array().pow(rmat->array());
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = power_scalar(m, lmat->data()[i], rmat->data()[i]);
+    }
     // Preserve vector/matrix distinction
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -1474,15 +1502,31 @@ void fn_magnitude(Machine* m, Value* axis, Value* omega) {
 // Residue (|) - dyadic (modulo: lhs | rhs means rhs mod lhs)
 // APL semantics: A|B gives the remainder when B is divided by A
 // Result has the same sign as A (or 0)
+// ISO 13751 7.2.9: Uses comparison-tolerance
 void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
-    auto residue = [](double a, double b) -> double {
-        if (a == 0.0) return b;  // 0|B = B
+    double ct = m->ct;
+
+    auto residue = [ct](double a, double b) -> double {
+        // ISO 13751: If A is zero, return B
+        if (a == 0.0) return b;
+
+        // ISO 13751: If B/A is integral within tolerance, return 0
+        if (ct > 0.0) {
+            double quotient = b / a;
+            double nearest_int = std::round(quotient);
+            if (tolerant_eq(quotient, nearest_int, ct)) {
+                return 0.0;
+            }
+        }
+
         double r = std::fmod(b, a);
         // Adjust sign to match divisor (APL semantics)
         if (r != 0.0 && ((a > 0.0) != (r > 0.0))) {
             r += a;
         }
+        // ISO 13751: If Z is A, return zero
+        if (r == a) return 0.0;
         return r;
     };
 
@@ -1657,10 +1701,7 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // DOMAIN ERROR for negative integers (gamma has poles at non-positive integers)
 void fn_factorial(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
-    // Check if value is a negative integer (gamma undefined there)
-    auto is_negative_int = [](double x) -> bool {
-        return x < 0 && x == std::floor(x);
-    };
+    // is_negative_int is defined as a global helper at top of file
 
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
@@ -1697,16 +1738,70 @@ void fn_factorial(Machine* m, Value* axis, Value* omega) {
 }
 
 // Binomial (!) - dyadic (lhs ! rhs = "rhs choose lhs" = C(rhs, lhs))
-// Uses gamma function: C(n,k) = n! / (k! * (n-k)!) = gamma(n+1) / (gamma(k+1) * gamma(n-k+1))
+// ISO 13751 7.2.10: Handles negative integer cases per the spec table
+// A = lhs (k), B = rhs (n)
+static double binomial_scalar(Machine* m, double A, double B) {
+    // Check if values are negative integers
+    bool A_neg_int = is_negative_int(A);
+    bool B_neg_int = is_negative_int(B);
+    double B_minus_A = B - A;
+    bool BmA_neg_int = is_negative_int(B_minus_A);
+
+    // ISO 13751 7.2.10 case table:
+    // Case A B B-A
+    if (!A_neg_int && !B_neg_int && !BmA_neg_int) {
+        // Case 0 0 0: Return (!B)÷(!A)×!B-A (standard gamma formula)
+        return std::tgamma(B + 1.0) / (std::tgamma(A + 1.0) * std::tgamma(B - A + 1.0));
+    }
+    if (!A_neg_int && !B_neg_int && BmA_neg_int) {
+        // Case 0 0 1: A non-neg, B non-neg, B-A negative integer → return 0
+        return 0.0;
+    }
+    if (!A_neg_int && B_neg_int && !BmA_neg_int) {
+        // Case 0 1 0: A non-neg, B neg int, B-A non-neg → signal domain-error
+        m->throw_error("DOMAIN ERROR: invalid binomial arguments");
+        return 0.0;
+    }
+    if (!A_neg_int && B_neg_int && BmA_neg_int) {
+        // Case 0 1 1: A non-neg, B neg int, B-A neg int
+        // Return (¯1*A)×A!(A-B-1)
+        // Note: The spec says A!A-B+1 but looking at the table values, it should be:
+        // For A non-neg int, B neg int: use formula (¯1^A) × C(A-B-1, A)
+        double sign = (static_cast<int>(A) % 2 == 0) ? 1.0 : -1.0;
+        double new_n = A - B - 1.0;  // This is now positive
+        return sign * std::tgamma(new_n + 1.0) / (std::tgamma(A + 1.0) * std::tgamma(new_n - A + 1.0));
+    }
+    if (A_neg_int && !B_neg_int && !BmA_neg_int) {
+        // Case 1 0 0: A neg int, B non-neg, B-A non-neg → return 0
+        return 0.0;
+    }
+    // Case 1 0 1 cannot arise (if A is neg int and B is non-neg, B-A > B >= 0)
+    if (A_neg_int && B_neg_int && !BmA_neg_int) {
+        // Case 1 1 0: A neg int, B neg int, B-A non-neg int (B >= A)
+        // Return (¯1^(B-A)) × (|B+1|)!(|A+1|)
+        int exp = static_cast<int>(B - A);
+        double sign = (exp % 2 == 0) ? 1.0 : -1.0;
+        double abs_B_plus_1 = std::abs(B + 1.0);
+        double abs_A_plus_1 = std::abs(A + 1.0);
+        // (|B+1|)!(|A+1|) = C(|A+1|, |B+1|) = (|A+1|)! / ((|B+1|)! × (|A+1|-|B+1|)!)
+        return sign * std::tgamma(abs_A_plus_1 + 1.0) /
+               (std::tgamma(abs_B_plus_1 + 1.0) * std::tgamma(abs_A_plus_1 - abs_B_plus_1 + 1.0));
+    }
+    if (A_neg_int && B_neg_int && BmA_neg_int) {
+        // Case 1 1 1: A neg int, B neg int, B-A neg int (B < A)
+        // ISO 13751: Return zero
+        return 0.0;
+    }
+
+    // Default: use gamma formula (shouldn't reach here for integers)
+    return std::tgamma(B + 1.0) / (std::tgamma(A + 1.0) * std::tgamma(B - A + 1.0));
+}
+
 void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
-    auto binomial = [](double k, double n) -> double {
-        // C(n,k) using gamma function for generalized binomial
-        return std::tgamma(n + 1.0) / (std::tgamma(k + 1.0) * std::tgamma(n - k + 1.0));
-    };
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(binomial(lhs->data.scalar, rhs->data.scalar));
+        m->result = m->heap->allocate_scalar(binomial_scalar(m, lhs->data.scalar, rhs->data.scalar));
         return;
     }
 
@@ -1718,7 +1813,7 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = binomial(lhs->data.scalar, rmat->data()[i]);
+            result(i) = binomial_scalar(m, lhs->data.scalar, rmat->data()[i]);
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1732,7 +1827,7 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = binomial(lmat->data()[i], rhs->data.scalar);
+            result(i) = binomial_scalar(m, lmat->data()[i], rhs->data.scalar);
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1752,7 +1847,7 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = binomial(lmat->data()[i], rmat->data()[i]);
+        result(i) = binomial_scalar(m, lmat->data()[i], rmat->data()[i]);
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -1788,9 +1883,12 @@ void fn_pi_times(Machine* m, Value* axis, Value* omega) {
 }
 
 // Helper for circular function dispatch
+// Returns NaN to signal domain error (caller must check)
 static double circular_function(int fn_code, double x) {
     switch (fn_code) {
-        case 0:  return std::sqrt(1.0 - x * x);           // sqrt(1-x²)
+        case 0:  // sqrt(1-x²) - requires |x| ≤ 1
+            if (x < -1.0 || x > 1.0) return std::nan("");
+            return std::sqrt(1.0 - x * x);
         case 1:  return std::sin(x);                      // sin
         case 2:  return std::cos(x);                      // cos
         case 3:  return std::tan(x);                      // tan
@@ -1801,10 +1899,35 @@ static double circular_function(int fn_code, double x) {
         case -1: return std::asin(x);                     // asin
         case -2: return std::acos(x);                     // acos
         case -3: return std::atan(x);                     // atan
-        case -4: return x * std::sqrt((x - 1.0) / (x + 1.0)); // (-1+x)×((x-1)÷x+1)*0.5
+        case -4: // ISO 13751: If B is ¯1 return zero, else (B+1)×((B-1)÷(B+1))*0.5
+            if (x == -1.0) return 0.0;
+            return (x + 1.0) * std::sqrt((x - 1.0) / (x + 1.0));
         case -5: return std::asinh(x);                    // asinh
         case -6: return std::acosh(x);                    // acosh
-        case -7: return std::atanh(x);                    // atanh
+        case -7: // ISO 13751: If B is ±1, signal domain-error
+            if (x == 1.0 || x == -1.0) return std::nan("");
+            return std::atanh(x);
+        // Cases 8-12 and -8 to -12 require complex arithmetic (not supported for general real inputs)
+        case 8:  // sqrt(-1-x²) - always requires complex for real x
+            return std::nan("");  // Domain error: requires complex
+        case -8: // -sqrt(-1-x²) - always requires complex for real x
+            return std::nan("");  // Domain error: requires complex
+        case 9:  // real part (identity for real)
+            return x;
+        case -9: // identity
+            return x;
+        case 10: // magnitude (abs for real)
+            return std::abs(x);
+        case -10: // conjugate (identity for real)
+            return x;
+        case 11: // imaginary part (0 for real)
+            return 0.0;
+        case -11: // x×i (requires complex)
+            return std::nan("");
+        case 12: // arc/phase (0 or π for real)
+            return (x >= 0) ? 0.0 : M_PI;
+        case -12: // exp(x×i) (requires complex)
+            return std::nan("");
         default:
             throw std::runtime_error("VM BUG: circular function code not validated before dispatch");
     }
@@ -1827,9 +1950,9 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    if (fn_code < -7 || fn_code > 7) {
-        // We only support -7 to 7 (no complex number support)
-        m->throw_error("DOMAIN ERROR: circular function code must be -7 to 7");
+    // ISO 13751: fn_code must be in [-12, 12]
+    if (fn_code < -12 || fn_code > 12) {
+        m->throw_error("DOMAIN ERROR: circular function code must be -12 to 12");
         return;
     }
 
