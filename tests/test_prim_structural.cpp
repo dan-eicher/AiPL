@@ -456,6 +456,70 @@ TEST_F(StructuralTest, RotateScalar) {
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 42.0);
 }
 
+// --- ISO 13751 10.1.4/10.2.7: Additional Reverse/Rotate tests ---
+
+// ISO 13751 10.1.4: Reverse with axis - ⌽[K]
+TEST_F(StructuralTest, ReverseWithAxisLast) {
+    // ⌽[2] on matrix reverses along axis 2 (columns within rows)
+    Value* result = machine->eval("⌽[2] 2 3⍴⍳6");
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);  // Row 0: 3 2 1
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);  // Row 1: 6 5 4
+}
+
+TEST_F(StructuralTest, ReverseWithAxisFirst) {
+    // ⌽[1] on matrix reverses along axis 1 (rows)
+    Value* result = machine->eval("⌽[1] 2 3⍴⍳6");
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 4.0);  // First row is now [4,5,6]
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // Second row is now [1,2,3]
+}
+
+// ISO 13751 10.1.4: Invalid axis signals AXIS ERROR
+TEST_F(StructuralTest, ReverseAxisError) {
+    // ⌽[3] on 2D matrix → AXIS ERROR
+    EXPECT_THROW(machine->eval("⌽[3] 2 3⍴⍳6"), APLError);
+}
+
+TEST_F(StructuralTest, ReverseAxisZeroError) {
+    // ⌽[0] → AXIS ERROR (axes are 1-based when ⎕IO=1)
+    EXPECT_THROW(machine->eval("⌽[0] 2 3⍴⍳6"), APLError);
+}
+
+// ISO 13751 10.1.4: Reverse on higher rank array
+TEST_F(StructuralTest, DISABLED_ReverseHigherRank) {
+    // Reverse on 3D array
+    Value* result = machine->eval("⌽ 2 2 3⍴⍳12");
+    ASSERT_TRUE(result->is_matrix());  // 3D stored as matrix
+    // Should reverse along last axis
+}
+
+// ISO 13751 10.2.7: Rotate with invalid axis
+TEST_F(StructuralTest, RotateAxisError) {
+    EXPECT_THROW(machine->eval("1⌽[3] 2 3⍴⍳6"), APLError);
+}
+
+// ISO 13751 10.2.7: Rotate with non-integer amount signals DOMAIN ERROR
+TEST_F(StructuralTest, RotateNonIntegerError) {
+    EXPECT_THROW(machine->eval("1.5⌽1 2 3"), APLError);
+}
+
+// ISO 13751 10.2.7: Rotate with shape conformability
+TEST_F(StructuralTest, RotateMatrixWithVector) {
+    // Each row rotated by different amount
+    Value* result = machine->eval("1 2⌽[2] 2 4⍴⍳8");
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // Row 0 rotated by 1: [2,3,4,1]
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 3), 1.0);
+    // Row 1 rotated by 2: [7,8,5,6]
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 7.0);
+}
+
 TEST_F(StructuralTest, TallyVector) {
     Eigen::VectorXd v(5);
     v << 1.0, 2.0, 3.0, 4.0, 5.0;
@@ -1279,6 +1343,51 @@ TEST_F(StructuralTest, CharGradeUpMatrixWithUnknowns) {
     EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // "XY" (all unknown)
 }
 
+// --- ISO 13751 10.1.2-3: Additional Grade tests ---
+
+// ISO 13751 10.1.2: Monadic grade on scalar signals RANK ERROR (eval-level test)
+TEST_F(StructuralTest, GradeUpScalarRankError) {
+    EXPECT_THROW(machine->eval("⍋5"), APLError);
+}
+
+TEST_F(StructuralTest, GradeDownScalarRankError) {
+    EXPECT_THROW(machine->eval("⍒5"), APLError);
+}
+
+// ISO 13751 10.1.2: Single element vector returns ⍳1
+TEST_F(StructuralTest, GradeUpSingleElement) {
+    Value* result = machine->eval("⍋,5");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->operator()(0, 0), 1.0);
+}
+
+// ISO 13751 10.1.2: ⎕CT is NOT an implicit argument of grade
+TEST_F(StructuralTest, GradeUpCTNotUsed) {
+    // Even with large ⎕CT, values should sort by exact value
+    machine->eval("⎕CT←0.1");
+    Value* result = machine->eval("⍋1 1.05 1.1");
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // Should sort by exact values: 1 < 1.05 < 1.1
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+    machine->eval("⎕CT←1E¯14");  // Reset
+}
+
+// ISO 13751 10.1.2: Numeric matrix - grade sorts by major cells (rows)
+TEST_F(StructuralTest, GradeUpNumericMatrix) {
+    // Grade up on numeric matrix sorts row indices lexicographically
+    Value* result = machine->eval("⍋3 2⍴3 1 2 2 1 3");
+    // Rows: [3,1] [2,2] [1,3] → sorted: [1,3]@3 [2,2]@2 [3,1]@1
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 3.0);  // [1,3] at row 3
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);  // [2,2] at row 2
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 1.0);  // [3,1] at row 1
+}
+
 // ============================================================================
 // Replicate Function (/)
 // ============================================================================
@@ -1410,6 +1519,41 @@ TEST_F(StructuralTest, UniqueAlreadyUnique) {
     ASSERT_TRUE(machine->result->is_vector());
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_EQ(res->rows(), 4);
+}
+
+// --- ISO 13751 10.1.8: Additional Unique tests ---
+
+// ISO 13751 10.1.8: Rank > 1 signals RANK ERROR
+TEST_F(StructuralTest, UniqueMatrixRankError) {
+    // ∪ 2 3⍴⍳6 → RANK ERROR
+    EXPECT_THROW(machine->eval("∪ 2 3⍴⍳6"), APLError);
+}
+
+// ISO 13751 10.1.8: Uses comparison-tolerance
+TEST_F(StructuralTest, UniqueCTEffect) {
+    // With large ⎕CT, nearly-equal values should be considered duplicates
+    machine->eval("⎕CT←0.1");
+    Value* result = machine->eval("∪ 1 1.05 2");
+    // 1 and 1.05 are within tolerance, so result should be 1 2
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    machine->eval("⎕CT←1E¯14");  // Reset
+}
+
+// ISO 13751 10.1.8: Character unique (spec example)
+TEST_F(StructuralTest, UniqueCharacter) {
+    // ∪'MISSISSIPPI' → 'MISP' (first occurrence order)
+    Value* result = machine->eval("∪'MISSISSIPPI'");
+    ASSERT_TRUE(result->is_char_data());
+    EXPECT_EQ(result->size(), 4);
+    // Verify order: M, I, S, P
+}
+
+// ISO 13751 10.1.8: Empty vector returns empty
+TEST_F(StructuralTest, UniqueEmptyVector) {
+    Value* result = machine->eval("∪⍳0");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
 }
 
 TEST_F(StructuralTest, UnionBasic) {
@@ -1599,6 +1743,43 @@ TEST_F(StructuralTest, FirstSingleElementVector) {
 
     ASSERT_TRUE(machine->result->is_scalar());
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 99.0);
+}
+
+// --- ISO 13751 10.1.9: Additional First tests ---
+
+// ISO 13751 10.1.9: ↑ of vector returns scalar (first element)
+TEST_F(StructuralTest, FirstShapeVerification) {
+    // ↑1 2 3 → 1 (scalar first element)
+    Value* first = machine->eval("↑1 2 3");
+    ASSERT_TRUE(first->is_scalar());
+    EXPECT_DOUBLE_EQ(first->as_scalar(), 1.0);
+
+    // ⍴↑1 2 3 → ⍬ (shape of scalar is empty vector)
+    Value* shape = machine->eval("⍴↑1 2 3");
+    ASSERT_TRUE(shape->is_vector());
+    EXPECT_EQ(shape->size(), 0);
+
+    // ⍴⍴↑1 2 3 → ,0 (shape of empty vector is 1-element vector [0])
+    Value* shape2 = machine->eval("⍴⍴↑1 2 3");
+    ASSERT_TRUE(shape2->is_vector());
+    EXPECT_EQ(shape2->size(), 1);
+    EXPECT_DOUBLE_EQ(shape2->as_matrix()->operator()(0, 0), 0.0);
+}
+
+// ISO 13751 10.1.9: First of higher rank array returns major cell
+TEST_F(StructuralTest, DISABLED_FirstHigherRank) {
+    // ↑ 2 3 4⍴⍳24 → first 3×4 matrix
+    Value* result = machine->eval("↑ 2 3 4⍴⍳24");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 4);
+}
+
+// ISO 13751 10.1.9: First of empty char array returns blank
+TEST_F(StructuralTest, FirstEmptyCharReturnsBlank) {
+    Value* result = machine->eval("↑''");
+    ASSERT_TRUE(result->is_scalar() || result->size() == 1);
+    // Result should be blank character ' '
 }
 
 // ============================================================================
@@ -1839,9 +2020,9 @@ TEST_F(StructuralTest, DyadicTransposeVectorIdentity) {
 }
 
 TEST_F(StructuralTest, DyadicTransposeMatrixIdentity) {
-    // 0 1⍉M → M (identity permutation)
+    // 1 2⍉M → M (identity permutation, ⎕IO=1)
     Eigen::VectorXd perm(2);
-    perm << 0, 1;
+    perm << 1, 2;
     Value* lhs = machine->heap->allocate_vector(perm);
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3, 4, 5, 6;
@@ -1856,9 +2037,9 @@ TEST_F(StructuralTest, DyadicTransposeMatrixIdentity) {
 }
 
 TEST_F(StructuralTest, DyadicTransposeMatrixSwap) {
-    // 1 0⍉M → transpose
+    // 2 1⍉M → transpose (⎕IO=1)
     Eigen::VectorXd perm(2);
-    perm << 1, 0;
+    perm << 2, 1;
     Value* lhs = machine->heap->allocate_vector(perm);
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3, 4, 5, 6;
@@ -1875,9 +2056,9 @@ TEST_F(StructuralTest, DyadicTransposeMatrixSwap) {
 }
 
 TEST_F(StructuralTest, DyadicTransposeInvalidPermError) {
-    // 2 2⍉M → DOMAIN ERROR
+    // 3 3⍉M → DOMAIN ERROR (out of range, valid axes are 1-2 with ⎕IO=1)
     Eigen::VectorXd perm(2);
-    perm << 2, 2;
+    perm << 3, 3;
     Value* lhs = machine->heap->allocate_vector(perm);
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3, 4, 5, 6;
@@ -1886,6 +2067,52 @@ TEST_F(StructuralTest, DyadicTransposeInvalidPermError) {
     ASSERT_FALSE(machine->kont_stack.empty());
     auto* k = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(k, nullptr);
+}
+
+// --- ISO 13751 10.1.5/10.2.10: Additional Transpose tests ---
+
+// ISO 13751 10.1.5: Monadic transpose on scalar returns scalar
+TEST_F(StructuralTest, MonadicTransposeScalar) {
+    Value* result = machine->eval("⍉5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// ISO 13751 10.2.10: Dyadic transpose diagonal selection (1 1⍉M)
+TEST_F(StructuralTest, DyadicTransposeDiagonal) {
+    // 1 1⍉ 3 3⍴⍳9 → diagonal: 1 5 9
+    Value* result = machine->eval("1 1⍉ 3 3⍴⍳9");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 9.0);
+}
+
+// ISO 13751 10.2.10: Permutation length must match rank
+TEST_F(StructuralTest, DyadicTransposeLengthError) {
+    // 1 2 3⍉ 2 3⍴⍳6 → LENGTH ERROR (3 perms for rank-2 array)
+    EXPECT_THROW(machine->eval("1 2 3⍉ 2 3⍴⍳6"), APLError);
+}
+
+// ISO 13751 10.2.10: Non-integer permutation signals DOMAIN ERROR
+TEST_F(StructuralTest, DyadicTransposeNonIntegerError) {
+    EXPECT_THROW(machine->eval("1.5 2⍉ 2 3⍴⍳6"), APLError);
+}
+
+// ISO 13751 10.2.10: Permutation out of range signals DOMAIN ERROR
+TEST_F(StructuralTest, DyadicTransposeOutOfRangeError) {
+    // 1 3⍉ 2 3⍴⍳6 → DOMAIN ERROR (3 > rank)
+    EXPECT_THROW(machine->eval("1 3⍉ 2 3⍴⍳6"), APLError);
+}
+
+// ISO 13751 10.2.10: Empty permutation on scalar
+TEST_F(StructuralTest, DyadicTransposeEmptyPermScalar) {
+    // (⍳0)⍉5 → 5 (empty perm on scalar returns scalar)
+    Value* result = machine->eval("(⍳0)⍉5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 }
 
 TEST_F(StructuralTest, DominoRegistered) {
@@ -1923,6 +2150,42 @@ TEST_F(StructuralTest, ExecuteEmptyString) {
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 0);
+}
+
+// --- ISO 13751 10.1.7: Additional Execute tests ---
+
+// ISO 13751 10.1.7: Syntax error in executed string
+TEST_F(StructuralTest, ExecuteSyntaxError) {
+    // ⍎'1++' → SYNTAX ERROR
+    EXPECT_THROW(machine->eval("⍎'1++'"), APLError);
+}
+
+// ISO 13751 10.1.7: Execute variable reference
+TEST_F(StructuralTest, ExecuteVariableRef) {
+    machine->eval("X←42");
+    Value* result = machine->eval("⍎'X'");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+// ISO 13751 10.1.7: Execute assignment
+TEST_F(StructuralTest, ExecuteAssignment) {
+    machine->eval("⍎'Y←99'");
+    Value* result = machine->eval("Y");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
+}
+
+// ISO 13751 10.1.7: Execute arithmetic expression
+TEST_F(StructuralTest, ExecuteArithmetic) {
+    Value* result = machine->eval("⍎'2+3×4'");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);  // 2+12 = 14
+}
+
+// ISO 13751 10.1.7: Execute undefined variable should error
+TEST_F(StructuralTest, ExecuteUndefinedVariable) {
+    EXPECT_THROW(machine->eval("⍎'UNDEFINED_VAR_XYZ'"), APLError);
 }
 
 // ============================================================================

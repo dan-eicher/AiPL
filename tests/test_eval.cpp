@@ -3277,8 +3277,8 @@ TEST_F(EvalTest, MatrixDivideVectorByScalar) {
 // ============================================================================
 
 TEST_F(EvalTest, DyadicTransposeIdentity) {
-    // 0 1⍉2 3⍴⍳6 → same matrix
-    Continuation* k = parser->parse("0 1⍉2 3⍴⍳6");
+    // 1 2⍉2 3⍴⍳6 → same matrix (⎕IO=1)
+    Continuation* k = parser->parse("1 2⍉2 3⍴⍳6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     machine->push_kont(k);
@@ -3291,8 +3291,8 @@ TEST_F(EvalTest, DyadicTransposeIdentity) {
 }
 
 TEST_F(EvalTest, DyadicTransposeSwap) {
-    // 1 0⍉2 3⍴⍳6 → 3x2 transpose
-    Continuation* k = parser->parse("1 0⍉2 3⍴⍳6");
+    // 2 1⍉2 3⍴⍳6 → 3x2 transpose (⎕IO=1)
+    Continuation* k = parser->parse("2 1⍉2 3⍴⍳6");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     machine->push_kont(k);
@@ -3310,9 +3310,9 @@ TEST_F(EvalTest, DyadicTransposeSwap) {
 }
 
 TEST_F(EvalTest, DyadicTransposeEqualsMonadic) {
-    // 1 0⍉M ≡ ⍉M for 2D matrix
+    // 2 1⍉M ≡ ⍉M for 2D matrix (⎕IO=1)
     // Both should give same result
-    Continuation* k1 = parser->parse("1 0⍉2 3⍴⍳6");
+    Continuation* k1 = parser->parse("2 1⍉2 3⍴⍳6");
     ASSERT_NE(k1, nullptr) << "Parse error: " << parser->get_error();
     machine->push_kont(k1);
     Value* result1 = machine->execute();
@@ -6016,6 +6016,193 @@ TEST_F(EvalTest, AxisErrorUnsupportedFunction) {
     EXPECT_THROW(machine->eval("-[1] 10"), APLError);     // - doesn't support axis
     EXPECT_THROW(machine->eval("⍳[1] 5"), APLError);      // ⍳ doesn't support axis
     EXPECT_THROW(machine->eval("⍴[1] 3 4"), APLError);    // ⍴ doesn't support axis
+}
+
+// ============================================================================
+// ISO 13751 Section 10.2 Gap Tests - Dyadic Mixed Functions
+// ============================================================================
+
+// --- 10.2.1 Join Along Axis ---
+
+// ISO 13751 10.2.1: Laminate with scalar extension
+TEST_F(EvalTest, LaminateScalarExtension) {
+    // 1 2 3,[1.5]4 → 3×2 matrix with 4 replicated
+    Value* result = machine->eval("1 2 3,[1.5]4");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 2);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 1), 4.0);
+}
+
+// ISO 13751 10.2.1: Both scalars with integer axis is error
+TEST_F(EvalTest, CatenateBothScalarsError) {
+    // 5,[1]3 with both scalars → AXIS ERROR
+    EXPECT_THROW(machine->eval("5,[1]3"), APLError);
+}
+
+// ISO 13751 10.2.1: Laminate with fractional axis (both scalars OK)
+TEST_F(EvalTest, LaminateBothScalars) {
+    // 5,[0.5]3 → 2-element vector [5,3]
+    Value* result = machine->eval("5,[0.5]3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+}
+
+// --- 10.2.2 Index Of ---
+
+// ISO 13751 10.2.2: Non-vector left arg signals RANK ERROR
+TEST_F(EvalTest, IndexOfNonVectorLeftError) {
+    // (2 3⍴⍳6)⍳3 → RANK ERROR
+    EXPECT_THROW(machine->eval("(2 3⍴⍳6)⍳3"), APLError);
+}
+
+// ISO 13751 10.2.2: ⎕CT affects tolerant equality
+TEST_F(EvalTest, IndexOfCTEffect) {
+    machine->eval("⎕CT←0.1");
+    Value* result = machine->eval("1 2 3⍳1.05");
+    // 1.05 is within tolerance of 1, should find at index 1
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+    machine->eval("⎕CT←1E¯14");
+}
+
+// ISO 13751 10.2.2: Character index-of
+TEST_F(EvalTest, IndexOfCharacter) {
+    Value* result = machine->eval("'ABC'⍳'B'");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+TEST_F(EvalTest, IndexOfCharacterNotFound) {
+    // 'ABC'⍳'D' → 4 (one past end)
+    Value* result = machine->eval("'ABC'⍳'D'");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+}
+
+// --- 10.2.3 Member Of ---
+
+// ISO 13751 10.2.3: ⎕CT affects tolerant equality
+TEST_F(EvalTest, MemberOfCTEffect) {
+    machine->eval("⎕CT←0.1");
+    Value* result = machine->eval("1.05∊1 2 3");
+    // 1.05 is within tolerance of 1
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+    machine->eval("⎕CT←1E¯14");
+}
+
+// ISO 13751 10.2.3: Matrix B - result has shape of A
+TEST_F(EvalTest, MemberOfMatrixRight) {
+    // 3 5∊2 3⍴⍳6 → check 3 and 5 membership
+    Value* result = machine->eval("3 5∊2 3⍴⍳6");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);  // 3 is in 1..6
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 1.0);  // 5 is in 1..6
+}
+
+// --- 10.2.5 Replicate ---
+
+// ISO 13751 10.2.5: Scalar left argument expansion
+TEST_F(EvalTest, ReplicateScalarLeftExpansion) {
+    // 2/1 2 3 → 1 1 2 2 3 3
+    Value* result = machine->eval("2/1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 6);
+}
+
+// ISO 13751 10.2.5: Replicate with axis
+TEST_F(EvalTest, ReplicateWithAxis) {
+    // 1 0 1/[2] 2 3⍴⍳6 → select columns 1 and 3
+    Value* result = machine->eval("1 0 1/[2] 2 3⍴⍳6");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+}
+
+// --- 10.2.6 Expand ---
+
+// ISO 13751 10.2.6: Non-boolean signals DOMAIN ERROR
+TEST_F(EvalTest, ExpandNonBooleanError) {
+    EXPECT_THROW(machine->eval("1 2 1\\1 2"), APLError);
+}
+
+// ISO 13751 10.2.6: Expand with axis
+TEST_F(EvalTest, ExpandWithAxis) {
+    // 1 0 1\[1] 2 3⍴⍳6 → insert zero row
+    Value* result = machine->eval("1 0 1\\[1] 2 3⍴⍳6");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 3);
+}
+
+// --- 10.2.11 Take ---
+
+// ISO 13751 10.2.11: Matrix take
+TEST_F(EvalTest, TakeMatrix) {
+    // 2 2↑3 4⍴⍳12 → top-left 2×2 corner
+    Value* result = machine->eval("2 2↑3 4⍴⍳12");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+}
+
+// ISO 13751 10.2.11: Rank>1 left arg signals RANK ERROR
+TEST_F(EvalTest, TakeRankLeftError) {
+    EXPECT_THROW(machine->eval("(2 2⍴⍳4)↑1 2 3 4 5"), APLError);
+}
+
+// --- 10.2.12 Drop ---
+
+// ISO 13751 10.2.12: Matrix drop
+TEST_F(EvalTest, DropMatrix) {
+    // 1 1↓3 4⍴⍳12 → drop first row and column
+    Value* result = machine->eval("1 1↓3 4⍴⍳12");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+}
+
+// ISO 13751 10.2.12: Rank>1 left arg signals RANK ERROR
+TEST_F(EvalTest, DropRankLeftError) {
+    EXPECT_THROW(machine->eval("(2 2⍴⍳4)↓1 2 3 4 5"), APLError);
+}
+
+// --- 10.2.14-15 Indexed Reference/Assignment ---
+
+// ISO 13751 10.2.14: Multi-dimensional indexing
+TEST_F(EvalTest, DISABLED_IndexedRefMultiDim) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[2;3]");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);  // Row 2, Col 3 of 1-indexed
+}
+
+// ISO 13751 10.2.14: Elided index (all elements along axis)
+TEST_F(EvalTest, DISABLED_IndexedRefElidedIndex) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[2;]");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);  // All columns of row 2
+}
+
+// ISO 13751 10.2.14: Scalar cannot be indexed
+TEST_F(EvalTest, IndexedRefScalarError) {
+    machine->eval("S←42");
+    EXPECT_THROW(machine->eval("S[1]"), APLError);
+}
+
+// ISO 13751 10.2.15: Multi-dimensional indexed assignment
+TEST_F(EvalTest, DISABLED_IndexedAssignMultiDim) {
+    machine->eval("M←3 4⍴⍳12");
+    machine->eval("M[2;3]←99");
+    Value* result = machine->eval("M[2;3]");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
 }
 
 

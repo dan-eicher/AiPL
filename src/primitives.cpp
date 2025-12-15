@@ -36,6 +36,11 @@ inline bool tolerant_eq(double a, double b, double ct) {
     return diff <= ct * magnitude;
 }
 
+// Check if value is a near-integer (within INTEGER_TOLERANCE)
+static inline bool is_near_integer(double x, double tol) {
+    return std::abs(x - std::round(x)) < tol;
+}
+
 // Tolerant floor: largest integer n where n ≤ X (with tolerance)
 inline double tolerant_floor(double x, double ct) {
     double f = std::floor(x);
@@ -130,6 +135,10 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension using Eigen broadcasting
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR");
+            return;
+        }
         Eigen::MatrixXd result =
             lhs->data.scalar + rhs->as_matrix()->array();
         // Preserve vector/matrix distinction
@@ -142,6 +151,10 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR");
+            return;
+        }
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() + rhs->data.scalar;
         // Preserve vector/matrix distinction
@@ -154,6 +167,10 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array + Array: element-wise
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -2007,8 +2024,10 @@ void fn_conjugate(Machine* m, Value* axis, Value* omega) {
     // For arrays, return a copy preserving vector/matrix distinction
     if (omega->is_vector()) {
         m->result = m->heap->allocate_vector(omega->as_matrix()->col(0), omega->is_char_data());
-    } else {
+    } else if (omega->is_matrix()) {
         m->result = m->heap->allocate_matrix(*omega->as_matrix(), omega->is_char_data());
+    } else {
+        m->throw_error("DOMAIN ERROR: conjugate requires array argument");
     }
 }
 
@@ -2505,19 +2524,49 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Matrix: permutation must be 0 1 (identity) or 1 0 (transpose)
+    // Matrix: permutation must be length 2
     if (perm.size() != 2) {
         m->throw_error("LENGTH ERROR: permutation must match array rank");
         return;
     }
 
-    int p0 = static_cast<int>(perm(0));
-    int p1 = static_cast<int>(perm(1));
+    // ISO 13751 10.2.10: Permutation values must be near-integers
+    if (!is_near_integer(perm(0), INTEGER_TOLERANCE) ||
+        !is_near_integer(perm(1), INTEGER_TOLERANCE)) {
+        m->throw_error("DOMAIN ERROR: permutation values must be integers");
+        return;
+    }
+
+    // Convert to 0-indexed
+    int io = m->io;
+    int p0 = static_cast<int>(std::round(perm(0))) - io;
+    int p1 = static_cast<int>(std::round(perm(1))) - io;
+
+    // Validate permutation values
+    if (p0 < 0 || p0 > 1 || p1 < 0 || p1 > 1) {
+        m->throw_error("DOMAIN ERROR: permutation values out of range");
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+    bool is_char = rhs->is_char_data();
 
     if (p0 == 0 && p1 == 1) {
-        m->result = m->heap->allocate_matrix(*rhs->as_matrix());
+        // Identity: 1 2⍉M (with ⎕IO=1)
+        m->result = m->heap->allocate_matrix(*mat, is_char);
     } else if (p0 == 1 && p1 == 0) {
-        m->result = m->heap->allocate_matrix(rhs->as_matrix()->transpose());
+        // Transpose: 2 1⍉M (with ⎕IO=1)
+        m->result = m->heap->allocate_matrix(mat->transpose(), is_char);
+    } else if (p0 == p1) {
+        // ISO 13751 10.2.10: Diagonal selection (1 1⍉M or 2 2⍉M with ⎕IO=1)
+        // Result length is min of the two axis lengths
+        int diag_len = std::min(static_cast<int>(mat->rows()),
+                                static_cast<int>(mat->cols()));
+        Eigen::VectorXd diag(diag_len);
+        for (int i = 0; i < diag_len; ++i) {
+            diag(i) = (*mat)(i, i);
+        }
+        m->result = m->heap->allocate_vector(diag, is_char);
     } else {
         m->throw_error("AXIS ERROR: invalid axis permutation");
     }
@@ -2537,6 +2586,13 @@ void fn_matrix_inverse(Machine* m, Value* axis, Value* omega) {
     }
 
     const Eigen::MatrixXd* mat = omega->as_matrix();
+
+    // Handle empty matrix: inverse of 0×0 is 0×0
+    if (mat->rows() == 0 || mat->cols() == 0) {
+        m->result = m->heap->allocate_matrix(Eigen::MatrixXd(mat->cols(), mat->rows()));
+        return;
+    }
+
     Eigen::MatrixXd result = mat->completeOrthogonalDecomposition().pseudoInverse();
 
     if (omega->is_vector()) {
@@ -2574,6 +2630,12 @@ void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         ? Eigen::MatrixXd::Constant(1, 1, lhs->as_scalar())
         : *lhs->as_matrix();
     const Eigen::MatrixXd& B = *rhs->as_matrix();
+
+    // Check dimensions: B's rows must match A's rows
+    if (B.rows() != A.rows()) {
+        m->throw_error("LENGTH ERROR: incompatible shapes for matrix divide");
+        return;
+    }
 
     Eigen::MatrixXd result = B.colPivHouseholderQr().solve(A);
 
@@ -2655,15 +2717,12 @@ void fn_first(Machine* m, Value* axis, Value* omega) {
 // Take (↑) - dyadic: take first n elements along specified axis
 // N↑B takes along first axis; N↑[K]B takes along axis K
 void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
-    if (!lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: take count must be scalar");
-        return;
-    }
-
-    int n = static_cast<int>(lhs->as_scalar());
-
     if (rhs->is_scalar()) {
-        // Taking from scalar: replicate
+        if (!lhs->is_scalar()) {
+            m->throw_error("RANK ERROR: take from scalar requires scalar count");
+            return;
+        }
+        int n = static_cast<int>(lhs->as_scalar());
         Eigen::VectorXd result(std::abs(n));
         result.setConstant(rhs->as_scalar());
         m->result = m->heap->allocate_vector(result);
@@ -2673,10 +2732,63 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
+    double fill = is_char ? 32.0 : 0.0;
 
-    // Determine which axis to take along
+    // Vector left argument: multi-axis take
+    if (lhs->is_vector()) {
+        const Eigen::MatrixXd* counts = lhs->as_matrix();
+        int lhs_len = counts->rows();
+        int rank = rhs->is_vector() ? 1 : 2;
+
+        if (lhs_len != rank) {
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            return;
+        }
+
+        if (rhs->is_vector()) {
+            int n = static_cast<int>((*counts)(0, 0));
+            int len = mat->rows();
+            int abs_n = std::abs(n);
+            Eigen::VectorXd result(abs_n);
+            result.setConstant(fill);
+            for (int i = 0; i < abs_n; ++i) {
+                int src_i = (n >= 0) ? i : (len - abs_n + i);
+                if (src_i >= 0 && src_i < len) result(i) = (*mat)(src_i, 0);
+            }
+            m->result = m->heap->allocate_vector(result, is_char);
+            return;
+        }
+
+        int n_rows = static_cast<int>((*counts)(0, 0));
+        int n_cols = static_cast<int>((*counts)(1, 0));
+        int rows = mat->rows();
+        int cols = mat->cols();
+        int abs_rows = std::abs(n_rows);
+        int abs_cols = std::abs(n_cols);
+
+        Eigen::MatrixXd result(abs_rows, abs_cols);
+        result.setConstant(fill);
+        for (int i = 0; i < abs_rows; ++i) {
+            int src_i = (n_rows >= 0) ? i : (rows - abs_rows + i);
+            if (src_i < 0 || src_i >= rows) continue;
+            for (int j = 0; j < abs_cols; ++j) {
+                int src_j = (n_cols >= 0) ? j : (cols - abs_cols + j);
+                if (src_j < 0 || src_j >= cols) continue;
+                result(i, j) = (*mat)(src_i, src_j);
+            }
+        }
+        m->result = m->heap->allocate_matrix(result, is_char);
+        return;
+    }
+
+    if (!lhs->is_scalar()) {
+        m->throw_error("RANK ERROR: take count must be scalar or vector");
+        return;
+    }
+
+    int n = static_cast<int>(lhs->as_scalar());
     int rank = rhs->is_vector() ? 1 : 2;
-    int take_axis = 1;  // Default to first axis
+    int take_axis = 1;
 
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
@@ -2690,80 +2802,37 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
     }
 
-    // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
-    double fill = is_char ? 32.0 : 0.0;
-
     if (rhs->is_vector()) {
         int len = mat->rows();
         int abs_n = std::abs(n);
-
         Eigen::VectorXd result(abs_n);
-
-        if (n >= 0) {
-            // Take from beginning
-            for (int i = 0; i < abs_n; ++i) {
-                result(i) = (i < len) ? (*mat)(i, 0) : fill;
-            }
-        } else {
-            // Take from end
-            for (int i = 0; i < abs_n; ++i) {
-                int src_idx = len - abs_n + i;
-                result(i) = (src_idx >= 0) ? (*mat)(src_idx, 0) : fill;
-            }
+        result.setConstant(fill);
+        for (int i = 0; i < abs_n; ++i) {
+            int src_idx = (n >= 0) ? i : (len - abs_n + i);
+            if (src_idx >= 0 && src_idx < len) result(i) = (*mat)(src_idx, 0);
         }
         m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
-    // Matrix case
     int rows = mat->rows();
     int cols = mat->cols();
     int abs_n = std::abs(n);
 
     if (take_axis == 1) {
-        // Take along first axis (rows)
         Eigen::MatrixXd result(abs_n, cols);
-
-        if (n >= 0) {
-            for (int i = 0; i < abs_n; ++i) {
-                if (i < rows) {
-                    result.row(i) = mat->row(i);
-                } else {
-                    result.row(i).setConstant(fill);
-                }
-            }
-        } else {
-            for (int i = 0; i < abs_n; ++i) {
-                int src_idx = rows - abs_n + i;
-                if (src_idx >= 0) {
-                    result.row(i) = mat->row(src_idx);
-                } else {
-                    result.row(i).setConstant(fill);
-                }
-            }
+        result.setConstant(fill);
+        for (int i = 0; i < abs_n; ++i) {
+            int src_idx = (n >= 0) ? i : (rows - abs_n + i);
+            if (src_idx >= 0 && src_idx < rows) result.row(i) = mat->row(src_idx);
         }
         m->result = m->heap->allocate_matrix(result, is_char);
     } else {
-        // Take along second axis (columns)
         Eigen::MatrixXd result(rows, abs_n);
-
-        if (n >= 0) {
-            for (int j = 0; j < abs_n; ++j) {
-                if (j < cols) {
-                    result.col(j) = mat->col(j);
-                } else {
-                    result.col(j).setConstant(fill);
-                }
-            }
-        } else {
-            for (int j = 0; j < abs_n; ++j) {
-                int src_idx = cols - abs_n + j;
-                if (src_idx >= 0) {
-                    result.col(j) = mat->col(src_idx);
-                } else {
-                    result.col(j).setConstant(fill);
-                }
-            }
+        result.setConstant(fill);
+        for (int j = 0; j < abs_n; ++j) {
+            int src_idx = (n >= 0) ? j : (cols - abs_n + j);
+            if (src_idx >= 0 && src_idx < cols) result.col(j) = mat->col(src_idx);
         }
         m->result = m->heap->allocate_matrix(result, is_char);
     }
@@ -2771,15 +2840,7 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
 // Drop (↓) - dyadic: drop first n elements
 void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
-    if (!lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: drop count must be scalar");
-        return;
-    }
-
-    int n = static_cast<int>(lhs->as_scalar());
-
     if (rhs->is_scalar()) {
-        // Dropping from scalar gives empty vector
         Eigen::VectorXd result(0);
         m->result = m->heap->allocate_vector(result);
         return;
@@ -2789,39 +2850,73 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
-    if (rhs->is_vector()) {
-        int len = mat->rows();
-        int abs_n = std::abs(n);
+    // Vector left argument: multi-axis drop
+    if (lhs->is_vector()) {
+        const Eigen::MatrixXd* counts = lhs->as_matrix();
+        int lhs_len = counts->rows();
+        int rank = rhs->is_vector() ? 1 : 2;
 
-        if (abs_n >= len) {
-            // Drop everything
-            Eigen::VectorXd result(0);
+        if (lhs_len != rank) {
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            return;
+        }
+
+        if (rhs->is_vector()) {
+            int n = static_cast<int>((*counts)(0, 0));
+            int len = mat->rows();
+            int abs_n = std::abs(n);
+            int result_len = std::max(0, len - abs_n);
+            Eigen::VectorXd result(result_len);
+            int start = (n >= 0) ? abs_n : 0;
+            for (int i = 0; i < result_len; ++i) {
+                result(i) = (*mat)(start + i, 0);
+            }
             m->result = m->heap->allocate_vector(result, is_char);
             return;
         }
 
-        int result_len = len - abs_n;
-        Eigen::VectorXd result(result_len);
+        int n_rows = static_cast<int>((*counts)(0, 0));
+        int n_cols = static_cast<int>((*counts)(1, 0));
+        int rows = mat->rows();
+        int cols = mat->cols();
+        int abs_rows = std::abs(n_rows);
+        int abs_cols = std::abs(n_cols);
+        int result_rows = std::max(0, rows - abs_rows);
+        int result_cols = std::max(0, cols - abs_cols);
 
-        if (n >= 0) {
-            // Drop from beginning
-            for (int i = 0; i < result_len; ++i) {
-                result(i) = (*mat)(abs_n + i, 0);
+        Eigen::MatrixXd result(result_rows, result_cols);
+        int row_start = (n_rows >= 0) ? abs_rows : 0;
+        int col_start = (n_cols >= 0) ? abs_cols : 0;
+        for (int i = 0; i < result_rows; ++i) {
+            for (int j = 0; j < result_cols; ++j) {
+                result(i, j) = (*mat)(row_start + i, col_start + j);
             }
-        } else {
-            // Drop from end
-            for (int i = 0; i < result_len; ++i) {
-                result(i) = (*mat)(i, 0);
-            }
+        }
+        m->result = m->heap->allocate_matrix(result, is_char);
+        return;
+    }
+
+    if (!lhs->is_scalar()) {
+        m->throw_error("RANK ERROR: drop count must be scalar or vector");
+        return;
+    }
+
+    int n = static_cast<int>(lhs->as_scalar());
+
+    if (rhs->is_vector()) {
+        int len = mat->rows();
+        int abs_n = std::abs(n);
+        int result_len = std::max(0, len - abs_n);
+        Eigen::VectorXd result(result_len);
+        int start = (n >= 0) ? abs_n : 0;
+        for (int i = 0; i < result_len; ++i) {
+            result(i) = (*mat)(start + i, 0);
         }
         m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
-    // For matrices, determine which axis to drop along
-    // Default is axis 1 (first axis = rows)
-    // ↓[2] drops along second axis (columns)
-    int drop_axis = 1;  // Default: first axis (rows)
+    int drop_axis = 1;
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
             m->throw_error("RANK ERROR: axis must be scalar");
@@ -2839,40 +2934,22 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int abs_n = std::abs(n);
 
     if (drop_axis == 1) {
-        // Drop along first axis (rows)
-        if (abs_n >= rows) {
-            Eigen::MatrixXd result(0, cols);
-            m->result = m->heap->allocate_matrix(result, is_char);
-            return;
-        }
-
-        int result_rows = rows - abs_n;
+        int result_rows = std::max(0, rows - abs_n);
         Eigen::MatrixXd result(result_rows, cols);
-
         if (n >= 0) {
             result = mat->bottomRows(result_rows);
         } else {
             result = mat->topRows(result_rows);
         }
-
         m->result = m->heap->allocate_matrix(result, is_char);
     } else {
-        // Drop along second axis (columns)
-        if (abs_n >= cols) {
-            Eigen::MatrixXd result(rows, 0);
-            m->result = m->heap->allocate_matrix(result, is_char);
-            return;
-        }
-
-        int result_cols = cols - abs_n;
+        int result_cols = std::max(0, cols - abs_n);
         Eigen::MatrixXd result(rows, result_cols);
-
         if (n >= 0) {
             result = mat->rightCols(result_cols);
         } else {
             result = mat->leftCols(result_cols);
         }
-
         m->result = m->heap->allocate_matrix(result, is_char);
     }
 }
@@ -3024,15 +3101,35 @@ void fn_tally(Machine* m, Value* axis, Value* omega) {
 
 // Rotate (⌽) - dyadic: rotate elements along last axis
 void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
-    if (!lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: rotate count must be scalar");
-        return;
+    // ISO 13751 10.2.7: Validate axis if provided
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be scalar");
+            return;
+        }
+        double ax = axis->as_scalar();
+        if (!is_near_integer(ax, INTEGER_TOLERANCE)) {
+            m->throw_error("AXIS ERROR: axis must be integer");
+            return;
+        }
+        int ax_int = static_cast<int>(std::round(ax));
+        int io = m->io;
+        int rank = rhs->is_scalar() ? 0 : (rhs->is_vector() ? 1 : 2);
+        if (ax_int < io || ax_int > io + rank - 1) {
+            m->throw_error("AXIS ERROR: axis out of range");
+            return;
+        }
     }
 
-    int n = static_cast<int>(lhs->as_scalar());
-
     if (rhs->is_scalar()) {
-        // Rotating a scalar is identity
+        // ISO 13751 10.2.7: Rotating a scalar - just validate left arg
+        if (lhs->is_scalar()) {
+            double val = lhs->as_scalar();
+            if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+                m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                return;
+            }
+        }
         m->result = m->heap->allocate_scalar(rhs->as_scalar());
         return;
     }
@@ -3041,31 +3138,84 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
-    if (rhs->is_vector()) {
-        int len = mat->rows();
-        if (len == 0) {
-            m->result = m->heap->allocate_vector(mat->col(0), is_char);
+    if (lhs->is_scalar()) {
+        // Scalar rotation count
+        double val = lhs->as_scalar();
+        if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+            m->throw_error("DOMAIN ERROR: rotate count must be integer");
             return;
         }
-        // Normalize rotation (positive = left rotate, APL convention)
-        n = ((n % len) + len) % len;
-        Eigen::VectorXd result(len);
-        for (int i = 0; i < len; ++i) {
-            result(i) = (*mat)((i + n) % len, 0);
+        int n = static_cast<int>(std::round(val));
+
+        if (rhs->is_vector()) {
+            int len = mat->rows();
+            if (len == 0) {
+                m->result = m->heap->allocate_vector(mat->col(0), is_char);
+                return;
+            }
+            n = ((n % len) + len) % len;
+            Eigen::VectorXd result(len);
+            for (int i = 0; i < len; ++i) {
+                result(i) = (*mat)((i + n) % len, 0);
+            }
+            m->result = m->heap->allocate_vector(result, is_char);
+            return;
         }
-        m->result = m->heap->allocate_vector(result, is_char);
+
+        // For matrices: rotate columns within each row (last axis)
+        int cols = mat->cols();
+        if (cols == 0) {
+            m->result = m->heap->allocate_matrix(*mat, is_char);
+            return;
+        }
+        n = ((n % cols) + cols) % cols;
+        Eigen::MatrixXd result(mat->rows(), cols);
+        for (int i = 0; i < mat->rows(); ++i) {
+            for (int j = 0; j < cols; ++j) {
+                result(i, j) = (*mat)(i, (j + n) % cols);
+            }
+        }
+        m->result = m->heap->allocate_matrix(result, is_char);
         return;
     }
 
-    // For matrices: rotate columns within each row
+    // ISO 13751 10.2.7: Vector rotation count - each row rotated by different amount
+    if (!lhs->is_vector()) {
+        m->throw_error("RANK ERROR: rotate count must be scalar or vector");
+        return;
+    }
+
+    if (!rhs->is_matrix()) {
+        m->throw_error("RANK ERROR: vector rotate requires matrix right argument");
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
+    int rows = mat->rows();
     int cols = mat->cols();
+
+    if (lmat->rows() != rows) {
+        m->throw_error("LENGTH ERROR: rotate count length must match number of rows");
+        return;
+    }
+
+    // Validate all rotation counts are near-integers
+    for (int i = 0; i < rows; ++i) {
+        if (!is_near_integer((*lmat)(i, 0), INTEGER_TOLERANCE)) {
+            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            return;
+        }
+    }
+
     if (cols == 0) {
         m->result = m->heap->allocate_matrix(*mat, is_char);
         return;
     }
-    n = ((n % cols) + cols) % cols;
-    Eigen::MatrixXd result(mat->rows(), cols);
-    for (int i = 0; i < mat->rows(); ++i) {
+
+    Eigen::MatrixXd result(rows, cols);
+    for (int i = 0; i < rows; ++i) {
+        int n = static_cast<int>(std::round((*lmat)(i, 0)));
+        n = ((n % cols) + cols) % cols;
         for (int j = 0; j < cols; ++j) {
             result(i, j) = (*mat)(i, (j + n) % cols);
         }
@@ -3075,15 +3225,35 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
 // Rotate First (⊖) - dyadic: rotate elements along first axis
 void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
-    if (!lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: rotate count must be scalar");
-        return;
+    // ISO 13751 10.2.7: Validate axis if provided
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be scalar");
+            return;
+        }
+        double ax = axis->as_scalar();
+        if (!is_near_integer(ax, INTEGER_TOLERANCE)) {
+            m->throw_error("AXIS ERROR: axis must be integer");
+            return;
+        }
+        int ax_int = static_cast<int>(std::round(ax));
+        int io = m->io;
+        int rank = rhs->is_scalar() ? 0 : (rhs->is_vector() ? 1 : 2);
+        if (ax_int < io || ax_int > io + rank - 1) {
+            m->throw_error("AXIS ERROR: axis out of range");
+            return;
+        }
     }
 
-    int n = static_cast<int>(lhs->as_scalar());
-
     if (rhs->is_scalar()) {
-        // Rotating a scalar is identity
+        // ISO 13751 10.2.7: Rotating a scalar - just validate left arg
+        if (lhs->is_scalar()) {
+            double val = lhs->as_scalar();
+            if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+                m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                return;
+            }
+        }
         m->result = m->heap->allocate_scalar(rhs->as_scalar());
         return;
     }
@@ -3092,32 +3262,85 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
-    if (rhs->is_vector()) {
-        // For vectors, first axis is the only axis
-        int len = mat->rows();
-        if (len == 0) {
-            m->result = m->heap->allocate_vector(mat->col(0), is_char);
+    if (lhs->is_scalar()) {
+        double val = lhs->as_scalar();
+        if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+            m->throw_error("DOMAIN ERROR: rotate count must be integer");
             return;
         }
-        n = ((n % len) + len) % len;
-        Eigen::VectorXd result(len);
-        for (int i = 0; i < len; ++i) {
-            result(i) = (*mat)((i + n) % len, 0);
+        int n = static_cast<int>(std::round(val));
+
+        if (rhs->is_vector()) {
+            // For vectors, first axis is the only axis
+            int len = mat->rows();
+            if (len == 0) {
+                m->result = m->heap->allocate_vector(mat->col(0), is_char);
+                return;
+            }
+            n = ((n % len) + len) % len;
+            Eigen::VectorXd result(len);
+            for (int i = 0; i < len; ++i) {
+                result(i) = (*mat)((i + n) % len, 0);
+            }
+            m->result = m->heap->allocate_vector(result, is_char);
+            return;
         }
-        m->result = m->heap->allocate_vector(result, is_char);
+
+        // For matrices: rotate rows (first axis)
+        int rows = mat->rows();
+        if (rows == 0) {
+            m->result = m->heap->allocate_matrix(*mat, is_char);
+            return;
+        }
+        n = ((n % rows) + rows) % rows;
+        Eigen::MatrixXd result(rows, mat->cols());
+        for (int i = 0; i < rows; ++i) {
+            result.row(i) = mat->row((i + n) % rows);
+        }
+        m->result = m->heap->allocate_matrix(result, is_char);
         return;
     }
 
-    // For matrices: rotate rows (first axis)
+    // ISO 13751 10.2.7: Vector rotation count - each column rotated by different amount
+    if (!lhs->is_vector()) {
+        m->throw_error("RANK ERROR: rotate count must be scalar or vector");
+        return;
+    }
+
+    if (!rhs->is_matrix()) {
+        m->throw_error("RANK ERROR: vector rotate requires matrix right argument");
+        return;
+    }
+
+    const Eigen::MatrixXd* lmat = lhs->as_matrix();
     int rows = mat->rows();
+    int cols = mat->cols();
+
+    if (lmat->rows() != cols) {
+        m->throw_error("LENGTH ERROR: rotate count length must match number of columns");
+        return;
+    }
+
+    // Validate all rotation counts are near-integers
+    for (int i = 0; i < cols; ++i) {
+        if (!is_near_integer((*lmat)(i, 0), INTEGER_TOLERANCE)) {
+            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            return;
+        }
+    }
+
     if (rows == 0) {
         m->result = m->heap->allocate_matrix(*mat, is_char);
         return;
     }
-    n = ((n % rows) + rows) % rows;
-    Eigen::MatrixXd result(rows, mat->cols());
-    for (int i = 0; i < rows; ++i) {
-        result.row(i) = mat->row((i + n) % rows);
+
+    Eigen::MatrixXd result(rows, cols);
+    for (int j = 0; j < cols; ++j) {
+        int n = static_cast<int>(std::round((*lmat)(j, 0)));
+        n = ((n % rows) + rows) % rows;
+        for (int i = 0; i < rows; ++i) {
+            result(i, j) = (*mat)((i + n) % rows, j);
+        }
     }
     m->result = m->heap->allocate_matrix(result, is_char);
 }
@@ -3150,23 +3373,39 @@ void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
+    // ISO 13751: left argument must be a vector
+    if (!lhs->is_scalar() && !lhs->is_vector()) {
+        m->throw_error("RANK ERROR: left argument of index-of must be a vector");
+        return;
+    }
+
     // Get lhs as a flat array of values to search in
     Eigen::VectorXd haystack = flatten_value(lhs);
     int io = m->io;
+    double ct = m->ct;
     double not_found = static_cast<double>(haystack.size() + io);  // ⎕IO + length
 
+    // Tolerant equality per ISO 13751: |a-b| ≤ ⎕CT × max(|a|, |b|)
+    auto tolerant_equal = [ct](double a, double b) -> bool {
+        if (a == b) return true;
+        double magnitude = std::max(std::abs(a), std::abs(b));
+        return std::abs(a - b) <= ct * magnitude;
+    };
+
     // Search for needle in haystack, return index or not_found
-    auto find_index = [&haystack, not_found, io](double needle) -> double {
+    auto find_index = [&haystack, not_found, io, &tolerant_equal](double needle) -> double {
         for (int i = 0; i < haystack.size(); ++i) {
-            if (haystack(i) == needle) {
+            if (tolerant_equal(haystack(i), needle)) {
                 return static_cast<double>(i + io);  // ⎕IO
             }
         }
         return not_found;
     };
 
-    if (rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(find_index(rhs->as_scalar()));
+    // Scalar or single-element vector returns scalar result
+    if (rhs->is_scalar() || (rhs->is_vector() && rhs->size() == 1)) {
+        double needle = rhs->is_scalar() ? rhs->as_scalar() : rhs->as_matrix()->coeff(0, 0);
+        m->result = m->heap->allocate_scalar(find_index(needle));
         return;
     }
 
@@ -3218,11 +3457,19 @@ void fn_member_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Get rhs as flat array to search in
     Eigen::VectorXd set = flatten_value(rhs);
+    double ct = m->ct;
+
+    // Tolerant equality per ISO 13751: |a-b| ≤ ⎕CT × max(|a|, |b|)
+    auto tolerant_equal = [ct](double a, double b) -> bool {
+        if (a == b) return true;
+        double magnitude = std::max(std::abs(a), std::abs(b));
+        return std::abs(a - b) <= ct * magnitude;
+    };
 
     // Check if val is in set
-    auto is_member = [&set](double val) -> double {
+    auto is_member = [&set, &tolerant_equal](double val) -> double {
         for (int i = 0; i < set.size(); ++i) {
-            if (set(i) == val) {
+            if (tolerant_equal(set(i), val)) {
                 return 1.0;
             }
         }
@@ -3261,12 +3508,44 @@ void fn_member_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 void fn_grade_up(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
-        // RANK ERROR: grade requires array, not scalar
         m->throw_error("RANK ERROR: grade requires array");
         return;
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // Matrix case: grade rows lexicographically
+    if (omega->is_matrix()) {
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+
+        // Create index array for rows
+        std::vector<int> indices(rows);
+        for (int i = 0; i < rows; ++i) {
+            indices[i] = i;
+        }
+
+        // Sort row indices lexicographically
+        std::sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
+            for (int j = 0; j < cols; ++j) {
+                if ((*mat)(a, j) < (*mat)(b, j)) return true;
+                if ((*mat)(a, j) > (*mat)(b, j)) return false;
+            }
+            return false;  // Equal rows maintain original order
+        });
+
+        // Convert to result vector (⎕IO)
+        Eigen::VectorXd result(rows);
+        for (int i = 0; i < rows; ++i) {
+            result(i) = static_cast<double>(indices[i] + m->io);
+        }
+
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // Vector case
     Eigen::VectorXd data = flatten_value(omega);
     int n = data.size();
 
@@ -3295,12 +3574,44 @@ void fn_grade_up(Machine* m, Value* axis, Value* omega) {
 void fn_grade_down(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
-        // RANK ERROR: grade requires array, not scalar
         m->throw_error("RANK ERROR: grade requires array");
         return;
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // Matrix case: grade rows lexicographically (descending)
+    if (omega->is_matrix()) {
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+
+        // Create index array for rows
+        std::vector<int> indices(rows);
+        for (int i = 0; i < rows; ++i) {
+            indices[i] = i;
+        }
+
+        // Sort row indices lexicographically (descending)
+        std::sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
+            for (int j = 0; j < cols; ++j) {
+                if ((*mat)(a, j) > (*mat)(b, j)) return true;
+                if ((*mat)(a, j) < (*mat)(b, j)) return false;
+            }
+            return false;  // Equal rows maintain original order
+        });
+
+        // Convert to result vector (⎕IO)
+        Eigen::VectorXd result(rows);
+        for (int i = 0; i < rows; ++i) {
+            result(i) = static_cast<double>(indices[i] + m->io);
+        }
+
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    // Vector case
     Eigen::VectorXd data = flatten_value(omega);
     int n = data.size();
 
@@ -3604,7 +3915,6 @@ void fn_grade_down_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // 1 1 1 / 4 5 6 → 4 5 6 (compress)
 // 0 1 0 / 4 5 6 → 5 (filter)
 void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
-    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3613,13 +3923,73 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Get counts from lhs
     Eigen::VectorXd counts = flatten_value(lhs);
 
-    // For now, support vectors only (last axis replication)
+    // Determine axis for matrix operations (default is last axis)
+    int k = 0;  // 0 means use default (last axis)
+    if (axis) {
+        int max_rank = rhs->is_vector() ? 1 : (rhs->is_matrix() ? 2 : 0);
+        if (max_rank == 0) {
+            m->throw_error("AXIS ERROR: replicate with axis requires array argument");
+            return;
+        }
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be a scalar");
+            return;
+        }
+        k = static_cast<int>(axis->as_scalar()) - static_cast<int>(m->io);
+        if (k < 0 || k >= max_rank) {
+            m->throw_error("AXIS ERROR: axis out of bounds");
+            return;
+        }
+        k += 1;  // Convert to 1-based internal representation
+    }
+
+    // Matrix case: replicate along specified axis
     if (!rhs->is_scalar() && !rhs->is_vector()) {
-        // Matrix case: replicate along last axis (columns)
         const Eigen::MatrixXd* mat = rhs->as_matrix();
         int rows = mat->rows();
         int cols = mat->cols();
 
+        // Default axis: last (k=2 means columns)
+        if (k == 0) k = 2;
+
+        if (k == 1) {
+            // Replicate along first axis (rows)
+            if (counts.size() != rows) {
+                m->throw_error("LENGTH ERROR: replicate count must match array length");
+                return;
+            }
+
+            // Calculate total output rows
+            int total_rows = 0;
+            for (int i = 0; i < counts.size(); ++i) {
+                int c = static_cast<int>(counts(i));
+                if (c < 0) {
+                    m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+                    return;
+                }
+                total_rows += c;
+            }
+
+            if (total_rows == 0) {
+                Eigen::VectorXd empty(0);
+                m->result = m->heap->allocate_vector(empty, is_char);
+                return;
+            }
+
+            Eigen::MatrixXd result(total_rows, cols);
+            int out_row = 0;
+            for (int i = 0; i < rows; ++i) {
+                int rep = static_cast<int>(counts(i));
+                for (int r = 0; r < rep; ++r) {
+                    result.row(out_row++) = mat->row(i);
+                }
+            }
+
+            m->result = m->heap->allocate_matrix(result, is_char);
+            return;
+        }
+
+        // k == 2: Replicate along last axis (columns)
         if (counts.size() != cols) {
             m->throw_error("LENGTH ERROR: replicate count must match array length");
             return;
@@ -3637,7 +4007,6 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
 
         if (total_cols == 0) {
-            // Empty result - return empty vector (shape 0)
             Eigen::VectorXd empty(0);
             m->result = m->heap->allocate_vector(empty, is_char);
             return;
@@ -3658,6 +4027,13 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar or vector case
     Eigen::VectorXd data = flatten_value(rhs);
+
+    // Scalar extension: if lhs is scalar, extend to match rhs length
+    if (counts.size() == 1 && data.size() > 1) {
+        double scalar_count = counts(0);
+        counts.resize(data.size());
+        counts.setConstant(scalar_count);
+    }
 
     if (counts.size() != data.size()) {
         m->throw_error("LENGTH ERROR: replicate count must match array length");
@@ -3711,21 +4087,32 @@ static bool value_in_array(double val, const Eigen::VectorXd& arr, int n) {
 // ∪ 1 2 2 3 1 4 → 1 2 3 4
 void fn_unique(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
+
+    // ISO 13751 10.1.8: Unique requires vector or scalar
+    if (omega->is_matrix()) {
+        m->throw_error("RANK ERROR: unique requires vector or scalar argument");
+        return;
+    }
+
     if (omega->is_scalar()) {
         m->result = omega;
         return;
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
-    Eigen::VectorXd data = flatten_value(omega);
-    int n = data.size();
+    bool is_char = omega->is_char_data();
+    const Eigen::MatrixXd* mat = omega->as_matrix();
+    int n = mat->rows();
 
-    // First pass: count unique elements
+    // Get comparison tolerance
+    double ct = m->ct;
+
+    // First pass: count unique elements using tolerant equality
     int unique_count = 0;
     for (int i = 0; i < n; ++i) {
         bool found = false;
         for (int j = 0; j < i; ++j) {
-            if (data(j) == data(i)) {
+            if (tolerant_eq((*mat)(j, 0), (*mat)(i, 0), ct)) {
                 found = true;
                 break;
             }
@@ -3734,7 +4121,7 @@ void fn_unique(Machine* m, Value* axis, Value* omega) {
     }
 
     if (unique_count == 0) {
-        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0), is_char);
         return;
     }
 
@@ -3742,12 +4129,19 @@ void fn_unique(Machine* m, Value* axis, Value* omega) {
     Eigen::VectorXd result(unique_count);
     int out_idx = 0;
     for (int i = 0; i < n; ++i) {
-        if (!value_in_array(data(i), result, out_idx)) {
-            result(out_idx++) = data(i);
+        bool found = false;
+        for (int j = 0; j < out_idx; ++j) {
+            if (tolerant_eq(result(j), (*mat)(i, 0), ct)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            result(out_idx++) = (*mat)(i, 0);
         }
     }
 
-    m->result = m->heap->allocate_vector(result);
+    m->result = m->heap->allocate_vector(result, is_char);
 }
 
 // Union (∪ dyadic) - unique elements from both arrays (left first, then unique from right)
@@ -3866,9 +4260,19 @@ void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // Uses machine's RNG seeded by ⎕RL for reproducibility
 void fn_roll(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
+    // Validate argument is a basic value
+    if (!omega->is_basic_value()) {
+        m->throw_error("DOMAIN ERROR");
+        return;
+    }
     int io = m->io;
     if (omega->is_scalar()) {
-        int n = static_cast<int>(omega->data.scalar);
+        double val = omega->data.scalar;
+        int n = static_cast<int>(val);
+        if (n != val) {
+            m->throw_error("DOMAIN ERROR: roll argument must be integer");
+            return;
+        }
         if (n <= 0) {
             m->throw_error("DOMAIN ERROR: roll argument must be positive");
             return;
@@ -3882,7 +4286,12 @@ void fn_roll(Machine* m, Value* axis, Value* omega) {
     Eigen::MatrixXd result(mat->rows(), mat->cols());
 
     for (int i = 0; i < mat->size(); ++i) {
-        int n = static_cast<int>(mat->data()[i]);
+        double val = mat->data()[i];
+        int n = static_cast<int>(val);
+        if (n != val) {
+            m->throw_error("DOMAIN ERROR: roll argument must be integer");
+            return;
+        }
         if (n <= 0) {
             m->throw_error("DOMAIN ERROR: roll argument must be positive");
             return;
@@ -3907,8 +4316,21 @@ void fn_deal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    int a = static_cast<int>(lhs->data.scalar);
-    int b = static_cast<int>(rhs->data.scalar);
+    double lval = lhs->data.scalar;
+    double rval = rhs->data.scalar;
+
+    // Check for integer values using ⎕CT
+    if (std::abs(lval - std::round(lval)) > m->ct) {
+        m->throw_error("DOMAIN ERROR: deal count must be integer");
+        return;
+    }
+    if (std::abs(rval - std::round(rval)) > m->ct) {
+        m->throw_error("DOMAIN ERROR: deal range must be integer");
+        return;
+    }
+
+    int a = static_cast<int>(std::round(lval));
+    int b = static_cast<int>(std::round(rval));
 
     if (a < 0 || b <= 0) {
         m->throw_error("DOMAIN ERROR: deal arguments must be positive");
@@ -3953,7 +4375,6 @@ void fn_deal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // 1 0 1 0 0 1 \ 'ABC' → 'A B  C' (with spaces being fill)
 // 1 0 1 1 \ 1 2 3 → 1 0 2 3
 void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
-    REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
@@ -3976,6 +4397,26 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
     double fill = is_char ? 32.0 : 0.0;
 
+    // Determine axis for matrix operations (default is last axis)
+    int k = 0;  // 0 means use default (last axis)
+    if (axis) {
+        int max_rank = rhs->is_vector() ? 1 : (rhs->is_matrix() ? 2 : 0);
+        if (max_rank == 0 && !rhs->is_scalar()) {
+            m->throw_error("AXIS ERROR: expand with axis requires array argument");
+            return;
+        }
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be a scalar");
+            return;
+        }
+        k = static_cast<int>(axis->as_scalar()) - static_cast<int>(m->io);
+        if (k < 0 || k >= max_rank) {
+            m->throw_error("AXIS ERROR: axis out of bounds");
+            return;
+        }
+        k += 1;  // Convert to 1-based internal representation
+    }
+
     // Handle scalar/vector rhs
     // ISO 10.2.6: "If B is a scalar, set B1 to (+/A1)µB" - extend scalar to ones_count copies
     if (rhs->is_scalar()) {
@@ -3993,11 +4434,36 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!rhs->is_vector()) {
-        // Matrix case: expand along last axis (columns)
+        // Matrix case: expand along specified axis
         const Eigen::MatrixXd* mat = rhs->as_matrix();
         int rows = mat->rows();
         int cols = mat->cols();
 
+        // Default axis: last (k=2 means columns)
+        if (k == 0) k = 2;
+
+        if (k == 1) {
+            // Expand along first axis (rows)
+            if (ones_count != rows) {
+                m->throw_error("LENGTH ERROR: expand mask ones must match array length");
+                return;
+            }
+
+            Eigen::MatrixXd result(mask.size(), cols);
+            int src_row = 0;
+            for (int i = 0; i < mask.size(); ++i) {
+                if (static_cast<int>(mask(i)) == 1) {
+                    result.row(i) = mat->row(src_row++);
+                } else {
+                    result.row(i).setConstant(fill);  // Fill row
+                }
+            }
+
+            m->result = m->heap->allocate_matrix(result, is_char);
+            return;
+        }
+
+        // k == 2: Expand along last axis (columns)
         if (ones_count != cols) {
             m->throw_error("LENGTH ERROR: expand mask ones must match array length");
             return;
@@ -4120,18 +4586,67 @@ void fn_expand_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // 24 60 60⊥1 30 45 → 5445 (hours:mins:secs to seconds)
 void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
+
+    // Reject character data
+    if (lhs->is_string() || lhs->is_char_data()) {
+        m->throw_error("DOMAIN ERROR: decode requires numeric arguments");
+        return;
+    }
+    if (rhs->is_string() || rhs->is_char_data()) {
+        m->throw_error("DOMAIN ERROR: decode requires numeric arguments");
+        return;
+    }
+
+    // Helper: Horner's method for decode
+    auto horner = [](const Eigen::VectorXd& radix, const Eigen::VectorXd& digits) -> double {
+        if (digits.size() == 0) return 0.0;
+        double z = digits(0);
+        for (int i = 1; i < digits.size(); ++i) {
+            z = radix(i) * z + digits(i);
+        }
+        return z;
+    };
+
     // Fast path: scalar radix with scalar digit → just return the digit
     if (lhs->is_scalar() && rhs->is_scalar()) {
         m->result = m->heap->allocate_scalar(rhs->as_scalar());
         return;
     }
 
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    // Matrix case: A⊥B where A is m×n and B is n×p → result is m×p
+    if (lhs->is_matrix() && rhs->is_matrix()) {
+        const Eigen::MatrixXd* A = lhs->as_matrix();
+        const Eigen::MatrixXd* B = rhs->as_matrix();
+        int m_rows = A->rows();
+        int n = A->cols();
+        int p = B->cols();
+
+        if (B->rows() != n) {
+            m->throw_error("LENGTH ERROR: decode inner dimensions must match");
+            return;
+        }
+
+        Eigen::MatrixXd result(m_rows, p);
+        for (int i = 0; i < m_rows; ++i) {
+            Eigen::VectorXd radix = A->row(i).transpose();
+            for (int j = 0; j < p; ++j) {
+                Eigen::VectorXd digits = B->col(j);
+                result(i, j) = horner(radix, digits);
+            }
+        }
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
 
     // Get the radix and digits as vectors
     Eigen::VectorXd radix = flatten_value(lhs);
     Eigen::VectorXd digits = flatten_value(rhs);
+
+    // Empty radix → 0 (per ISO 13751 spec)
+    if (radix.size() == 0) {
+        m->result = m->heap->allocate_scalar(0.0);
+        return;
+    }
 
     int n = digits.size();
 
@@ -4153,13 +4668,7 @@ void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Horner's method: Z = digits[0], then Z = radix[i]*Z + digits[i] for i=1..n-1
-    double z = digits(0);
-    for (int i = 1; i < n; ++i) {
-        z = radix(i) * z + digits(i);
-    }
-
-    m->result = m->heap->allocate_scalar(z);
+    m->result = m->heap->allocate_scalar(horner(radix, digits));
 }
 
 // Encode (⊤ dyadic) - representation / convert to digits in radix
@@ -4169,8 +4678,16 @@ void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // 24 60 60⊤5445 → 1 30 45 (seconds to hours:mins:secs)
 void fn_encode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    // Reject character data
+    if (lhs->is_string() || lhs->is_char_data()) {
+        m->throw_error("DOMAIN ERROR: encode requires numeric arguments");
+        return;
+    }
+    if (rhs->is_string() || rhs->is_char_data()) {
+        m->throw_error("DOMAIN ERROR: encode requires numeric arguments");
+        return;
+    }
 
     // Get the radix vector
     Eigen::VectorXd radix = flatten_value(lhs);

@@ -2032,6 +2032,30 @@ TEST_F(ArithmeticTest, RollErrorNegative) {
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
+// ISO 13751 10.1.1: Non-integer argument should signal DOMAIN ERROR
+TEST_F(ArithmeticTest, RollErrorNonInteger) {
+    // ?3.5 is a DOMAIN ERROR (non-integer)
+    Value* arg = machine->heap->allocate_scalar(3.5);
+    fn_roll(machine, nullptr, arg);
+
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// ISO 13751 10.1.1: Roll is atomic - ⎕RL unchanged on error
+TEST_F(ArithmeticTest, RollAtomicOnError) {
+    // Set ⎕RL to known value, trigger error, verify ⎕RL unchanged
+    machine->eval("⎕RL←12345");
+    Value* rl_before = machine->eval("⎕RL");
+    double rl_val = rl_before->as_scalar();
+
+    // Try invalid roll (should error)
+    EXPECT_THROW(machine->eval("?0"), APLError);
+
+    // ⎕RL should be unchanged
+    Value* rl_after = machine->eval("⎕RL");
+    EXPECT_DOUBLE_EQ(rl_after->as_scalar(), rl_val);
+}
+
 // ========================================================================
 // Deal (? dyadic) Tests
 // ========================================================================
@@ -2106,6 +2130,66 @@ TEST_F(ArithmeticTest, DealErrorTooMany) {
     fn_deal(machine, nullptr, count, range);
 
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// ISO 13751 10.2.4: Deal is atomic - ⎕RL unchanged on error
+TEST_F(ArithmeticTest, DealAtomicOnError) {
+    machine->eval("⎕RL←12345");
+    Value* rl_before = machine->eval("⎕RL");
+    double rl_val = rl_before->as_scalar();
+
+    // Try invalid deal (A > B should error)
+    EXPECT_THROW(machine->eval("6?5"), APLError);
+
+    // ⎕RL should be unchanged
+    Value* rl_after = machine->eval("⎕RL");
+    EXPECT_DOUBLE_EQ(rl_after->as_scalar(), rl_val);
+}
+
+// ISO 13751 10.2.4: Deal reproducibility with same ⎕RL
+TEST_F(ArithmeticTest, DealReproducibility) {
+    // Same ⎕RL should produce same deal result
+    machine->eval("⎕RL←42");
+    Value* result1 = machine->eval("3?100");
+
+    machine->eval("⎕RL←42");
+    Value* result2 = machine->eval("3?100");
+
+    ASSERT_TRUE(result1->is_vector());
+    ASSERT_TRUE(result2->is_vector());
+    const Eigen::MatrixXd* m1 = result1->as_matrix();
+    const Eigen::MatrixXd* m2 = result2->as_matrix();
+    EXPECT_EQ(m1->rows(), m2->rows());
+    for (int i = 0; i < m1->rows(); ++i) {
+        EXPECT_DOUBLE_EQ((*m1)(i, 0), (*m2)(i, 0));
+    }
+}
+
+// ISO 13751 10.2.4: Negative values signal DOMAIN ERROR
+TEST_F(ArithmeticTest, DealErrorNegativeCount) {
+    EXPECT_THROW(machine->eval("¯3?10"), APLError);
+}
+
+TEST_F(ArithmeticTest, DealErrorNegativeRange) {
+    EXPECT_THROW(machine->eval("3?¯10"), APLError);
+}
+
+// ISO 13751 10.2.4: Non-integer values signal DOMAIN ERROR
+TEST_F(ArithmeticTest, DealErrorNonIntegerCount) {
+    EXPECT_THROW(machine->eval("3.5?10"), APLError);
+}
+
+TEST_F(ArithmeticTest, DealErrorNonIntegerRange) {
+    EXPECT_THROW(machine->eval("3?10.5"), APLError);
+}
+
+// ISO 13751 10.2.4: Rank>1 arguments signal RANK ERROR
+TEST_F(ArithmeticTest, DealErrorRankCount) {
+    EXPECT_THROW(machine->eval("(2 2⍴⍳4)?10"), APLError);
+}
+
+TEST_F(ArithmeticTest, DealErrorRankRange) {
+    EXPECT_THROW(machine->eval("3?(2 2⍴⍳4)"), APLError);
 }
 
 // ========================================================================
@@ -2264,6 +2348,69 @@ TEST_F(ArithmeticTest, EncodeRegistered) {
     ASSERT_NE(machine->env->lookup("⊤"), nullptr);
 }
 
+// ISO 13751 10.2.8: Empty decode returns 0
+TEST_F(ArithmeticTest, DecodeEmptyLeftArg) {
+    // ''⊥3 → 0 (per spec example)
+    Value* result = machine->eval("(⍳0)⊥3");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// ISO 13751 10.2.8: Character domain error
+TEST_F(ArithmeticTest, DecodeCharDomainError) {
+    // 'A'⊥3 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("'A'⊥3"), APLError);
+}
+
+TEST_F(ArithmeticTest, DecodeCharRightDomainError) {
+    // 10⊥'ABC' → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("10⊥'ABC'"), APLError);
+}
+
+// ISO 13751 10.2.9: Encode with character domain error
+TEST_F(ArithmeticTest, EncodeCharDomainError) {
+    // 'AB'⊤123 → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("'AB'⊤123"), APLError);
+}
+
+TEST_F(ArithmeticTest, EncodeCharRightDomainError) {
+    // 10 10⊤'A' → DOMAIN ERROR
+    EXPECT_THROW(machine->eval("10 10⊤'A'"), APLError);
+}
+
+// ISO 13751 10.2.9: Encode empty array
+TEST_F(ArithmeticTest, EncodeEmptyResult) {
+    // (⍳0)⊤5 → empty vector
+    Value* result = machine->eval("(⍳0)⊤5");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 0);
+}
+
+// ISO 13751 10.2.8: Matrix decode (inner product style)
+TEST_F(ArithmeticTest, DecodeMatrixInnerProduct) {
+    // A⊥B where A is 2×3 matrix and B is 3×2 matrix
+    // Result should be 2×2
+    machine->eval("A←2 3⍴10 10 10 12 60 60");
+    machine->eval("B←3 2⍴1 4 2 5 3 6");
+    Value* result = machine->eval("A⊥B");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 123.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 456.0);
+}
+
+// ISO 13751 10.2.9: Encode with vector B (multiple values)
+TEST_F(ArithmeticTest, EncodeVectorRight) {
+    // 10 10 10⊤123 456 → 2×3 matrix (columns are representations)
+    Value* result = machine->eval("10 10 10⊤123 456");
+    // Result shape should be (⍴A),⍴B = 3,2 → 3×2 matrix
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 2);
+}
+
 // ============================================================================
 // Matrix Inverse (⌹) monadic tests
 // ============================================================================
@@ -2326,6 +2473,30 @@ TEST_F(ArithmeticTest, MatrixInverseSingular) {
     EXPECT_TRUE(machine->result->is_matrix());
 }
 
+// ISO 13751 10.1.6: Non-square matrix (pseudoinverse)
+TEST_F(ArithmeticTest, MatrixInverseNonSquare) {
+    // ⌹ 2 3⍴⍳6 → 3×2 pseudoinverse matrix
+    Value* result = machine->eval("⌹ 2 3⍴⍳6");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 2);
+}
+
+// ISO 13751 10.1.6: Empty matrix
+TEST_F(ArithmeticTest, MatrixInverseEmpty) {
+    // ⌹ 0 0⍴0 → 0×0 matrix
+    Value* result = machine->eval("⌹ 0 0⍴0");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 0);
+    EXPECT_EQ(result->cols(), 0);
+}
+
+// ISO 13751 10.1.6: Rank > 2 signals RANK ERROR
+TEST_F(ArithmeticTest, MatrixInverseRankError) {
+    // ⌹ 2 2 2⍴⍳8 → RANK ERROR
+    EXPECT_THROW(machine->eval("⌹ 2 2 2⍴⍳8"), APLError);
+}
+
 // ============================================================================
 // Matrix Divide (⌹) dyadic tests
 // ============================================================================
@@ -2377,6 +2548,33 @@ TEST_F(ArithmeticTest, MatrixDivideLinearSystem) {
     const Eigen::MatrixXd* res = machine->result->as_matrix();
     EXPECT_NEAR((*res)(0, 0), 3.0, 1e-10);
     EXPECT_NEAR((*res)(1, 0), 4.0, 1e-10);
+}
+
+// ISO 13751 10.2.13: Least squares solution (over-determined system)
+TEST_F(ArithmeticTest, MatrixDivideLeastSquares) {
+    // Over-determined system: 3 equations, 2 unknowns
+    // A = [[1,0],[0,1],[1,1]], b = [1,2,2.5]
+    // Least squares solution minimizes ||Ax - b||
+    machine->eval("A←3 2⍴1 0 0 1 1 1");
+    machine->eval("b←1 2 2.5");
+    Value* result = machine->eval("b⌹A");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+}
+
+// ISO 13751 10.2.13: Rank > 2 signals RANK ERROR
+TEST_F(ArithmeticTest, MatrixDivideRankErrorLeft) {
+    EXPECT_THROW(machine->eval("(2 2 2⍴⍳8)⌹(2 2⍴⍳4)"), APLError);
+}
+
+TEST_F(ArithmeticTest, MatrixDivideRankErrorRight) {
+    EXPECT_THROW(machine->eval("(⍳4)⌹(2 2 2⍴⍳8)"), APLError);
+}
+
+// ISO 13751 10.2.13: Shape mismatch LENGTH ERROR
+TEST_F(ArithmeticTest, MatrixDivideLengthError) {
+    // First dimension must match
+    EXPECT_THROW(machine->eval("(⍳3)⌹(2 2⍴⍳4)"), APLError);
 }
 
 // ============================================================================

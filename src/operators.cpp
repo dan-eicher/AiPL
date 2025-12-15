@@ -478,11 +478,7 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
     // Handle replicate: if "func" is actually an array, this is A / B (replicate)
     // Note: use is_array()/is_scalar() not is_basic_value() to exclude strings
     if (func->is_array() || func->is_scalar()) {
-        if (axis) {
-            m->throw_error("SYNTAX ERROR: replicate does not support axis");
-            return;
-        }
-        fn_replicate(m, nullptr, func, omega);
+        fn_replicate(m, axis, func, omega);
         return;
     }
 
@@ -668,11 +664,7 @@ void fn_scan(Machine* m, Value* axis, Value* func, Value* omega) {
     // Handle expand: if "func" is actually an array, this is A \ B (expand)
     // Note: use is_array()/is_scalar() not is_basic_value() to exclude strings
     if (func->is_array() || func->is_scalar()) {
-        if (axis) {
-            m->throw_error("SYNTAX ERROR: expand does not support axis");
-            return;
-        }
-        fn_expand(m, nullptr, func, omega);
+        fn_expand(m, axis, func, omega);
         return;
     }
 
@@ -1494,6 +1486,39 @@ void fn_catenate_axis_dyadic(Machine* m, Value* curry_axis, Value* lhs, Value* a
             return;
         }
 
+        // Scalar extension for laminate
+        if (lhs->is_vector() && rhs->is_scalar()) {
+            double scalar_val = rhs->as_scalar();
+            if (axis_idx < 0) {
+                Eigen::MatrixXd result(2, lrows);
+                result.row(0) = lmat->col(0).transpose();
+                result.row(1).setConstant(scalar_val);
+                m->result = m->heap->allocate_matrix(result);
+            } else {
+                Eigen::MatrixXd result(lrows, 2);
+                result.col(0) = lmat->col(0);
+                result.col(1).setConstant(scalar_val);
+                m->result = m->heap->allocate_matrix(result);
+            }
+            return;
+        }
+
+        if (lhs->is_scalar() && rhs->is_vector()) {
+            double scalar_val = lhs->as_scalar();
+            if (axis_idx < 0) {
+                Eigen::MatrixXd result(2, rrows);
+                result.row(0).setConstant(scalar_val);
+                result.row(1) = rmat->col(0).transpose();
+                m->result = m->heap->allocate_matrix(result);
+            } else {
+                Eigen::MatrixXd result(rrows, 2);
+                result.col(0).setConstant(scalar_val);
+                result.col(1) = rmat->col(0);
+                m->result = m->heap->allocate_matrix(result);
+            }
+            return;
+        }
+
         if (lhs->is_scalar() && rhs->is_scalar()) {
             Eigen::VectorXd result(2);
             result(0) = lhs->as_scalar();
@@ -1508,11 +1533,9 @@ void fn_catenate_axis_dyadic(Machine* m, Value* curry_axis, Value* lhs, Value* a
 
     int cat_axis = static_cast<int>(std::round(k)) - m->io;  // ⎕IO
 
+    // Scalars have no axes - cannot catenate with axis specification
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        Eigen::VectorXd result(2);
-        result(0) = lhs->as_scalar();
-        result(1) = rhs->as_scalar();
-        m->result = m->heap->allocate_vector(result);
+        m->throw_error("AXIS ERROR: cannot catenate scalars with axis");
         return;
     }
 
