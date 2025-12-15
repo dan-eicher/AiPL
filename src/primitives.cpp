@@ -5742,13 +5742,52 @@ void fn_format_monadic(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // Matrix: newline-separated rows
+    // Matrix: newline-separated rows with aligned columns
+    // ISO 13751 §15.4.1: columns should be aligned
+
+    // First pass: format all elements and find max width per column
+    std::vector<std::vector<std::string>> formatted(rows, std::vector<std::string>(cols));
+    std::vector<size_t> col_widths(cols, 0);
+
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            formatted[i][j] = format_number_pp((*mat)(i, j), m->pp);
+            // Count UTF-8 characters, not bytes
+            size_t char_count = 0;
+            for (size_t k = 0; k < formatted[i][j].length(); ) {
+                unsigned char c = formatted[i][j][k];
+                if ((c & 0x80) == 0) { k += 1; }
+                else if ((c & 0xE0) == 0xC0) { k += 2; }
+                else if ((c & 0xF0) == 0xE0) { k += 3; }
+                else { k += 4; }
+                char_count++;
+            }
+            if (char_count > col_widths[j]) {
+                col_widths[j] = char_count;
+            }
+        }
+    }
+
+    // Second pass: output with padding for alignment
     std::ostringstream oss;
     for (int i = 0; i < rows; i++) {
         if (i > 0) oss << "\n";
         for (int j = 0; j < cols; j++) {
             if (j > 0) oss << " ";
-            oss << format_number_pp((*mat)(i, j), m->pp);
+            // Right-justify: pad with spaces on left
+            size_t char_count = 0;
+            for (size_t k = 0; k < formatted[i][j].length(); ) {
+                unsigned char c = formatted[i][j][k];
+                if ((c & 0x80) == 0) { k += 1; }
+                else if ((c & 0xE0) == 0xC0) { k += 2; }
+                else if ((c & 0xF0) == 0xE0) { k += 3; }
+                else { k += 4; }
+                char_count++;
+            }
+            for (size_t p = char_count; p < col_widths[j]; p++) {
+                oss << " ";
+            }
+            oss << formatted[i][j];
         }
     }
     m->result = m->heap->allocate_string(oss.str().c_str());
@@ -5776,11 +5815,24 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
     }
 
     // Get format specifications from A
+    // ISO 13751 §15.4.2: If any item of A is not a near-integer, signal domain-error
     std::vector<std::pair<int, int>> specs;  // (width, precision) pairs
+
+    // Helper lambda to check if value is a near-integer
+    // ISO 13751: use comparison tolerance (⎕CT) for near-integer test
+    auto is_near_integer = [m](double v) -> bool {
+        double rounded = std::round(v);
+        return std::abs(v - rounded) <= m->ct;
+    };
 
     if (alpha->is_scalar()) {
         // Single scalar - interpret as width with 0 decimals
-        int w = (int)std::round(alpha->as_scalar());
+        double v = alpha->as_scalar();
+        if (!is_near_integer(v)) {
+            m->throw_error("DOMAIN ERROR: format specification must be integer");
+            return;
+        }
+        int w = (int)std::round(v);
         specs.push_back({w, 0});
     } else {
         if (!alpha->is_array()) {
@@ -5796,8 +5848,14 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
         }
 
         for (int i = 0; i < a_size; i += 2) {
-            int w = (int)std::round((*a_mat)(i, 0));
-            int p = (int)std::round((*a_mat)(i + 1, 0));
+            double w_val = (*a_mat)(i, 0);
+            double p_val = (*a_mat)(i + 1, 0);
+            if (!is_near_integer(w_val) || !is_near_integer(p_val)) {
+                m->throw_error("DOMAIN ERROR: format specification must be integer");
+                return;
+            }
+            int w = (int)std::round(w_val);
+            int p = (int)std::round(p_val);
             specs.push_back({w, p});
         }
     }
