@@ -170,6 +170,7 @@ Lexer::Lexer(const char* input)
     omega_sym = "⍵";     // U+2375 (right argument)
     alpha_alpha = "⍺⍺";  // U+237A U+237A (left operand in dop)
     omega_omega = "⍵⍵";  // U+2375 U+2375 (right operand in dop)
+    del_del = "∇∇";      // U+2207 U+2207 (self-reference in dop)
     zilde = "⍬";         // U+236C (empty vector)
     quad = "⎕";          // U+2395 (quad - system variable prefix)
 
@@ -177,7 +178,7 @@ Lexer::Lexer(const char* input)
     quad_name = quad name;
 
     // Comments (⍝ to end of line)
-    comment = "⍝" [^\n]*;  // U+235D
+    comment = "⍝" [^\r\n]*;  // U+235D
 */
 
 Token Lexer::next_token() {
@@ -200,7 +201,7 @@ Token Lexer::next_token() {
                 return Token(TOK_NEWLINE, token_line, token_column);
             }
 
-            // Comments - skip and continue
+            // Comments - skip and continue (newline NOT consumed, handled by nl rule)
             comment { continue; }
 
         // Numeric vector literal (ISO 13751) - must come before single number
@@ -386,6 +387,7 @@ Token Lexer::next_token() {
         // Operand references (must come before single alpha/omega for longest match)
         alpha_alpha { column_ += 2; return Token(TOK_ALPHA_ALPHA, token_line, token_column); }
         omega_omega { column_ += 2; return Token(TOK_OMEGA_OMEGA, token_line, token_column); }
+        del_del { column_ += 2; return Token(TOK_DEL_DEL, token_line, token_column); }
         alpha_sym { column_++; return Token(TOK_ALPHA, token_line, token_column); }
         omega_sym { column_++; return Token(TOK_OMEGA, token_line, token_column); }
         zilde { column_++; return Token(TOK_ZILDE, token_line, token_column); }

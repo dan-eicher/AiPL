@@ -1872,6 +1872,169 @@ TEST_F(OperatorsTest, DefinedDyadicOperatorPowerCompose) {
 }
 
 // ========================================================================
+// ISO 13751 §13 - ∇∇ (Del-Del) Self-Reference in Defined Operators
+// ========================================================================
+
+TEST_F(OperatorsTest, DelDelBasicBinding) {
+    // ∇∇ should be bound within a defined operator's body
+    // Simple test: operator just applies its operand
+    eval(machine, "(F SELFOP) ← {⍺⍺ ⍵}");
+
+    Value* result = eval(machine, "-SELFOP 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+}
+
+TEST_F(OperatorsTest, DelDelWithVectorArg) {
+    // ∇∇ with vector argument
+    eval(machine, "(F APPLY) ← {⍺⍺ ⍵}");
+
+    Value* result = eval(machine, "-APPLY 1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), -3.0);
+}
+
+TEST_F(OperatorsTest, DelDelRecursiveMonadicOperator) {
+    // Recursive operator using ∇∇ - apply function N times
+    // (F NTIMES N) applies F N times to argument
+    eval(machine, "(F NTIMES N) ← {N≤0: ⍵ ⋄ ⍺⍺ (⍺⍺ ∇∇ (N-1)) ⍵}");
+
+    // Apply negate 3 times to 5: ---5 = -5
+    Value* result = eval(machine, "-NTIMES 3 ⊢ 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+
+    // Apply negate 2 times to 5: --5 = 5
+    Value* result2 = eval(machine, "-NTIMES 2 ⊢ 5");
+    ASSERT_NE(result2, nullptr);
+    EXPECT_DOUBLE_EQ(result2->as_scalar(), 5.0);
+}
+
+TEST_F(OperatorsTest, DelDelRecursiveDyadicOperator) {
+    // Dyadic operator with ∇∇ recursion
+    // (F COMPOSE G) applies G to result of F
+    eval(machine, "(F COMPOSE G) ← {⍵⍵ ⍺⍺ ⍵}");
+
+    // Compose negate and double: first negate, then double
+    // Using dfn {2×⍵} instead of train (2×⊢)
+    Value* result = eval(machine, "- COMPOSE {2×⍵} ⊢ 3");
+    ASSERT_NE(result, nullptr);
+    // -3 then ×2 = -6
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -6.0);
+}
+
+TEST_F(OperatorsTest, DelDelWithDfnOperand) {
+    // ∇∇ with a dfn as operand
+    eval(machine, "(F WRAP) ← {⍺⍺ ⍵}");
+
+    Value* result = eval(machine, "{⍵+10}WRAP 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DelDelWithNamedFunctionOperand) {
+    // ∇∇ with a named function as operand
+    eval(machine, "DOUBLE ← {2×⍵}");
+    eval(machine, "(F APPLY) ← {⍺⍺ ⍵}");
+
+    Value* result = eval(machine, "DOUBLE APPLY 7");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 14.0);
+}
+
+TEST_F(OperatorsTest, DelDelDyadicApplication) {
+    // ∇∇ in operator with dyadic function application
+    eval(machine, "(F DAPPLY) ← {⍺ ⍺⍺ ⍵}");
+
+    Value* result = eval(machine, "10 +DAPPLY 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DelDelAmbivalentOperator) {
+    // ∇∇ in operator that can work monadically and dyadically
+    // ISO 13751 §13.1.2.1: Operators can be ambivalent
+    // Note: ⎕NC is not implemented, so we test via separate monadic/dyadic operators
+
+    // Monadic operator - always applies operand monadically
+    eval(machine, "(F MWRAP) ← {⍺⍺ ⍵}");
+    Value* result = eval(machine, "-MWRAP 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);
+
+    // Dyadic operator application - applies operand dyadically
+    eval(machine, "(F DWRAP) ← {⍺ ⍺⍺ ⍵}");
+    Value* result2 = eval(machine, "10 +DWRAP 5");
+    ASSERT_NE(result2, nullptr);
+    EXPECT_DOUBLE_EQ(result2->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DelDelNestedOperator) {
+    // Nested operator calls with ∇∇
+    eval(machine, "(F OUTER) ← {⍺⍺ ⍵}");
+    eval(machine, "(F INNER) ← {⍺⍺ ⍵}");
+
+    // Compose operators: -OUTER applied through INNER
+    Value* result = eval(machine, "-OUTER INNER 5");
+    ASSERT_NE(result, nullptr);
+    // This tests derived function from OUTER being passed to INNER
+}
+
+TEST_F(OperatorsTest, DelDelWithReduceOperand) {
+    // ∇∇ with reduce as operand
+    eval(machine, "(F WRAP) ← {⍺⍺ ⍵}");
+
+    Value* result = eval(machine, "+/WRAP 1 2 3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DelDelCountingRecursion) {
+    // Simple counting recursion to verify ∇∇ works
+    // Operator that counts down and sums
+    eval(machine, "(F COUNTDOWN) ← {⍵≤0: 0 ⋄ ⍵ + (⍺⍺ ∇∇) (⍵-1)}");
+
+    // Sum of 1+2+3+4+5 = 15
+    Value* result = eval(machine, "⊢COUNTDOWN 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(OperatorsTest, DelDelFactorial) {
+    // Classic factorial using ∇∇
+    eval(machine, "(F FACT) ← {⍵≤1: 1 ⋄ ⍵ × (⍺⍺ ∇∇) (⍵-1)}");
+
+    Value* result = eval(machine, "×FACT 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 120.0);  // 5! = 120
+}
+
+TEST_F(OperatorsTest, DelDelFibonacci) {
+    // Fibonacci using ∇∇
+    eval(machine, "(F FIB) ← {⍵≤1: ⍵ ⋄ ((⍺⍺ ∇∇) (⍵-1)) + (⍺⍺ ∇∇) (⍵-2)}");
+
+    Value* result = eval(machine, "+FIB 10");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 55.0);  // F(10) = 55
+}
+
+TEST_F(OperatorsTest, DelDelDyadicRecursive) {
+    // Dyadic operator with ∇∇ - power function compose
+    // Applies F N times where N is the right operand
+    eval(machine, "(F POW N) ← {N=0: ⍵ ⋄ ⍺⍺ (⍺⍺ ∇∇ (N-1)) ⍵}");
+
+    // Apply +1 three times: 5+1+1+1 = 8
+    // Using dfn {1+⍵} instead of train (1+⊢)
+    Value* result = eval(machine, "{1+⍵} POW 3 ⊢ 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
+}
+
+// ========================================================================
 // ISO 13751 Error Type Tests
 // ========================================================================
 

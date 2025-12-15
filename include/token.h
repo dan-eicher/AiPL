@@ -141,6 +141,7 @@ enum TokenType {
     TOK_ALPHA_ALPHA,    // ⍺⍺ (left operand in defined operator)
     TOK_OMEGA_OMEGA,    // ⍵⍵ (right operand in defined operator)
     TOK_DEL,            // ∇ (self-reference in recursive dfns)
+    TOK_DEL_DEL,        // ∇∇ (self-reference in defined operators)
     TOK_COLON,          // : (guard separator in dfns)
 
     // Special

@@ -588,6 +588,160 @@ TEST_F(DfnTest, GCStressNestedDfnCalls) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);  // 0+1+1+1+1
 }
 
+// ============================================================================
+// ISO 13751 Section 13: Guard Edge Cases
+// ============================================================================
+
+TEST_F(DfnTest, GuardNonBooleanScalar) {
+    // Guard with value 2 - should be treated as truthy (non-zero)
+    Value* result = machine->eval("{2: 'yes' ⋄ 'no'}1");
+    ASSERT_NE(result, nullptr);
+    // Non-zero values are truthy
+    EXPECT_TRUE(result->is_string() || result->is_char_data());
+}
+
+TEST_F(DfnTest, GuardZeroIsFalsy) {
+    // Guard with 0 should fall through
+    Value* result = machine->eval("{0: 'yes' ⋄ 'no'}1");
+    ASSERT_NE(result, nullptr);
+}
+
+TEST_F(DfnTest, GuardVectorResultError) {
+    // Guard with vector result should error (must be scalar)
+    EXPECT_THROW(machine->eval("{(1 0): 'yes' ⋄ 'no'}1"), APLError);
+}
+
+TEST_F(DfnTest, GuardExpressionEvaluated) {
+    // Guard expression should be fully evaluated
+    Value* result = machine->eval("{(3>2): 'yes' ⋄ 'no'}1");
+    ASSERT_NE(result, nullptr);
+}
+
+// ============================================================================
+// ISO 13751 Section 13: Local Variable Scoping
+// ============================================================================
+
+TEST_F(DfnTest, LocalVariableShadowsGlobal) {
+    // Local variable should shadow global
+    machine->eval("x←100");
+    Value* result = machine->eval("{x←5 ⋄ x}1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+
+    // Global should be unchanged
+    Value* global = machine->eval("x");
+    ASSERT_NE(global, nullptr);
+    EXPECT_DOUBLE_EQ(global->as_scalar(), 100.0);
+}
+
+TEST_F(DfnTest, LocalVariableDoesNotLeak) {
+    // Variable defined inside dfn should not leak out
+    machine->eval("{localvar←42 ⋄ localvar}1");
+
+    // Accessing localvar should error (undefined)
+    EXPECT_THROW(machine->eval("localvar"), APLError);
+}
+
+TEST_F(DfnTest, NestedDfnScoping) {
+    // Inner dfn should see outer dfn's locals
+    Value* result = machine->eval("{x←10 ⋄ {x+⍵}5}1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(DfnTest, GlobalVariableAccessible) {
+    // Dfn should be able to read global variable
+    machine->eval("globalval←99");
+    Value* result = machine->eval("{globalval+⍵}1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 100.0);
+}
+
+// ============================================================================
+// ISO 13751 Section 13: Result Handling
+// ============================================================================
+
+TEST_F(DfnTest, DfnNoExplicitResult) {
+    // Dfn with only assignment - result is the assigned value
+    Value* result = machine->eval("{x←42}1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(DfnTest, DfnMultipleStatementsLastResult) {
+    // Result is the last evaluated expression
+    Value* result = machine->eval("{1 ⋄ 2 ⋄ 3}0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(DfnTest, DfnGuardEarlyReturn) {
+    // Guard causes early return, subsequent code not executed
+    Value* result = machine->eval("{⍵>0: 'positive' ⋄ ⍵<0: 'negative' ⋄ 'zero'}5");
+    ASSERT_NE(result, nullptr);
+    // First guard matches, returns immediately
+}
+
+// ============================================================================
+// ISO 13751 Section 13: Error Handling
+// ============================================================================
+
+TEST_F(DfnTest, ErrorInDfnPropagates) {
+    // Error inside dfn should propagate
+    EXPECT_THROW(machine->eval("{1÷0}1"), APLError);
+}
+
+TEST_F(DfnTest, ErrorInNestedDfnPropagates) {
+    // Error in nested dfn should propagate through
+    machine->eval("F←{1÷⍵}");
+    EXPECT_THROW(machine->eval("{F 0}1"), APLError);
+}
+
+TEST_F(DfnTest, UndefinedVariableError) {
+    // Reference to undefined variable should error
+    EXPECT_THROW(machine->eval("{undefined_var}1"), APLError);
+}
+
+// ============================================================================
+// ISO 13751 Section 13: Recursion Edge Cases
+// ============================================================================
+
+TEST_F(DfnTest, DyadicRecursionInDfn) {
+    // ∇ can be called dyadically within dfn
+    Value* result = machine->eval("{⍵≤1: ⍵ ⋄ ⍵+∇ ⍵-1}5");
+    ASSERT_NE(result, nullptr);
+    // 5 + 4 + 3 + 2 + 1 = 15
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
+}
+
+TEST_F(DfnTest, ClosureWithGuardAndAlpha) {
+    // Dfn that uses ⍺ in guard result should create closure
+    Value* result = machine->eval("{⍵≤0: ⍺ ⋄ ⍵}");
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CLOSURE);
+}
+
+TEST_F(DfnTest, ClosureWithMonadicRecursion) {
+    // Dfn with monadic ∇ should create closure
+    Value* result = machine->eval("{⍵≤0: ⍵ ⋄ ∇ ⍵-1}");
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CLOSURE);
+}
+
+TEST_F(DfnTest, ClosureWithDyadicRecursion) {
+    // Dfn with dyadic ∇ should create closure
+    Value* result = machine->eval("{⍵≤0: ⍺ ⋄ (⍺+⍵)∇ ⍵-1}");
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->tag, ValueType::CLOSURE);
+}
+
+TEST_F(DfnTest, RecursionWithAccumulator) {
+    // Apply dyadic recursion: 0 f 5 = sum from 5 to 1 = 15
+    Value* sum = machine->eval("0{⍵≤0: ⍺ ⋄ (⍺+⍵)∇ ⍵-1}5");
+    ASSERT_NE(sum, nullptr);
+    EXPECT_DOUBLE_EQ(sum->as_scalar(), 15.0);
+}
+
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

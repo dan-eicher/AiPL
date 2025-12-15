@@ -210,7 +210,8 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_OMEGA:  // ⍵ in dfns
                 case TOK_ALPHA_ALPHA:  // ⍺⍺ in defined operators
                 case TOK_OMEGA_OMEGA:  // ⍵⍵ in defined operators
-                case TOK_DEL:    // ∇ in recursive dfns
+                case TOK_DEL:      // ∇ in recursive dfns
+                case TOK_DEL_DEL:  // ∇∇ in recursive defined operators
                 // Primitive function tokens are identifiers in G2 grammar
                 case TOK_PLUS:
                 case TOK_MINUS:
@@ -504,6 +505,14 @@ Continuation* Parser::nud(const Token& token) {
             return lookup;
         }
 
+        case TOK_DEL_DEL: {
+            // ∇∇ (del-del) - self-reference in recursive defined operator
+            const char* interned_name = machine->string_pool.intern("∇∇");
+            LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
+            lookup->set_location(token.line, token.column);
+            return lookup;
+        }
+
         case TOK_ZILDE: {
             // ⍬ (zilde) - empty numeric vector
             Eigen::VectorXd empty_vec(0);
@@ -728,7 +737,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         }
 
         case TOK_LBRACE: {
-            // Handle dfn application (e.g., "3 {⍺+⍵} 5")
+            // Handle dfn in infix position
             // NOTE: { has already been consumed by parse_expression before calling led()
             ClosureLiteralK* closure_lit = parse_dfn();
             if (!closure_lit) {
@@ -736,6 +745,32 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             }
             closure_lit->set_location(token.line, token.column);
 
+            // Check if left is a DerivedOperatorK that needs a second operand
+            // This handles cases like "- COMPOSE {2×⍵}" where the dfn is the right operand
+            DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(left);
+            if (derived) {
+                bool needs_second_operand = false;
+
+                // Built-in operators that need second operand: "." and "⍤"
+                if (strcmp(derived->op_name, ".") == 0 || strcmp(derived->op_name, "⍤") == 0) {
+                    needs_second_operand = true;
+                } else {
+                    // Check for user-defined dyadic operators
+                    Value* op_val = machine->env->lookup(derived->op_name);
+                    if (op_val && op_val->is_defined_operator()) {
+                        needs_second_operand = op_val->data.defined_op_data->is_dyadic_operator;
+                    }
+                }
+
+                if (needs_second_operand) {
+                    // Dfn is the second operand to the dyadic operator
+                    JuxtaposeK* jux = machine->heap->allocate<JuxtaposeK>(left, closure_lit);
+                    jux->set_location(token.line, token.column);
+                    return jux;
+                }
+            }
+
+            // Regular dyadic dfn application (e.g., "3 {⍺+⍵} 5")
             // Parse the right argument
             int bp = get_binding_power(token);  // Use operator binding power for dfns
             Continuation* right = parse_expression(bp);

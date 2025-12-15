@@ -280,9 +280,10 @@ void InvokeDefinedOperatorK::invoke(Machine* machine) {
         env->define("⍵⍵", right_operand);
     }
 
-    // Bind ∇ for recursive self-reference to the operator
+    // Bind ∇∇ for recursive self-reference to the operator
+    // (∇ is for functions, ∇∇ is for operators)
     if (operator_value) {
-        env->define("∇", operator_value);
+        env->define("∇∇", operator_value);
     }
 
     // Bind arguments using dfn conventions (⍺ and ⍵)
@@ -718,7 +719,10 @@ void PerformFinalizeK::invoke(Machine* machine) {
         // G_PRIME: always has monadic form (that's why it's G_PRIME)
         // Only finalize G_PRIME if finalize_gprime flag is true
         // Parentheses set this to false to preserve partial applications like (2×)
-        if (cd->curry_type == Value::CurryType::G_PRIME && finalize_gprime) {
+        // Exception: CLOSURE curries should always be finalized because they're
+        // immediate expressions, not partial applications meant to be preserved
+        bool should_finalize = finalize_gprime || cd->fn->is_closure();
+        if (cd->curry_type == Value::CurryType::G_PRIME && should_finalize) {
             // If curry has axis and is primitive, apply directly with axis
             if (cd->axis != nullptr && cd->fn->is_primitive()) {
                 PrimitiveFn* prim_fn = cd->fn->data.primitive_fn;
@@ -1283,12 +1287,22 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
     // Handle CLOSURE values (dfns)
     if (fn_val->tag == ValueType::CLOSURE) {
-        // Call the closure using FunctionCallK
+        if (left_val == nullptr && !force_monadic) {
+            // Only right argument - create G_PRIME curry to defer monadic/dyadic decision
+            // This enables proper dyadic calls like "3 F 5" where F is a named closure
+            // Per Georgeff et al. "Parsing and Evaluation of APL with Operators":
+            // g' = λx . λy . if null(y) then g1(x)
+            //                else if bas(y) then g2(x,y)
+            //                else y(g1(x))
+            Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
+            machine->result = curried;
+            return;
+        }
+        // Both arguments (dyadic) or force_monadic - call immediately
         FunctionCallK* call_k = machine->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
         machine->push_kont(call_k);
         return;  // Early exit for closure case
     }
-
 
     // G2 Grammar: Handle CURRIED_FN values
     if (fn_val->tag == ValueType::CURRIED_FN) {
@@ -1482,9 +1496,11 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     }
                 } else {
                     // For closures, need to evaluate g1(x) first then apply y
-                    // Push continuation to apply y after g1(x) evaluates
-                    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(right_val, nullptr, nullptr));
-                    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(inner_fn, nullptr, first_arg));
+                    // Push DeferredDispatchK to apply y after g1(x) evaluates
+                    // DeferredDispatchK will read machine->result as the new right_val
+                    machine->push_kont(machine->heap->allocate<DeferredDispatchK>(right_val, nullptr, force_monadic));
+                    // Dispatch inner closure with force_monadic to prevent infinite G_PRIME creation
+                    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(inner_fn, nullptr, first_arg, true));
                     return;
                 }
             }
@@ -1876,17 +1892,15 @@ void SelectBranchK::invoke(Machine* machine) {
     }
 
     // APL convention: 0 is false, non-zero is true
-    // For arrays, we'll use the first element
+    // Per ISO 13751, guard conditions must be scalar boolean
     bool is_true = false;
 
     if (cond_val->is_scalar()) {
         is_true = (cond_val->as_scalar() != 0.0);
     } else {
-        // For arrays, use first element
-        const Eigen::MatrixXd* mat = cond_val->as_matrix();
-        if (mat->size() > 0) {
-            is_true = ((*mat)(0, 0) != 0.0);
-        }
+        // Non-scalar guard condition is a DOMAIN ERROR per ISO 13751
+        machine->throw_error("DOMAIN ERROR: Guard condition must be scalar", this);
+        return;
     }
 
     // Select and push the appropriate branch
@@ -2272,6 +2286,11 @@ void FunctionCallK::invoke(Machine* machine) {
     // Push restore environment continuation (executes after function returns)
     RestoreEnvK* restore_k = machine->heap->allocate<RestoreEnvK>(saved_env);
     machine->push_kont(restore_k);
+
+    // Push finalization to resolve any G_PRIME curries BEFORE environment restoration
+    // This ensures closures created inside the dfn execute while their environment is active
+    PerformFinalizeK* finalize_k = machine->heap->allocate<PerformFinalizeK>(true);
+    machine->push_kont(finalize_k);
 
     // Push CatchReturnK to establish function boundary for →0 and :Return
     CatchReturnK* catch_k = machine->heap->allocate<CatchReturnK>("dfn");
