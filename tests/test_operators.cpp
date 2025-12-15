@@ -2160,6 +2160,38 @@ TEST_F(OperatorsTest, RankThreeElementVector) {
     EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 11.0);
 }
 
+// ========================================================================
+// Operator Argument Validation Tests
+// ========================================================================
+
+TEST_F(OperatorsTest, ReduceRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("+/+"), APLError);
+}
+
+TEST_F(OperatorsTest, ReduceFirstRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("+⌿+"), APLError);
+}
+
+TEST_F(OperatorsTest, ScanRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("+\\+"), APLError);
+}
+
+TEST_F(OperatorsTest, ScanFirstRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("+⍀+"), APLError);
+}
+
+TEST_F(OperatorsTest, NwiseReduceRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("2+/+"), APLError);
+}
+
+TEST_F(OperatorsTest, NwiseReduceFirstRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("2+⌿+"), APLError);
+}
+
+TEST_F(OperatorsTest, RankRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("+⍤1 +"), APLError);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

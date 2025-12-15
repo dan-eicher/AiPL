@@ -3345,3 +3345,151 @@ TEST_F(ArithmeticTest, FirstAxisCatenateScalars) {
     EXPECT_EQ(mat->rows(), 2);
     EXPECT_EQ(mat->cols(), 1);
 }
+
+// ============================================================================
+// Domain Error Tests - Functions Reject Non-Numeric Arguments
+// ============================================================================
+
+TEST_F(ArithmeticTest, ConjugateRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("++"), APLError);  // + applied to +
+}
+
+TEST_F(ArithmeticTest, NegateRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("--"), APLError);  // - applied to -
+}
+
+TEST_F(ArithmeticTest, SignumRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("×+"), APLError);  // × applied to +
+}
+
+TEST_F(ArithmeticTest, ReciprocalRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("÷+"), APLError);  // ÷ applied to +
+}
+
+TEST_F(ArithmeticTest, ExponentialRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("*+"), APLError);  // * applied to +
+}
+
+TEST_F(ArithmeticTest, NaturalLogRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⍟+"), APLError);  // ⍟ applied to +
+}
+
+TEST_F(ArithmeticTest, MagnitudeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("|+"), APLError);  // | applied to +
+}
+
+TEST_F(ArithmeticTest, FloorRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⌊+"), APLError);  // ⌊ applied to +
+}
+
+TEST_F(ArithmeticTest, CeilingRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⌈+"), APLError);  // ⌈ applied to +
+}
+
+TEST_F(ArithmeticTest, FactorialRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("!+"), APLError);  // ! applied to +
+}
+
+TEST_F(ArithmeticTest, PiTimesRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("○+"), APLError);  // ○ applied to +
+}
+
+TEST_F(ArithmeticTest, NotRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("~+"), APLError);  // ~ applied to +
+}
+
+TEST_F(ArithmeticTest, RollRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("?+"), APLError);  // ? applied to +
+}
+
+// ============================================================================
+// Domain Error Tests - Dyadic Functions Reject Non-Numeric Arguments
+// ============================================================================
+
+TEST_F(ArithmeticTest, DyadicAddRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1++"), APLError);  // 1 + +
+}
+
+TEST_F(ArithmeticTest, DyadicSubtractRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1-+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicMultiplyRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1×+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicDivideRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1÷+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicPowerRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("2*+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicLogRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("2⍟+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicResidueRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("3|+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicMaximumRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1⌈+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicMinimumRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1⌊+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicBinomialRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("2!+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicCircularRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1○+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicAndRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1∧+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicOrRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1∨+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicNandRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1⍲+"), APLError);
+}
+
+TEST_F(ArithmeticTest, DyadicNorRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1⍱+"), APLError);
+}
+
+// ============================================================================
+// Comparison Function Rejection Tests
+// ============================================================================
+
+TEST_F(ArithmeticTest, EqualRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1=+"), APLError);
+}
+
+TEST_F(ArithmeticTest, NotEqualRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1≠+"), APLError);
+}
+
+TEST_F(ArithmeticTest, LessThanRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1<+"), APLError);
+}
+
+TEST_F(ArithmeticTest, GreaterThanRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1>+"), APLError);
+}
+
+TEST_F(ArithmeticTest, LessEqualRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1≤+"), APLError);
+}
+
+TEST_F(ArithmeticTest, GreaterEqualRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1≥+"), APLError);
+}

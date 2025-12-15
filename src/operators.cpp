@@ -496,6 +496,10 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: / requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Determine which axis to reduce along
@@ -594,6 +598,10 @@ void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega) {
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌿ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Determine which axis to reduce along
@@ -681,6 +689,10 @@ void fn_scan(Machine* m, Value* axis, Value* func, Value* omega) {
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: \\ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Determine which axis to scan along
@@ -772,6 +784,10 @@ void fn_scan_first(Machine* m, Value* axis, Value* func, Value* omega) {
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍀ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Determine which axis to scan along
@@ -901,6 +917,11 @@ void fn_reduce_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Value* g,
     // String to char vector conversion
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: / requires array argument");
+        return;
+    }
+
     // Determine axis (default is last axis = 2 for matrix, 1 for vector)
     int max_rank = rhs->is_vector() ? 1 : 2;
     int k = 0;
@@ -1018,6 +1039,11 @@ void fn_reduce_first_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Val
 
     // String to char vector conversion
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌿ requires array argument");
+        return;
+    }
 
     // Determine axis (default for ⌿ is first axis = 1)
     int max_rank = rhs->is_vector() ? 1 : 2;
@@ -1299,6 +1325,16 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
         return;
     }
 
+    // Validate arguments are arrays (not functions)
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍤ requires array argument");
+        return;
+    }
+    if (lhs && !lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍤ requires array argument");
+        return;
+    }
+
     bool is_dyadic = (lhs != nullptr);
 
     if (!is_dyadic) {
@@ -1407,6 +1443,10 @@ void fn_catenate_axis_monadic(Machine* m, Value* curry_axis, Value* axis_operand
         return;
     }
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ,[k] requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     int rows = mat->rows();
     int cols = mat->cols();
@@ -1458,6 +1498,15 @@ void fn_catenate_axis_dyadic(Machine* m, Value* curry_axis, Value* lhs, Value* a
 
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ,[k] requires array argument");
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ,[k] requires array argument");
+        return;
+    }
 
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();

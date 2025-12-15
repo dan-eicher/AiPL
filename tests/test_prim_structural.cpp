@@ -3032,4 +3032,128 @@ TEST_F(StructuralTest, RollIO1) {
     }
 }
 
+// ============================================================================
+// Structural Function Rejection Tests
+// ============================================================================
+
+TEST_F(StructuralTest, ShapeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⍴+"), APLError);
+}
+
+TEST_F(StructuralTest, RavelRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval(",+"), APLError);
+}
+
+TEST_F(StructuralTest, ReverseRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⌽+"), APLError);
+}
+
+TEST_F(StructuralTest, ReverseFirstRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⊖+"), APLError);
+}
+
+TEST_F(StructuralTest, TransposeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⍉+"), APLError);
+}
+
+TEST_F(StructuralTest, FirstRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("↑+"), APLError);
+}
+
+TEST_F(StructuralTest, TallyRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("≢+"), APLError);
+}
+
+TEST_F(StructuralTest, TableRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⍪+"), APLError);
+}
+
+TEST_F(StructuralTest, GradeUpRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⍋+"), APLError);
+}
+
+TEST_F(StructuralTest, GradeDownRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⍒+"), APLError);
+}
+
+TEST_F(StructuralTest, UniqueRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("∪+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicReshapeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("3⍴+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicCatenateRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1,+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicRotateRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1⌽+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicRotateFirstRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1⊖+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicTakeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("3↑+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicDropRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1↓+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicIndexOfRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1 2 3⍳+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicMemberOfRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1∊+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicUnionRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1 2∪+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicWithoutRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1 2 3~+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicCatenateFirstRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1⍪+"), APLError);
+}
+
+TEST_F(StructuralTest, DyadicTransposeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1 0⍉+"), APLError);
+}
+
+// ============================================================================
+// Special Function Rejection Tests
+// ============================================================================
+
+TEST_F(StructuralTest, FormatMonadicRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⍕+"), APLError);
+}
+
+TEST_F(StructuralTest, FormatDyadicRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("10 2⍕+"), APLError);
+}
+
+TEST_F(StructuralTest, MatrixInverseRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("⌹+"), APLError);
+}
+
+TEST_F(StructuralTest, MatrixDivideRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("1 2 3⌹+"), APLError);
+}
+
+TEST_F(StructuralTest, EncodeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("2 2 2⊤+"), APLError);
+}
+
+TEST_F(StructuralTest, DecodeRejectsFunctionArgument) {
+    EXPECT_THROW(machine->eval("10⊥+"), APLError);
+}
+
 // ========================================================================

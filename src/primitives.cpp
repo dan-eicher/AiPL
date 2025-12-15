@@ -136,7 +136,7 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension using Eigen broadcasting
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR");
+            m->throw_error("DOMAIN ERROR: + requires numeric argument");
             return;
         }
         Eigen::MatrixXd result =
@@ -152,7 +152,7 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR");
+            m->throw_error("DOMAIN ERROR: + requires numeric argument");
             return;
         }
         Eigen::MatrixXd result =
@@ -168,7 +168,7 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array + Array: element-wise
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR");
+        m->throw_error("DOMAIN ERROR: + requires numeric argument");
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -204,6 +204,10 @@ void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: - requires numeric argument");
+            return;
+        }
         Eigen::MatrixXd result =
             lhs->data.scalar - rhs->as_matrix()->array();
         // Preserve vector/matrix distinction
@@ -216,6 +220,10 @@ void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: - requires numeric argument");
+            return;
+        }
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() - rhs->data.scalar;
         // Preserve vector/matrix distinction
@@ -228,6 +236,10 @@ void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array - Array
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: - requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -260,6 +272,10 @@ void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: × requires numeric argument");
+            return;
+        }
         Eigen::MatrixXd result =
             lhs->data.scalar * rhs->as_matrix()->array();
         // Preserve vector/matrix distinction
@@ -272,6 +288,10 @@ void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: × requires numeric argument");
+            return;
+        }
         Eigen::MatrixXd result =
             lhs->as_matrix()->array() * rhs->data.scalar;
         // Preserve vector/matrix distinction
@@ -284,6 +304,10 @@ void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array × Array: element-wise multiplication
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: × requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -335,6 +359,10 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension: scalar ÷ array
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double lval = lhs->data.scalar;
@@ -355,6 +383,10 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension: array ÷ scalar
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         double rval = rhs->data.scalar;
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
@@ -374,6 +406,10 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array ÷ Array
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -429,6 +465,10 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: * requires numeric argument");
+            return;
+        }
         // lhs is scalar base, rhs is array of exponents: lhs^rhs[i]
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
@@ -445,6 +485,10 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: * requires numeric argument");
+            return;
+        }
         // lhs is array of bases, rhs is scalar exponent
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
@@ -461,6 +505,10 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array * Array: element-wise power
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: * requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -498,6 +546,10 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: = requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
@@ -512,6 +564,10 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: = requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
@@ -526,6 +582,10 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array = Array: element-wise equality
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: = requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -563,6 +623,10 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ≠ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
@@ -577,6 +641,10 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ≠ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
@@ -591,6 +659,10 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array ≠ Array: element-wise not equal
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ≠ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -629,6 +701,10 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: < requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
@@ -645,6 +721,10 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: < requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
@@ -661,6 +741,10 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array < Array: element-wise less than
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: < requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -700,6 +784,10 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: > requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
@@ -716,6 +804,10 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: > requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
@@ -732,6 +824,10 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array > Array: element-wise greater than
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: > requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -771,6 +867,10 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ≤ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
@@ -787,6 +887,10 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ≤ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
@@ -803,6 +907,10 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array ≤ Array: element-wise less than or equal
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ≤ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -842,6 +950,10 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Scalar extension
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ≥ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
@@ -858,6 +970,10 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ≥ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
@@ -874,6 +990,10 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Array ≥ Array: element-wise greater than or equal
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ≥ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -912,6 +1032,10 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result = rmat->array().max(lhs->data.scalar);
         if (rhs->is_vector()) {
@@ -923,6 +1047,10 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result = lmat->array().max(rhs->data.scalar);
         if (lhs->is_vector()) {
@@ -933,6 +1061,10 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -963,6 +1095,10 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result = rmat->array().min(lhs->data.scalar);
         if (rhs->is_vector()) {
@@ -974,6 +1110,10 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result = lmat->array().min(rhs->data.scalar);
         if (lhs->is_vector()) {
@@ -984,6 +1124,10 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1014,6 +1158,10 @@ void fn_ceiling(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Fast path: no tolerance, use Eigen vectorized ceil
@@ -1052,6 +1200,10 @@ void fn_floor(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Fast path: no tolerance, use Eigen vectorized floor
@@ -1138,6 +1290,10 @@ void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ∧ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double lval = lhs->data.scalar;
@@ -1153,6 +1309,10 @@ void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ∧ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double rval = rhs->data.scalar;
@@ -1167,6 +1327,10 @@ void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∧ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1214,6 +1378,10 @@ void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ∨ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double lval = lhs->data.scalar;
@@ -1229,6 +1397,10 @@ void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ∨ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double rval = rhs->data.scalar;
@@ -1243,6 +1415,10 @@ void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∨ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1282,6 +1458,10 @@ void fn_not(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ~ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Check all elements are near-boolean
@@ -1340,6 +1520,10 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
@@ -1358,6 +1542,10 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
@@ -1375,6 +1563,10 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1432,6 +1624,10 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
@@ -1450,6 +1646,10 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
@@ -1467,6 +1667,10 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1506,6 +1710,10 @@ void fn_magnitude(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: | requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = mat->array().abs();
 
@@ -1557,6 +1765,10 @@ void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: | requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
@@ -1571,6 +1783,10 @@ void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: | requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
@@ -1584,6 +1800,10 @@ void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: | requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1610,7 +1830,7 @@ void fn_natural_log(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         if (val <= 0.0) {
-            m->throw_error("DOMAIN ERROR: logarithm of non-positive number");
+            m->throw_error("DOMAIN ERROR: ⍟ of non-positive number");
             return;
         }
         m->result = m->heap->allocate_scalar(std::log(val));
@@ -1620,6 +1840,10 @@ void fn_natural_log(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for non-positive values
     if ((mat->array() <= 0.0).any()) {
@@ -1667,6 +1891,10 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         double ln_base = std::log(lhs->data.scalar);
         Eigen::MatrixXd result = rmat->array().log() / ln_base;
@@ -1679,6 +1907,10 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         double ln_val = std::log(rhs->data.scalar);
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
@@ -1693,6 +1925,10 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1723,7 +1959,7 @@ void fn_factorial(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         if (is_negative_int(val)) {
-            m->throw_error("DOMAIN ERROR: factorial of negative integer");
+            m->throw_error("DOMAIN ERROR: ! of negative integer");
             return;
         }
         m->result = m->heap->allocate_scalar(std::tgamma(val + 1.0));
@@ -1733,6 +1969,10 @@ void fn_factorial(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for negative integers
     for (int i = 0; i < mat->size(); ++i) {
@@ -1827,6 +2067,10 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (lhs->is_scalar()) {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
@@ -1841,6 +2085,10 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_scalar()) {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
@@ -1854,6 +2102,10 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!lhs->is_array() || !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
@@ -1889,6 +2141,10 @@ void fn_pi_times(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ○ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result = M_PI * mat->array();
 
@@ -1987,6 +2243,10 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // String → char vector conversion for array operations
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ○ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = rhs->as_matrix();
     Eigen::MatrixXd result(mat->rows(), mat->cols());
 
@@ -2027,7 +2287,7 @@ void fn_conjugate(Machine* m, Value* axis, Value* omega) {
     } else if (omega->is_matrix()) {
         m->result = m->heap->allocate_matrix(*omega->as_matrix(), omega->is_char_data());
     } else {
-        m->throw_error("DOMAIN ERROR: conjugate requires array argument");
+        m->throw_error("DOMAIN ERROR: + requires numeric argument");
     }
 }
 
@@ -2042,6 +2302,10 @@ void fn_negate(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: - requires numeric argument");
+        return;
+    }
     Eigen::MatrixXd result = -omega->as_matrix()->array();
     // Preserve vector/matrix distinction
     if (omega->is_vector()) {
@@ -2064,6 +2328,10 @@ void fn_signum(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: × requires numeric argument");
+        return;
+    }
     // For arrays, apply sign element-wise
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result(mat->rows(), mat->cols());
@@ -2098,6 +2366,10 @@ void fn_reciprocal(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for zeros
     if ((mat->array() == 0.0).any()) {
@@ -2125,6 +2397,10 @@ void fn_exponential(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: * requires numeric argument");
+        return;
+    }
     Eigen::MatrixXd result = omega->as_matrix()->array().exp();
     // Preserve vector/matrix distinction
     if (omega->is_vector()) {
@@ -2151,6 +2427,10 @@ void fn_shape(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍴ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (omega->is_vector()) {
@@ -2265,6 +2545,10 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         source.resize(1);
         source(0) = rhs->as_scalar();
     } else {
+        if (!rhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍴ requires array argument");
+            return;
+        }
         const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
         // Flatten to vector in row-major order
         int size = rhs_mat->size();
@@ -2310,6 +2594,10 @@ void fn_ravel(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: , requires array argument");
+        return;
+    }
     bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Flatten in row-major order (APL standard)
@@ -2344,6 +2632,16 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         result(0) = lhs->as_scalar();
         result(1) = rhs->as_scalar();
         m->result = m->heap->allocate_vector(result, is_char);
+        return;
+    }
+
+    // Validate both arguments are arrays (or scalars which were handled above)
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: , requires array argument");
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: , requires array argument");
         return;
     }
 
@@ -2472,6 +2770,11 @@ void fn_transpose(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍉ requires array argument");
+        return;
+    }
+
     if (omega->is_vector()) {
         // Vector transpose is identity (returns vector unchanged)
         m->result = m->heap->allocate_vector(omega->as_matrix()->col(0), omega->is_char_data());
@@ -2499,6 +2802,10 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     } else if (lhs->is_vector()) {
         perm = lhs->as_matrix()->col(0);
     } else {
+        if (!lhs->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍉ requires array argument");
+            return;
+        }
         // Flatten matrix row-major
         const Eigen::MatrixXd* mat = lhs->as_matrix();
         perm.resize(mat->size());
@@ -2521,6 +2828,11 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         m->result = m->heap->allocate_vector(rhs->as_matrix()->col(0));
+        return;
+    }
+
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍉ requires array argument");
         return;
     }
 
@@ -2585,6 +2897,10 @@ void fn_matrix_inverse(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // Handle empty matrix: inverse of 0×0 is 0×0
@@ -2615,6 +2931,10 @@ void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (lhs->is_scalar()) {
             m->result = m->heap->allocate_scalar(lhs->as_scalar() / divisor);
         } else {
+            if (!lhs->is_array()) {
+                m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
+                return;
+            }
             Eigen::MatrixXd result = lhs->as_matrix()->array() / divisor;
             if (lhs->is_vector()) {
                 m->result = m->heap->allocate_vector(result.col(0));
@@ -2622,6 +2942,16 @@ void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 m->result = m->heap->allocate_matrix(result);
             }
         }
+        return;
+    }
+
+    // Validate arguments
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
+        return;
+    }
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
         return;
     }
 
@@ -2693,6 +3023,10 @@ void fn_first(Machine* m, Value* axis, Value* omega) {
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ↑ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     if (mat->size() == 0) {
@@ -2730,6 +3064,10 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ↑ requires array argument");
+        return;
+    }
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
     double fill = is_char ? 32.0 : 0.0;
@@ -2847,6 +3185,10 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ↓ requires array argument");
+        return;
+    }
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
@@ -2970,6 +3312,10 @@ void fn_reverse(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌽ requires array argument");
+        return;
+    }
     bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
@@ -3032,6 +3378,10 @@ void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⊖ requires array argument");
+        return;
+    }
     bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
@@ -3094,6 +3444,10 @@ void fn_tally(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ≢ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // First axis is number of rows
     m->result = m->heap->allocate_scalar(static_cast<double>(mat->rows()));
@@ -3135,6 +3489,10 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⌽ requires array argument");
+        return;
+    }
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
@@ -3259,6 +3617,10 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⊖ requires array argument");
+        return;
+    }
     bool is_char = rhs->is_char_data();
     const Eigen::MatrixXd* mat = rhs->as_matrix();
 
@@ -3409,6 +3771,10 @@ void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    if (!rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍳ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (rhs->is_vector()) {
@@ -3454,6 +3820,15 @@ void fn_member_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∊ requires array argument");
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∊ requires array argument");
+        return;
+    }
 
     // Get rhs as flat array to search in
     Eigen::VectorXd set = flatten_value(rhs);
@@ -3513,6 +3888,10 @@ void fn_grade_up(Machine* m, Value* axis, Value* omega) {
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍋ requires array argument");
+        return;
+    }
 
     // Matrix case: grade rows lexicographically
     if (omega->is_matrix()) {
@@ -3579,6 +3958,10 @@ void fn_grade_down(Machine* m, Value* axis, Value* omega) {
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍒ requires array argument");
+        return;
+    }
 
     // Matrix case: grade rows lexicographically (descending)
     if (omega->is_matrix()) {
@@ -4100,6 +4483,10 @@ void fn_unique(Machine* m, Value* axis, Value* omega) {
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∪ requires array argument");
+        return;
+    }
     bool is_char = omega->is_char_data();
     const Eigen::MatrixXd* mat = omega->as_matrix();
     int n = mat->rows();
@@ -4150,6 +4537,15 @@ void fn_union(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∪ requires array argument");
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∪ requires array argument");
+        return;
+    }
 
     Eigen::VectorXd left = flatten_value(lhs);
     Eigen::VectorXd right = flatten_value(rhs);
@@ -4211,6 +4607,15 @@ void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ~ requires array argument");
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ~ requires array argument");
+        return;
+    }
+
     Eigen::VectorXd left = flatten_value(lhs);
     Eigen::VectorXd right = flatten_value(rhs);
 
@@ -4260,21 +4665,16 @@ void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // Uses machine's RNG seeded by ⎕RL for reproducibility
 void fn_roll(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
-    // Validate argument is a basic value
-    if (!omega->is_basic_value()) {
-        m->throw_error("DOMAIN ERROR");
-        return;
-    }
     int io = m->io;
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         int n = static_cast<int>(val);
         if (n != val) {
-            m->throw_error("DOMAIN ERROR: roll argument must be integer");
+            m->throw_error("DOMAIN ERROR: ? argument must be integer");
             return;
         }
         if (n <= 0) {
-            m->throw_error("DOMAIN ERROR: roll argument must be positive");
+            m->throw_error("DOMAIN ERROR: ? argument must be positive");
             return;
         }
         std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
@@ -4282,6 +4682,10 @@ void fn_roll(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ? requires numeric argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     Eigen::MatrixXd result(mat->rows(), mat->cols());
 
@@ -4638,6 +5042,16 @@ void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    // Validate arguments before flattening
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⊥ requires array argument");
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⊥ requires array argument");
+        return;
+    }
+
     // Get the radix and digits as vectors
     Eigen::VectorXd radix = flatten_value(lhs);
     Eigen::VectorXd digits = flatten_value(rhs);
@@ -4686,6 +5100,16 @@ void fn_encode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
     if (rhs->is_string() || rhs->is_char_data()) {
         m->throw_error("DOMAIN ERROR: encode requires numeric arguments");
+        return;
+    }
+
+    // Validate arguments before flattening
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⊤ requires array argument");
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⊤ requires array argument");
         return;
     }
 
@@ -4879,6 +5303,10 @@ void fn_table(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍪ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     int rows = mat->rows();
     int cols = mat->cols();
@@ -5019,6 +5447,16 @@ void fn_catenate_first(Machine* m, Value* axis, Value* alpha, Value* omega) {
         result(0, 0) = alpha->as_scalar();
         result(1, 0) = omega->as_scalar();
         m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
+    // Validate both arguments are arrays (or scalars which are handled below)
+    if (!alpha->is_scalar() && !alpha->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍪ requires array argument");
+        return;
+    }
+    if (!omega->is_scalar() && !omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍪ requires array argument");
         return;
     }
 
@@ -5285,6 +5723,10 @@ void fn_format_monadic(Machine* m, Value* axis, Value* omega) {
     }
 
     // Vector or Matrix: format as space-separated values
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍕ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     int rows = mat->rows();
     int cols = mat->cols();
@@ -5341,6 +5783,10 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
         int w = (int)std::round(alpha->as_scalar());
         specs.push_back({w, 0});
     } else {
+        if (!alpha->is_array()) {
+            m->throw_error("DOMAIN ERROR: ⍕ requires array argument");
+            return;
+        }
         const Eigen::MatrixXd* a_mat = alpha->as_matrix();
         int a_size = a_mat->rows();
 
@@ -5409,6 +5855,10 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
     }
 
     // Format vector or matrix
+    if (!omega->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍕ requires array argument");
+        return;
+    }
     const Eigen::MatrixXd* mat = omega->as_matrix();
 
     // For vectors, treat as single row with N elements
