@@ -178,7 +178,8 @@ Lexer::Lexer(const char* input)
     quad_name = quad name;
 
     // Comments (⍝ to end of line)
-    comment = "⍝" [^\r\n]*;  // U+235D
+    // Must exclude \x00 (null) since re2c uses it as sentinel in yyfill:enable=0 mode
+    comment = "⍝" [^\x00\r\n]*;  // U+235D
 */
 
 Token Lexer::next_token() {
