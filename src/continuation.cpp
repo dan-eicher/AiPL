@@ -15,6 +15,92 @@ namespace apl {
 class Heap;
 
 // ============================================================================
+// Finalization Helpers
+// ============================================================================
+// Consolidates the logic for checking and performing finalization of curried
+// values (G_PRIME, DYADIC_CURRY) used throughout DispatchFunctionK.
+
+// Check if a value needs finalization
+static bool needs_finalization(Value* val, bool finalize_gprime = true) {
+    if (!val || val->tag != ValueType::CURRIED_FN) {
+        return false;
+    }
+
+    Value::CurriedFnData* cd = val->data.curried_fn;
+
+    // G_PRIME: only finalize if finalize_gprime is true
+    // Exception: CLOSURE curries should always be finalized because they're
+    // immediate expressions, not partial applications meant to be preserved
+    if (cd->curry_type == Value::CurryType::G_PRIME) {
+        bool should_finalize = finalize_gprime || cd->fn->is_closure();
+        return should_finalize;
+    }
+
+    // DYADIC_CURRY: always needs finalization
+    if (cd->curry_type == Value::CurryType::DYADIC_CURRY) {
+        return true;
+    }
+
+    // OPERATOR_CURRY: does not need finalization (it's waiting for operand, not array)
+    return false;
+}
+
+// Try to finalize a G_PRIME curry synchronously (without pushing continuations).
+// Only works for primitive functions with monadic forms.
+// Returns: val unchanged if not a curry, machine->result if finalized, nullptr if async needed.
+static Value* try_finalize_sync(Machine* m, Value* val, bool finalize_gprime = true) {
+    if (!val || val->tag != ValueType::CURRIED_FN) {
+        return val;  // Not a curry, nothing to finalize
+    }
+
+    Value::CurriedFnData* cd = val->data.curried_fn;
+
+    // Only handle G_PRIME curries
+    if (cd->curry_type != Value::CurryType::G_PRIME) {
+        return val;  // Not G_PRIME, can't sync finalize here
+    }
+
+    // Check finalize_gprime flag (unless it's a closure which always finalizes)
+    bool should_finalize = finalize_gprime || cd->fn->is_closure();
+    if (!should_finalize) {
+        return val;  // Shouldn't finalize, return unchanged
+    }
+
+    // Only sync finalize if it's a primitive with monadic form
+    if (!cd->fn->is_primitive()) {
+        return nullptr;  // Closure - needs async finalization
+    }
+
+    PrimitiveFn* prim_fn = cd->fn->data.primitive_fn;
+    if (!prim_fn->monadic) {
+        return nullptr;  // No monadic form - can't finalize
+    }
+
+    // Call the primitive's monadic form directly
+    prim_fn->monadic(m, cd->axis, cd->first_arg);
+    return m->result;
+}
+
+// Push PerformFinalizeK then the caller's continuation
+// After finalization completes, then_kont will be invoked with machine->result
+static void push_finalize_then(Machine* m, Continuation* then_kont, bool finalize_gprime = true) {
+    m->push_kont(then_kont);
+    m->push_kont(m->heap->allocate<PerformFinalizeK>(finalize_gprime));
+}
+
+// Combined helper: check if finalization is needed, and if so, push it
+// Returns true if finalization was pushed (caller should return immediately)
+// Returns false if no finalization needed (caller should continue)
+static bool maybe_push_finalize(Machine* m, Value* val, Continuation* then_kont,
+                                bool finalize_gprime = true) {
+    if (!needs_finalization(val, finalize_gprime)) {
+        return false;
+    }
+    push_finalize_then(m, then_kont, finalize_gprime);
+    return true;
+}
+
+// ============================================================================
 // Terminal and Completion Continuations
 // ============================================================================
 
@@ -363,15 +449,11 @@ void PerformAssignK::invoke(Machine* machine) {
     Value* val = machine->result;
 
     // Finalize curried functions before assignment (A←⍳5, A←+/1 2 3)
-    if (val && val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* cd = val->data.curried_fn;
-        if (cd->curry_type == Value::CurryType::G_PRIME ||
-            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
-            machine->push_kont(this);
-            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
-            return;
-        }
+    if (maybe_push_finalize(machine, val, this)) {
+        return;
     }
+    // After finalization, use machine->result (may have been updated by sync finalization)
+    val = machine->result;
 
     // Special handling for ⍺←value (alpha default): only assign if ⍺ not already defined
     // This implements APL's conditional default argument syntax
@@ -865,15 +947,11 @@ void ApplyMonadicK::invoke(Machine* machine) {
     Value* operand_val = machine->result;
 
     // g' finalization: If operand is a curry, finalize it first
-    if (operand_val && operand_val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* cd = operand_val->data.curried_fn;
-        if (cd->curry_type == Value::CurryType::G_PRIME ||
-            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
-            machine->push_kont(this);
-            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
-            return;
-        }
+    if (maybe_push_finalize(machine, operand_val, this)) {
+        return;
     }
+    // After finalization, use machine->result (may have been updated by sync finalization)
+    operand_val = machine->result;
 
     // Look up the operator at evaluation time
     Value* op_val = machine->env->lookup(op_name);
@@ -975,15 +1053,11 @@ void EvalStrandElementK::invoke(Machine* machine) {
     Value* current_val = machine->result;
 
     // g' finalization: Finalize curries before adding to strand
-    if (current_val && current_val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* cd = current_val->data.curried_fn;
-        if (cd->curry_type == Value::CurryType::G_PRIME ||
-            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
-            machine->push_kont(this);
-            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
-            return;
-        }
+    if (maybe_push_finalize(machine, current_val, this)) {
+        return;
     }
+    // After finalization, use machine->result (may have been updated by sync finalization)
+    current_val = machine->result;
 
     evaluated_values.insert(evaluated_values.begin(), current_val);
 
@@ -1357,27 +1431,13 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
             if (left_val && right_val) {
                 // Finalize any G_PRIME curried functions in arguments first
-                if (left_val->tag == ValueType::CURRIED_FN) {
-                    Value::CurriedFnData* lcd = left_val->data.curried_fn;
-                    if (lcd->curry_type == Value::CurryType::G_PRIME) {
-                        Value* fn = lcd->fn;
-                        Value* arg = lcd->first_arg;
-                        if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, lcd->axis, arg);
-                            left_val = machine->result;
-                        }
-                    }
+                Value* finalized_left = try_finalize_sync(machine, left_val, true);
+                if (finalized_left != nullptr) {
+                    left_val = finalized_left;
                 }
-                if (right_val->tag == ValueType::CURRIED_FN) {
-                    Value::CurriedFnData* rcd = right_val->data.curried_fn;
-                    if (rcd->curry_type == Value::CurryType::G_PRIME) {
-                        Value* fn = rcd->fn;
-                        Value* arg = rcd->first_arg;
-                        if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, rcd->axis, arg);
-                            right_val = machine->result;
-                        }
-                    }
+                Value* finalized_right = try_finalize_sync(machine, right_val, true);
+                if (finalized_right != nullptr) {
+                    right_val = finalized_right;
                 }
 
                 if (def_op) {
@@ -1391,17 +1451,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // This enables N-wise reduction with axis: "2 +/[1] matrix"
 
                 // Finalize any G_PRIME curried function in right_val first
-                if (right_val->tag == ValueType::CURRIED_FN) {
-                    Value::CurriedFnData* rcd = right_val->data.curried_fn;
-                    if (rcd->curry_type == Value::CurryType::G_PRIME) {
-                        Value* fn = rcd->fn;
-                        Value* arg = rcd->first_arg;
-                        Value* axis = rcd->axis;
-                        if (fn->is_primitive() && fn->data.primitive_fn->monadic) {
-                            fn->data.primitive_fn->monadic(machine, axis, arg);
-                            right_val = machine->result;
-                        }
-                    }
+                Value* finalized = try_finalize_sync(machine, right_val, true);
+                if (finalized != nullptr) {
+                    right_val = finalized;
                 }
 
                 if (def_op) {
@@ -1585,42 +1637,14 @@ void DispatchFunctionK::invoke(Machine* machine) {
         }
     }
 
-    // G2 g' finalization: Unwrap any g' curried functions in arguments
+    // G2 g' finalization: Unwrap any curried functions in arguments
     // Per paper: when a g' curried function is used as an argument (not at top level),
-    // it should be unwrapped by applying g1(x)
-    // Use continuation machinery to handle async evaluation (e.g., ⍎)
-    if (right_val && right_val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* curried_data = right_val->data.curried_fn;
-        if (curried_data->curry_type == Value::CurryType::G_PRIME) {
-            // Unwrap g' curried function via continuation machinery
-            Value* inner_fn = curried_data->fn;
-            Value* inner_arg = curried_data->first_arg;
-            // Push DeferredDispatchK to continue with unwrapped right_val
-            machine->push_kont(machine->heap->allocate<DeferredDispatchK>(fn_val, left_val, force_monadic));
-            // Dispatch inner function with force_monadic=true to actually evaluate
-            DispatchFunctionK* inner = machine->heap->allocate<DispatchFunctionK>(inner_fn, nullptr, inner_arg);
-            inner->force_monadic = true;
-            machine->push_kont(inner);
-            return;
-        } else if (curried_data->curry_type == Value::CurryType::DYADIC_CURRY) {
-            // Finalize DYADIC_CURRY from reduce/scan when used as argument
-            // This handles nested reductions like "+/×/1 2 3 4"
-            Value* inner_fn = curried_data->fn;
-            Value* arg = curried_data->first_arg;
-            if (inner_fn->tag == ValueType::DERIVED_OPERATOR) {
-                Value::DerivedOperatorData* derived_data = inner_fn->data.derived_op;
-                PrimitiveOp* op = derived_data->primitive_op;
-                Value* first_operand = derived_data->first_operand;
-                if (op->monadic) {
-                    // Push DeferredDispatchK to continue after inner reduction completes
-                    // It will read machine->result as the new right_val
-                    machine->push_kont(machine->heap->allocate<DeferredDispatchK>(fn_val, left_val, force_monadic));
-                    // Evaluate inner reduction - result will become new right_val (no axis here)
-                    op->monadic(machine, nullptr, first_operand, arg);
-                    return;
-                }
-            }
-        }
+    // it should be unwrapped. Use consolidated finalization via PerformFinalizeK.
+    if (needs_finalization(right_val, true)) {
+        machine->result = right_val;
+        DeferredDispatchK* then_k = machine->heap->allocate<DeferredDispatchK>(fn_val, left_val, force_monadic);
+        push_finalize_then(machine, then_k, true);
+        return;
     }
 
     if (fn_val->tag == ValueType::DERIVED_OPERATOR) {
@@ -3272,15 +3296,11 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
     index_val = machine->result;
 
     // g' finalization: If index is a curry, finalize it first
-    if (index_val && index_val->tag == ValueType::CURRIED_FN) {
-        Value::CurriedFnData* cd = index_val->data.curried_fn;
-        if (cd->curry_type == Value::CurryType::G_PRIME ||
-            cd->curry_type == Value::CurryType::DYADIC_CURRY) {
-            machine->push_kont(this);
-            machine->push_kont(machine->heap->allocate<PerformFinalizeK>());
-            return;
-        }
+    if (maybe_push_finalize(machine, index_val, this)) {
+        return;
     }
+    // After finalization, use machine->result (may have been updated by sync finalization)
+    index_val = machine->result;
 
     // Lookup the array variable
     Value* arr = machine->env->lookup(var_name);
