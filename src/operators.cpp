@@ -199,7 +199,7 @@ void op_each(Machine* m, Value* axis, Value* f, Value* omega) {
     }
 
     if (omega->is_scalar()) {
-        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, nullptr, omega, true));
+        apply_function_immediate(m, f, nullptr, omega);
         return;
     }
 
@@ -1356,8 +1356,7 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
 
         if (num_cells == 1) {
             // Single cell: just apply f to whole array
-            // Use force_monadic=true to ensure immediate application (not G_PRIME curry)
-            m->push_kont(m->heap->allocate<DispatchFunctionK>(f, nullptr, rhs, true));
+            apply_function_immediate(m, f, nullptr, rhs);
             return;
         }
 

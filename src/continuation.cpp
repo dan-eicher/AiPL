@@ -101,6 +101,80 @@ static bool maybe_push_finalize(Machine* m, Value* val, Continuation* then_kont,
 }
 
 // ============================================================================
+// Function Application Helpers
+// ============================================================================
+
+// Apply a function immediately without creating curries.
+// For primitives: calls the monadic or dyadic form directly.
+// For closures: pushes FunctionCallK.
+// For derived operators: invokes the operator's form.
+// Returns true if result is ready in machine->result, false if continuation pushed.
+bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
+                              Value* right_val, Value* axis) {
+    // Handle CLOSURE values (dfns)
+    if (fn_val->tag == ValueType::CLOSURE) {
+        FunctionCallK* call_k = m->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
+        m->push_kont(call_k);
+        return false;  // Continuation pushed
+    }
+
+    // Handle DERIVED_OPERATOR
+    if (fn_val->tag == ValueType::DERIVED_OPERATOR) {
+        Value::DerivedOperatorData* derived = fn_val->data.derived_op;
+        PrimitiveOp* op = derived->primitive_op;
+        Value::DefinedOperatorData* def_op = derived->defined_op;
+        Value* first_operand = derived->first_operand;
+        Value* op_value = derived->operator_value;
+
+        if (def_op) {
+            // User-defined operator
+            m->push_kont(m->heap->allocate<InvokeDefinedOperatorK>(
+                def_op, op_value, first_operand, nullptr, left_val, right_val));
+            return false;  // Continuation pushed
+        } else if (op) {
+            // Primitive operator
+            if (left_val && right_val && op->dyadic) {
+                op->dyadic(m, axis, left_val, first_operand, nullptr, right_val);
+            } else if (right_val && op->monadic) {
+                op->monadic(m, axis, first_operand, right_val);
+            } else {
+                m->throw_error("SYNTAX ERROR: operator form not available", nullptr);
+                return false;
+            }
+            return true;  // Result set synchronously
+        }
+    }
+
+    // Handle PRIMITIVE functions
+    if (fn_val->tag == ValueType::PRIMITIVE) {
+        PrimitiveFn* prim_fn = fn_val->data.primitive_fn;
+
+        if (left_val && right_val) {
+            // Dyadic application
+            if (!prim_fn->dyadic) {
+                m->throw_error("SYNTAX ERROR: Function has no dyadic form", nullptr);
+                return false;
+            }
+            prim_fn->dyadic(m, axis, left_val, right_val);
+        } else if (right_val) {
+            // Monadic application
+            if (!prim_fn->monadic) {
+                m->throw_error("SYNTAX ERROR: Function has no monadic form", nullptr);
+                return false;
+            }
+            prim_fn->monadic(m, axis, right_val);
+        } else {
+            m->throw_error("VALUE ERROR: function requires argument", nullptr);
+            return false;
+        }
+        return true;  // Result set synchronously
+    }
+
+    m->throw_error("VALUE ERROR: expected function value", nullptr);
+    return false;
+}
+
+// ============================================================================
 // Terminal and Completion Continuations
 // ============================================================================
 
@@ -800,18 +874,7 @@ void PerformFinalizeK::invoke(Machine* machine) {
         // immediate expressions, not partial applications meant to be preserved
         bool should_finalize = finalize_gprime || cd->fn->is_closure();
         if (cd->curry_type == Value::CurryType::G_PRIME && should_finalize) {
-            // If curry has axis and is primitive, apply directly with axis
-            if (cd->axis != nullptr && cd->fn->is_primitive()) {
-                PrimitiveFn* prim_fn = cd->fn->data.primitive_fn;
-                if (prim_fn->monadic) {
-                    prim_fn->monadic(machine, cd->axis, cd->first_arg);
-                    return;
-                }
-            }
-            DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
-                cd->fn, nullptr, cd->first_arg);
-            dispatch->force_monadic = true;
-            machine->push_kont(dispatch);
+            apply_function_immediate(machine, cd->fn, nullptr, cd->first_arg, cd->axis);
             return;
         }
 
@@ -861,10 +924,7 @@ void PerformFinalizeK::invoke(Machine* machine) {
             }
 
             if (has_monadic) {
-                DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
-                    fn, nullptr, arg);
-                dispatch->force_monadic = true;
-                machine->push_kont(dispatch);
+                apply_function_immediate(machine, fn, nullptr, arg);
                 return;
             }
             // No monadic form - leave as valid partial application
@@ -1356,7 +1416,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
     // Handle CLOSURE values (dfns)
     if (fn_val->tag == ValueType::CLOSURE) {
-        if (left_val == nullptr && !force_monadic) {
+        if (left_val == nullptr) {
             // Only right argument - create G_PRIME curry to defer monadic/dyadic decision
             // This enables proper dyadic calls like "3 F 5" where F is a named closure
             // Per Georgeff et al. "Parsing and Evaluation of APL with Operators":
@@ -1367,7 +1427,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             machine->result = curried;
             return;
         }
-        // Both arguments (dyadic) or force_monadic - call immediately
+        // Both arguments (dyadic) - call immediately
         FunctionCallK* call_k = machine->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
         machine->push_kont(call_k);
         return;  // Early exit for closure case
@@ -1387,11 +1447,8 @@ void DispatchFunctionK::invoke(Machine* machine) {
             // DYADIC_CURRY g' transformation:
             // null(y) → g1(x), bas(y) → g2(x,y), else → y(g1(x))
             if (right_val == nullptr) {
-                // null(y): finalize monadically via DispatchFunctionK
-                DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
-                    inner_fn, nullptr, first_arg);
-                dispatch->force_monadic = true;
-                machine->push_kont(dispatch);
+                // null(y): finalize monadically
+                apply_function_immediate(machine, inner_fn, nullptr, first_arg);
                 return;
             } else if (right_val->is_basic_value()) {
                 // bas(y): apply dyadically with swapped args
@@ -1402,10 +1459,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             } else {
                 // y is a function: first finalize g1(x), then apply y to result
                 machine->push_kont(machine->heap->allocate<PerformJuxtaposeK>(right_val));
-                DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(
-                    inner_fn, nullptr, first_arg);
-                dispatch->force_monadic = true;
-                machine->push_kont(dispatch);
+                apply_function_immediate(machine, inner_fn, nullptr, first_arg);
                 return;
             }
         } else if (curried_data->curry_type == Value::CurryType::OPERATOR_CURRY) {
@@ -1545,9 +1599,9 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     // For closures, need to evaluate g1(x) first then apply y
                     // Push DeferredDispatchK to apply y after g1(x) evaluates
                     // DeferredDispatchK will read machine->result as the new right_val
-                    machine->push_kont(machine->heap->allocate<DeferredDispatchK>(right_val, nullptr, force_monadic));
-                    // Dispatch inner closure with force_monadic to prevent infinite G_PRIME creation
-                    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(inner_fn, nullptr, first_arg, true));
+                    machine->push_kont(machine->heap->allocate<DeferredDispatchK>(right_val, nullptr));
+                    // Apply inner closure monadically
+                    apply_function_immediate(machine, inner_fn, nullptr, first_arg);
                     return;
                 }
             }
@@ -1637,7 +1691,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
     // it should be unwrapped. Use consolidated finalization via PerformFinalizeK.
     if (needs_finalization(right_val, true)) {
         machine->result = right_val;
-        DeferredDispatchK* then_k = machine->heap->allocate<DeferredDispatchK>(fn_val, left_val, force_monadic);
+        DeferredDispatchK* then_k = machine->heap->allocate<DeferredDispatchK>(fn_val, left_val);
         push_finalize_then(machine, then_k, true);
         return;
     }
@@ -1660,8 +1714,8 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     // Monadic operator with both arguments - invoke dyadically
                     machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, nullptr, left_val, right_val));
-                } else if (force_monadic || !def_op->is_ambivalent) {
-                    // Force monadic (from finalization) or non-ambivalent - invoke immediately
+                } else if (!def_op->is_ambivalent) {
+                    // Non-ambivalent - invoke immediately
                     machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, nullptr, nullptr, right_val));
                 } else {
@@ -1672,12 +1726,6 @@ void DispatchFunctionK::invoke(Machine* machine) {
             } else {
                 machine->throw_error("VALUE ERROR: operator requires argument", this);
             }
-            return;
-        }
-
-        // Force monadic: apply monadic form directly (used by each, rank operators)
-        if (force_monadic && op->monadic && !left_val && right_val) {
-            op->monadic(machine, nullptr, first_operand, right_val);
             return;
         }
 
@@ -1762,15 +1810,11 @@ void DispatchFunctionK::invoke(Machine* machine) {
     // Determine monadic vs dyadic based on what arguments we have
     if (left_val == nullptr) {
         // Monadic case: only right argument
-
-        if (prim_fn->monadic && !force_monadic) {
+        if (prim_fn->monadic) {
             // G_PRIME curry for all monadic functions (not just overloaded)
             // This allows proper error handling if used in dyadic context
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
             machine->result = curried;
-        } else if (prim_fn->monadic && force_monadic) {
-            // Force immediate monadic evaluation (used by operators like each, rank)
-            prim_fn->monadic(machine, nullptr, right_val);
         } else if (prim_fn->dyadic) {
             // Pure dyadic function: simple currying (right arg captured, waiting for left)
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
@@ -1790,8 +1834,6 @@ void DispatchFunctionK::invoke(Machine* machine) {
         // Apply dyadic function (sets machine->result directly or pushes ThrowErrorK)
         prim_fn->dyadic(machine, nullptr, left_val, right_val);
     }
-
-    // Phase 3.1: No return needed
 }
 
 void DispatchFunctionK::mark(Heap* heap) {
@@ -1806,7 +1848,7 @@ void DeferredDispatchK::invoke(Machine* machine) {
     Value* right_val = machine->result;
 
     // Create and push DispatchFunctionK to continue the dispatch
-    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn_val, left_val, right_val, force_monadic));
+    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn_val, left_val, right_val));
 }
 
 void DeferredDispatchK::mark(Heap* heap) {
@@ -2597,9 +2639,14 @@ void CellIterK::invoke(Machine* machine) {
         }
 
         // Push collector continuation, then dispatch function
-        // Use force_monadic=true when applying monadically to get immediate result
         machine->push_kont(machine->heap->allocate<CellCollectK>(this));
-        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, left_cell, right_cell, left_cell == nullptr));
+        if (left_cell == nullptr) {
+            // Monadic - apply immediately without currying
+            apply_function_immediate(machine, fn, nullptr, right_cell);
+        } else {
+            // Dyadic - use dispatch (may curry if needed)
+            machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, left_cell, right_cell));
+        }
 
     } else if (mode == CellIterMode::FOLD_RIGHT) {
         // Backward iteration for right-fold

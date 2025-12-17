@@ -456,8 +456,8 @@ TEST_F(ContinuationTest, DispatchFunctionKGPrimeFinalization) {
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
     Value* arg = machine->heap->allocate_scalar(5.0);
 
-    // Without force_monadic, creates G_PRIME curry, but execute() finalizes it
-    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg, false);
+    // DispatchFunctionK creates G_PRIME curry, but execute() finalizes it
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg);
     machine->push_kont(dispatch);
     Value* result = machine->execute();
 
@@ -488,14 +488,13 @@ TEST_F(ContinuationTest, DispatchFunctionKGPrimeDyadicApplication) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), -2.0);
 }
 
-TEST_F(ContinuationTest, DispatchFunctionKForceMonadic) {
-    // Test force_monadic=true: bypasses G_PRIME, applies monadic immediately
+TEST_F(ContinuationTest, ApplyFunctionImmediateMonadic) {
+    // Test apply_function_immediate: applies monadic immediately without currying
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
     Value* arg = machine->heap->allocate_scalar(5.0);
 
-    // With force_monadic=true, should apply monadic form directly
-    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg, true);
-    machine->push_kont(dispatch);
+    // apply_function_immediate should apply monadic form directly
+    apply_function_immediate(machine, fn, nullptr, arg);
     Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
@@ -503,15 +502,14 @@ TEST_F(ContinuationTest, DispatchFunctionKForceMonadic) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), -5.0);  // Negated value
 }
 
-TEST_F(ContinuationTest, DispatchFunctionKForceMonadicVector) {
-    // Test force_monadic with vector argument
+TEST_F(ContinuationTest, ApplyFunctionImmediateMonadicVector) {
+    // Test apply_function_immediate with vector argument
     Value* fn = machine->heap->allocate_primitive(&prim_minus);
     Eigen::VectorXd vec(3);
     vec << 1, 2, 3;
     Value* arg = machine->heap->allocate_vector(vec);
 
-    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(fn, nullptr, arg, true);
-    machine->push_kont(dispatch);
+    apply_function_immediate(machine, fn, nullptr, arg);
     Value* result = machine->execute();
 
     ASSERT_NE(result, nullptr);
@@ -592,7 +590,7 @@ TEST_F(ContinuationTest, DeferredDispatchKBasic) {
     machine->result = machine->heap->allocate_scalar(5.0);
 
     // DeferredDispatchK should use result as right_val, apply fn monadically
-    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(fn, nullptr, false);
+    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(fn, nullptr);
     machine->push_kont(deferred);
     Value* result = machine->execute();
 
@@ -615,7 +613,7 @@ TEST_F(ContinuationTest, DeferredDispatchKWithNestedReduce) {
     machine->result = machine->heap->allocate_scalar(6.0);
 
     // DeferredDispatchK should dispatch +/ to 6, giving +/ 6 = 6
-    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(reduce_op, nullptr, false);
+    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(reduce_op, nullptr);
     machine->push_kont(deferred);
     Value* result = machine->execute();
 
@@ -629,7 +627,7 @@ TEST_F(ContinuationTest, DeferredDispatchKMarking) {
     Value* fn = machine->heap->allocate_primitive(&prim_plus);
     Value* left = machine->heap->allocate_scalar(3.0);
 
-    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(fn, left, true);
+    DeferredDispatchK* deferred = heap->allocate<DeferredDispatchK>(fn, left);
 
     // Mark should not crash and should mark the values
     deferred->mark(heap);
@@ -1496,7 +1494,7 @@ TEST_F(ContinuationTest, GPrimeAllMonadicFinalizedAtTopLevel) {
     Value* iota_fn = machine->heap->allocate_primitive(&prim_iota);
     Value* five = machine->heap->allocate_scalar(5.0);
 
-    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(iota_fn, nullptr, five, false);
+    DispatchFunctionK* dispatch = heap->allocate<DispatchFunctionK>(iota_fn, nullptr, five);
     machine->push_kont(dispatch);
     Value* result = machine->execute();
 

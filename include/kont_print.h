@@ -374,7 +374,6 @@ public:
                 out << "(dfn)";
             }
         }
-        if (k->force_monadic) out << "[forced-monadic]";
         print_value("left", k->left_val);
         print_value("right", k->right_val);
         print_location(k);
@@ -384,7 +383,6 @@ public:
         out << "DeferredDispatchK";
         print_value("fn", k->fn_val);
         print_value("left", k->left_val);
-        if (k->force_monadic) out << "[forced-monadic]";
         print_location(k);
     }
 

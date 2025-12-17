@@ -95,6 +95,18 @@ class PerformIndexedAssignK;
 class InvokeDefinedOperatorK;
 
 // ============================================================================
+// Function Application Helper
+// ============================================================================
+
+// Apply a function immediately without creating curries.
+// For primitives: calls the monadic or dyadic form directly.
+// For closures: pushes FunctionCallK.
+// For derived operators: invokes the operator's form.
+// Returns true if result is ready in machine->result, false if continuation pushed.
+bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
+                              Value* right_val, Value* axis = nullptr);
+
+// ============================================================================
 // ContinuationVisitor - Visitor pattern for operations on continuations
 // ============================================================================
 // Enables external operations (printing, optimization, etc.) without
@@ -925,10 +937,9 @@ public:
     Value* fn_val;              // The function value
     Value* left_val;            // Left argument (nullptr for monadic)
     Value* right_val;           // Right argument
-    bool force_monadic;         // When true, apply monadic form immediately (skip G_PRIME currying)
 
-    DispatchFunctionK(Value* fn, Value* left, Value* right, bool force_mon = false)
-        : fn_val(fn), left_val(left), right_val(right), force_monadic(force_mon) {}
+    DispatchFunctionK(Value* fn, Value* left, Value* right)
+        : fn_val(fn), left_val(left), right_val(right) {}
 
     ~DispatchFunctionK() override {}
 
@@ -946,10 +957,9 @@ class DeferredDispatchK : public Continuation {
 public:
     Value* fn_val;              // The function to dispatch
     Value* left_val;            // Left argument (nullptr for monadic)
-    bool force_monadic;         // Force monadic application
 
-    DeferredDispatchK(Value* fn, Value* left, bool force_mon = false)
-        : fn_val(fn), left_val(left), force_monadic(force_mon) {}
+    DeferredDispatchK(Value* fn, Value* left)
+        : fn_val(fn), left_val(left) {}
 
     ~DeferredDispatchK() override {}
 
