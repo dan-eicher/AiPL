@@ -229,9 +229,16 @@ public:
         print_location(k);
     }
 
+    void visit(LiteralStrandK* k) override {
+        out << "LiteralStrandK";
+        print_value("vec", k->vector_value);
+        print_location(k);
+    }
+
     void visit(StrandK* k) override {
         out << "StrandK";
-        print_value("vec", k->vector_value);
+        print_value("left", k->left_val);
+        print_value("right", k->right_val);
         print_location(k);
     }
 

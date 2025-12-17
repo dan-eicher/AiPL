@@ -518,18 +518,18 @@ TEST_F(EvalTest, GCWithNestedExpressions) {
     EXPECT_DOUBLE_EQ(result2->as_scalar(), 30.0);
 }
 
-TEST_F(EvalTest, StrandIsNotJuxtapose) {
+TEST_F(EvalTest, LiteralStrandIsNotJuxtapose) {
     // "2 3" is a lexical strand (single TOK_NUMBER_VECTOR token)
-    // It should create StrandK, NOT JuxtaposeK
+    // It should create LiteralStrandK, NOT JuxtaposeK
     Continuation* k = parser->parse("2 3");
     ASSERT_NE(k, nullptr);
 
-    StrandK* strand = dynamic_cast<StrandK*>(k);
-    ASSERT_NE(strand, nullptr) << "2 3 is a strand, not juxtaposition";
+    LiteralStrandK* strand = dynamic_cast<LiteralStrandK*>(k);
+    ASSERT_NE(strand, nullptr) << "2 3 is a literal strand, not juxtaposition";
 
     // Verify it's NOT juxtapose
     JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
-    EXPECT_EQ(jux, nullptr) << "Strand should not be JuxtaposeK";
+    EXPECT_EQ(jux, nullptr) << "Literal strand should not be JuxtaposeK";
 }
 
 TEST_F(EvalTest, MonadicNotJuxtapose) {
@@ -547,7 +547,7 @@ TEST_F(EvalTest, MonadicNotJuxtapose) {
     EXPECT_EQ(monadic, nullptr) << "G2 grammar uses juxtaposition, not MonadicK";
 }
 
-TEST_F(EvalTest, FunctionNameAndStrand) {
+TEST_F(EvalTest, FunctionNameAndLiteralStrand) {
     // "× 5 6" is TWO tokens: TOK_TIMES ("×") and TOK_NUMBER_VECTOR ([5, 6])
     // In G2 grammar, "×" is an identifier, so this is juxtaposition
     Continuation* k = parser->parse("× 5 6");
@@ -557,9 +557,9 @@ TEST_F(EvalTest, FunctionNameAndStrand) {
     JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
     ASSERT_NE(jux, nullptr) << "× 5 6 should be JuxtaposeK in G2 grammar";
 
-    // The right side should be a strand
-    StrandK* strand = dynamic_cast<StrandK*>(jux->right);
-    EXPECT_NE(strand, nullptr) << "Right operand should be strand [5, 6]";
+    // The right side should be a literal strand
+    LiteralStrandK* strand = dynamic_cast<LiteralStrandK*>(jux->right);
+    EXPECT_NE(strand, nullptr) << "Right operand should be literal strand [5, 6]";
 }
 
 TEST_F(EvalTest, NameNameCreatesJuxtapose) {
@@ -627,9 +627,9 @@ TEST_F(EvalTest, OuterProductScalarParseStructure) {
     EXPECT_NE(jux, nullptr) << "3 ∘.× 5 should have JuxtaposeK at top level";
 }
 
-TEST_F(EvalTest, OuterProductStrandParseStructure) {
+TEST_F(EvalTest, OuterProductLiteralStrandParseStructure) {
     // Outer product "3 4 ∘.× 5 6" should parse as:
-    // JuxtaposeK(StrandK(3,4), JuxtaposeK(DerivedOperatorK(×,"∘."), StrandK(5,6)))
+    // JuxtaposeK(LiteralStrandK(3,4), JuxtaposeK(DerivedOperatorK(×,"∘."), LiteralStrandK(5,6)))
     // This is: (3 4) ((∘.×) (5 6))
     Continuation* k = parser->parse("3 4 ∘.× 5 6");
     ASSERT_NE(k, nullptr);
@@ -637,9 +637,9 @@ TEST_F(EvalTest, OuterProductStrandParseStructure) {
     JuxtaposeK* jux = dynamic_cast<JuxtaposeK*>(k);
     ASSERT_NE(jux, nullptr);
 
-    // Left side should be StrandK (left array)
-    StrandK* left_strand = dynamic_cast<StrandK*>(jux->left);
-    ASSERT_NE(left_strand, nullptr) << "Left side should be StrandK";
+    // Left side should be LiteralStrandK (left array)
+    LiteralStrandK* left_strand = dynamic_cast<LiteralStrandK*>(jux->left);
+    ASSERT_NE(left_strand, nullptr) << "Left side should be LiteralStrandK";
 
     // Right side should be JuxtaposeK (derived operator applied to right array)
     JuxtaposeK* right_jux = dynamic_cast<JuxtaposeK*>(jux->right);

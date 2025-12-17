@@ -1083,12 +1083,12 @@ TEST_F(ParserTest, PrimitiveFunctionLookupKHasSourceLocation) {
     EXPECT_EQ(lookup->column(), 1);
 }
 
-TEST_F(ParserTest, StrandKHasSourceLocation) {
-    // Vector literal creates StrandK
+TEST_F(ParserTest, LiteralStrandKHasSourceLocation) {
+    // Vector literal creates LiteralStrandK
     Continuation* k = parser->parse("1 2 3");
     ASSERT_NE(k, nullptr);
 
-    StrandK* strand = dynamic_cast<StrandK*>(k);
+    LiteralStrandK* strand = dynamic_cast<LiteralStrandK*>(k);
     ASSERT_NE(strand, nullptr);
     EXPECT_TRUE(strand->has_location());
     EXPECT_EQ(strand->line(), 1);
@@ -1191,11 +1191,11 @@ TEST_F(ParserTest, SourceLocationWithMultipleTokens) {
 }
 
 TEST_F(ParserTest, ZildeHasSourceLocation) {
-    // ⍬ creates StrandK with empty vector
+    // ⍬ creates LiteralStrandK with empty vector
     Continuation* k = parser->parse("⍬");
     ASSERT_NE(k, nullptr);
 
-    StrandK* strand = dynamic_cast<StrandK*>(k);
+    LiteralStrandK* strand = dynamic_cast<LiteralStrandK*>(k);
     ASSERT_NE(strand, nullptr);
     EXPECT_TRUE(strand->has_location());
     EXPECT_EQ(strand->line(), 1);

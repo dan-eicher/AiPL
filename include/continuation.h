@@ -33,6 +33,7 @@ class PerformAssignK;
 class SysVarReadK;
 class SysVarAssignK;
 class PerformSysVarAssignK;
+class LiteralStrandK;
 class StrandK;
 class JuxtaposeK;
 class EvalJuxtaposeLeftK;
@@ -119,6 +120,7 @@ public:
     virtual void visit(SysVarReadK*) = 0;
     virtual void visit(SysVarAssignK*) = 0;
     virtual void visit(PerformSysVarAssignK*) = 0;
+    virtual void visit(LiteralStrandK*) = 0;
     virtual void visit(StrandK*) = 0;
     virtual void visit(JuxtaposeK*) = 0;
     virtual void visit(EvalJuxtaposeLeftK*) = 0;
@@ -522,15 +524,36 @@ protected:
 };
 
 // StrandK - Lexical strand continuation for numeric vector literals (ISO 13751)
-// Stores a pre-computed vector Value* from the lexer
+// LiteralStrandK - Stores a pre-computed vector Value* from the lexer
 // At runtime, just returns this Value
-// Example: "1 2 3" → StrandK(vector_value)
-class StrandK : public Continuation {
+// Example: "1 2 3" → LiteralStrandK(vector_value)
+class LiteralStrandK : public Continuation {
 public:
     Value* vector_value;  // Pre-allocated vector Value
 
-    StrandK(Value* val)
+    LiteralStrandK(Value* val)
         : vector_value(val) {}
+
+    ~LiteralStrandK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// StrandK - Runtime stranding: concatenate two basic values into a vector
+// Used by PerformJuxtaposeK when both values are basic (e.g., {⍵ ⍵}5 → 5 5)
+// TODO: When nested arrays are implemented, this should create boxed values
+// for non-scalar elements instead of flattening.
+class StrandK : public Continuation {
+public:
+    Value* left_val;
+    Value* right_val;
+
+    StrandK(Value* left, Value* right)
+        : left_val(left), right_val(right) {}
 
     ~StrandK() override {}
 

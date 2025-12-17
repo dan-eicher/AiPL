@@ -316,8 +316,8 @@ Continuation* Parser::nud(const Token& token) {
             Eigen::VectorXd vec = Eigen::Map<const Eigen::VectorXd>(
                 token.vector_data, token.vector_size);
             Value* vec_val = machine->heap->allocate_vector(vec);
-            // Create StrandK that holds this vector Value
-            StrandK* strand = machine->heap->allocate<StrandK>(vec_val);
+            // Create LiteralStrandK that holds this vector Value
+            LiteralStrandK* strand = machine->heap->allocate<LiteralStrandK>(vec_val);
             strand->set_location(token.line, token.column);
             return strand;
         }
@@ -325,7 +325,7 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_STRING: {
             // String literal: 'hello' → string value
             Value* str_val = machine->heap->allocate_string(token.name);
-            StrandK* strand = machine->heap->allocate<StrandK>(str_val);
+            LiteralStrandK* strand = machine->heap->allocate<LiteralStrandK>(str_val);
             strand->set_location(token.line, token.column);
             return strand;
         }
@@ -517,7 +517,7 @@ Continuation* Parser::nud(const Token& token) {
             // ⍬ (zilde) - empty numeric vector
             Eigen::VectorXd empty_vec(0);
             Value* empty_val = machine->heap->allocate_vector(empty_vec);
-            StrandK* strand = machine->heap->allocate<StrandK>(empty_val);
+            LiteralStrandK* strand = machine->heap->allocate<LiteralStrandK>(empty_val);
             strand->set_location(token.line, token.column);
             return strand;
         }

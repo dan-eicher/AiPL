@@ -573,15 +573,68 @@ void PerformSysVarAssignK::mark(Heap* heap) {
     (void)heap;  // var_id is an enum, nothing to mark
 }
 
-// StrandK implementation
-void StrandK::invoke(Machine* machine) {
+// LiteralStrandK implementation - lexer-level strands
+void LiteralStrandK::invoke(Machine* machine) {
     // Lexical strand: just return the pre-computed vector Value
     machine->result = vector_value;
 }
 
-void StrandK::mark(Heap* heap) {
-    // Mark the vector Value
+void LiteralStrandK::mark(Heap* heap) {
     heap->mark(vector_value);
+}
+
+// StrandK implementation - runtime stranding of two basic values
+void StrandK::invoke(Machine* machine) {
+    // Concatenate left_val and right_val into a flat vector
+    // NOTE: This flattening is technically incorrect for APL2-style nested arrays.
+    // E.g., "1 (2 3) 4" SHOULD create a 3-element nested vector, but we produce
+    // a flat 4-element vector "1 2 3 4". This is acceptable until nested arrays
+    // are implemented, at which point this code should create boxed/enclosed
+    // values for non-scalar strand elements.
+
+    Value* left = left_val;
+    Value* right = right_val;
+
+    // Convert strings to character vectors for uniform handling
+    if (left->is_string()) {
+        left = left->to_char_vector(machine->heap);
+    }
+    if (right->is_string()) {
+        right = right->to_char_vector(machine->heap);
+    }
+
+    size_t left_size = left->is_scalar() ? 1 : left->size();
+    size_t right_size = right->is_scalar() ? 1 : right->size();
+    size_t total = left_size + right_size;
+
+    Eigen::VectorXd result(total);
+
+    // Copy left elements
+    if (left->is_scalar()) {
+        result(0) = left->as_scalar();
+    } else {
+        const Eigen::MatrixXd* left_mat = left->as_matrix();
+        for (size_t i = 0; i < left_size; i++) {
+            result(i) = (*left_mat)(i, 0);
+        }
+    }
+
+    // Copy right elements
+    if (right->is_scalar()) {
+        result(left_size) = right->as_scalar();
+    } else {
+        const Eigen::MatrixXd* right_mat = right->as_matrix();
+        for (size_t i = 0; i < right_size; i++) {
+            result(left_size + i) = (*right_mat)(i, 0);
+        }
+    }
+
+    machine->result = machine->heap->allocate_vector(result);
+}
+
+void StrandK::mark(Heap* heap) {
+    heap->mark(left_val);
+    heap->mark(right_val);
 }
 
 // ============================================================================
@@ -633,68 +686,10 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
     Value* left_val = machine->result;
 
     // Extension to G2: when both values are basic, form a strand (vector)
-    // This handles cases like {⍵ ⍵}5 which should return 5 5
-    //
-    // ISO 13751 NOTE: The ISO spec has NO stranding rule in the Phrase Table -
-    // there's no "A B" pattern for adjacent values. Stranding like "1 2 3" works
-    // because it's parsed as a single numeric-literal token at the lexer level.
-    // But "1 (2 3) 4" cannot work that way since (2 3) is an evaluated expression.
-    //
-    // APL2-style stranding would create NESTED arrays here:
-    //   "1 (2 3) 4"    → 3-element nested vector: 1, (2 3), 4
-    //   "{⍵ ⍵}(1 2 3)" → 2-element nested vector: (1 2 3), (1 2 3)
-    //
-    // TODO: NESTED ARRAYS NOT YET IMPLEMENTED
-    // Until we have nested arrays, we only allow scalar stranding (which produces
-    // simple vectors) and reject non-scalar stranding with NONCE ERROR.
-    // When nested arrays are implemented, this code should create boxed/enclosed
-    // values instead of throwing an error.
-    //
-    // Related: fn_enlist (∊) in primitives.cpp will need to recursively flatten
-    // nested structures once they exist.
-    //
+    // Delegate to StrandK which handles the concatenation logic.
+    // See StrandK for notes on nested array support.
     if (left_val->is_basic_value() && right_val->is_basic_value()) {
-        // Convert strings to character vectors for uniform handling
-        if (left_val->is_string()) {
-            left_val = left_val->to_char_vector(machine->heap);
-        }
-        if (right_val->is_string()) {
-            right_val = right_val->to_char_vector(machine->heap);
-        }
-
-        // Concatenate left and right into a flat vector
-        // NOTE: This flattening is technically incorrect for APL2-style nested arrays.
-        // E.g., "1 (2 3) 4" SHOULD create a 3-element nested vector, but we produce
-        // a flat 4-element vector "1 2 3 4". This is acceptable until nested arrays
-        // are implemented, at which point this code should create boxed/enclosed
-        // values for non-scalar strand elements.
-        size_t left_size = left_val->is_scalar() ? 1 : left_val->size();
-        size_t right_size = right_val->is_scalar() ? 1 : right_val->size();
-        size_t total = left_size + right_size;
-
-        Eigen::VectorXd result(total);
-
-        // Copy left elements
-        if (left_val->is_scalar()) {
-            result(0) = left_val->as_scalar();
-        } else {
-            const Eigen::MatrixXd* left_mat = left_val->as_matrix();
-            for (size_t i = 0; i < left_size; i++) {
-                result(i) = (*left_mat)(i, 0);
-            }
-        }
-
-        // Copy right elements
-        if (right_val->is_scalar()) {
-            result(left_size) = right_val->as_scalar();
-        } else {
-            const Eigen::MatrixXd* right_mat = right_val->as_matrix();
-            for (size_t i = 0; i < right_size; i++) {
-                result(left_size + i) = (*right_mat)(i, 0);
-            }
-        }
-
-        machine->result = machine->heap->allocate_vector(result);
+        machine->push_kont(machine->heap->allocate<StrandK>(left_val, right_val));
         return;
     }
 
