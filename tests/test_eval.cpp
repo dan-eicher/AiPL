@@ -6305,6 +6305,51 @@ TEST_F(EvalTest, IndexedRefMatrixLinear) {
 }
 
 // ============================================================================
+// Strand Indexing
+// ============================================================================
+
+// Basic strand indexing: S[i] returns element
+TEST_F(EvalTest, StrandIndexScalar) {
+    machine->eval("V←1 2");
+    machine->eval("W←3 4");
+    machine->eval("S←(⊂V),⊂W");
+    Value* result = machine->eval("S[1]");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 2.0);
+}
+
+// Strand indexing: S[2] returns second element
+TEST_F(EvalTest, StrandIndexSecond) {
+    machine->eval("V←1 2");
+    machine->eval("W←3 4");
+    machine->eval("S←(⊂V),⊂W");
+    Value* result = machine->eval("S[2]");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 4.0);
+}
+
+// Strand indexing with vector index: S[1 2] returns strand
+TEST_F(EvalTest, StrandIndexVector) {
+    machine->eval("V←1 2");
+    machine->eval("W←3 4");
+    machine->eval("S←(⊂V),⊂W");
+    Value* result = machine->eval("S[1 2]");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+}
+
+// Strand index out of bounds
+TEST_F(EvalTest, StrandIndexOutOfBounds) {
+    machine->eval("V←1 2");
+    machine->eval("W←3 4");
+    machine->eval("S←(⊂V),⊂W");
+    EXPECT_THROW(machine->eval("S[3]"), APLError);
+}
+
+// ============================================================================
 // ISO 13751 10.2.15: Indexed Assignment
 // ============================================================================
 

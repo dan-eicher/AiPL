@@ -5463,6 +5463,42 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    // Strand indexing: S[I] selects elements from strand
+    if (array->is_strand()) {
+        std::vector<Value*>* strand = array->as_strand();
+        int len = static_cast<int>(strand->size());
+
+        if (indices->is_scalar()) {
+            double idx_val = indices->as_scalar();
+            if (!validate_index(idx_val)) return;
+            int idx = static_cast<int>(std::round(idx_val)) - m->io;
+            if (idx < 0 || idx >= len) {
+                m->throw_error("INDEX ERROR: index out of bounds");
+                return;
+            }
+            m->result = (*strand)[idx];
+        } else if (indices->is_array()) {
+            const Eigen::MatrixXd* idx_mat = indices->as_matrix();
+            int n = idx_mat->rows();
+            std::vector<Value*> result;
+            result.reserve(n);
+            for (int i = 0; i < n; i++) {
+                double idx_val = (*idx_mat)(i, 0);
+                if (!validate_index(idx_val)) return;
+                int idx = static_cast<int>(std::round(idx_val)) - m->io;
+                if (idx < 0 || idx >= len) {
+                    m->throw_error("INDEX ERROR: index out of bounds");
+                    return;
+                }
+                result.push_back((*strand)[idx]);
+            }
+            m->result = m->heap->allocate_strand(std::move(result));
+        } else {
+            m->throw_error("DOMAIN ERROR: index must be numeric");
+        }
+        return;
+    }
+
     // Single-axis indexing (original behavior)
     const Eigen::MatrixXd* arr = array->as_matrix();
     int rows = arr->rows();
