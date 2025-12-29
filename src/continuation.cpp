@@ -3411,9 +3411,166 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
     }
 
     const Eigen::MatrixXd* mat = arr->as_matrix();
+    int rows = mat->rows();
+    int cols = mat->cols();
     int size = static_cast<int>(mat->size());
 
-    // Create modified copy
+    // Helper to validate index is near-integer
+    auto validate_index = [machine, this](double val) -> bool {
+        double rounded = std::round(val);
+        if (std::abs(val - rounded) > 1e-10) {
+            machine->throw_error("DOMAIN ERROR: index must be integer", this);
+            return false;
+        }
+        return true;
+    };
+
+    // Helper to check if index is elided (empty vector = select all)
+    auto is_elided = [](Value* idx) -> bool {
+        return idx->is_vector() && idx->size() == 0;
+    };
+
+    // Multi-axis indexed assignment: M[I;J]←V
+    if (index_val->is_strand()) {
+        auto* idx_strand = index_val->as_strand();
+        if (idx_strand->size() != 2) {
+            machine->throw_error("RANK ERROR: matrix requires exactly 2 indices", this);
+            return;
+        }
+
+        Value* row_idx = (*idx_strand)[0];
+        Value* col_idx = (*idx_strand)[1];
+
+        // Get row indices
+        std::vector<int> row_indices;
+        bool had_error = false;
+        if (is_elided(row_idx)) {
+            for (int i = 0; i < rows; i++) row_indices.push_back(i);
+        } else if (row_idx->is_scalar()) {
+            double val = row_idx->as_scalar();
+            if (!validate_index(val)) return;
+            int i = static_cast<int>(std::round(val)) - machine->io;
+            if (i < 0 || i >= rows) {
+                machine->throw_error("INDEX ERROR: row index out of bounds", this);
+                return;
+            }
+            row_indices.push_back(i);
+        } else if (row_idx->is_array()) {
+            const Eigen::MatrixXd* m = row_idx->as_matrix();
+            for (int j = 0; j < m->rows(); j++) {
+                double val = (*m)(j, 0);
+                if (!validate_index(val)) return;
+                int i = static_cast<int>(std::round(val)) - machine->io;
+                if (i < 0 || i >= rows) {
+                    machine->throw_error("INDEX ERROR: row index out of bounds", this);
+                    return;
+                }
+                row_indices.push_back(i);
+            }
+        } else {
+            machine->throw_error("DOMAIN ERROR: row index must be numeric", this);
+            return;
+        }
+
+        // Get column indices
+        std::vector<int> col_indices;
+        if (is_elided(col_idx)) {
+            for (int i = 0; i < cols; i++) col_indices.push_back(i);
+        } else if (col_idx->is_scalar()) {
+            double val = col_idx->as_scalar();
+            if (!validate_index(val)) return;
+            int i = static_cast<int>(std::round(val)) - machine->io;
+            if (i < 0 || i >= cols) {
+                machine->throw_error("INDEX ERROR: column index out of bounds", this);
+                return;
+            }
+            col_indices.push_back(i);
+        } else if (col_idx->is_array()) {
+            const Eigen::MatrixXd* m = col_idx->as_matrix();
+            for (int j = 0; j < m->rows(); j++) {
+                double val = (*m)(j, 0);
+                if (!validate_index(val)) return;
+                int i = static_cast<int>(std::round(val)) - machine->io;
+                if (i < 0 || i >= cols) {
+                    machine->throw_error("INDEX ERROR: column index out of bounds", this);
+                    return;
+                }
+                col_indices.push_back(i);
+            }
+        } else {
+            machine->throw_error("DOMAIN ERROR: column index must be numeric", this);
+            return;
+        }
+
+        int result_rows = static_cast<int>(row_indices.size());
+        int result_cols = static_cast<int>(col_indices.size());
+
+        // Create modified copy
+        Eigen::MatrixXd new_mat = *mat;
+
+        // Assign value(s)
+        if (value_val->is_scalar()) {
+            // Scalar extends to all selected positions
+            double v = value_val->as_scalar();
+            for (int r : row_indices) {
+                for (int c : col_indices) {
+                    new_mat(r, c) = v;
+                }
+            }
+        } else if (result_rows == 1 && result_cols == 1) {
+            // Single position, scalar value required
+            machine->throw_error("LENGTH ERROR: scalar index requires scalar value", this);
+            return;
+        } else if (value_val->is_array()) {
+            const Eigen::MatrixXd* val_mat = value_val->as_matrix();
+            // Check shape compatibility
+            if (result_rows == 1) {
+                // Single row: value should be vector of length result_cols
+                if (val_mat->size() != result_cols) {
+                    machine->throw_error("LENGTH ERROR: value shape doesn't match index", this);
+                    return;
+                }
+                for (int c = 0; c < result_cols; c++) {
+                    new_mat(row_indices[0], col_indices[c]) = (*val_mat)(c, 0);
+                }
+            } else if (result_cols == 1) {
+                // Single column: value should be vector of length result_rows
+                if (val_mat->size() != result_rows) {
+                    machine->throw_error("LENGTH ERROR: value shape doesn't match index", this);
+                    return;
+                }
+                for (int r = 0; r < result_rows; r++) {
+                    new_mat(row_indices[r], col_indices[0]) = (*val_mat)(r, 0);
+                }
+            } else {
+                // Matrix: value should be result_rows × result_cols
+                if (val_mat->rows() != result_rows || val_mat->cols() != result_cols) {
+                    machine->throw_error("LENGTH ERROR: value shape doesn't match index", this);
+                    return;
+                }
+                for (int r = 0; r < result_rows; r++) {
+                    for (int c = 0; c < result_cols; c++) {
+                        new_mat(row_indices[r], col_indices[c]) = (*val_mat)(r, c);
+                    }
+                }
+            }
+        } else {
+            machine->throw_error("DOMAIN ERROR: value must be scalar or array", this);
+            return;
+        }
+
+        Value* result;
+        if (arr->is_vector()) {
+            result = machine->heap->allocate_vector(new_mat.col(0));
+        } else {
+            result = machine->heap->allocate_matrix(new_mat);
+        }
+        machine->env->define(var_name, result);
+        machine->result = value_val;
+        return;
+    }
+
+    // Create modified copy for single-axis indexing
     Eigen::MatrixXd new_mat = *mat;
 
     if (index_val->is_scalar()) {
@@ -3494,6 +3651,51 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
 void PerformIndexedAssignK::mark(Heap* heap) {
     heap->mark(value_val);
     heap->mark(index_val);
+}
+
+// ============================================================================
+// IndexListK - Multi-axis index evaluation
+// ============================================================================
+
+void IndexListK::invoke(Machine* machine) {
+    // Start evaluating the first index expression
+    // Push collector to gather result, then evaluate first index
+    std::vector<Value*> empty_results;
+    empty_results.reserve(indices.size());
+    machine->push_kont(machine->heap->allocate<IndexListCollectK>(
+        indices, 1, std::move(empty_results)));
+    machine->push_kont(indices[0]);
+}
+
+void IndexListK::mark(Heap* heap) {
+    for (Continuation* idx : indices) {
+        heap->mark(idx);
+    }
+}
+
+void IndexListCollectK::invoke(Machine* machine) {
+    // Collect the result from the previous index evaluation
+    results.push_back(machine->result);
+
+    if (current >= indices.size()) {
+        // All indices evaluated - create strand from results
+        machine->result = machine->heap->allocate_strand(std::move(results));
+        return;
+    }
+
+    // More indices to evaluate
+    machine->push_kont(machine->heap->allocate<IndexListCollectK>(
+        indices, current + 1, std::move(results)));
+    machine->push_kont(indices[current]);
+}
+
+void IndexListCollectK::mark(Heap* heap) {
+    for (Continuation* idx : indices) {
+        heap->mark(idx);
+    }
+    for (Value* v : results) {
+        heap->mark(v);
+    }
 }
 
 } // namespace apl

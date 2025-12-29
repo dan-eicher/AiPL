@@ -89,6 +89,8 @@ class InnerProductCollectK;
 class IndexedAssignK;
 class IndexedAssignIndexK;
 class PerformIndexedAssignK;
+class IndexListK;
+class IndexListCollectK;
 class InvokeDefinedOperatorK;
 
 // ============================================================================
@@ -185,6 +187,8 @@ public:
     virtual void visit(IndexedAssignK*) = 0;
     virtual void visit(IndexedAssignIndexK*) = 0;
     virtual void visit(PerformIndexedAssignK*) = 0;
+    virtual void visit(IndexListK*) = 0;
+    virtual void visit(IndexListCollectK*) = 0;
     virtual void visit(InvokeDefinedOperatorK*) = 0;
 };
 
@@ -1750,6 +1754,48 @@ public:
         : var_name(var), value_val(val), index_val(idx) {}
 
     ~PerformIndexedAssignK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// IndexListK - Multi-axis index list for M[I;J;K] syntax (ISO 13751 10.2.14)
+// ============================================================================
+// Evaluates a list of index expressions and collects results into a strand.
+// Empty vectors (zilde) represent elided indices meaning "all elements".
+
+class IndexListK : public Continuation {
+public:
+    std::vector<Continuation*> indices;  // Index expressions to evaluate
+    size_t current;                       // Current index being evaluated
+
+    explicit IndexListK(std::vector<Continuation*>&& idx)
+        : indices(std::move(idx)), current(0) {}
+
+    ~IndexListK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// IndexListCollectK - Collects evaluated index values into a strand
+class IndexListCollectK : public Continuation {
+public:
+    std::vector<Continuation*> indices;   // Remaining index expressions
+    size_t current;                        // Next index to evaluate
+    std::vector<Value*> results;           // Collected index values
+
+    IndexListCollectK(std::vector<Continuation*> idx, size_t cur, std::vector<Value*> res)
+        : indices(std::move(idx)), current(cur), results(std::move(res)) {}
+
+    ~IndexListCollectK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }

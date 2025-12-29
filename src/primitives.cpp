@@ -5336,7 +5336,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         m->throw_error("RANK ERROR: cannot index scalar");
         return;
     }
-    if (!array->is_array()) {
+    if (!array->is_array() && !array->is_strand()) {
         m->throw_error("DOMAIN ERROR: cannot index non-array value");
         return;
     }
@@ -5351,6 +5351,119 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return true;
     };
 
+    // Helper to check if index is elided (empty vector = select all)
+    auto is_elided = [](Value* idx) -> bool {
+        if (idx->is_vector() && idx->size() == 0) return true;
+        return false;
+    };
+
+    // Helper to get indices as vector (handles scalar, vector, elided)
+    // Returns empty vector and sets had_error=true if invalid
+    bool had_error = false;
+    auto get_index_vector = [&](Value* idx, int max_dim) -> std::vector<int> {
+        std::vector<int> result;
+        if (is_elided(idx)) {
+            // Elided: all indices 0..max_dim-1
+            result.reserve(max_dim);
+            for (int i = 0; i < max_dim; i++) {
+                result.push_back(i);
+            }
+        } else if (idx->is_scalar()) {
+            double val = idx->as_scalar();
+            if (!validate_index(val)) { had_error = true; return {}; }
+            int i = static_cast<int>(std::round(val)) - m->io;
+            if (i < 0 || i >= max_dim) {
+                m->throw_error("INDEX ERROR: index out of bounds");
+                had_error = true;
+                return {};
+            }
+            result.push_back(i);
+        } else if (idx->is_array()) {
+            const Eigen::MatrixXd* mat = idx->as_matrix();
+            result.reserve(mat->rows());
+            for (int j = 0; j < mat->rows(); j++) {
+                double val = (*mat)(j, 0);
+                if (!validate_index(val)) { had_error = true; return {}; }
+                int i = static_cast<int>(std::round(val)) - m->io;
+                if (i < 0 || i >= max_dim) {
+                    m->throw_error("INDEX ERROR: index out of bounds");
+                    had_error = true;
+                    return {};
+                }
+                result.push_back(i);
+            }
+        } else {
+            m->throw_error("DOMAIN ERROR: index must be numeric");
+            had_error = true;
+            return {};
+        }
+        return result;
+    };
+
+    // Multi-axis indexing: strand of indices for A[I;J;...]
+    if (indices->is_strand()) {
+        auto* idx_strand = indices->as_strand();
+        size_t num_axes = idx_strand->size();
+
+        // For matrices, we support 2 axes (row, column)
+        if (!array->is_array()) {
+            m->throw_error("RANK ERROR: multi-axis indexing requires array");
+            return;
+        }
+
+        const Eigen::MatrixXd* arr = array->as_matrix();
+        int rows = arr->rows();
+        int cols = arr->cols();
+        bool is_vec = (cols == 1);
+
+        if (num_axes != 2) {
+            m->throw_error("RANK ERROR: matrix requires exactly 2 indices");
+            return;
+        }
+
+        Value* row_idx = (*idx_strand)[0];
+        Value* col_idx = (*idx_strand)[1];
+
+        // Get row and column indices
+        std::vector<int> row_indices = get_index_vector(row_idx, rows);
+        if (had_error) return;
+        std::vector<int> col_indices = get_index_vector(col_idx, cols);
+        if (had_error) return;
+
+        int result_rows = static_cast<int>(row_indices.size());
+        int result_cols = static_cast<int>(col_indices.size());
+
+        if (result_rows == 1 && result_cols == 1) {
+            // Scalar result: M[i;j]
+            m->result = m->heap->allocate_scalar((*arr)(row_indices[0], col_indices[0]));
+        } else if (result_rows == 1) {
+            // Row selection, single row: M[i;] or M[i;j k l] → vector
+            Eigen::VectorXd result(result_cols);
+            for (int c = 0; c < result_cols; c++) {
+                result(c) = (*arr)(row_indices[0], col_indices[c]);
+            }
+            m->result = m->heap->allocate_vector(result, is_char);
+        } else if (result_cols == 1) {
+            // Column selection, single column: M[;j] or M[i k l;j] → vector
+            Eigen::VectorXd result(result_rows);
+            for (int r = 0; r < result_rows; r++) {
+                result(r) = (*arr)(row_indices[r], col_indices[0]);
+            }
+            m->result = m->heap->allocate_vector(result, is_char);
+        } else {
+            // Matrix result: M[i j;k l]
+            Eigen::MatrixXd result(result_rows, result_cols);
+            for (int r = 0; r < result_rows; r++) {
+                for (int c = 0; c < result_cols; c++) {
+                    result(r, c) = (*arr)(row_indices[r], col_indices[c]);
+                }
+            }
+            m->result = m->heap->allocate_matrix(result, is_char);
+        }
+        return;
+    }
+
+    // Single-axis indexing (original behavior)
     const Eigen::MatrixXd* arr = array->as_matrix();
     int rows = arr->rows();
     int cols = arr->cols();

@@ -594,6 +594,17 @@ public:
         print_location(k);
     }
 
+    void visit(IndexListK* k) override {
+        out << "IndexListK[" << k->indices.size() << " indices]";
+        print_location(k);
+    }
+
+    void visit(IndexListCollectK* k) override {
+        out << "IndexListCollectK[" << k->current << "/" << k->indices.size() << "]";
+        out << " results=" << k->results.size();
+        print_location(k);
+    }
+
     void visit(InvokeDefinedOperatorK* k) override {
         out << "InvokeDefinedOperatorK";
         print_value("op", k->operator_value);

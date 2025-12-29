@@ -889,18 +889,76 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         }
 
         case TOK_LBRACKET: {
-            // Bracket indexing: A[I] is equivalent to I⌷A
-            // Use JuxtaposeK instead of DyadicK to go through proper curry handling
-            Continuation* index_cont = parse_expression(0);
-            if (!index_cont) {
-                set_error("expected index expression after '['", token);
-                return nullptr;
+            // Bracket indexing: A[I] or A[I;J;...] (ISO 13751 10.2.14)
+            // Multi-axis indexing uses semicolons to separate axes
+            // Elided indices (;; or [;J]) mean "all elements along that axis"
+
+            std::vector<Continuation*> indices;
+
+            // Helper to create zilde (empty vector) for elided indices
+            auto make_zilde = [&]() -> Continuation* {
+                Eigen::VectorXd empty_vec(0);
+                Value* empty_val = machine->heap->allocate_vector(empty_vec);
+                LiteralStrandK* zilde = machine->heap->allocate<LiteralStrandK>(empty_val);
+                zilde->set_location(token.line, token.column);
+                return zilde;
+            };
+
+            // Parse index list: I or I;J or ;J or I; or ;; etc.
+            // Each position can be an expression or elided (empty = all elements)
+            bool after_semicolon = false;  // True if we just consumed a semicolon
+            while (true) {
+                if (current_token_.type == TOK_RBRACKET) {
+                    if (indices.empty()) {
+                        // Empty brackets [] - error
+                        set_error("expected index expression after '['", token);
+                        return nullptr;
+                    }
+                    if (after_semicolon) {
+                        // Trailing elided: [I;] → add zilde for second axis
+                        indices.push_back(make_zilde());
+                    }
+                    break;  // Done parsing indices
+                } else if (current_token_.type == TOK_SEMICOLON) {
+                    // Elided index
+                    indices.push_back(make_zilde());
+                    advance();  // consume ;
+                    after_semicolon = true;
+                } else {
+                    // Parse index expression
+                    Continuation* idx = parse_expression(0);
+                    if (!idx) {
+                        set_error("expected index expression", token);
+                        return nullptr;
+                    }
+                    indices.push_back(idx);
+                    after_semicolon = false;
+
+                    // Check what follows
+                    if (current_token_.type == TOK_SEMICOLON) {
+                        advance();  // consume ;
+                        after_semicolon = true;
+                    } else {
+                        break;  // No more indices
+                    }
+                }
             }
+
             if (current_token_.type != TOK_RBRACKET) {
                 set_error("expected ']' after index expression");
                 return nullptr;
             }
             advance();  // consume ]
+
+            Continuation* index_cont;
+            if (indices.size() == 1) {
+                // Single index - use directly (backwards compatible)
+                index_cont = indices[0];
+            } else {
+                // Multiple indices - wrap in IndexListK to evaluate all and create strand
+                index_cont = machine->heap->allocate<IndexListK>(std::move(indices));
+                index_cont->set_location(token.line, token.column);
+            }
 
             // Build I⌷A as JuxtaposeK(I, JuxtaposeK(⌷, A))
             // This goes through DispatchFunctionK which handles curry finalization

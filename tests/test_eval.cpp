@@ -6169,36 +6169,239 @@ TEST_F(EvalTest, DropRankLeftError) {
     EXPECT_THROW(machine->eval("(2 2⍴⍳4)↓1 2 3 4 5"), APLError);
 }
 
-// --- 10.2.14-15 Indexed Reference/Assignment ---
+// ============================================================================
+// ISO 13751 10.2.14: Indexed Reference
+// ============================================================================
 
-// ISO 13751 10.2.14: Multi-dimensional indexing
-TEST_F(EvalTest, DISABLED_IndexedRefMultiDim) {
+// Basic multi-dimensional indexing: M[row;col] returns scalar
+TEST_F(EvalTest, IndexedRefMultiDim) {
     machine->eval("M←3 4⍴⍳12");
     Value* result = machine->eval("M[2;3]");
     ASSERT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);  // Row 2, Col 3 of 1-indexed
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);  // Row 2, Col 3 (1-indexed)
 }
 
-// ISO 13751 10.2.14: Elided index (all elements along axis)
-TEST_F(EvalTest, DISABLED_IndexedRefElidedIndex) {
+// First row, first column
+TEST_F(EvalTest, IndexedRefFirstElement) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[1;1]");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// Last row, last column
+TEST_F(EvalTest, IndexedRefLastElement) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[3;4]");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 12.0);
+}
+
+// Elided column index: M[row;] returns entire row as vector
+TEST_F(EvalTest, IndexedRefElidedColumn) {
     machine->eval("M←3 4⍴⍳12");
     Value* result = machine->eval("M[2;]");
     ASSERT_TRUE(result->is_vector());
-    EXPECT_EQ(result->size(), 4);  // All columns of row 2
+    EXPECT_EQ(result->size(), 4);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(3, 0), 8.0);
 }
 
-// ISO 13751 10.2.14: Scalar cannot be indexed
+// Elided row index: M[;col] returns entire column as vector
+TEST_F(EvalTest, IndexedRefElidedRow) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[;3]");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 0), 11.0);
+}
+
+// Both indices elided: M[;] returns entire matrix
+TEST_F(EvalTest, IndexedRefBothElided) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[;]");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 4);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 3), 12.0);
+}
+
+// Multiple indices per axis: M[1 3;2 4] returns 2×2 submatrix
+TEST_F(EvalTest, IndexedRefMultipleIndices) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[1 3;2 4]");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 2.0);  // M[1;2]
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 1), 4.0);  // M[1;4]
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 10.0); // M[3;2]
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 1), 12.0); // M[3;4]
+}
+
+// Row vector selection: M[1 2;3] returns vector
+TEST_F(EvalTest, IndexedRefMultiRowSingleCol) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[1 2;3]");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 3.0);  // M[1;3]
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 7.0);  // M[2;3]
+}
+
+// Column vector selection: M[2;1 3] returns vector
+TEST_F(EvalTest, IndexedRefSingleRowMultiCol) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[2;1 3]");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 5.0);  // M[2;1]
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 7.0);  // M[2;3]
+}
+
+// Scalar cannot be indexed (ISO 13751)
 TEST_F(EvalTest, IndexedRefScalarError) {
     machine->eval("S←42");
     EXPECT_THROW(machine->eval("S[1]"), APLError);
 }
 
-// ISO 13751 10.2.15: Multi-dimensional indexed assignment
-TEST_F(EvalTest, DISABLED_IndexedAssignMultiDim) {
+// Index out of bounds - row
+TEST_F(EvalTest, IndexedRefRowOutOfBounds) {
+    machine->eval("M←3 4⍴⍳12");
+    EXPECT_THROW(machine->eval("M[4;1]"), APLError);
+}
+
+// Index out of bounds - column
+TEST_F(EvalTest, IndexedRefColOutOfBounds) {
+    machine->eval("M←3 4⍴⍳12");
+    EXPECT_THROW(machine->eval("M[1;5]"), APLError);
+}
+
+// Index zero with default ⎕IO=1 is out of bounds
+TEST_F(EvalTest, IndexedRefZeroIndex) {
+    machine->eval("M←3 4⍴⍳12");
+    EXPECT_THROW(machine->eval("M[0;1]"), APLError);
+}
+
+// Single-axis indexing on vector (backwards compatibility)
+TEST_F(EvalTest, IndexedRefVectorSingleIndex) {
+    machine->eval("V←1 2 3 4 5");
+    Value* result = machine->eval("V[3]");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+// Single-axis indexing on matrix (linear/row-major)
+TEST_F(EvalTest, IndexedRefMatrixLinear) {
+    machine->eval("M←2 3⍴⍳6");
+    Value* result = machine->eval("M[4]");  // Linear index: row 2, col 1
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+}
+
+// ============================================================================
+// ISO 13751 10.2.15: Indexed Assignment
+// ============================================================================
+
+// Basic multi-dimensional assignment: M[row;col]←value
+TEST_F(EvalTest, IndexedAssignMultiDim) {
     machine->eval("M←3 4⍴⍳12");
     machine->eval("M[2;3]←99");
     Value* result = machine->eval("M[2;3]");
     EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
+}
+
+// Assignment returns the value assigned (ISO 13751) - multi-axis version
+TEST_F(EvalTest, IndexedAssignMultiAxisReturnsValue) {
+    machine->eval("M←3 4⍴⍳12");
+    Value* result = machine->eval("M[2;3]←99");
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
+}
+
+// Scalar extension to entire row: M[row;]←scalar
+TEST_F(EvalTest, IndexedAssignRowScalar) {
+    machine->eval("M←3 4⍴⍳12");
+    machine->eval("M[2;]←0");
+    Value* result = machine->eval("M[2;]");
+    ASSERT_TRUE(result->is_vector());
+    for (int i = 0; i < 4; i++) {
+        EXPECT_DOUBLE_EQ((*result->as_matrix())(i, 0), 0.0);
+    }
+}
+
+// Scalar extension to entire column: M[;col]←scalar
+TEST_F(EvalTest, IndexedAssignColScalar) {
+    machine->eval("M←3 4⍴⍳12");
+    machine->eval("M[;3]←100");
+    Value* result = machine->eval("M[;3]");
+    ASSERT_TRUE(result->is_vector());
+    for (int i = 0; i < 3; i++) {
+        EXPECT_DOUBLE_EQ((*result->as_matrix())(i, 0), 100.0);
+    }
+}
+
+// Vector assignment to row: M[row;]←vector
+TEST_F(EvalTest, IndexedAssignRowVector) {
+    machine->eval("M←3 4⍴⍳12");
+    machine->eval("M[2;]←10 20 30 40");
+    Value* result = machine->eval("M[2;]");
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 20.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 0), 30.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(3, 0), 40.0);
+}
+
+// Vector assignment to column: M[;col]←vector
+TEST_F(EvalTest, IndexedAssignColVector) {
+    machine->eval("M←3 4⍴⍳12");
+    machine->eval("M[;2]←100 200 300");
+    Value* result = machine->eval("M[;2]");
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 100.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 200.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 0), 300.0);
+}
+
+// Submatrix assignment: M[rows;cols]←matrix
+TEST_F(EvalTest, IndexedAssignSubmatrix) {
+    machine->eval("M←3 4⍴0");
+    machine->eval("M[1 2;2 3]←2 2⍴1 2 3 4");
+    Value* m12 = machine->eval("M[1;2]");
+    Value* m13 = machine->eval("M[1;3]");
+    Value* m22 = machine->eval("M[2;2]");
+    Value* m23 = machine->eval("M[2;3]");
+    EXPECT_DOUBLE_EQ(m12->as_scalar(), 1.0);
+    EXPECT_DOUBLE_EQ(m13->as_scalar(), 2.0);
+    EXPECT_DOUBLE_EQ(m22->as_scalar(), 3.0);
+    EXPECT_DOUBLE_EQ(m23->as_scalar(), 4.0);
+}
+
+// Scalar extension to submatrix: M[rows;cols]←scalar
+TEST_F(EvalTest, IndexedAssignSubmatrixScalar) {
+    machine->eval("M←3 4⍴⍳12");
+    machine->eval("M[1 3;2 4]←99");
+    EXPECT_DOUBLE_EQ(machine->eval("M[1;2]")->as_scalar(), 99.0);
+    EXPECT_DOUBLE_EQ(machine->eval("M[1;4]")->as_scalar(), 99.0);
+    EXPECT_DOUBLE_EQ(machine->eval("M[3;2]")->as_scalar(), 99.0);
+    EXPECT_DOUBLE_EQ(machine->eval("M[3;4]")->as_scalar(), 99.0);
+    // Unchanged elements
+    EXPECT_DOUBLE_EQ(machine->eval("M[2;2]")->as_scalar(), 6.0);
+}
+
+// Length error: value doesn't match selection shape
+TEST_F(EvalTest, IndexedAssignLengthError) {
+    machine->eval("M←3 4⍴⍳12");
+    EXPECT_THROW(machine->eval("M[2;]←1 2 3"), APLError);  // Need 4 elements
+}
+
+// Index error: out of bounds multi-axis assignment
+TEST_F(EvalTest, IndexedAssignMultiAxisOutOfBounds) {
+    machine->eval("M←3 4⍴⍳12");
+    EXPECT_THROW(machine->eval("M[4;1]←99"), APLError);
 }
 
 
