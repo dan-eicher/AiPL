@@ -551,6 +551,16 @@ TEST_F(StructuralTest, TallyMatrix) {
     EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 3.0);
 }
 
+TEST_F(StructuralTest, TallyStrand) {
+    Value* result = machine->eval("≢⊂1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+
+    result = machine->eval("≢(⊂1 2),(⊂3 4 5)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
 TEST_F(StructuralTest, ReverseRotateTallyRegistered) {
     ASSERT_NE(machine->env->lookup("⌽"), nullptr);
     ASSERT_NE(machine->env->lookup("⊖"), nullptr);
@@ -794,6 +804,71 @@ TEST_F(StructuralTest, DepthMatrix) {
 TEST_F(StructuralTest, DepthEmptyVector) {
     // ISO 8.2.5: ≡⍳0 → 1 (empty array still has depth 1)
     Value* result = machine->eval("≡⍳0");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+TEST_F(StructuralTest, DepthEnclosedVector) {
+    // ISO 8.2.5: ≡⊂1 2 3 → 2 (enclosed vector has depth 2)
+    Value* result = machine->eval("≡⊂1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+TEST_F(StructuralTest, DepthDoubleEnclosed) {
+    // ISO 8.2.5: ≡⊂⊂1 2 3 → 3 (double-enclosed)
+    Value* result = machine->eval("≡⊂⊂1 2 3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+}
+
+TEST_F(StructuralTest, DepthNestedMixed) {
+    Value* result = machine->eval("≡(⊂1 2 3),(⊂4 5 6)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+// --- Strand Catenation Tests ---
+
+TEST_F(StructuralTest, CatenateStrandStrand) {
+    // (⊂1 2),(⊂3 4) → strand of 2 vectors
+    Value* result = machine->eval("(⊂1 2),(⊂3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2u);
+}
+
+TEST_F(StructuralTest, CatenateStrandScalar) {
+    // (⊂1 2),5 → strand with 2 elements (vector + scalar)
+    Value* result = machine->eval("(⊂1 2),5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2u);
+}
+
+TEST_F(StructuralTest, CatenateScalarStrand) {
+    // 5,(⊂1 2) → strand with 2 elements (scalar + vector)
+    Value* result = machine->eval("5,(⊂1 2)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2u);
+}
+
+TEST_F(StructuralTest, CatenateStrandVector) {
+    // (⊂1 2),(3 4 5) → strand with 2 elements (vector + vector)
+    Value* result = machine->eval("(⊂1 2),3 4 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2u);
+}
+
+TEST_F(StructuralTest, DepthString) {
+    // Strings have depth 1 (like simple arrays)
+    Value* result = machine->eval("≡'ABC'");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
@@ -3154,6 +3229,492 @@ TEST_F(StructuralTest, EncodeRejectsFunctionArgument) {
 
 TEST_F(StructuralTest, DecodeRejectsFunctionArgument) {
     EXPECT_THROW(machine->eval("10⊥+"), APLError);
+}
+
+// ========================================================================
+// Enclose (⊂) Tests - ISO 13751 Section 10.2.26
+// ========================================================================
+
+// ISO 13751: If B is a simple-scalar, Z is B (scalars don't get enclosed)
+TEST_F(StructuralTest, EncloseScalarReturnsScalar) {
+    Value* result = machine->eval("⊂5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Enclose of vector creates strand containing vector
+TEST_F(StructuralTest, EncloseVectorCreatesStrand) {
+    Value* result = machine->eval("⊂1 2 3");
+    ASSERT_TRUE(result->is_strand());
+    std::vector<Value*>* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 1);
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_EQ((*strand)[0]->size(), 3);
+}
+
+// Enclose of matrix creates strand containing matrix
+TEST_F(StructuralTest, EncloseMatrixCreatesStrand) {
+    Value* result = machine->eval("⊂2 3⍴⍳6");
+    ASSERT_TRUE(result->is_strand());
+    std::vector<Value*>* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 1);
+    ASSERT_TRUE((*strand)[0]->is_matrix());
+    EXPECT_EQ((*strand)[0]->rows(), 2);
+    EXPECT_EQ((*strand)[0]->cols(), 3);
+}
+
+// Enclose of string creates strand containing string
+TEST_F(StructuralTest, EncloseStringCreatesStrand) {
+    Value* result = machine->eval("⊂'OSCAR'");
+    ASSERT_TRUE(result->is_strand());
+    std::vector<Value*>* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 1);
+    // String is converted to char vector
+    ASSERT_TRUE((*strand)[0]->is_vector() || (*strand)[0]->is_string());
+}
+
+// Double enclose creates nested strand
+TEST_F(StructuralTest, DoubleEncloseCreatesNestedStrand) {
+    Value* result = machine->eval("⊂⊂1 2 3");
+    ASSERT_TRUE(result->is_strand());
+    std::vector<Value*>* outer = result->as_strand();
+    ASSERT_EQ(outer->size(), 1);
+    ASSERT_TRUE((*outer)[0]->is_strand());
+    std::vector<Value*>* inner = (*outer)[0]->as_strand();
+    ASSERT_EQ(inner->size(), 1);
+    ASSERT_TRUE((*inner)[0]->is_vector());
+}
+
+// Enclose preserves identity: ⊃⊂B ≡ B for non-scalars
+TEST_F(StructuralTest, EncloseDiscloseIdentityVector) {
+    Value* result = machine->eval("⊃⊂1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+// ========================================================================
+// Disclose (⊃ monadic) Tests - ISO 13751 Section 10.2.24
+// ========================================================================
+
+// Disclose of scalar returns scalar
+TEST_F(StructuralTest, DiscloseScalarReturnsScalar) {
+    Value* result = machine->eval("⊃5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+}
+
+// Disclose of vector returns first element
+TEST_F(StructuralTest, DiscloseVectorReturnsFirst) {
+    Value* result = machine->eval("⊃1 2 3");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// Disclose of matrix returns first row
+TEST_F(StructuralTest, DiscloseMatrixReturnsFirstRow) {
+    Value* result = machine->eval("⊃2 3⍴⍳6");
+    ASSERT_TRUE(result->is_vector());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+// Disclose of empty vector returns prototype (0)
+TEST_F(StructuralTest, DiscloseEmptyVectorReturnsZero) {
+    Value* result = machine->eval("⊃⍬");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+}
+
+// Disclose of strand returns first element
+TEST_F(StructuralTest, DiscloseStrandReturnsFirst) {
+    Value* result = machine->eval("⊃⊂1 2 3");  // ⊂ creates strand, ⊃ extracts
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+// Disclose of function returns function unchanged
+TEST_F(StructuralTest, DiscloseFunctionReturnsFunction) {
+    Value* result = machine->eval("⊃+");
+    ASSERT_TRUE(result->is_primitive());
+}
+
+// ========================================================================
+// Pick (⊃ dyadic) Tests - ISO 13751 Section 10.2.22
+// ========================================================================
+
+// Pick from vector with scalar index
+TEST_F(StructuralTest, PickVectorScalarIndex) {
+    Value* result = machine->eval("2⊃1 2 3");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+// Pick from vector - index out of range
+TEST_F(StructuralTest, PickVectorIndexOutOfRange) {
+    EXPECT_THROW(machine->eval("5⊃1 2 3"), APLError);
+}
+
+// Pick from vector - zero index (⎕IO=1)
+TEST_F(StructuralTest, PickVectorZeroIndex) {
+    EXPECT_THROW(machine->eval("0⊃1 2 3"), APLError);
+}
+
+// Pick from strand
+TEST_F(StructuralTest, PickFromStrand) {
+    // Create strand via catenate of enclosed values
+    Value* result = machine->eval("1⊃⊂1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+// ========================================================================
+// Enclose with Axis - ISO 13751 Section 10.2.27
+// ========================================================================
+
+TEST_F(StructuralTest, EncloseWithAxisVector) {
+    // ⊂[1]vec - partition vector into strand of scalars
+    Value* result = machine->eval("⊂[1]1 2 3");
+    ASSERT_TRUE(result->is_strand());
+    std::vector<Value*>* strand = result->as_strand();
+    EXPECT_EQ(strand->size(), 3);
+    EXPECT_TRUE((*strand)[0]->is_scalar());
+    EXPECT_EQ((*strand)[0]->as_scalar(), 1);
+    EXPECT_EQ((*strand)[1]->as_scalar(), 2);
+    EXPECT_EQ((*strand)[2]->as_scalar(), 3);
+}
+
+TEST_F(StructuralTest, EncloseWithAxisMatrixAxis1) {
+    // ⊂[1]matrix - each column becomes an element
+    Value* result = machine->eval("⊂[1]2 3⍴⍳6");
+    ASSERT_TRUE(result->is_strand());
+    std::vector<Value*>* strand = result->as_strand();
+    EXPECT_EQ(strand->size(), 3);  // 3 columns
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_EQ((*strand)[0]->size(), 2);  // Each column has 2 elements
+}
+
+TEST_F(StructuralTest, EncloseWithAxisMatrixAxis2) {
+    // ⊂[2]matrix - each row becomes an element
+    Value* result = machine->eval("⊂[2]2 3⍴⍳6");
+    ASSERT_TRUE(result->is_strand());
+    std::vector<Value*>* strand = result->as_strand();
+    EXPECT_EQ(strand->size(), 2);  // 2 rows
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_EQ((*strand)[0]->size(), 3);  // Each row has 3 elements
+}
+
+TEST_F(StructuralTest, EncloseWithAxisInvalidAxis) {
+    // Axis out of range
+    EXPECT_THROW(machine->eval("⊂[3]1 2 3"), APLError);
+    EXPECT_THROW(machine->eval("⊂[0]1 2 3"), APLError);
+}
+
+// ========================================================================
+// Disclose with Axis - ISO 13751 Section 10.2.25
+// ========================================================================
+
+TEST_F(StructuralTest, DiscloseWithAxisVector) {
+    // ⊃[1] on enclosed vector - returns first element (vector), axis 1 stays
+    Value* result = machine->eval("⊃[1]⊂1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+TEST_F(StructuralTest, DiscloseWithAxisMatrix) {
+    // ⊃[1 2] on enclosed matrix - normal order
+    Value* result = machine->eval("⊃[1 2]⊂2 3⍴⍳6");
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+}
+
+TEST_F(StructuralTest, DiscloseWithAxisMatrixTranspose) {
+    // ⊃[2 1] on enclosed matrix - transposed
+    Value* result = machine->eval("⊃[2 1]⊂2 3⍴⍳6");
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);  // Transposed: cols become rows
+    EXPECT_EQ(mat->cols(), 2);  // Transposed: rows become cols
+}
+
+TEST_F(StructuralTest, DiscloseWithAxisScalar) {
+    // Scalars have rank 0, so specifying any axis is invalid
+    EXPECT_THROW(machine->eval("⊃[1]5"), APLError);
+}
+
+TEST_F(StructuralTest, DiscloseWithAxisInvalidCount) {
+    // Axis count must match rank
+    EXPECT_THROW(machine->eval("⊃[1 2]⊂1 2 3"), APLError);  // Vector has rank 1, not 2
+}
+
+TEST_F(StructuralTest, DiscloseWithAxisInvalidValue) {
+    // Axis values must be in range
+    EXPECT_THROW(machine->eval("⊃[3]⊂2 3⍴⍳6"), APLError);  // Matrix has rank 2, not 3
+    EXPECT_THROW(machine->eval("⊃[0]⊂1 2 3"), APLError);  // Axis 0 invalid with ⎕IO=1
+}
+
+TEST_F(StructuralTest, DiscloseWithAxisDuplicate) {
+    // Duplicate axis values are invalid
+    EXPECT_THROW(machine->eval("⊃[1 1]⊂2 3⍴⍳6"), APLError);
+}
+
+// ========================================================================
+// Pervasive Dispatch on Strands - ISO 13751 Scalar Function Extension
+// ========================================================================
+// Scalar (pervasive) functions automatically penetrate nested arrays,
+// applying element-wise to the contents of enclosed values.
+
+TEST_F(StructuralTest, PervasiveAddScalarToStrand) {
+    // 1+⊂2 3 4 → (3 4 5) - add scalar to each element of enclosed vector
+    Value* result = machine->eval("1+⊂2 3 4");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 1);
+    Value* inner = (*result->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_EQ(inner->size(), 3);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(2, 0), 5.0);
+}
+
+TEST_F(StructuralTest, PervasiveAddStrandToStrand) {
+    // (⊂1 2)+(⊂3 4) → (4 6) - add corresponding elements
+    // Result is a single-element strand containing the sum vector
+    Value* result = machine->eval("(⊂1 2)+(⊂3 4)");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 1);
+    Value* inner = (*result->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 6.0);
+}
+
+TEST_F(StructuralTest, PervasiveAddMultiElementStrand) {
+    // 10+(⊂1 2),⊂3 4 → ((11 12)(13 14)) - add scalar to each element
+    Value* result = machine->eval("10+(⊂1 2),⊂3 4");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+    // First element: 11 12
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(1, 0), 12.0);
+    // Second element: 13 14
+    Value* second = (*result->as_strand())[1];
+    ASSERT_TRUE(second->is_vector());
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(0, 0), 13.0);
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(1, 0), 14.0);
+}
+
+TEST_F(StructuralTest, PervasiveMultiplyStrands) {
+    // (⊂2 3)×(⊂4 5) → (8 15) - wrapped in strand
+    Value* result = machine->eval("(⊂2 3)×(⊂4 5)");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 1);
+    Value* inner = (*result->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 8.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 15.0);
+}
+
+TEST_F(StructuralTest, PervasivePreservesDepth) {
+    // Depth should be preserved through pervasive operations
+    Value* before = machine->eval("≡(⊂1 2),⊂3 4");
+    EXPECT_DOUBLE_EQ(before->as_scalar(), 2.0);  // Depth 2 before
+    Value* after = machine->eval("≡10+(⊂1 2),⊂3 4");
+    EXPECT_DOUBLE_EQ(after->as_scalar(), 2.0);   // Depth 2 after
+}
+
+TEST_F(StructuralTest, PervasiveComparisonOnStrand) {
+    // 2<⊂1 2 3 → (0 0 1) - comparison is pervasive
+    Value* result = machine->eval("2<⊂1 2 3");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 1);
+    Value* inner = (*result->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 0.0);  // 2<1 = 0
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 0.0);  // 2<2 = 0
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(2, 0), 1.0);  // 2<3 = 1
+}
+
+TEST_F(StructuralTest, StructuralFunctionsNotPervasive) {
+    // Structural functions like ≢ and ≡ should NOT be pervasive
+    // ≢⊂1 2 3 → 1 (tally of strand, not tally of each element)
+    Value* tally = machine->eval("≢⊂1 2 3");
+    EXPECT_DOUBLE_EQ(tally->as_scalar(), 1.0);
+
+    // ≡⊂1 2 3 → 2 per ISO 13751 Section 8.2.5
+    // Depth = 1 + max depth of elements = 1 + 1 (simple vector) = 2
+    Value* depth = machine->eval("≡⊂1 2 3");
+    EXPECT_DOUBLE_EQ(depth->as_scalar(), 2.0);
+}
+
+TEST_F(StructuralTest, ShapeOfEnclose) {
+    // ⍴⊂1 2 3 → 1 (single enclosed item, strand of length 1)
+    Value* result = machine->eval("⍴⊂1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);
+}
+
+TEST_F(StructuralTest, ShapeOfStrand) {
+    // ⍴(⊂1 2 3),⊂4 5 → 2 (strand with 2 elements)
+    Value* result = machine->eval("⍴(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 2.0);
+}
+
+TEST_F(StructuralTest, ShapeOfThreeElementStrand) {
+    // ⍴(⊂1 2),(⊂3 4),⊂5 6 → 3 (strand with 3 elements)
+    Value* result = machine->eval("⍴(⊂1 2),(⊂3 4),⊂5 6");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 3.0);
+}
+
+// ============================================================================
+// Strand Operations - Comprehensive Tests per ISO 13751
+// ============================================================================
+
+// First (↑) with strands - ISO 10.1.9
+// "Z is the first item of B in row-major order"
+TEST_F(StructuralTest, FirstOfStrand) {
+    // ↑(⊂1 2 3),⊂4 5 → 1 2 3 (first element of strand)
+    Value* result = machine->eval("↑(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 0), 3.0);
+}
+
+TEST_F(StructuralTest, FirstOfSingleElementStrand) {
+    // ↑⊂1 2 3 → 1 2 3
+    Value* result = machine->eval("↑⊂1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+TEST_F(StructuralTest, FirstOfNestedStrand) {
+    // ↑(⊂(⊂1 2)),⊂3 4 → (⊂1 2) (first element is itself a strand)
+    Value* result = machine->eval("↑(⊂(⊂1 2)),⊂3 4");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 1);
+}
+
+// Disclose/First (⊃) with strands - already works, verify behavior
+TEST_F(StructuralTest, DiscloseOfStrand) {
+    // ⊃(⊂1 2 3),⊂4 5 → 1 2 3
+    Value* result = machine->eval("⊃(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);
+}
+
+// Tally (≢) with strands
+TEST_F(StructuralTest, TallyOfStrand) {
+    // ≢(⊂1 2 3),⊂4 5 → 2
+    Value* result = machine->eval("≢(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
+}
+
+TEST_F(StructuralTest, TallyOfSingleElementStrand) {
+    // ≢⊂1 2 3 → 1
+    Value* result = machine->eval("≢⊂1 2 3");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// Reverse (⌽) with strands - ISO 10.1.4
+// "Z is an array whose elements are those of B taken in reverse order"
+TEST_F(StructuralTest, ReverseOfStrand) {
+    // ⌽(⊂1 2),(⊂3 4),⊂5 6 → (⊂5 6),(⊂3 4),⊂1 2
+    Value* result = machine->eval("⌽(⊂1 2),(⊂3 4),⊂5 6");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 3);
+    // First element should now be 5 6
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(1, 0), 6.0);
+    // Last element should now be 1 2
+    Value* last = (*result->as_strand())[2];
+    ASSERT_TRUE(last->is_vector());
+    EXPECT_DOUBLE_EQ((*last->as_matrix())(0, 0), 1.0);
+}
+
+TEST_F(StructuralTest, ReverseOfTwoElementStrand) {
+    // ⌽(⊂1 2 3),⊂4 5 → (⊂4 5),⊂1 2 3
+    Value* result = machine->eval("⌽(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_EQ(first->size(), 2);  // 4 5
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 4.0);
+}
+
+// Rotate (⌽) dyadic with strands
+TEST_F(StructuralTest, RotateStrand) {
+    // 1⌽(⊂1 2),(⊂3 4),⊂5 6 → (⊂3 4),(⊂5 6),⊂1 2
+    Value* result = machine->eval("1⌽(⊂1 2),(⊂3 4),⊂5 6");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 3);
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 3.0);  // Was second, now first
+}
+
+// Enlist (∊) with strands - ISO 8.2.6
+// "recursively raveling each element of B and joining them together"
+TEST_F(StructuralTest, EnlistOfStrand) {
+    // ∊(⊂1 2 3),⊂4 5 → 1 2 3 4 5
+    Value* result = machine->eval("∊(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(4, 0), 5.0);
+}
+
+TEST_F(StructuralTest, EnlistOfNestedStrand) {
+    // ∊(⊂(⊂1 2)),⊂3 4 → 1 2 3 4 (recursive flatten)
+    Value* result = machine->eval("∊(⊂(⊂1 2)),⊂3 4");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 4);
+}
+
+TEST_F(StructuralTest, EnlistOfSingleElementStrand) {
+    // ∊⊂1 2 3 → 1 2 3
+    Value* result = machine->eval("∊⊂1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+// Pick (⊃) dyadic with strands - additional tests (1-indexed per ISO)
+TEST_F(StructuralTest, PickSecondFromStrand) {
+    // 2⊃(⊂10 20),(⊂30 40) → 30 40 (second element, 1-indexed)
+    Value* result = machine->eval("2⊃(⊂10 20),(⊂30 40)");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 30.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 40.0);
+}
+
+TEST_F(StructuralTest, PickFirstFromStrandOneIndex) {
+    // 1⊃(⊂10 20),(⊂30 40) → 10 20 (first element, 1-indexed)
+    Value* result = machine->eval("1⊃(⊂10 20),(⊂30 40)");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 10.0);
 }
 
 // ========================================================================

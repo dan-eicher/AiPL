@@ -67,54 +67,57 @@ inline bool is_negative_int(double x) {
 }
 
 // PrimitiveFn structs combining monadic and dyadic forms
-PrimitiveFn prim_plus    = { "+", fn_conjugate, fn_add };
-PrimitiveFn prim_minus   = { "-", fn_negate, fn_subtract };
-PrimitiveFn prim_times   = { "×", fn_signum, fn_multiply };
-PrimitiveFn prim_divide  = { "÷", fn_reciprocal, fn_divide };
-PrimitiveFn prim_star    = { "*", fn_exponential, fn_power };
-PrimitiveFn prim_equal   = { "=", nullptr, fn_equal };  // No monadic form for equals
-PrimitiveFn prim_not_equal = { "≠", nullptr, fn_not_equal };
-PrimitiveFn prim_less      = { "<", nullptr, fn_less };
-PrimitiveFn prim_greater   = { ">", nullptr, fn_greater };
-PrimitiveFn prim_less_eq   = { "≤", nullptr, fn_less_eq };
-PrimitiveFn prim_greater_eq = { "≥", nullptr, fn_greater_eq };
-PrimitiveFn prim_ceiling   = { "⌈", fn_ceiling, fn_maximum };
-PrimitiveFn prim_floor     = { "⌊", fn_floor, fn_minimum };
-PrimitiveFn prim_and       = { "∧", nullptr, fn_and };
-PrimitiveFn prim_or        = { "∨", nullptr, fn_or };
-PrimitiveFn prim_not       = { "~", fn_not, fn_without };
-PrimitiveFn prim_nand      = { "⍲", nullptr, fn_nand };
-PrimitiveFn prim_nor       = { "⍱", nullptr, fn_nor };
-PrimitiveFn prim_stile     = { "|", fn_magnitude, fn_residue };
-PrimitiveFn prim_log       = { "⍟", fn_natural_log, fn_logarithm };
-PrimitiveFn prim_factorial = { "!", fn_factorial, fn_binomial };
+// Scalar (pervasive) functions - auto-penetrate nested arrays
+PrimitiveFn prim_plus    = { "+", fn_conjugate, fn_add, true };
+PrimitiveFn prim_minus   = { "-", fn_negate, fn_subtract, true };
+PrimitiveFn prim_times   = { "×", fn_signum, fn_multiply, true };
+PrimitiveFn prim_divide  = { "÷", fn_reciprocal, fn_divide, true };
+PrimitiveFn prim_star    = { "*", fn_exponential, fn_power, true };
+PrimitiveFn prim_equal   = { "=", nullptr, fn_equal, true };
+PrimitiveFn prim_not_equal = { "≠", nullptr, fn_not_equal, true };
+PrimitiveFn prim_less      = { "<", nullptr, fn_less, true };
+PrimitiveFn prim_greater   = { ">", nullptr, fn_greater, true };
+PrimitiveFn prim_less_eq   = { "≤", nullptr, fn_less_eq, true };
+PrimitiveFn prim_greater_eq = { "≥", nullptr, fn_greater_eq, true };
+PrimitiveFn prim_ceiling   = { "⌈", fn_ceiling, fn_maximum, true };
+PrimitiveFn prim_floor     = { "⌊", fn_floor, fn_minimum, true };
+PrimitiveFn prim_and       = { "∧", nullptr, fn_and, true };
+PrimitiveFn prim_or        = { "∨", nullptr, fn_or, true };
+PrimitiveFn prim_not       = { "~", fn_not, fn_without, true };
+PrimitiveFn prim_nand      = { "⍲", nullptr, fn_nand, true };
+PrimitiveFn prim_nor       = { "⍱", nullptr, fn_nor, true };
+PrimitiveFn prim_stile     = { "|", fn_magnitude, fn_residue, true };
+PrimitiveFn prim_log       = { "⍟", fn_natural_log, fn_logarithm, true };
+PrimitiveFn prim_factorial = { "!", fn_factorial, fn_binomial, true };
 
-// Array operation primitives
-PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape };
-PrimitiveFn prim_comma     = { ",", fn_ravel, fn_catenate };
-PrimitiveFn prim_transpose = { "⍉", fn_transpose, fn_dyadic_transpose };
-PrimitiveFn prim_domino    = { "⌹", fn_matrix_inverse, fn_matrix_divide };
-PrimitiveFn prim_iota      = { "⍳", fn_iota, fn_index_of };
-PrimitiveFn prim_uptack    = { "↑", fn_first, fn_take };
-PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop };
-PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate };
-PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first };
-PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr };
-PrimitiveFn prim_depth     = { "≡", fn_depth, fn_match };  // ISO 13751: depth/match
-PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of };
-PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, fn_grade_up_dyadic };
-PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, fn_grade_down_dyadic };
-PrimitiveFn prim_union     = { "∪", fn_unique, fn_union };
-PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular };
-PrimitiveFn prim_question  = { "?", fn_roll, fn_deal };
-PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode };
-PrimitiveFn prim_encode    = { "⊤", nullptr, fn_encode };
-PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr };
-PrimitiveFn prim_format    = { "⍕", fn_format_monadic, fn_format_dyadic };
-PrimitiveFn prim_table     = { "⍪", fn_table, fn_catenate_first };
-PrimitiveFn prim_squad     = { "⌷", nullptr, fn_squad };
-PrimitiveFn prim_left      = { "⊣", fn_right, fn_left };   // ISO 10.2.17: monadic ⊣ is identity, dyadic returns left
-PrimitiveFn prim_right     = { "⊢", fn_right, fn_right_dyadic }; // ISO 10.2.18: both return right argument
+// Array operation primitives - structural, not pervasive
+PrimitiveFn prim_rho       = { "⍴", fn_shape, fn_reshape, false };
+PrimitiveFn prim_comma     = { ",", fn_ravel, fn_catenate, false };
+PrimitiveFn prim_transpose = { "⍉", fn_transpose, fn_dyadic_transpose, false };
+PrimitiveFn prim_domino    = { "⌹", fn_matrix_inverse, fn_matrix_divide, false };
+PrimitiveFn prim_iota      = { "⍳", fn_iota, fn_index_of, false };
+PrimitiveFn prim_uptack    = { "↑", fn_first, fn_take, false };
+PrimitiveFn prim_downtack  = { "↓", nullptr, fn_drop, false };
+PrimitiveFn prim_reverse   = { "⌽", fn_reverse, fn_rotate, false };
+PrimitiveFn prim_reverse_first = { "⊖", fn_reverse_first, fn_rotate_first, false };
+PrimitiveFn prim_tally     = { "≢", fn_tally, nullptr, false };
+PrimitiveFn prim_depth     = { "≡", fn_depth, fn_match, false };
+PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of, false };
+PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, fn_grade_up_dyadic, false };
+PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, fn_grade_down_dyadic, false };
+PrimitiveFn prim_union     = { "∪", fn_unique, fn_union, false };
+PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular, true };  // Circular is pervasive
+PrimitiveFn prim_question  = { "?", fn_roll, fn_deal, true };  // Roll/deal is pervasive
+PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode, false };
+PrimitiveFn prim_encode    = { "⊤", nullptr, fn_encode, false };
+PrimitiveFn prim_execute   = { "⍎", fn_execute, nullptr, false };
+PrimitiveFn prim_format    = { "⍕", fn_format_monadic, fn_format_dyadic, false };
+PrimitiveFn prim_table     = { "⍪", fn_table, fn_catenate_first, false };
+PrimitiveFn prim_squad     = { "⌷", nullptr, fn_squad, false };
+PrimitiveFn prim_left      = { "⊣", fn_right, fn_left, false };
+PrimitiveFn prim_right     = { "⊢", fn_right, fn_right_dyadic, false };
+PrimitiveFn prim_enclose   = { "⊂", fn_enclose, nullptr, false };
+PrimitiveFn prim_disclose  = { "⊃", fn_disclose, fn_pick, false };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -2424,6 +2427,14 @@ void fn_shape(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
+    // Strand shape is its element count (rank 1)
+    if (omega->is_strand()) {
+        Eigen::VectorXd shape(1);
+        shape(0) = static_cast<double>(omega->as_strand()->size());
+        m->result = m->heap->allocate_vector(shape);
+        return;
+    }
+
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
@@ -2615,6 +2626,34 @@ void fn_ravel(Machine* m, Value* axis, Value* omega) {
 // Near-integer K: catenate along existing axis K
 // Non-integer K: laminate (create new axis at ⌊K)
 void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    // Handle strands (nested arrays) - catenate element-wise
+    if (lhs->is_strand() || rhs->is_strand()) {
+        if (axis != nullptr) {
+            m->throw_error("AXIS ERROR: cannot catenate strands with axis");
+            return;
+        }
+        std::vector<Value*> result;
+
+        // Add elements from lhs
+        if (lhs->is_strand()) {
+            std::vector<Value*>* left_strand = lhs->as_strand();
+            result.insert(result.end(), left_strand->begin(), left_strand->end());
+        } else {
+            result.push_back(lhs);
+        }
+
+        // Add elements from rhs
+        if (rhs->is_strand()) {
+            std::vector<Value*>* right_strand = rhs->as_strand();
+            result.insert(result.end(), right_strand->begin(), right_strand->end());
+        } else {
+            result.push_back(rhs);
+        }
+
+        m->result = m->heap->allocate_strand(result);
+        return;
+    }
+
     // String → char vector conversion for array operations
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
@@ -3022,6 +3061,18 @@ void fn_first(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
+    // First of strand is the first element (ISO 10.1.9: first item in row-major order)
+    if (omega->is_strand()) {
+        const std::vector<Value*>* strand = omega->as_strand();
+        if (strand->empty()) {
+            // Empty strand: return typical element (0 for numeric)
+            m->result = m->heap->allocate_scalar(0.0);
+            return;
+        }
+        m->result = (*strand)[0];
+        return;
+    }
+
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ↑ requires array argument");
@@ -3309,6 +3360,14 @@ void fn_reverse(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
+    // Strand reversal: reverse the order of elements (ISO 10.1.4)
+    if (omega->is_strand()) {
+        const std::vector<Value*>* strand = omega->as_strand();
+        std::vector<Value*> reversed(strand->rbegin(), strand->rend());
+        m->result = m->heap->allocate_strand(std::move(reversed));
+        return;
+    }
+
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
@@ -3436,12 +3495,15 @@ void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
 void fn_tally(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
-        // Scalar has no first axis, tally is 1
         m->result = m->heap->allocate_scalar(1.0);
         return;
     }
 
-    // String → char vector conversion for array operations
+    if (omega->is_strand()) {
+        m->result = m->heap->allocate_scalar(static_cast<double>(omega->as_strand()->size()));
+        return;
+    }
+
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
@@ -3449,7 +3511,6 @@ void fn_tally(Machine* m, Value* axis, Value* omega) {
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
-    // First axis is number of rows
     m->result = m->heap->allocate_scalar(static_cast<double>(mat->rows()));
 }
 
@@ -3485,6 +3546,34 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             }
         }
         m->result = m->heap->allocate_scalar(rhs->as_scalar());
+        return;
+    }
+
+    // Strand rotation: rotate elements (ISO 10.2.7)
+    if (rhs->is_strand()) {
+        if (!lhs->is_scalar()) {
+            m->throw_error("RANK ERROR: strand rotation requires scalar count");
+            return;
+        }
+        double val = lhs->as_scalar();
+        if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            return;
+        }
+        int n = static_cast<int>(std::round(val));
+        const std::vector<Value*>* strand = rhs->as_strand();
+        int len = static_cast<int>(strand->size());
+        if (len == 0) {
+            m->result = m->heap->allocate_strand(std::vector<Value*>());
+            return;
+        }
+        n = ((n % len) + len) % len;  // Normalize to [0, len)
+        std::vector<Value*> rotated;
+        rotated.reserve(len);
+        for (int i = 0; i < len; i++) {
+            rotated.push_back((*strand)[(i + n) % len]);
+        }
+        m->result = m->heap->allocate_strand(std::move(rotated));
         return;
     }
 
@@ -3808,9 +3897,52 @@ void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // flattens strands into simple vectors, which is incorrect for APL2-style
 // semantics but works until nested arrays are implemented.
 //
+// Helper to recursively enlist a value into a vector of scalars
+static void enlist_into(Machine* m, Value* v, std::vector<double>& out) {
+    if (v->is_scalar()) {
+        out.push_back(v->as_scalar());
+    } else if (v->is_strand()) {
+        // Recursively enlist each strand element (ISO 8.2.6)
+        const std::vector<Value*>* strand = v->as_strand();
+        for (Value* elem : *strand) {
+            enlist_into(m, elem, out);
+        }
+    } else if (v->is_string()) {
+        v = v->to_char_vector(m->heap);
+        const Eigen::MatrixXd* mat = v->as_matrix();
+        for (int i = 0; i < mat->size(); i++) {
+            out.push_back((*mat)(i / mat->cols(), i % mat->cols()));
+        }
+    } else if (v->is_array()) {
+        const Eigen::MatrixXd* mat = v->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+        for (int i = 0; i < mat->size(); i++) {
+            out.push_back((*mat)(i / cols, i % cols));
+        }
+    }
+}
+
 void fn_enlist(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
-    // Without nested arrays, enlist = ravel
+
+    // For strands: recursively flatten all elements (ISO 8.2.6)
+    if (omega->is_strand()) {
+        std::vector<double> result;
+        enlist_into(m, omega, result);
+        if (result.empty()) {
+            m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+            return;
+        }
+        Eigen::VectorXd vec(result.size());
+        for (size_t i = 0; i < result.size(); i++) {
+            vec(i) = result[i];
+        }
+        m->result = m->heap->allocate_vector(vec);
+        return;
+    }
+
+    // For simple arrays, enlist = ravel
     fn_ravel(m, axis, omega);
 }
 
@@ -5326,17 +5458,30 @@ void fn_table(Machine* m, Value* axis, Value* omega) {
     m->result = m->heap->allocate_matrix(*mat);
 }
 
+// Helper: compute depth recursively
+static int compute_depth(Value* v) {
+    if (v->is_scalar()) {
+        return 0;
+    }
+    if (v->is_strand()) {
+        // Depth is 1 + max depth of elements
+        std::vector<Value*>* strand = v->as_strand();
+        int max_depth = 0;
+        for (Value* elem : *strand) {
+            int d = compute_depth(elem);
+            if (d > max_depth) max_depth = d;
+        }
+        return 1 + max_depth;
+    }
+    // Simple arrays (vectors, matrices, strings) have depth 1
+    return 1;
+}
+
 // Depth (≡ monadic) - nesting level of array
 // ISO 13751 Section 8.2.5: simple-scalar → 0, array → 1 + max depth of elements
-// Since we don't support nested arrays, depth is always 0 for scalars, 1 for arrays
 void fn_depth(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
-    if (omega->is_scalar()) {
-        m->result = m->heap->allocate_scalar(0.0);
-    } else {
-        // All our arrays are simple (non-nested), so depth is 1
-        m->result = m->heap->allocate_scalar(1.0);
-    }
+    m->result = m->heap->allocate_scalar(static_cast<double>(compute_depth(omega)));
 }
 
 // Match (≡ dyadic) - returns 1 if arguments are identical, 0 otherwise
@@ -5964,6 +6109,287 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
     }
 
     m->result = m->heap->allocate_string(oss.str().c_str());
+}
+
+// ============================================================================
+// Enclose and Disclose (ISO 13751 Sections 10.2.22, 10.2.24, 10.2.26)
+// ============================================================================
+
+// Enclose (⊂ monadic) - wrap value in a single-element strand (nested scalar)
+// ISO 13751 Section 10.2.26: ⊂B creates a scalar containing B
+// ISO 13751 Section 10.2.27: ⊂[K]B partitions B along axis K
+// Note: If B is a simple-scalar, Z is B (scalars don't get enclosed)
+void fn_enclose(Machine* m, Value* axis, Value* omega) {
+    // ISO 13751: If B is a simple-scalar, return B unchanged
+    if (omega->is_scalar()) {
+        m->result = omega;
+        return;
+    }
+
+    // Handle axis specification - ISO 13751 Section 10.2.27
+    if (axis != nullptr) {
+        if (!axis->is_scalar()) {
+            m->throw_error("AXIS ERROR: axis must be scalar");
+            return;
+        }
+        int enc_axis = static_cast<int>(axis->as_scalar());
+
+        // Convert string to char vector only when we need array operations
+        if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+        int rank = omega->rank();
+        if (enc_axis < 1 || enc_axis > rank) {
+            m->throw_error("AXIS ERROR: axis out of range");
+            return;
+        }
+
+        // For vectors: ⊂[1]vec returns strand of scalars
+        if (omega->is_vector()) {
+            const Eigen::MatrixXd* mat = omega->as_matrix();
+            std::vector<Value*> elements;
+            for (int i = 0; i < mat->rows(); ++i) {
+                elements.push_back(m->heap->allocate_scalar((*mat)(i, 0)));
+            }
+            m->result = m->heap->allocate_strand(std::move(elements));
+            return;
+        }
+
+        // For matrices: partition along the specified axis
+        if (omega->is_matrix()) {
+            const Eigen::MatrixXd* mat = omega->as_matrix();
+            std::vector<Value*> elements;
+            bool is_char = omega->is_char_data();
+
+            if (enc_axis == 1) {
+                // ⊂[1]matrix - each column becomes an element
+                for (int j = 0; j < mat->cols(); ++j) {
+                    Eigen::VectorXd col = mat->col(j);
+                    elements.push_back(m->heap->allocate_vector(col, is_char));
+                }
+            } else {  // enc_axis == 2
+                // ⊂[2]matrix - each row becomes an element
+                for (int i = 0; i < mat->rows(); ++i) {
+                    Eigen::VectorXd row = mat->row(i).transpose();
+                    elements.push_back(m->heap->allocate_vector(row, is_char));
+                }
+            }
+            m->result = m->heap->allocate_strand(std::move(elements));
+            return;
+        }
+
+        // Strands with axis - partition elements
+        if (omega->is_strand()) {
+            // For strands, axis 1 means each element becomes enclosed
+            std::vector<Value*>* src = omega->as_strand();
+            std::vector<Value*> elements;
+            for (Value* v : *src) {
+                std::vector<Value*> single = {v};
+                elements.push_back(m->heap->allocate_strand(std::move(single)));
+            }
+            m->result = m->heap->allocate_strand(std::move(elements));
+            return;
+        }
+
+        m->throw_error("DOMAIN ERROR: cannot enclose with axis on this type");
+        return;
+    }
+
+    // No axis - simple enclose (string stays as string, wrapped in strand)
+    std::vector<Value*> elements = {omega};
+    m->result = m->heap->allocate_strand(std::move(elements));
+}
+
+// Disclose (⊃ monadic) - extract first element, unwrap nested array
+// Helper: transpose array according to axis permutation
+// perm is 0-indexed permutation of axes
+static Value* transpose_by_perm(Machine* m, Value* arr, const std::vector<int>& perm) {
+    if (!arr->is_matrix() || perm.size() != 2) {
+        // For vectors or non-standard cases, just return as-is
+        return arr;
+    }
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+
+    // perm[0]=0, perm[1]=1 means no change
+    // perm[0]=1, perm[1]=0 means transpose
+    if (perm[0] == 1 && perm[1] == 0) {
+        Eigen::MatrixXd transposed = mat->transpose();
+        return m->heap->allocate_matrix(transposed, arr->is_char_data());
+    }
+
+    return arr;
+}
+
+// ISO 13751 Section 10.2.24/25: ⊃B returns the first element of B
+// ⊃[K]B specifies which axes of the result are "new" (from nested structure)
+void fn_disclose(Machine* m, Value* axis, Value* omega) {
+    // First, compute ⊃B (the disclosed value)
+    Value* disclosed = nullptr;
+
+    if (omega->is_strand()) {
+        std::vector<Value*>* strand = omega->as_strand();
+        if (strand->empty()) {
+            disclosed = m->heap->allocate_scalar(0.0);
+        } else {
+            disclosed = (*strand)[0];
+        }
+    } else if (omega->is_scalar()) {
+        disclosed = omega;
+    } else if (omega->is_string()) {
+        const char* s = omega->as_string();
+        if (*s) {
+            // Convert to char vector (proper UTF-8 decoding) and get first codepoint
+            Value* char_vec = omega->to_char_vector(m->heap);
+            const Eigen::MatrixXd* mat = char_vec->as_matrix();
+            disclosed = m->heap->allocate_scalar((*mat)(0, 0));
+        } else {
+            disclosed = m->heap->allocate_scalar(32.0);  // Space for empty string
+        }
+    } else if (omega->is_array()) {
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        if (mat->size() == 0) {
+            double typical = omega->is_char_data() ? 32.0 : 0.0;
+            disclosed = m->heap->allocate_scalar(typical);
+        } else if (omega->is_vector()) {
+            disclosed = m->heap->allocate_scalar((*mat)(0, 0));
+        } else {
+            Eigen::VectorXd first_row = mat->row(0);
+            disclosed = m->heap->allocate_vector(first_row, omega->is_char_data());
+        }
+    } else {
+        // Functions, operators, etc. - return as-is
+        disclosed = omega;
+    }
+
+    // Handle axis specification (ISO 13751 Section 10.2.25)
+    if (axis != nullptr) {
+        int rank = disclosed->rank();
+
+        // Get axis values
+        std::vector<int> axis_vals;
+        if (axis->is_scalar()) {
+            axis_vals.push_back(static_cast<int>(axis->as_scalar()));
+        } else if (axis->is_vector()) {
+            const Eigen::MatrixXd* mat = axis->as_matrix();
+            for (int i = 0; i < mat->rows(); ++i) {
+                axis_vals.push_back(static_cast<int>((*mat)(i, 0)));
+            }
+        } else {
+            m->throw_error("AXIS ERROR: axis must be scalar or vector");
+            return;
+        }
+
+        // Validate: count of axis values must equal rank of disclosed value
+        if (static_cast<int>(axis_vals.size()) != rank) {
+            m->throw_error("AXIS ERROR: axis count must equal rank of result");
+            return;
+        }
+
+        // Validate: all axis values must be valid and distinct
+        std::vector<bool> seen(rank, false);
+        for (int a : axis_vals) {
+            if (a < 1 || a > rank) {
+                m->throw_error("AXIS ERROR: axis value out of range");
+                return;
+            }
+            if (seen[a - 1]) {
+                m->throw_error("AXIS ERROR: duplicate axis value");
+                return;
+            }
+            seen[a - 1] = true;
+        }
+
+        // Build permutation: (((⍳⍴⍴Z)~A),A) means put non-A axes first, then A axes
+        // But since axis_vals IS the target positions, we need the inverse permutation
+        // axis_vals[i] tells us where axis i should go in the result
+        // For transpose, we need: result axis j comes from source axis perm[j]
+        std::vector<int> perm(rank);
+        for (int i = 0; i < rank; ++i) {
+            perm[axis_vals[i] - 1] = i;
+        }
+
+        disclosed = transpose_by_perm(m, disclosed, perm);
+    }
+
+    m->result = disclosed;
+}
+
+// Pick (⊃ dyadic) - index into nested array
+// ISO 13751 Section 10.2.22: A⊃B selects element at index A from B
+void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
+    REJECT_AXIS(m, axis);
+
+    // Alpha must be a scalar integer or vector of indices
+    if (alpha->is_scalar()) {
+        int idx = static_cast<int>(alpha->as_scalar());
+
+        // Handle strand
+        if (omega->is_strand()) {
+            std::vector<Value*>* strand = omega->as_strand();
+            // APL uses 1-based indexing by default
+            int adjusted = idx - 1;  // Assuming ⎕IO=1
+            if (adjusted < 0 || adjusted >= static_cast<int>(strand->size())) {
+                m->throw_error("INDEX ERROR: index out of range");
+                return;
+            }
+            m->result = (*strand)[adjusted];
+            return;
+        }
+
+        // Handle regular arrays
+        if (omega->is_vector()) {
+            const Eigen::MatrixXd* mat = omega->as_matrix();
+            int adjusted = idx - 1;
+            if (adjusted < 0 || adjusted >= mat->rows()) {
+                m->throw_error("INDEX ERROR: index out of range");
+                return;
+            }
+            m->result = m->heap->allocate_scalar((*mat)(adjusted, 0));
+            return;
+        }
+
+        if (omega->is_matrix()) {
+            m->throw_error("RANK ERROR: scalar pick on matrix requires vector index");
+            return;
+        }
+    }
+
+    // Vector of indices for deep pick
+    if (alpha->is_vector()) {
+        const Eigen::MatrixXd* indices = alpha->as_matrix();
+        Value* current = omega;
+
+        for (int i = 0; i < indices->rows(); i++) {
+            int idx = static_cast<int>((*indices)(i, 0)) - 1;  // 1-based to 0-based
+
+            if (current->is_strand()) {
+                std::vector<Value*>* strand = current->as_strand();
+                if (idx < 0 || idx >= static_cast<int>(strand->size())) {
+                    m->throw_error("INDEX ERROR: index out of range");
+                    return;
+                }
+                current = (*strand)[idx];
+            } else if (current->is_vector()) {
+                const Eigen::MatrixXd* mat = current->as_matrix();
+                if (idx < 0 || idx >= mat->rows()) {
+                    m->throw_error("INDEX ERROR: index out of range");
+                    return;
+                }
+                current = m->heap->allocate_scalar((*mat)(idx, 0));
+            } else if (current->is_matrix()) {
+                m->throw_error("RANK ERROR: cannot pick from matrix with scalar index");
+                return;
+            } else {
+                m->throw_error("RANK ERROR: cannot pick from scalar");
+                return;
+            }
+        }
+
+        m->result = current;
+        return;
+    }
+
+    m->throw_error("DOMAIN ERROR: left argument of ⊃ must be integer index");
 }
 
 } // namespace apl

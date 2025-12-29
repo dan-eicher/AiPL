@@ -155,6 +155,43 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
                 m->throw_error("SYNTAX ERROR: Function has no dyadic form", nullptr);
                 return false;
             }
+
+            // Pervasive strand handling: if either arg is a strand, apply element-wise
+            bool left_strand = left_val->is_strand();
+            bool right_strand = right_val->is_strand();
+            if (prim_fn->is_pervasive && (left_strand || right_strand)) {
+                // Get sizes
+                int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
+                                           : (left_val->is_scalar() ? 1 : left_val->size());
+                int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
+                                             : (right_val->is_scalar() ? 1 : right_val->size());
+
+                // Scalar extension for strands
+                if (left_val->is_scalar() && right_strand) {
+                    // Scalar op strand: extend scalar to match strand
+                    std::vector<Value*> extended(right_size, left_val);
+                    left_val = m->heap->allocate_strand(std::move(extended));
+                    left_size = right_size;
+                } else if (left_strand && right_val->is_scalar()) {
+                    // Strand op scalar: extend scalar to match strand
+                    std::vector<Value*> extended(left_size, right_val);
+                    right_val = m->heap->allocate_strand(std::move(extended));
+                    right_size = left_size;
+                }
+
+                // Check lengths match
+                if (left_size != right_size) {
+                    m->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation");
+                    return false;
+                }
+
+                // Use CellIterK with COLLECT mode to apply element-wise
+                m->push_kont(m->heap->allocate<CellIterK>(
+                    fn_val, left_val, right_val, 0, 0, left_size,
+                    CellIterMode::COLLECT, left_size, 1, true, false, true));
+                return false;  // Continuation pushed
+            }
+
             prim_fn->dyadic(m, axis, left_val, right_val);
         } else if (right_val) {
             // Monadic application
@@ -172,6 +209,101 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
 
     m->throw_error("VALUE ERROR: expected function value", nullptr);
     return false;
+}
+
+// ============================================================================
+// Cell Iterator Helpers
+// ============================================================================
+// Helper functions for CellIterK that are also used by DispatchFunctionK
+// for pervasive strand dispatch.
+
+// Helper: get the rank of a value (0=scalar, 1=vector/strand, 2=matrix)
+static int get_value_rank(Value* v) {
+    if (v->is_scalar()) return 0;
+    if (v->is_vector() || v->is_strand()) return 1;
+    return 2;
+}
+
+// Helper function for cell counting
+static int count_cells_for_rank(Value* arr, int k) {
+    if (!arr) return 0;
+    int arr_rank = get_value_rank(arr);
+    if (k >= arr_rank) return 1;
+
+    if (arr->is_scalar()) return 1;
+
+    // Handle strands - 0-cells are the elements
+    if (arr->is_strand()) {
+        return (k == 0) ? static_cast<int>(arr->as_strand()->size()) : 1;
+    }
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+
+    if (arr->is_vector()) {
+        return (k == 0) ? mat->rows() : 1;
+    }
+
+    // Matrix
+    if (k == 0) {
+        return mat->rows() * mat->cols();
+    } else if (k == 1) {
+        return mat->rows();
+    }
+    return 1;
+}
+
+// Helper: extract a k-cell from an array
+static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
+    if (!arr) return nullptr;
+
+    int arr_rank = get_value_rank(arr);
+    if (k >= arr_rank) {
+        // Full rank: return whole array
+        return arr;
+    }
+
+    if (arr->is_scalar()) {
+        return arr;
+    }
+
+    // Handle strands - 0-cells are the elements (already Value*)
+    if (arr->is_strand()) {
+        if (k == 0) {
+            std::vector<Value*>* elems = arr->as_strand();
+            if (cell_index >= static_cast<int>(elems->size())) return nullptr;
+            return (*elems)[cell_index];
+        }
+        return arr;  // k >= 1: return whole strand
+    }
+
+    const Eigen::MatrixXd* mat = arr->as_matrix();
+
+    if (arr->is_vector()) {
+        if (k == 0) {
+            // 0-cell of vector: individual scalar
+            if (cell_index >= mat->rows()) return nullptr;
+            return m->heap->allocate_scalar((*mat)(cell_index, 0));
+        }
+        return arr;
+    }
+
+    // Matrix
+    if (k == 0) {
+        // 0-cell: scalar at linear index (row-major)
+        int rows = mat->rows();
+        int cols = mat->cols();
+        int r = cell_index / cols;
+        int c = cell_index % cols;
+        if (r >= rows) return nullptr;
+        return m->heap->allocate_scalar((*mat)(r, c));
+    } else if (k == 1) {
+        // 1-cell: row vector
+        if (cell_index >= mat->rows()) return nullptr;
+        Eigen::VectorXd row = mat->row(cell_index).transpose();
+        return m->heap->allocate_vector(row);
+    }
+
+    return arr;
 }
 
 // ============================================================================
@@ -1035,6 +1167,36 @@ void ApplyDyadicK::invoke(Machine* machine) {
         return;
     }
 
+    // Pervasive strand handling: if either arg is a strand, apply element-wise
+    bool left_strand = left_val->is_strand();
+    bool right_strand = right_val->is_strand();
+    if (prim_fn->is_pervasive && (left_strand || right_strand)) {
+        int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
+                                   : (left_val->is_scalar() ? 1 : left_val->size());
+        int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
+                                     : (right_val->is_scalar() ? 1 : right_val->size());
+
+        if (left_val->is_scalar() && right_strand) {
+            std::vector<Value*> extended(right_size, left_val);
+            left_val = machine->heap->allocate_strand(std::move(extended));
+            left_size = right_size;
+        } else if (left_strand && right_val->is_scalar()) {
+            std::vector<Value*> extended(left_size, right_val);
+            right_val = machine->heap->allocate_strand(std::move(extended));
+            right_size = left_size;
+        }
+
+        if (left_size != right_size) {
+            machine->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation", this);
+            return;
+        }
+
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            op_val, left_val, right_val, 0, 0, left_size,
+            CellIterMode::COLLECT, left_size, 1, true, false, true));
+        return;
+    }
+
     // Apply the dyadic function (no axis from this path)
     prim_fn->dyadic(machine, nullptr, left_val, right_val);
 
@@ -1290,15 +1452,28 @@ void DispatchFunctionK::invoke(Machine* machine) {
             // Special case: axis-only curry (first_arg is nullptr, axis is set)
             // This represents F[k] waiting for its first operand
             // Always curry the value - monadic vs dyadic decided at finalization
-            if (first_arg == nullptr && curried_data->axis != nullptr && right_val != nullptr && right_val->is_basic_value()) {
-                if (inner_fn->is_primitive()) {
-                    // Create G_PRIME curry of inner_fn with first_arg=B, preserving axis
-                    Value* curried = machine->heap->allocate_curried_fn(inner_fn, right_val, Value::CurryType::G_PRIME, curried_data->axis);
-                    machine->result = curried;
-                    return;
+            if (first_arg == nullptr && curried_data->axis != nullptr && right_val != nullptr) {
+                // Per Georgeff et al.: if right_val is a G_PRIME curry, finalize it first
+                // This is the y(g1(x)) case where y=F[k] and we need to compute g1(x) first
+                Value* finalized = try_finalize_sync(machine, right_val, true);
+                if (finalized != nullptr) {
+                    right_val = finalized;
+                }
+
+                if (right_val->is_basic_value()) {
+                    if (inner_fn->is_primitive()) {
+                        // Create G_PRIME curry of inner_fn with first_arg=B, preserving axis
+                        Value* curried = machine->heap->allocate_curried_fn(inner_fn, right_val, Value::CurryType::G_PRIME, curried_data->axis);
+                        machine->result = curried;
+                        return;
+                    } else {
+                        // For closures, dispatch normally (closures don't support axis per ISO spec)
+                        machine->throw_error("SYNTAX ERROR: axis specification requires primitive function", this);
+                        return;
+                    }
                 } else {
-                    // For closures, dispatch normally (closures don't support axis per ISO spec)
-                    machine->throw_error("SYNTAX ERROR: axis specification requires primitive function", this);
+                    // right_val is a function - can't apply function-with-axis to another function
+                    machine->throw_error("DOMAIN ERROR: function with axis requires array argument", this);
                     return;
                 }
             } else if (right_val == nullptr) {
@@ -1569,6 +1744,31 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
     PrimitiveFn* prim_fn = fn_val->data.primitive_fn;
 
+    // Pervasive dispatch for strands: use CellIterK to iterate elements
+    // Only applies to scalar (pervasive) functions, not structural ones
+    // Note: monadic case goes through G_PRIME curry first, so only handle dyadic here
+    bool left_strand = left_val && left_val->is_strand();
+    bool right_strand = right_val && right_val->is_strand();
+
+    if (prim_fn->is_pervasive && left_val && (left_strand || right_strand)) {
+        int left_cells = left_val ? count_cells_for_rank(left_val, 0) : 0;
+        int right_cells = count_cells_for_rank(right_val, 0);
+        int total = std::max(left_cells, right_cells);
+
+        // Scalar extension check: mismatched lengths are an error
+        if (left_cells > 1 && right_cells > 1 && left_cells != right_cells) {
+            machine->throw_error("LENGTH ERROR: mismatched strand lengths", this);
+            return;
+        }
+
+        // Use CellIterK with rank 0 (iterate 0-cells = elements)
+        // Pass is_strand=true to preserve strand structure in result
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn_val, left_val, right_val, 0, 0, total,
+            CellIterMode::COLLECT, total, 1, true, false, true));
+        return;
+    }
+
     // Determine monadic vs dyadic based on what arguments we have
     if (left_val == nullptr) {
         // Monadic case: only right argument
@@ -1590,6 +1790,40 @@ void DispatchFunctionK::invoke(Machine* machine) {
         // Dyadic case: both arguments
         if (!prim_fn->dyadic) {
             machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this);
+            return;
+        }
+
+        // Pervasive strand handling: if either arg is a strand, apply element-wise
+        bool left_strand = left_val->is_strand();
+        bool right_strand = right_val->is_strand();
+        if (prim_fn->is_pervasive && (left_strand || right_strand)) {
+            // Get sizes
+            int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
+                                       : (left_val->is_scalar() ? 1 : left_val->size());
+            int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
+                                         : (right_val->is_scalar() ? 1 : right_val->size());
+
+            // Scalar extension for strands
+            if (left_val->is_scalar() && right_strand) {
+                std::vector<Value*> extended(right_size, left_val);
+                left_val = machine->heap->allocate_strand(std::move(extended));
+                left_size = right_size;
+            } else if (left_strand && right_val->is_scalar()) {
+                std::vector<Value*> extended(left_size, right_val);
+                right_val = machine->heap->allocate_strand(std::move(extended));
+                right_size = left_size;
+            }
+
+            // Check lengths match
+            if (left_size != right_size) {
+                machine->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation", this);
+                return;
+            }
+
+            // Use CellIterK with COLLECT mode to apply element-wise
+            machine->push_kont(machine->heap->allocate<CellIterK>(
+                fn_val, left_val, right_val, 0, 0, left_size,
+                CellIterMode::COLLECT, left_size, 1, true, false, true));
             return;
         }
 
@@ -2240,80 +2474,8 @@ void ApplyAxisK::mark(Heap* heap) {
 // ============================================================================
 // CellIterK - General-purpose cell iterator
 // ============================================================================
-
-// Helper: get the rank of a value (0=scalar, 1=vector, 2=matrix)
-static int get_value_rank(Value* v) {
-    if (v->is_scalar()) return 0;
-    if (v->is_vector()) return 1;
-    return 2;
-}
-
-// Helper function for cell counting
-static int count_cells_for_rank(Value* arr, int k) {
-    if (!arr) return 0;
-    int arr_rank = get_value_rank(arr);
-    if (k >= arr_rank) return 1;
-
-    if (arr->is_scalar()) return 1;
-
-    const Eigen::MatrixXd* mat = arr->as_matrix();
-
-    if (arr->is_vector()) {
-        return (k == 0) ? mat->rows() : 1;
-    }
-
-    // Matrix
-    if (k == 0) {
-        return mat->rows() * mat->cols();
-    } else if (k == 1) {
-        return mat->rows();
-    }
-    return 1;
-}
-
-// Helper: extract a k-cell from an array
-static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
-    if (!arr) return nullptr;
-
-    int arr_rank = get_value_rank(arr);
-    if (k >= arr_rank) {
-        // Full rank: return whole array
-        return arr;
-    }
-
-    if (arr->is_scalar()) {
-        return arr;
-    }
-
-    const Eigen::MatrixXd* mat = arr->as_matrix();
-
-    if (arr->is_vector()) {
-        if (k == 0) {
-            // 0-cell of vector: individual scalar
-            if (cell_index >= mat->rows()) return nullptr;
-            return m->heap->allocate_scalar((*mat)(cell_index, 0));
-        }
-        return arr;
-    }
-
-    // Matrix
-    if (k == 0) {
-        // 0-cell: scalar at linear index (row-major)
-        int rows = mat->rows();
-        int cols = mat->cols();
-        int r = cell_index / cols;
-        int c = cell_index % cols;
-        if (r >= rows) return nullptr;
-        return m->heap->allocate_scalar((*mat)(r, c));
-    } else if (k == 1) {
-        // 1-cell: row vector
-        if (cell_index >= mat->rows()) return nullptr;
-        Eigen::VectorXd row = mat->row(cell_index).transpose();
-        return m->heap->allocate_vector(row);
-    }
-
-    return arr;
-}
+// Note: Helper functions (get_value_rank, count_cells_for_rank, extract_cell)
+// are defined earlier in the file under "Cell Iterator Helpers".
 
 void CellIterK::invoke(Machine* machine) {
     if (mode == CellIterMode::COLLECT) {
@@ -2342,7 +2504,10 @@ void CellIterK::invoke(Machine* machine) {
             if (all_scalars) {
                 // Reassemble into array based on number of results
                 // When function changes cell shape (like reduce), results.size() determines output shape
-                if (results.size() == 1) {
+                if (orig_is_strand) {
+                    // Strand input: preserve strand structure even for single/scalar results
+                    machine->result = machine->heap->allocate_strand(std::move(results));
+                } else if (results.size() == 1) {
                     // Single scalar result - return as scalar
                     machine->result = results[0];
                 } else if (results.size() == (size_t)(orig_rows * orig_cols) && !orig_is_vector && orig_cols > 1) {
@@ -2362,29 +2527,35 @@ void CellIterK::invoke(Machine* machine) {
                     machine->result = machine->heap->allocate_vector(vec, orig_is_char);
                 }
             } else {
-                // Results are vectors - try to assemble into matrix
-                bool all_same_len = true;
-                int vec_len = -1;
-                for (Value* v : results) {
-                    if (v->is_vector()) {
-                        int len = v->rows();
-                        if (vec_len < 0) vec_len = len;
-                        else if (len != vec_len) all_same_len = false;
-                    } else {
-                        all_same_len = false;
-                    }
-                }
-
-                if (all_same_len && vec_len > 0) {
-                    Eigen::MatrixXd mat(results.size(), vec_len);
-                    for (size_t i = 0; i < results.size(); i++) {
-                        const Eigen::MatrixXd* v = results[i]->as_matrix();
-                        mat.row(i) = v->col(0).transpose();
-                    }
-                    machine->result = machine->heap->allocate_matrix(mat, orig_is_char);
+                // Results are non-scalars
+                // If input was a strand, preserve strand structure
+                if (orig_is_strand) {
+                    machine->result = machine->heap->allocate_strand(std::move(results));
                 } else {
-                    // Mixed results - return last (TODO: nested arrays)
-                    machine->result = results.back();
+                    // Try to assemble vectors into matrix
+                    bool all_same_len = true;
+                    int vec_len = -1;
+                    for (Value* v : results) {
+                        if (v->is_vector()) {
+                            int len = v->rows();
+                            if (vec_len < 0) vec_len = len;
+                            else if (len != vec_len) all_same_len = false;
+                        } else {
+                            all_same_len = false;
+                        }
+                    }
+
+                    if (all_same_len && vec_len > 0) {
+                        Eigen::MatrixXd mat(results.size(), vec_len);
+                        for (size_t i = 0; i < results.size(); i++) {
+                            const Eigen::MatrixXd* v = results[i]->as_matrix();
+                            mat.row(i) = v->col(0).transpose();
+                        }
+                        machine->result = machine->heap->allocate_matrix(mat, orig_is_char);
+                    } else {
+                        // Mixed results - create STRAND
+                        machine->result = machine->heap->allocate_strand(std::move(results));
+                    }
                 }
             }
             return;
@@ -2439,6 +2610,12 @@ void CellIterK::invoke(Machine* machine) {
             // Done - reverse results and assemble
             std::reverse(results.begin(), results.end());
 
+            // Strand scan: return results as strand
+            if (orig_is_strand) {
+                machine->result = machine->heap->allocate_strand(std::move(results));
+                return;
+            }
+
             if (orig_is_vector || orig_cols == 1) {
                 Eigen::VectorXd vec(results.size());
                 for (size_t i = 0; i < results.size(); i++) {
@@ -2472,12 +2649,42 @@ void CellIterK::invoke(Machine* machine) {
         machine->push_kont(machine->heap->allocate<CellCollectK>(this));
         machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, element, accumulator));
 
-    } else if (mode == CellIterMode::OUTER) {
-        // Cartesian product iteration for outer product
+    } else if (mode == CellIterMode::SCAN_LEFT) {
+        // Forward iteration for left-to-right scan (strand scan)
         if (current_cell >= total_cells) {
-            // Done - assemble results into matrix
-            // Outer product ALWAYS returns a matrix (shape: lhs_shape × rhs_shape)
-            // Even with scalars: scalar∘.f vector → 1×N matrix, vector∘.f scalar → N×1 matrix
+            // Done - results are already in order
+            if (orig_is_strand) {
+                machine->result = machine->heap->allocate_strand(std::move(results));
+                return;
+            }
+            // For non-strand, assemble as vector
+            Eigen::VectorXd vec(results.size());
+            for (size_t i = 0; i < results.size(); i++) {
+                vec(i) = results[i]->as_scalar();
+            }
+            machine->result = machine->heap->allocate_vector(vec, orig_is_char);
+            return;
+        }
+
+        if (!accumulator) {
+            // First iteration - first element is its own scan result
+            accumulator = extract_cell(machine, rhs, right_rank, current_cell);
+            results.push_back(accumulator);
+            current_cell++;
+            machine->push_kont(this);
+            return;
+        }
+
+        // Apply: accumulator f element (left-to-right)
+        Value* element = extract_cell(machine, rhs, right_rank, current_cell);
+
+        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, accumulator, element));
+
+    } else if (mode == CellIterMode::OUTER) {
+        // Cartesian product iteration for outer product (ISO 9.3.1)
+        if (current_cell >= total_cells) {
+            // Done - assemble results
             if (lhs_total == 0 || rhs_total == 0) {
                 // Empty result - return empty matrix with correct shape
                 machine->result = machine->heap->allocate_matrix(Eigen::MatrixXd(lhs_total, rhs_total));
@@ -2486,7 +2693,20 @@ void CellIterK::invoke(Machine* machine) {
             if (lhs_total == 1 && rhs_total == 1) {
                 // Scalar result (both sides scalar)
                 machine->result = results[0];
-            } else {
+                return;
+            }
+
+            // Check if all results are scalars - if so, build a matrix
+            // Otherwise build a strand of strands (nested array)
+            bool all_scalars = true;
+            for (Value* r : results) {
+                if (!r->is_scalar()) {
+                    all_scalars = false;
+                    break;
+                }
+            }
+
+            if (all_scalars) {
                 // Matrix result (including N×1 and 1×N cases)
                 Eigen::MatrixXd mat(lhs_total, rhs_total);
                 for (int i = 0; i < lhs_total; i++) {
@@ -2495,6 +2715,29 @@ void CellIterK::invoke(Machine* machine) {
                     }
                 }
                 machine->result = machine->heap->allocate_matrix(mat);
+            } else {
+                // Nested array result: build strand of strands (lhs_total rows, each with rhs_total elements)
+                std::vector<Value*> outer;
+                outer.reserve(lhs_total);
+                for (int i = 0; i < lhs_total; i++) {
+                    std::vector<Value*> inner;
+                    inner.reserve(rhs_total);
+                    for (int j = 0; j < rhs_total; j++) {
+                        inner.push_back(results[i * rhs_total + j]);
+                    }
+                    if (rhs_total == 1) {
+                        // Single-element row: don't wrap in strand
+                        outer.push_back(inner[0]);
+                    } else {
+                        outer.push_back(machine->heap->allocate_strand(std::move(inner)));
+                    }
+                }
+                if (lhs_total == 1) {
+                    // Single row: return the inner strand directly
+                    machine->result = outer[0];
+                } else {
+                    machine->result = machine->heap->allocate_strand(std::move(outer));
+                }
             }
             return;
         }
@@ -2503,12 +2746,15 @@ void CellIterK::invoke(Machine* machine) {
         int i = current_cell / rhs_total;
         int j = current_cell % rhs_total;
 
-        // Extract lhs[i] and rhs[j]
+        // Extract lhs[i] and rhs[j], handling strands
         Value* left_cell;
         Value* right_cell;
 
         if (lhs->is_scalar()) {
             left_cell = lhs;
+        } else if (lhs->is_strand()) {
+            const std::vector<Value*>* strand = lhs->as_strand();
+            left_cell = (*strand)[i];
         } else {
             const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
             int li = i / lhs_cols;
@@ -2522,6 +2768,9 @@ void CellIterK::invoke(Machine* machine) {
 
         if (rhs->is_scalar()) {
             right_cell = rhs;
+        } else if (rhs->is_strand()) {
+            const std::vector<Value*>* strand = rhs->as_strand();
+            right_cell = (*strand)[j];
         } else {
             const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
             int ri = j / rhs_cols;
@@ -2562,6 +2811,10 @@ void CellCollectK::invoke(Machine* machine) {
         iter->accumulator = result;
         iter->results.push_back(result);
         iter->current_cell--;
+    } else if (iter->mode == CellIterMode::SCAN_LEFT) {
+        iter->accumulator = result;
+        iter->results.push_back(result);
+        iter->current_cell++;
     } else if (iter->mode == CellIterMode::OUTER) {
         iter->results.push_back(result);
         iter->current_cell++;
@@ -2937,37 +3190,69 @@ void InnerProductCollectK::mark(Heap* heap) {
 
 void NwiseReduceK::invoke(Machine* machine) {
     if (current_window >= total_windows) {
-        // Done - assemble results into vector
-        Eigen::VectorXd result_vec(results.size());
-        for (size_t i = 0; i < results.size(); i++) {
-            result_vec(i) = results[i]->as_scalar();
+        // Done - assemble results
+        // Per ISO 9.2.3: when N equals length of B, return f/B directly (unwrapped)
+        if (results.size() == 1) {
+            // Single result - return unwrapped (like 3+/1 2 3 returns 6, not ⊂6)
+            machine->result = results[0];
+        } else if (is_strand) {
+            // Multiple results from strand - return strand of results
+            machine->result = machine->heap->allocate_strand(std::move(results));
+        } else {
+            // Multiple results from vector - return vector of scalar results
+            Eigen::VectorXd result_vec(results.size());
+            for (size_t i = 0; i < results.size(); i++) {
+                result_vec(i) = results[i]->as_scalar();
+            }
+            machine->result = machine->heap->allocate_vector(result_vec);
         }
-        machine->result = machine->heap->allocate_vector(result_vec);
         return;
     }
 
-    const Eigen::MatrixXd* mat = vec->as_matrix();
+    Value* window_val;
 
-    // Extract window of size window_size starting at current_window
-    // For negative N (reverse=true), reverse the window so reduction operates
-    // on elements in opposite order (ISO 13751 §9.2.3)
-    Eigen::VectorXd window(window_size);
-    if (reverse) {
-        for (int i = 0; i < window_size; i++) {
-            window(i) = (*mat)(current_window + window_size - 1 - i, 0);
+    if (is_strand) {
+        // Extract window from strand
+        auto* strand = vec->as_strand();
+        std::vector<Value*> window_elements;
+        window_elements.reserve(window_size);
+        if (reverse) {
+            for (int i = 0; i < window_size; i++) {
+                window_elements.push_back((*strand)[current_window + window_size - 1 - i]);
+            }
+        } else {
+            for (int i = 0; i < window_size; i++) {
+                window_elements.push_back((*strand)[current_window + i]);
+            }
         }
+        window_val = machine->heap->allocate_strand(std::move(window_elements));
+
+        // Push collector, then CellIterK FOLD_RIGHT to reduce this window strand
+        machine->push_kont(machine->heap->allocate<NwiseCollectK>(this));
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, window_val, 0, 0, window_size,
+            CellIterMode::FOLD_RIGHT, window_size, 1, true, false, true));
     } else {
-        for (int i = 0; i < window_size; i++) {
-            window(i) = (*mat)(current_window + i, 0);
+        // Extract window from vector
+        const Eigen::MatrixXd* mat = vec->as_matrix();
+        Eigen::VectorXd window(window_size);
+        if (reverse) {
+            for (int i = 0; i < window_size; i++) {
+                window(i) = (*mat)(current_window + window_size - 1 - i, 0);
+            }
+        } else {
+            for (int i = 0; i < window_size; i++) {
+                window(i) = (*mat)(current_window + i, 0);
+            }
         }
-    }
-    Value* window_vec = machine->heap->allocate_vector(window);
+        window_val = machine->heap->allocate_vector(window);
 
-    // Push collector, then CellIterK FOLD_RIGHT to reduce this window
-    machine->push_kont(machine->heap->allocate<NwiseCollectK>(this));
-    machine->push_kont(machine->heap->allocate<CellIterK>(
-        fn, nullptr, window_vec, 0, 0, window_size,
-        CellIterMode::FOLD_RIGHT, window_size, 1, true));
+        // Push collector, then CellIterK FOLD_RIGHT to reduce this window
+        machine->push_kont(machine->heap->allocate<NwiseCollectK>(this));
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, window_val, 0, 0, window_size,
+            CellIterMode::FOLD_RIGHT, window_size, 1, true));
+    }
 }
 
 void NwiseReduceK::mark(Heap* heap) {

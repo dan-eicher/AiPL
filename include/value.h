@@ -37,6 +37,7 @@ struct PrimitiveFn {
     const char* name;  // For debugging
     void (*monadic)(Machine* m, Value* axis, Value* omega);           // Monadic form (can be nullptr)
     void (*dyadic)(Machine* m, Value* axis, Value* lhs, Value* rhs);  // Dyadic form (can be nullptr)
+    bool is_pervasive;  // True for scalar functions that auto-penetrate nested arrays
 };
 
 // Operator structures - operators take functions and return derived functions

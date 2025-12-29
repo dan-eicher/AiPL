@@ -42,6 +42,9 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega); // �
 void fn_table(Machine* m, Value* axis, Value* omega);         // ⍪ monadic (table - convert to matrix)
 void fn_depth(Machine* m, Value* axis, Value* omega);         // ≡ monadic (depth - nesting level)
 void fn_match(Machine* m, Value* axis, Value* alpha, Value* omega); // ≡ dyadic (match - identical?)
+void fn_enclose(Machine* m, Value* axis, Value* omega);        // ⊂ monadic (enclose - create nested scalar)
+void fn_disclose(Machine* m, Value* axis, Value* omega);       // ⊃ monadic (disclose/first - unwrap nested)
+void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega); // ⊃ dyadic (pick - index into nested)
 
 // Dyadic built-in functions
 void fn_catenate_first(Machine* m, Value* axis, Value* lhs, Value* rhs); // ⍪ dyadic (join along first axis)
@@ -118,6 +121,8 @@ extern PrimitiveFn prim_format;    // ⍕ symbol (format)
 extern PrimitiveFn prim_table;     // ⍪ symbol (table/catenate first)
 extern PrimitiveFn prim_left;      // ⊣ symbol (left - ISO 10.2.17)
 extern PrimitiveFn prim_right;     // ⊢ symbol (right - ISO 10.2.18)
+extern PrimitiveFn prim_enclose;   // ⊂ symbol (enclose - ISO 10.2.26)
+extern PrimitiveFn prim_disclose;  // ⊃ symbol (disclose/pick - ISO 10.2.22/24)
 
 // Identity functions (ISO 10.2.17-18)
 void fn_right(Machine* m, Value* axis, Value* omega);                    // ⊢ monadic (identity)

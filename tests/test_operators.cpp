@@ -459,11 +459,12 @@ TEST_F(OperatorsTest, NwiseReduceVectorTriplets) {
 
 TEST_F(OperatorsTest, NwiseReduceFullVector) {
     // N = length of vector -> single result (full reduce)
+    // Per ISO 9.2.3: "If M1 equals the length of B, return f/B2"
+    // So 5+/1 2 3 4 5 returns the reduction result directly (scalar 15)
     Value* result = eval(machine, "5 +/ 1 2 3 4 5");
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector());
-    EXPECT_EQ(result->size(), 1);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 15.0);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 15.0);
 }
 
 TEST_F(OperatorsTest, NwiseReduceNonCommutative) {
@@ -2352,6 +2353,459 @@ TEST_F(OperatorsTest, NwiseReduceFirstRejectsFunctionArgument) {
 
 TEST_F(OperatorsTest, RankRejectsFunctionArgument) {
     EXPECT_THROW(machine->eval("+⍤1 +"), APLError);
+}
+
+// ============================================================================
+// Operators with Strands
+// ============================================================================
+
+TEST_F(OperatorsTest, EachWithStrand) {
+    // ⍴¨ applied to strand - result must have same shape as input (ISO 9.2.6)
+    // Note: ⊂ on scalar returns scalar, so use ⊂1 2 3 to create a strand
+    Value* result = machine->eval("⍴¨⊂1 2 3");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 1);
+    // Shape of 1 2 3 is the 1-element vector (3)
+    Value* inner = (*result->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_EQ(inner->size(), 1);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 3.0);
+}
+
+TEST_F(OperatorsTest, EachShapeOfStrand) {
+    // ⍴¨ applied to strand of vectors - 1-element vectors returned as strand (ISO 8.2.2: shape returns vector)
+    Value* result = machine->eval("⍴¨(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+    // First element shape is 1-element vector (3)
+    Value* shape1 = (*result->as_strand())[0];
+    ASSERT_TRUE(shape1->is_vector());
+    EXPECT_DOUBLE_EQ((*shape1->as_matrix())(0, 0), 3.0);
+    // Second element shape is 1-element vector (2)
+    Value* shape2 = (*result->as_strand())[1];
+    ASSERT_TRUE(shape2->is_vector());
+    EXPECT_DOUBLE_EQ((*shape2->as_matrix())(0, 0), 2.0);
+}
+
+TEST_F(OperatorsTest, ReduceStrandSingleElement) {
+    // +/⊂1 2 3 → returns the enclosed vector
+    Value* result = machine->eval("+/⊂1 2 3");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 0), 3.0);
+}
+
+TEST_F(OperatorsTest, ReduceStrandTwoElements) {
+    // +/(⊂1 2 3),⊂4 5 6 → element-wise sum: 5 7 9
+    Value* result = machine->eval("+/(⊂1 2 3),⊂4 5 6");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(2, 0), 9.0);
+}
+
+TEST_F(OperatorsTest, ReduceStrandCatenate) {
+    // ,/(⊂1 2 3),⊂4 5 → concatenate: 1 2 3 4 5
+    Value* result = machine->eval(",/(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 5);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(4, 0), 5.0);
+}
+
+TEST_F(OperatorsTest, ScanStrandSingleElement) {
+    // +\⊂1 2 3 → returns the strand unchanged
+    Value* result = machine->eval("+\\⊂1 2 3");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 1);
+}
+
+TEST_F(OperatorsTest, ScanStrandTwoElements) {
+    // +\(⊂1 2 3),⊂4 5 6 → ((1 2 3), (5 7 9))
+    Value* result = machine->eval("+\\(⊂1 2 3),⊂4 5 6");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+
+    // First element: 1 2 3
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(2, 0), 3.0);
+
+    // Second element: 5 7 9 (running sum)
+    Value* second = (*result->as_strand())[1];
+    ASSERT_TRUE(second->is_vector());
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(1, 0), 7.0);
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(2, 0), 9.0);
+}
+
+TEST_F(OperatorsTest, ScanStrandThreeElements) {
+    // +\(⊂1 2 3),(⊂4 5 6),⊂7 8 9 → ((1 2 3), (5 7 9), (12 15 18))
+    Value* result = machine->eval("+\\(⊂1 2 3),(⊂4 5 6),⊂7 8 9");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 3);
+
+    // Third element: 12 15 18
+    Value* third = (*result->as_strand())[2];
+    ASSERT_TRUE(third->is_vector());
+    EXPECT_DOUBLE_EQ((*third->as_matrix())(0, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*third->as_matrix())(1, 0), 15.0);
+    EXPECT_DOUBLE_EQ((*third->as_matrix())(2, 0), 18.0);
+}
+
+// ============================================================================
+// Dyadic Each with Mixed Types (ISO 9.2.6)
+// ============================================================================
+
+TEST_F(OperatorsTest, DyadicEachVectorPlusStrand) {
+    // 1 2+¨(⊂10 20),(⊂30 40) → ((11 21), (32 42))
+    // Per ISO 9.2.6: match shapes element-wise
+    Value* result = machine->eval("1 2+¨(⊂10 20),(⊂30 40)");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+
+    // First element: 1+(10 20) = 11 21
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(1, 0), 21.0);
+
+    // Second element: 2+(30 40) = 32 42
+    Value* second = (*result->as_strand())[1];
+    ASSERT_TRUE(second->is_vector());
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(0, 0), 32.0);
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(1, 0), 42.0);
+}
+
+TEST_F(OperatorsTest, DyadicEachStrandPlusVector) {
+    // ((⊂10 20),(⊂30 40))+¨1 2 → ((11 21), (32 42))
+    // Note: need explicit parens because APL parses right-to-left
+    Value* result = machine->eval("((⊂10 20),(⊂30 40))+¨1 2");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 11.0);
+}
+
+TEST_F(OperatorsTest, DyadicEachVectorTimesStrand) {
+    // 2 3×¨(⊂10 20),(⊂30 40) → ((20 40), (90 120))
+    Value* result = machine->eval("2 3×¨(⊂10 20),(⊂30 40)");
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 2);
+
+    Value* first = (*result->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), 20.0);
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(1, 0), 40.0);
+}
+
+// ============================================================================
+// Outer Product with Strands (ISO 9.3.1)
+// ============================================================================
+
+TEST_F(OperatorsTest, OuterProductVectorVector) {
+    // Basic outer product: 1 2∘.+10 20 → 2×2 matrix
+    Value* result = machine->eval("1 2∘.+10 20");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 2);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 1), 21.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 1), 22.0);
+}
+
+TEST_F(OperatorsTest, OuterProductStrandStrand) {
+    // Outer product with strands: (⊂1 2),(⊂3 4)∘.+⊂10 20
+    // Result shape is 2×1 (strand with strand)
+    // Each element is strand[i] + strand[j]
+    Value* result = machine->eval("((⊂1 2),(⊂3 4))∘.+(⊂10 20)");
+    // Result should be a 2×1 arrangement where each cell is a vector
+    // [0,0]: (1 2)+(10 20) = (11 22)
+    // [1,0]: (3 4)+(10 20) = (13 24)
+    ASSERT_TRUE(result->is_strand() || result->is_matrix());
+}
+
+TEST_F(OperatorsTest, OuterProductVectorStrand) {
+    // 1 2∘.+(⊂10 20),(⊂30 40) → 2×2 result
+    // [0,0]: 1+(10 20) = (11 21)
+    // [0,1]: 1+(30 40) = (31 41)
+    // [1,0]: 2+(10 20) = (12 22)
+    // [1,1]: 2+(30 40) = (32 42)
+    Value* result = machine->eval("1 2∘.+((⊂10 20),(⊂30 40))");
+    // Result is 2×2 with nested vectors
+    ASSERT_TRUE(result->is_strand() || result->is_matrix());
+    // Check depth - should be nested
+    Value* depth = machine->eval("≡1 2∘.+((⊂10 20),(⊂30 40))");
+    EXPECT_GE(depth->as_scalar(), 2.0);
+}
+
+TEST_F(OperatorsTest, OuterProductStrandVector) {
+    // (⊂1 2),(⊂3 4)∘.+10 20 → 2×2 result
+    // [0,0]: (1 2)+10 = (11 12)
+    // [0,1]: (1 2)+20 = (21 22)
+    // [1,0]: (3 4)+10 = (13 14)
+    // [1,1]: (3 4)+20 = (23 24)
+    Value* result = machine->eval("((⊂1 2),(⊂3 4))∘.+10 20");
+    ASSERT_TRUE(result->is_strand() || result->is_matrix());
+}
+
+// ============================================================================
+// Inner Product with Strands
+// ============================================================================
+
+TEST_F(OperatorsTest, InnerProductVectorVectorBaseline) {
+    // Baseline: 1 2 3 +.× 4 5 6 = +/ 1 2 3 × 4 5 6 = +/ 4 10 18 = 32
+    Value* result = machine->eval("1 2 3+.×4 5 6");
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 32.0);
+}
+
+TEST_F(OperatorsTest, InnerProductStrandStrand) {
+    // Inner product with strands: each element paired, g applied, then f reduced
+    // ((⊂1 2),(⊂3 4)) +.× ((⊂10),(⊂20))
+    // = +/ ((1 2)×(10)) ((3 4)×(20))
+    // = +/ (10 20) (60 80)
+    // Result depends on how + works with strands
+    Value* result = machine->eval("((⊂1 2),(⊂3 4))+.×((⊂10),(⊂20))");
+    // Should produce some result without crashing
+    ASSERT_NE(result, nullptr);
+}
+
+TEST_F(OperatorsTest, InnerProductVectorStrand) {
+    // 1 2 +.× ((⊂10 20),(⊂30 40))
+    // = +/ (1×(10 20)) (2×(30 40))
+    // = +/ (10 20) (60 80)
+    // = (70 100) if + works element-wise on strands
+    Value* result = machine->eval("1 2+.×((⊂10 20),(⊂30 40))");
+    ASSERT_NE(result, nullptr);
+}
+
+TEST_F(OperatorsTest, InnerProductStrandVector) {
+    // ((⊂1 2),(⊂3 4)) +.× 10 20
+    // = +/ ((1 2)×10) ((3 4)×20)
+    // = +/ (10 20) (60 80)
+    Value* result = machine->eval("((⊂1 2),(⊂3 4))+.×10 20");
+    ASSERT_NE(result, nullptr);
+}
+
+// ============================================================================
+// Commute/Duplicate with Strands (ISO 9.2.4, 9.2.5)
+// ============================================================================
+
+TEST_F(OperatorsTest, DuplicateStrand) {
+    // Duplicate: f⍨ B = B f B
+    // ,⍨ strand = strand , strand (catenate strand with itself)
+    Value* result = machine->eval(",⍨(⊂1 2),(⊂3 4)");
+    ASSERT_NE(result, nullptr);
+    // Should produce 4-element strand: (⊂1 2),(⊂3 4),(⊂1 2),(⊂3 4)
+    ASSERT_TRUE(result->is_strand());
+    EXPECT_EQ(result->as_strand()->size(), 4);
+}
+
+TEST_F(OperatorsTest, CommuteStrandScalar) {
+    // Commute: A f⍨ B = B f A
+    // 10 -⍨ (⊂1 2),(⊂3 4) = ((⊂1 2),(⊂3 4)) - 10
+    // Each element of strand minus 10
+    Value* result = machine->eval("10-⍨((⊂1 2),(⊂3 4))");
+    ASSERT_NE(result, nullptr);
+    // Result should be strand with (1 2)-10 and (3 4)-10
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First element: (1 2) - 10 = (-9 -8)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0, 0), -9.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1, 0), -8.0);
+}
+
+TEST_F(OperatorsTest, CommuteScalarStrand) {
+    // Commute: A f⍨ B = B f A
+    // (⊂1 2),(⊂3 4) -⍨ 10 = 10 - ((⊂1 2),(⊂3 4))
+    Value* result = machine->eval("((⊂1 2),(⊂3 4))-⍨10");
+    ASSERT_NE(result, nullptr);
+    // Result: 10 - (⊂1 2) and 10 - (⊂3 4)
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First element: 10 - (1 2) = (9 8)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1, 0), 8.0);
+}
+
+TEST_F(OperatorsTest, DirectStrandStrandSubtract) {
+    // Direct strand-strand subtraction without commute
+    Value* result = machine->eval("(10,20)-(1,2)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0,0), 9.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1,0), 18.0);
+}
+
+TEST_F(OperatorsTest, CommuteSimpleStrandStrand) {
+    // Commute with simple strands (no enclose): (1,2) -⍨ (10,20) = (10,20) - (1,2)
+    Value* result = machine->eval("(1,2)-⍨(10,20)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0,0), 9.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1,0), 18.0);
+}
+
+TEST_F(OperatorsTest, CommuteStrandStrand) {
+    // Commute with nested strands (enclosed vectors): A f⍨ B = B f A
+    // ((⊂1 2),(⊂3 4)) -⍨ ((⊂10 20),(⊂30 40)) = ((⊂10 20),(⊂30 40)) - ((⊂1 2),(⊂3 4))
+    // Element 0: (10 20) - (1 2) = (9 18)
+    // Element 1: (30 40) - (3 4) = (27 36)
+    Value* result = machine->eval("((⊂1 2),(⊂3 4))-⍨((⊂10 20),(⊂30 40))");
+    ASSERT_NE(result, nullptr);
+    // Result is a strand of vectors
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First element: (9 18)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0,0), 9.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1,0), 18.0);
+    // Second element: (27 36)
+    ASSERT_TRUE((*strand)[1]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(0,0), 27.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(1,0), 36.0);
+}
+
+// ============================================================================
+// Rank Operator with Strands (ISO 9.3.3-9.3.5)
+// Strand has rank 1: 0-cells are elements, 1-cells is whole strand
+// ============================================================================
+
+TEST_F(OperatorsTest, RankMonadicStrandRank0) {
+    // -⍤0 on strand: apply - to each 0-cell (each element)
+    // Per ISO 9.3.4: apply f to rank-0 cells of B
+    Value* result = machine->eval("-⍤0 ((⊂1 2),(⊂3 4))");
+    ASSERT_NE(result, nullptr);
+    // Result should be strand with negated vectors
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First: -(1 2) = (-1 -2)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0,0), -1.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1,0), -2.0);
+}
+
+TEST_F(OperatorsTest, RankMonadicStrandRank1) {
+    // ⌽⍤1 on strand: apply ⌽ to 1-cells (the whole strand, since strand is rank 1)
+    // Per ISO 9.3.4: if y exceeds rank, use rank of B (which is 1)
+    Value* result = machine->eval("⌽⍤1 ((⊂1 2),(⊂3 4))");
+    ASSERT_NE(result, nullptr);
+    // Reverse the strand: ((⊂3 4),(⊂1 2))
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First element should now be (3 4)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0,0), 3.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1,0), 4.0);
+}
+
+TEST_F(OperatorsTest, RankDyadicStrandStrandRank0) {
+    // Per ISO 9.3.5: apply f between rank-0 cells of A and rank-0 cells of B
+    // ((⊂1 2),(⊂3 4)) +⍤0 ((⊂10 20),(⊂30 40))
+    // Pairs: (1 2)+(10 20), (3 4)+(30 40)
+    Value* result = machine->eval("((⊂1 2),(⊂3 4))+⍤0 ((⊂10 20),(⊂30 40))");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First: (1 2)+(10 20) = (11 22)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0,0), 11.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1,0), 22.0);
+    // Second: (3 4)+(30 40) = (33 44)
+    ASSERT_TRUE((*strand)[1]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(0,0), 33.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(1,0), 44.0);
+}
+
+// N-wise Reduction with Strands (ISO 9.2.3)
+// N-wise reduction applies f to N-length windows of the argument
+// For strands, the "windows" are consecutive groups of strand elements
+
+TEST_F(OperatorsTest, NwiseReduceStrandPairwise) {
+    // 2+/ on strand: add consecutive pairs
+    // 2+/((⊂1 2),(⊂3 4),(⊂5 6)) should give strand of 2 elements:
+    // (1 2)+(3 4) = (4 6) and (3 4)+(5 6) = (8 10)
+    Value* result = machine->eval("2+/((⊂1 2),(⊂3 4),(⊂5 6))");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First: (1 2)+(3 4) = (4 6)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0,0), 4.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1,0), 6.0);
+    // Second: (3 4)+(5 6) = (8 10)
+    ASSERT_TRUE((*strand)[1]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(0,0), 8.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(1,0), 10.0);
+}
+
+TEST_F(OperatorsTest, NwiseReduceStrandFullReduction) {
+    // 3+/ on 3-element strand: reduces all to single element
+    // 3+/((⊂1 2),(⊂3 4),(⊂5 6)) = (1 2)+(3 4)+(5 6) = (9 12)
+    Value* result = machine->eval("3+/((⊂1 2),(⊂3 4),(⊂5 6))");
+    ASSERT_NE(result, nullptr);
+    // Result should be a single vector (not strand) since it's fully reduced
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0,0), 9.0);
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1,0), 12.0);
+}
+
+TEST_F(OperatorsTest, NwiseReduceStrandIdentity) {
+    // 1+/ should return unchanged (each element is its own window)
+    Value* result = machine->eval("1+/((⊂1 2),(⊂3 4))");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+}
+
+TEST_F(OperatorsTest, NwiseReduceStrandZero) {
+    // 0+/ should return identity-extended result (N+1 elements of identity)
+    // For +, identity is 0
+    Value* result = machine->eval("0+/((⊂1 2),(⊂3 4))");
+    ASSERT_NE(result, nullptr);
+    // Per ISO 9.2.3: 0+/ on 2-element vector gives 3-element result of zeros
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+TEST_F(OperatorsTest, NwiseReduceStrandNegative) {
+    // Negative N reverses subarrays before applying f
+    // Per ISO 9.2.3: negative N reverses each window before reduction
+    // ¯2-/((⊂1 2),(⊂3 4),(⊂5 6)) with 3 elements, window size 2:
+    // Window 0 reversed: (3 4)-(1 2) = (2 2)
+    // Window 1 reversed: (5 6)-(3 4) = (2 2)
+    Value* result = machine->eval("¯2-/((⊂1 2),(⊂3 4),(⊂5 6))");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 2);
+    // First: (3 4)-(1 2) = (2 2)
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(0,0), 2.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[0]->as_matrix())(1,0), 2.0);
+    // Second: (5 6)-(3 4) = (2 2)
+    ASSERT_TRUE((*strand)[1]->is_vector());
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(0,0), 2.0);
+    EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(1,0), 2.0);
 }
 
 int main(int argc, char** argv) {

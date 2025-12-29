@@ -834,6 +834,37 @@ TEST_F(LexerTest, SquadInExpression) {
     EXPECT_EQ(tokens[2].type, TOK_NUMBER_VECTOR);
 }
 
+// Test enclose token (⊂)
+TEST_F(LexerTest, EncloseToken) {
+    auto tokens = tokenize("⊂");
+    ASSERT_EQ(tokens.size(), 2);  // ⊂ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_ENCLOSE);
+}
+
+// Test disclose token (⊃)
+TEST_F(LexerTest, DiscloseToken) {
+    auto tokens = tokenize("⊃");
+    ASSERT_EQ(tokens.size(), 2);  // ⊃ + EOF
+    EXPECT_EQ(tokens[0].type, TOK_DISCLOSE);
+}
+
+// Test enclose in expression
+TEST_F(LexerTest, EncloseInExpression) {
+    auto tokens = tokenize("⊂1 2 3");
+    ASSERT_EQ(tokens.size(), 3);  // ⊂ VECTOR EOF
+    EXPECT_EQ(tokens[0].type, TOK_ENCLOSE);
+    EXPECT_EQ(tokens[1].type, TOK_NUMBER_VECTOR);
+}
+
+// Test disclose of enclose
+TEST_F(LexerTest, DiscloseEncloseExpression) {
+    auto tokens = tokenize("⊃⊂5");
+    ASSERT_EQ(tokens.size(), 4);  // ⊃ ⊂ 5 EOF
+    EXPECT_EQ(tokens[0].type, TOK_DISCLOSE);
+    EXPECT_EQ(tokens[1].type, TOK_ENCLOSE);
+    EXPECT_EQ(tokens[2].type, TOK_NUMBER);
+}
+
 // Test quad name token (⎕IO, ⎕PP)
 TEST_F(LexerTest, QuadNameIO) {
     auto tokens = tokenize("⎕IO");

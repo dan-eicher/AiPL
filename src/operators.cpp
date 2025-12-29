@@ -39,14 +39,25 @@ void op_outer_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
         return;
     }
 
-    // Get dimensions of both arguments
-    int lhs_rows = lhs->rows();
-    int lhs_cols = lhs->cols();
-    int lhs_size = lhs_rows * lhs_cols;
+    // Get dimensions of both arguments, handling strands (ISO 9.3.1)
+    int lhs_size, lhs_cols;
+    int rhs_size, rhs_cols;
 
-    int rhs_rows = rhs->rows();
-    int rhs_cols = rhs->cols();
-    int rhs_size = rhs_rows * rhs_cols;
+    if (lhs->is_strand()) {
+        lhs_size = static_cast<int>(lhs->as_strand()->size());
+        lhs_cols = lhs_size;  // Treat strand as 1D
+    } else {
+        lhs_size = lhs->rows() * lhs->cols();
+        lhs_cols = lhs->cols();
+    }
+
+    if (rhs->is_strand()) {
+        rhs_size = static_cast<int>(rhs->as_strand()->size());
+        rhs_cols = rhs_size;  // Treat strand as 1D
+    } else {
+        rhs_size = rhs->rows() * rhs->cols();
+        rhs_cols = rhs->cols();
+    }
 
     // Use CellIterK with OUTER mode for Cartesian product iteration
     m->push_kont(m->heap->allocate<CellIterK>(
@@ -87,6 +98,61 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
     if (lhs_is_scalar_like && rhs_is_scalar_like) {
         // Scalar inner product: just apply g then return (no reduction needed)
         m->push_kont(m->heap->allocate<DispatchFunctionK>(g, lhs, rhs));
+        return;
+    }
+
+    // Handle strands: treat as 1D collections for inner product
+    // Strand inner product: f/ (strand1 g strand2) where g is applied element-wise
+    bool lhs_is_strand = lhs->is_strand();
+    bool rhs_is_strand = rhs->is_strand();
+
+    if (lhs_is_strand || rhs_is_strand) {
+        // Get sizes
+        int lhs_size = lhs_is_strand ? static_cast<int>(lhs->as_strand()->size())
+                                     : (lhs->is_scalar() ? 1 : lhs->size());
+        int rhs_size = rhs_is_strand ? static_cast<int>(rhs->as_strand()->size())
+                                     : (rhs->is_scalar() ? 1 : rhs->size());
+
+        // Extend scalar-like to match other side
+        if (lhs_is_scalar_like && !rhs_is_scalar_like) {
+            Value* scalar_val = lhs;
+            std::vector<Value*> extended(rhs_size, scalar_val);
+            lhs = m->heap->allocate_strand(std::move(extended));
+            lhs_is_strand = true;
+            lhs_size = rhs_size;
+        }
+        if (rhs_is_scalar_like && !lhs_is_scalar_like) {
+            Value* scalar_val = rhs;
+            std::vector<Value*> extended(lhs_size, scalar_val);
+            rhs = m->heap->allocate_strand(std::move(extended));
+            rhs_is_strand = true;
+            rhs_size = lhs_size;
+        }
+
+        // Check lengths match
+        if (lhs_size != rhs_size) {
+            m->throw_error("LENGTH ERROR: inner product dimension mismatch");
+            return;
+        }
+
+        int n = lhs_size;
+
+        // Empty case: return identity element for f
+        if (n == 0) {
+            double identity = get_identity_for_function(f);
+            if (std::isnan(identity)) {
+                m->throw_error("DOMAIN ERROR: no identity element for empty inner product");
+                return;
+            }
+            m->result = m->heap->allocate_scalar(identity);
+            return;
+        }
+
+        // Strand inner product: f/ (lhs g¨ rhs) - apply g element-wise, then reduce with f
+        m->push_kont(m->heap->allocate<ReduceResultK>(f));
+        m->push_kont(m->heap->allocate<CellIterK>(
+            g, lhs, rhs, 0, 0, n,
+            CellIterMode::COLLECT, n, 1, true, false, true));  // to_strand=true for strand result
         return;
     }
 
@@ -203,6 +269,15 @@ void op_each(Machine* m, Value* axis, Value* f, Value* omega) {
         return;
     }
 
+    // Strand: apply function to each strand element
+    if (omega->is_strand()) {
+        int num_cells = static_cast<int>(omega->as_strand()->size());
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, nullptr, omega, 0, 0, num_cells,
+            CellIterMode::COLLECT, num_cells, 1, true, false, true));
+        return;
+    }
+
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
@@ -236,9 +311,15 @@ void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Val
         return;
     }
 
-    // Scalar extension: scalar with array
+    // Scalar extension: scalar with array/strand
     if (lhs->is_scalar()) {
-        // Scalar left, array right
+        if (rhs->is_strand()) {
+            int num_cells = static_cast<int>(rhs->as_strand()->size());
+            m->push_kont(m->heap->allocate<CellIterK>(
+                f, lhs, rhs, 0, 0, num_cells,
+                CellIterMode::COLLECT, num_cells, 1, true, false, true));
+            return;
+        }
         if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
         int rows = rhs->rows();
         int cols = rhs->cols();
@@ -251,7 +332,13 @@ void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Val
     }
 
     if (rhs->is_scalar()) {
-        // Array left, scalar right
+        if (lhs->is_strand()) {
+            int num_cells = static_cast<int>(lhs->as_strand()->size());
+            m->push_kont(m->heap->allocate<CellIterK>(
+                f, lhs, rhs, 0, 0, num_cells,
+                CellIterMode::COLLECT, num_cells, 1, true, false, true));
+            return;
+        }
         if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
         int rows = lhs->rows();
         int cols = lhs->cols();
@@ -260,6 +347,56 @@ void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Val
         m->push_kont(m->heap->allocate<CellIterK>(
             f, lhs, rhs, 0, 0, num_cells,
             CellIterMode::COLLECT, rows, cols, lhs->is_vector(), is_char));
+        return;
+    }
+
+    // Both strands: sizes must match
+    if (lhs->is_strand() && rhs->is_strand()) {
+        int lhs_size = static_cast<int>(lhs->as_strand()->size());
+        int rhs_size = static_cast<int>(rhs->as_strand()->size());
+        if (lhs_size != rhs_size) {
+            m->throw_error("LENGTH ERROR: each requires matching shapes or scalar");
+            return;
+        }
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, lhs, rhs, 0, 0, lhs_size,
+            CellIterMode::COLLECT, lhs_size, 1, true, false, true));
+        return;
+    }
+
+    // Mixed strand/vector: treat as parallel iteration if sizes match (ISO 9.2.6)
+    // Vector elements pair with strand elements
+    if (lhs->is_strand() && rhs->is_vector()) {
+        int strand_size = static_cast<int>(lhs->as_strand()->size());
+        int vec_size = rhs->rows();
+        if (strand_size != vec_size) {
+            m->throw_error("LENGTH ERROR: each requires matching shapes");
+            return;
+        }
+        // Result is strand: strand[i] f vec[i]
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, lhs, rhs, 0, 0, strand_size,
+            CellIterMode::COLLECT, strand_size, 1, true, false, true));
+        return;
+    }
+
+    if (lhs->is_vector() && rhs->is_strand()) {
+        int vec_size = lhs->rows();
+        int strand_size = static_cast<int>(rhs->as_strand()->size());
+        if (vec_size != strand_size) {
+            m->throw_error("LENGTH ERROR: each requires matching shapes");
+            return;
+        }
+        // Result is strand: vec[i] f strand[i]
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, lhs, rhs, 0, 0, strand_size,
+            CellIterMode::COLLECT, strand_size, 1, true, false, true));
+        return;
+    }
+
+    // Other mixed strand/array - error
+    if (lhs->is_strand() || rhs->is_strand()) {
+        m->throw_error("RANK ERROR: each requires matching types");
         return;
     }
 
@@ -382,6 +519,38 @@ void op_commute_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, 
         return;
     }
 
+    // Pervasive strand handling: if either arg is a strand, apply element-wise
+    bool left_strand = rhs->is_strand();  // Note: rhs becomes left after swap
+    bool right_strand = lhs->is_strand(); // Note: lhs becomes right after swap
+    if (fn->is_pervasive && (left_strand || right_strand)) {
+        int left_size = left_strand ? static_cast<int>(rhs->as_strand()->size())
+                                   : (rhs->is_scalar() ? 1 : rhs->size());
+        int right_size = right_strand ? static_cast<int>(lhs->as_strand()->size())
+                                     : (lhs->is_scalar() ? 1 : lhs->size());
+
+        // Scalar extension for strands
+        if (rhs->is_scalar() && right_strand) {
+            std::vector<Value*> extended(right_size, rhs);
+            rhs = m->heap->allocate_strand(std::move(extended));
+            left_size = right_size;
+        } else if (left_strand && lhs->is_scalar()) {
+            std::vector<Value*> extended(left_size, lhs);
+            lhs = m->heap->allocate_strand(std::move(extended));
+            right_size = left_size;
+        }
+
+        if (left_size != right_size) {
+            m->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation");
+            return;
+        }
+
+        // Use CellIterK with COLLECT mode to apply element-wise (swapped: rhs f lhs)
+        m->push_kont(m->heap->allocate<CellIterK>(
+            f, rhs, lhs, 0, 0, left_size,
+            CellIterMode::COLLECT, left_size, 1, true, false, true));
+        return;
+    }
+
     // Apply: rhs f lhs (swapped, no axis from operator context)
     fn->dyadic(m, nullptr, rhs, lhs);
 }
@@ -493,6 +662,31 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
         return;
     }
 
+    // Strand reduction: reduce over strand elements
+    if (omega->is_strand()) {
+        const std::vector<Value*>* strand = omega->as_strand();
+        int len = static_cast<int>(strand->size());
+        if (len == 0) {
+            // Empty strand: return identity element
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
+                return;
+            }
+            m->result = m->heap->allocate_scalar(identity);
+            return;
+        }
+        if (len == 1) {
+            m->result = (*strand)[0];
+            return;
+        }
+        // Use CellIterK FOLD_RIGHT to reduce strand elements
+        m->push_kont(m->heap->allocate<CellIterK>(
+            func, nullptr, omega, 0, 0, len,
+            CellIterMode::FOLD_RIGHT, len, 1, true, false, true));
+        return;
+    }
+
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
@@ -595,6 +789,12 @@ void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega) {
         return;
     }
 
+    // Strand reduction: same as / (single axis)
+    if (omega->is_strand()) {
+        fn_reduce(m, axis, func, omega);
+        return;
+    }
+
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
@@ -683,6 +883,27 @@ void fn_scan(Machine* m, Value* axis, Value* func, Value* omega) {
 
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(omega->as_scalar());
+        return;
+    }
+
+    // Strand scan: scan over strand elements
+    if (omega->is_strand()) {
+        const std::vector<Value*>* strand = omega->as_strand();
+        int len = static_cast<int>(strand->size());
+        if (len == 0) {
+            // Empty strand: return empty strand
+            m->result = m->heap->allocate_strand({});
+            return;
+        }
+        if (len == 1) {
+            // Single element: result is strand containing just that element
+            m->result = omega;
+            return;
+        }
+        // Use CellIterK SCAN_LEFT for left-to-right scan over strand elements
+        m->push_kont(m->heap->allocate<CellIterK>(
+            func, nullptr, omega, 0, 0, len,
+            CellIterMode::SCAN_LEFT, len, 1, true, false, true));
         return;
     }
 
@@ -778,6 +999,12 @@ void fn_scan_first(Machine* m, Value* axis, Value* func, Value* omega) {
 
     if (omega->is_scalar()) {
         m->result = m->heap->allocate_scalar(omega->as_scalar());
+        return;
+    }
+
+    // Strand scan: same as \ (single axis)
+    if (omega->is_strand()) {
+        fn_scan(m, axis, func, omega);
         return;
     }
 
@@ -916,6 +1143,43 @@ void fn_reduce_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Value* g,
 
     // String to char vector conversion
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    // Handle strands: treat as 1D collection
+    if (rhs->is_strand()) {
+        auto* strand = rhs->as_strand();
+        int len = static_cast<int>(strand->size());
+        int n = validate_nwise(m, n_val, len);
+        if (n == INT_MIN) return;
+        int abs_n = n < 0 ? -n : n;
+        bool reverse = n < 0;
+
+        if (abs_n == 0) {
+            // 0 f/ strand → (1+len) copies of identity
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->throw_error("DOMAIN ERROR: function has no identity element");
+                return;
+            }
+            Eigen::VectorXd result = Eigen::VectorXd::Constant(len + 1, identity);
+            m->result = m->heap->allocate_vector(result);
+            return;
+        }
+
+        // Result length = len - abs_n + 1
+        int result_len = len - abs_n + 1;
+        if (result_len < 0) {
+            m->throw_error("DOMAIN ERROR: N too large for strand");
+            return;
+        }
+        if (result_len == 0) {
+            m->result = m->heap->allocate_strand(std::vector<Value*>());
+            return;
+        }
+
+        // Use NwiseReduceK (now handles strands)
+        m->push_kont(m->heap->allocate<NwiseReduceK>(func, rhs, abs_n, reverse));
+        return;
+    }
 
     if (!rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: / requires array argument");
@@ -1175,10 +1439,11 @@ PrimitiveOp op_rank_op = {
 //   2-vector [l r]: left rank l, right rank r (dyadic only)
 //   3-vector [m l r]: monadic rank m, left rank l, right rank r
 
-// Helper: get the rank of a value (0=scalar, 1=vector, 2=matrix)
+// Helper: get the rank of a value (0=scalar, 1=vector/strand, 2=matrix)
 static int get_array_rank(Value* v) {
     if (v->is_scalar()) return 0;
     if (v->is_vector()) return 1;
+    if (v->is_strand()) return 1;  // Strands are 1D collections
     return 2;  // Matrix
 }
 
@@ -1229,6 +1494,7 @@ static bool parse_rank_spec(Value* rank_spec, int array_rank,
 
 // Helper: extract a k-cell from an array
 // For 2D: 0-cell = scalar at (row, col), 1-cell = row vector, 2-cell = whole matrix
+// For strands: 0-cell = individual element, 1-cell = whole strand
 static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
     if (k >= get_array_rank(arr)) {
         // Full rank: return whole array
@@ -1236,6 +1502,17 @@ static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
     }
 
     if (arr->is_scalar()) {
+        return arr;
+    }
+
+    // Handle strands: 0-cells are individual elements
+    if (arr->is_strand()) {
+        auto* strand = arr->as_strand();
+        if (k == 0) {
+            if (cell_index >= static_cast<int>(strand->size())) return nullptr;
+            return (*strand)[cell_index];
+        }
+        // k >= 1: whole strand
         return arr;
     }
 
@@ -1275,6 +1552,11 @@ static int count_cells(Value* arr, int k) {
     if (k >= get_array_rank(arr)) return 1;
 
     if (arr->is_scalar()) return 1;
+
+    // Handle strands: 0-cells are individual elements, 1-cell is whole strand
+    if (arr->is_strand()) {
+        return (k == 0) ? static_cast<int>(arr->as_strand()->size()) : 1;
+    }
 
     const Eigen::MatrixXd* mat = arr->as_matrix();
 
@@ -1326,11 +1608,11 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
     }
 
     // Validate arguments are arrays (not functions)
-    if (!rhs->is_scalar() && !rhs->is_array()) {
+    if (!rhs->is_scalar() && !rhs->is_array() && !rhs->is_strand()) {
         m->throw_error("DOMAIN ERROR: ⍤ requires array argument");
         return;
     }
-    if (lhs && !lhs->is_scalar() && !lhs->is_array()) {
+    if (lhs && !lhs->is_scalar() && !lhs->is_array() && !lhs->is_strand()) {
         m->throw_error("DOMAIN ERROR: ⍤ requires array argument");
         return;
     }
@@ -1361,11 +1643,18 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
         }
 
         // Multiple cells: use CellIterK continuation to iterate
-        int rows = rhs->is_scalar() ? 1 : rhs->rows();
-        int cols = rhs->is_scalar() ? 1 : rhs->cols();
+        int rows, cols;
+        bool is_strand = rhs->is_strand();
+        if (is_strand) {
+            rows = static_cast<int>(rhs->as_strand()->size());
+            cols = 1;
+        } else {
+            rows = rhs->is_scalar() ? 1 : rhs->rows();
+            cols = rhs->is_scalar() ? 1 : rhs->cols();
+        }
         m->push_kont(m->heap->allocate<CellIterK>(
             f, nullptr, rhs, k, k, num_cells,
-            CellIterMode::COLLECT, rows, cols, rhs->is_vector()));
+            CellIterMode::COLLECT, rows, cols, rhs->is_vector(), false, is_strand));
     } else {
         // Dyadic: A f⍤k B
         int lk = std::min(left_r, lhs_rank);
@@ -1391,11 +1680,19 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
         }
 
         // Multiple cells: use CellIterK continuation
-        int rows = rhs->is_scalar() ? 1 : rhs->rows();
-        int cols = rhs->is_scalar() ? 1 : rhs->cols();
+        // Use strand flag from rhs (output follows rhs structure)
+        int rows, cols;
+        bool is_strand = rhs->is_strand();
+        if (is_strand) {
+            rows = static_cast<int>(rhs->as_strand()->size());
+            cols = 1;
+        } else {
+            rows = rhs->is_scalar() ? 1 : rhs->rows();
+            cols = rhs->is_scalar() ? 1 : rhs->cols();
+        }
         m->push_kont(m->heap->allocate<CellIterK>(
             f, lhs, rhs, lk, rk, num_cells,
-            CellIterMode::COLLECT, rows, cols, rhs->is_vector()));
+            CellIterMode::COLLECT, rows, cols, rhs->is_vector(), false, is_strand));
     }
 }
 

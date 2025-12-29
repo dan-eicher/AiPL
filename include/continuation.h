@@ -1305,6 +1305,7 @@ enum class CellIterMode {
     COLLECT,      // Gather all results (each, rank)
     FOLD_RIGHT,   // Accumulate right-to-left, single result (reduce)
     SCAN_RIGHT,   // Accumulate right-to-left, keep all intermediates (scan)
+    SCAN_LEFT,    // Accumulate left-to-right, keep all intermediates (strand scan)
     OUTER         // Cartesian product iteration (outer product)
 };
 
@@ -1319,13 +1320,14 @@ public:
     int current_cell;       // Current cell index (counts from end for fold/scan)
     CellIterMode mode;      // How to combine results
     std::vector<Value*> results;  // Collected results
-    Value* accumulator;     // For FOLD_RIGHT and SCAN_RIGHT modes
+    Value* accumulator;     // For FOLD_RIGHT, SCAN_RIGHT, and SCAN_LEFT modes
 
     // Original array shape info for reassembly
     int orig_rows;
     int orig_cols;
     bool orig_is_vector;
     bool orig_is_char;     // Preserve character data flag
+    bool orig_is_strand;   // Preserve strand structure for pervasive dispatch
 
     // For OUTER mode: dimensions for Cartesian product
     int lhs_total;          // Total elements in lhs (for OUTER)
@@ -1334,18 +1336,21 @@ public:
     int rhs_cols;           // Columns in rhs (for extracting elements)
 
     CellIterK(Value* f, Value* l, Value* r, int lk, int rk, int total,
-              CellIterMode m, int rows, int cols, bool is_vec, bool is_char = false)
+              CellIterMode m, int rows, int cols, bool is_vec, bool is_char = false,
+              bool is_strand = false)
         : fn(f), lhs(l), rhs(r), left_rank(lk), right_rank(rk),
           total_cells(total), current_cell(0), mode(m), accumulator(nullptr),
           orig_rows(rows), orig_cols(cols), orig_is_vector(is_vec), orig_is_char(is_char),
-          lhs_total(0), rhs_total(0), lhs_cols(1), rhs_cols(1) {
-        if (mode == CellIterMode::COLLECT || mode == CellIterMode::SCAN_RIGHT || mode == CellIterMode::OUTER) {
+          orig_is_strand(is_strand), lhs_total(0), rhs_total(0), lhs_cols(1), rhs_cols(1) {
+        if (mode == CellIterMode::COLLECT || mode == CellIterMode::SCAN_RIGHT ||
+            mode == CellIterMode::SCAN_LEFT || mode == CellIterMode::OUTER) {
             results.reserve(total);
         }
-        // For fold/scan modes, start from the last cell
+        // For right-to-left modes, start from the last cell
         if (mode == CellIterMode::FOLD_RIGHT || mode == CellIterMode::SCAN_RIGHT) {
             current_cell = total - 1;
         }
+        // SCAN_LEFT starts at 0 (default), iterates forward
     }
 
     // Constructor for OUTER mode with explicit dimensions
@@ -1353,7 +1358,7 @@ public:
         : fn(f), lhs(l), rhs(r), left_rank(0), right_rank(0),
           total_cells(l_total * r_total), current_cell(0), mode(CellIterMode::OUTER),
           accumulator(nullptr), orig_rows(l_total), orig_cols(r_total), orig_is_vector(false), orig_is_char(false),
-          lhs_total(l_total), rhs_total(r_total), lhs_cols(l_cols), rhs_cols(r_cols) {
+          orig_is_strand(false), lhs_total(l_total), rhs_total(r_total), lhs_cols(l_cols), rhs_cols(r_cols) {
         results.reserve(total_cells);
     }
 
@@ -1437,16 +1442,19 @@ protected:
 class NwiseReduceK : public Continuation {
 public:
     Value* fn;              // Function to reduce with
-    Value* vec;             // Vector to reduce
+    Value* vec;             // Vector or strand to reduce
     int window_size;        // Size of each window (N)
     bool reverse;           // True if N was negative (reverse windows)
     int current_window;     // Current window being processed
     int total_windows;      // Total number of windows
+    bool is_strand;         // True if input is a strand
     std::vector<Value*> results;  // Collected window reduction results
 
     NwiseReduceK(Value* f, Value* v, int n, bool rev)
-        : fn(f), vec(v), window_size(n), reverse(rev), current_window(0) {
-        int len = v->as_matrix()->rows();
+        : fn(f), vec(v), window_size(n), reverse(rev), current_window(0),
+          is_strand(v->is_strand()) {
+        int len = is_strand ? static_cast<int>(v->as_strand()->size())
+                            : v->as_matrix()->rows();
         total_windows = len - n + 1;
         results.reserve(total_windows);
     }

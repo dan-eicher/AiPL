@@ -1121,11 +1121,10 @@ TEST_F(ContinuationTest, NwiseReduceKFullWindow) {
     machine->push_kont(iter);
     Value* result = machine->execute();
 
+    // Per ISO 9.2.3: when N equals length of B, return f/B directly (unwrapped)
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector());
-    const Eigen::MatrixXd* m = result->as_matrix();
-    EXPECT_EQ(m->rows(), 1);  // 4 - 4 + 1 = 1 window
-    EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);  // 1+2+3+4
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);  // 1+2+3+4
 }
 
 TEST_F(ContinuationTest, NwiseReduceKMarking) {

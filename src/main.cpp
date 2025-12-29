@@ -241,6 +241,18 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
         return oss.str();
     }
 
+    if (v->is_strand()) {
+        std::ostringstream oss;
+        std::vector<apl::Value*>* strand = v->as_strand();
+        oss << "(";
+        for (size_t i = 0; i < strand->size(); ++i) {
+            if (i > 0) oss << " ";
+            oss << format_value((*strand)[i], m);
+        }
+        oss << ")";
+        return oss.str();
+    }
+
     return "[function]";
 }
 
