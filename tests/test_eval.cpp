@@ -5624,18 +5624,14 @@ TEST_F(EvalTest, GPrimeCurryInExpressionContext) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
 }
 
-TEST_F(EvalTest, GPrimeStrandFormationInDfn) {
-    // Value-value juxtaposition in dfn body forms strands
-    Value* result = machine->eval("{⍵ ⍵}5");
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector());
-    EXPECT_EQ(result->size(), 2);
+TEST_F(EvalTest, ValueValueJuxtapositionInDfnIsSyntaxError) {
+    // ISO 13751: value-value juxtaposition is SYNTAX ERROR, even in dfn bodies
+    // Dfns are an extension but follow ISO stranding rules
+    EXPECT_THROW(machine->eval("{⍵ ⍵}5"), APLError);
+    EXPECT_THROW(machine->eval("{⍵ ⍵ ⍵}5"), APLError);
 
-    result = machine->eval("{⍵ ⍵ ⍵}5");
-    EXPECT_EQ(result->size(), 3);
-
-    // But A f B should NOT strand if f has dyadic form
-    result = machine->eval("3{⍺ + ⍵}5");  // Should add, not strand
+    // But A f B works fine - there's a function between values
+    Value* result = machine->eval("3{⍺ + ⍵}5");  // Should add
     EXPECT_TRUE(result->is_scalar());
     EXPECT_DOUBLE_EQ(result->as_scalar(), 8.0);
 }

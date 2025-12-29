@@ -92,6 +92,11 @@ public:
     // Defined operator allocation
     Value* allocate_defined_operator(Value::DefinedOperatorData* op_data);
 
+    // Strand allocation (nested arrays)
+    Value* allocate_strand(const std::vector<Value*>& elements);
+    Value* allocate_strand(std::vector<Value*>&& elements);
+    Value* allocate_empty_strand();
+
     // G2 grammar allocation helpers
     Value* allocate_derived_operator(PrimitiveOp* op, Value* first_operand);
     Value* allocate_derived_operator(Value::DefinedOperatorData* op, Value* first_operand, Value* operator_value = nullptr);

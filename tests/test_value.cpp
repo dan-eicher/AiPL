@@ -754,6 +754,186 @@ TEST_F(ValueTest, ToStringValueErrorOnFunction) {
     EXPECT_THROW(fn->to_string_value(machine->heap), std::runtime_error);
 }
 
+// ============================================================================
+// STRAND (Nested Array) Tests - Phase 1 Foundation
+// ============================================================================
+
+// Test basic strand creation
+TEST_F(ValueTest, StrandCreation) {
+    std::vector<Value*> elements;
+    elements.push_back(machine->heap->allocate_scalar(1.0));
+    elements.push_back(machine->heap->allocate_scalar(2.0));
+    elements.push_back(machine->heap->allocate_scalar(3.0));
+
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    EXPECT_TRUE(strand->is_strand());
+    EXPECT_FALSE(strand->is_vector());
+    EXPECT_FALSE(strand->is_array());  // STRAND is not VECTOR/MATRIX
+    EXPECT_FALSE(strand->is_scalar());
+    EXPECT_FALSE(strand->is_function());
+}
+
+// Test strand type predicates
+TEST_F(ValueTest, StrandTypePredicates) {
+    std::vector<Value*> elements = {machine->heap->allocate_scalar(42.0)};
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    EXPECT_TRUE(strand->is_strand());
+    EXPECT_TRUE(strand->is_basic_value());  // Strands are basic values in G2 grammar
+    EXPECT_FALSE(strand->is_function());
+    EXPECT_FALSE(strand->is_operator());
+}
+
+// Test strand size
+TEST_F(ValueTest, StrandSize) {
+    std::vector<Value*> elements;
+    elements.push_back(machine->heap->allocate_scalar(10.0));
+    elements.push_back(machine->heap->allocate_scalar(20.0));
+    elements.push_back(machine->heap->allocate_scalar(30.0));
+    elements.push_back(machine->heap->allocate_scalar(40.0));
+
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    EXPECT_EQ(strand->size(), 4);
+    EXPECT_EQ(strand->rows(), 4);  // Strands are rank-1
+    EXPECT_EQ(strand->cols(), 1);
+}
+
+// Test strand rank
+TEST_F(ValueTest, StrandRank) {
+    std::vector<Value*> elements = {machine->heap->allocate_scalar(1.0)};
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    EXPECT_EQ(strand->rank(), 1);  // Strands are always rank 1
+}
+
+// Test empty strand
+TEST_F(ValueTest, EmptyStrand) {
+    Value* strand = machine->heap->allocate_empty_strand();
+
+    EXPECT_TRUE(strand->is_strand());
+    EXPECT_EQ(strand->size(), 0);
+    EXPECT_EQ(strand->rows(), 0);
+}
+
+// Test strand element access
+TEST_F(ValueTest, StrandElementAccess) {
+    Value* elem1 = machine->heap->allocate_scalar(100.0);
+    Value* elem2 = machine->heap->allocate_scalar(200.0);
+    std::vector<Value*> elements = {elem1, elem2};
+
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    const std::vector<Value*>* elems = strand->as_strand();
+    ASSERT_NE(elems, nullptr);
+    ASSERT_EQ(elems->size(), 2);
+    EXPECT_EQ((*elems)[0], elem1);
+    EXPECT_EQ((*elems)[1], elem2);
+}
+
+// Test strand with move semantics
+TEST_F(ValueTest, StrandMoveSemantics) {
+    std::vector<Value*> elements;
+    elements.push_back(machine->heap->allocate_scalar(5.0));
+    elements.push_back(machine->heap->allocate_scalar(6.0));
+
+    Value* strand = machine->heap->allocate_strand(std::move(elements));
+
+    EXPECT_TRUE(strand->is_strand());
+    EXPECT_EQ(strand->size(), 2);
+}
+
+// Test nested strand (strand containing strands)
+TEST_F(ValueTest, NestedStrand) {
+    // Create inner strands
+    std::vector<Value*> inner1 = {
+        machine->heap->allocate_scalar(1.0),
+        machine->heap->allocate_scalar(2.0)
+    };
+    std::vector<Value*> inner2 = {
+        machine->heap->allocate_scalar(3.0),
+        machine->heap->allocate_scalar(4.0)
+    };
+    Value* strand1 = machine->heap->allocate_strand(inner1);
+    Value* strand2 = machine->heap->allocate_strand(inner2);
+
+    // Create outer strand containing inner strands
+    std::vector<Value*> outer = {strand1, strand2};
+    Value* nested = machine->heap->allocate_strand(outer);
+
+    EXPECT_TRUE(nested->is_strand());
+    EXPECT_EQ(nested->size(), 2);
+
+    // Check inner strands are accessible
+    const std::vector<Value*>* elems = nested->as_strand();
+    EXPECT_TRUE((*elems)[0]->is_strand());
+    EXPECT_TRUE((*elems)[1]->is_strand());
+    EXPECT_EQ((*elems)[0]->size(), 2);
+    EXPECT_EQ((*elems)[1]->size(), 2);
+}
+
+// Test strand with mixed types (scalars and vectors)
+TEST_F(ValueTest, StrandMixedTypes) {
+    Value* scalar = machine->heap->allocate_scalar(42.0);
+    Eigen::VectorXd vec(3);
+    vec << 1.0, 2.0, 3.0;
+    Value* vector = machine->heap->allocate_vector(vec);
+    Value* str = machine->heap->allocate_string("hello");
+
+    std::vector<Value*> elements = {scalar, vector, str};
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    EXPECT_TRUE(strand->is_strand());
+    EXPECT_EQ(strand->size(), 3);
+
+    const std::vector<Value*>* elems = strand->as_strand();
+    EXPECT_TRUE((*elems)[0]->is_scalar());
+    EXPECT_TRUE((*elems)[1]->is_vector());
+    EXPECT_TRUE((*elems)[2]->is_string());
+}
+
+// Test strand type_name
+TEST_F(ValueTest, StrandTypeName) {
+    std::vector<Value*> elements = {
+        machine->heap->allocate_scalar(1.0),
+        machine->heap->allocate_scalar(2.0)
+    };
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    std::string name = strand->type_name();
+    EXPECT_EQ(name, "strand[2]");
+}
+
+// Test strand GC metadata initialization
+TEST_F(ValueTest, StrandGCMetadata) {
+    std::vector<Value*> elements = {machine->heap->allocate_scalar(1.0)};
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    EXPECT_FALSE(strand->marked);
+    EXPECT_FALSE(strand->in_old_generation);
+}
+
+// Test strand survives GC when referenced
+TEST_F(ValueTest, StrandGCSurvival) {
+    // Create strand and store in result to keep it alive
+    Value* elem = machine->heap->allocate_scalar(999.0);
+    std::vector<Value*> elements = {elem};
+    Value* strand = machine->heap->allocate_strand(elements);
+
+    // Store in result register (GC root)
+    machine->result = strand;
+
+    // Force GC
+    machine->heap->collect(machine);
+
+    // Strand and its element should survive
+    EXPECT_TRUE(machine->result->is_strand());
+    const std::vector<Value*>* elems = machine->result->as_strand();
+    EXPECT_EQ(elems->size(), 1);
+    EXPECT_DOUBLE_EQ((*elems)[0]->as_scalar(), 999.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

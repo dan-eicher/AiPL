@@ -50,6 +50,11 @@ void Value::cleanup() {
         delete data.matrix;
         data.matrix = nullptr;
     }
+    // Clean up strand vector (elements are GC-managed, but the vector itself is owned)
+    if (tag == ValueType::STRAND) {
+        delete data.strand;
+        data.strand = nullptr;
+    }
     // Note: PRIMITIVE and OPERATOR values point to static globals (prim_plus, op_reduce, etc.)
     // CLOSURE body points to GC-managed Continuation (marked via mark(), not deleted here)
     if (tag == ValueType::CLOSURE) {
@@ -84,6 +89,7 @@ int Value::rank() const {
         case ValueType::SCALAR:
             return 0;
         case ValueType::VECTOR:
+        case ValueType::STRAND:  // Strands are rank 1 (vectors of values)
             return 1;
         case ValueType::MATRIX:
             return 2;
@@ -97,12 +103,16 @@ int Value::rows() const {
     if (tag == ValueType::VECTOR || tag == ValueType::MATRIX) {
         return data.matrix->rows();
     }
+    if (tag == ValueType::STRAND) {
+        return static_cast<int>(data.strand->size());
+    }
     throw std::runtime_error("rows() called on non-array value");
 }
 
 int Value::cols() const {
     if (tag == ValueType::SCALAR) return 1;
     if (tag == ValueType::VECTOR) return 1;  // Vectors are n×1
+    if (tag == ValueType::STRAND) return 1;  // Strands are rank-1 (like vectors)
     if (tag == ValueType::MATRIX) {
         return data.matrix->cols();
     }
@@ -113,6 +123,9 @@ int Value::size() const {
     if (tag == ValueType::SCALAR) return 1;
     if (tag == ValueType::VECTOR || tag == ValueType::MATRIX) {
         return data.matrix->rows() * data.matrix->cols();
+    }
+    if (tag == ValueType::STRAND) {
+        return static_cast<int>(data.strand->size());
     }
     throw std::runtime_error("size() called on non-array value");
 }
@@ -149,6 +162,13 @@ const Eigen::MatrixXd* Value::as_matrix() const {
 }
 
 void Value::mark(Heap* heap) {
+    // If this is a STRAND, mark all elements
+    if (tag == ValueType::STRAND && data.strand) {
+        for (Value* elem : *data.strand) {
+            heap->mark(elem);
+        }
+    }
+
     // If this is a CLOSURE, mark the continuation graph body
     if (tag == ValueType::CLOSURE && data.closure) {
         heap->mark(data.closure->body);
@@ -398,6 +418,19 @@ std::string format_value(const Value* v) {
             return oss.str();
         }
 
+        case ValueType::STRAND: {
+            std::ostringstream oss;
+            oss << "(";
+            bool first = true;
+            for (Value* elem : *v->data.strand) {
+                if (!first) oss << " ";
+                first = false;
+                oss << format_value(elem);
+            }
+            oss << ")";
+            return oss.str();
+        }
+
         case ValueType::PRIMITIVE:
             return std::string("<primitive:") + (v->data.primitive_fn->name ? v->data.primitive_fn->name : "?") + ">";
 
@@ -454,6 +487,13 @@ std::string Value::type_name() const {
             return result;
         }
         case ValueType::STRING: return "string";
+        case ValueType::STRAND: {
+            std::string result = "strand";
+            if (data.strand) {
+                result += "[" + std::to_string(data.strand->size()) + "]";
+            }
+            return result;
+        }
         case ValueType::PRIMITIVE:
             return std::string("primitive<") +
                    (data.primitive_fn && data.primitive_fn->name ? data.primitive_fn->name : "?") + ">";

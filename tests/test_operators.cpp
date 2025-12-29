@@ -1807,17 +1807,16 @@ TEST_F(OperatorsTest, DefinedOperatorPreservesGPrimeCurry) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 11.0);
 }
 
-TEST_F(OperatorsTest, DefinedOperatorFinalizesReduceCurry) {
-    // Parenthesized reduce (+/1 2 3) should finalize to 6
-    // Then strand with other values
-    Value* result = eval(machine, "0 (+/1 2 3) 10");
+TEST_F(OperatorsTest, ValueValueJuxtapositionWithReduceIsSyntaxError) {
+    // ISO 13751: value-value juxtaposition is SYNTAX ERROR
+    // 0 (+/1 2 3) 10 has adjacent values - SYNTAX ERROR
+    EXPECT_THROW(eval(machine, "0 (+/1 2 3) 10"), APLError);
+
+    // But reduce result can be used in arithmetic (not stranding)
+    Value* result = eval(machine, "(+/1 2 3) + 10");
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector());
-    EXPECT_EQ(result->size(), 3);
-    auto* mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 6.0);   // +/1 2 3 = 6
-    EXPECT_DOUBLE_EQ((*mat)(2, 0), 10.0);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);  // 6 + 10
 }
 
 TEST_F(OperatorsTest, DefinedOperatorNestedApplication) {

@@ -657,60 +657,6 @@ void LiteralStrandK::mark(Heap* heap) {
     heap->mark(vector_value);
 }
 
-// StrandK implementation - runtime stranding of two basic values
-void StrandK::invoke(Machine* machine) {
-    // Concatenate left_val and right_val into a flat vector
-    // NOTE: This flattening is technically incorrect for APL2-style nested arrays.
-    // E.g., "1 (2 3) 4" SHOULD create a 3-element nested vector, but we produce
-    // a flat 4-element vector "1 2 3 4". This is acceptable until nested arrays
-    // are implemented, at which point this code should create boxed/enclosed
-    // values for non-scalar strand elements.
-
-    Value* left = left_val;
-    Value* right = right_val;
-
-    // Convert strings to character vectors for uniform handling
-    if (left->is_string()) {
-        left = left->to_char_vector(machine->heap);
-    }
-    if (right->is_string()) {
-        right = right->to_char_vector(machine->heap);
-    }
-
-    size_t left_size = left->is_scalar() ? 1 : left->size();
-    size_t right_size = right->is_scalar() ? 1 : right->size();
-    size_t total = left_size + right_size;
-
-    Eigen::VectorXd result(total);
-
-    // Copy left elements
-    if (left->is_scalar()) {
-        result(0) = left->as_scalar();
-    } else {
-        const Eigen::MatrixXd* left_mat = left->as_matrix();
-        for (size_t i = 0; i < left_size; i++) {
-            result(i) = (*left_mat)(i, 0);
-        }
-    }
-
-    // Copy right elements
-    if (right->is_scalar()) {
-        result(left_size) = right->as_scalar();
-    } else {
-        const Eigen::MatrixXd* right_mat = right->as_matrix();
-        for (size_t i = 0; i < right_size; i++) {
-            result(left_size + i) = (*right_mat)(i, 0);
-        }
-    }
-
-    machine->result = machine->heap->allocate_vector(result);
-}
-
-void StrandK::mark(Heap* heap) {
-    heap->mark(left_val);
-    heap->mark(right_val);
-}
-
 // ============================================================================
 // Juxtaposition and Application Continuations
 // ============================================================================
@@ -759,11 +705,13 @@ void EvalJuxtaposeLeftK::mark(Heap* heap) {
 void PerformJuxtaposeK::invoke(Machine* machine) {
     Value* left_val = machine->result;
 
-    // Extension to G2: when both values are basic, form a strand (vector)
-    // Delegate to StrandK which handles the concatenation logic.
-    // See StrandK for notes on nested array support.
+    // ISO 13751 compliance: value-value juxtaposition is a SYNTAX ERROR
+    // The Phrase Table (Table 3) has no A B pattern - adjacent values with no
+    // function between them are not valid. Nested arrays must be created using
+    // ⊂ (enclose), not by juxtaposing values like (1 2)(3 4).
+    // Note: Lexer-level strands (e.g., 1 2 3) are handled earlier as LiteralStrandK.
     if (left_val->is_basic_value() && right_val->is_basic_value()) {
-        machine->push_kont(machine->heap->allocate<StrandK>(left_val, right_val));
+        machine->throw_error("SYNTAX ERROR: Adjacent values require a function between them", this);
         return;
     }
 
@@ -1096,192 +1044,6 @@ void ApplyDyadicK::invoke(Machine* machine) {
 void ApplyDyadicK::mark(Heap* heap) {
     // Mark the saved right value
     heap->mark(right_val);
-}
-
-// ============================================================================
-// Strand Building Continuations
-// ============================================================================
-
-void EvalStrandElementK::invoke(Machine* machine) {
-    // An element has just been evaluated - its value is in result
-    // Add it to the FRONT of evaluated_values (we're going right-to-left)
-    Value* current_val = machine->result;
-
-    // g' finalization: Finalize curries before adding to strand
-    if (maybe_push_finalize(machine, current_val, this)) {
-        return;
-    }
-    // After finalization, use machine->result (may have been updated by sync finalization)
-    current_val = machine->result;
-
-    evaluated_values.insert(evaluated_values.begin(), current_val);
-
-    if (remaining_elements.empty()) {
-        // No more elements to evaluate - build the final strand
-        BuildStrandK* build = machine->heap->allocate<BuildStrandK>(evaluated_values);
-        machine->push_kont(build);
-        return;  // Early exit - done evaluating elements
-    }
-
-    // More elements to evaluate - take the rightmost remaining element
-    Continuation* next_elem = remaining_elements.back();
-    std::vector<Continuation*> new_remaining(remaining_elements.begin(), remaining_elements.end() - 1);
-
-    // Create new EvalStrandElementK for the next iteration
-    EvalStrandElementK* eval_next = machine->heap->allocate<EvalStrandElementK>(new_remaining, evaluated_values);
-
-    // Push in reverse order
-    machine->push_kont(eval_next);   // Will execute after next element
-    machine->push_kont(next_elem);   // Evaluate next element now
-
-    // Phase 3.1: No return needed, trampoline continues
-}
-
-void EvalStrandElementK::mark(Heap* heap) {
-    // Mark remaining continuations
-    for (Continuation* elem : remaining_elements) {
-        heap->mark(elem);
-    }
-
-    // Mark evaluated values
-    for (Value* val : evaluated_values) {
-        heap->mark(val);
-    }
-}
-
-// BuildStrandK implementation
-void BuildStrandK::invoke(Machine* machine) {
-    // All elements have been evaluated - build the vector
-    // values are already in left-to-right order
-
-    if (values.empty()) {
-        Eigen::VectorXd empty_vec(0);
-        Value* val = machine->heap->allocate_vector(empty_vec);
-        machine->result = val;
-        return;  // Early exit for empty case
-    }
-
-    // CURRYING TRANSFORMATION (Georgeff et al. paper, page 121)
-    // Check if any element is a function - if so, apply it with proper permutation
-    // g' = λx. λy. if null(y) then g1(x) else if bas(y) then g2(x,y) else y(g1(x))
-    //
-    // Pattern matching for function application:
-    // [f x] -> monadic: f(x)
-    // [f x y] -> dyadic: x f y  (note: function is first in strand)
-    // [x f y] -> dyadic: x f y  (note: function is second in strand - "permute" reorders)
-    //
-    // The paper's "permute" function handles the reordering based on positions
-
-    // First, check if there's a function in the strand
-    PrimitiveFn* prim = nullptr;
-    int fn_index = -1;
-
-    for (size_t i = 0; i < values.size(); i++) {
-        if (values[i]->tag == ValueType::PRIMITIVE) {
-            prim = values[i]->data.primitive_fn;
-            fn_index = i;
-            break;
-        }
-    }
-
-    if (prim != nullptr) {
-        // Pattern: [f x] - monadic application
-        if (values.size() == 2 && fn_index == 0) {
-            Value* arg = values[1];
-
-            if (!prim->monadic) {
-                machine->throw_error("SYNTAX ERROR: Function has no monadic form", this);
-                return;
-            }
-
-            // Apply monadic function (sets machine->result directly or pushes ThrowErrorK)
-            prim->monadic(machine, nullptr, arg);
-            return;  // Early exit after monadic application
-        }
-
-        // Pattern: [f x y] - dyadic application (function first)
-        if (values.size() == 3 && fn_index == 0) {
-            Value* left_arg = values[1];
-            Value* right_arg = values[2];
-
-            if (!prim->dyadic) {
-                machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this);
-                return;
-            }
-
-            // Apply dyadic function: x f y (sets machine->result directly or pushes ThrowErrorK)
-            prim->dyadic(machine, nullptr, left_arg, right_arg);
-            return;  // Early exit after dyadic application
-        }
-
-        // Pattern: [x f y] - dyadic application (function in middle - APL infix notation)
-        if (values.size() == 3 && fn_index == 1) {
-            Value* left_arg = values[0];
-            Value* right_arg = values[2];
-
-            if (!prim->dyadic) {
-                machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this);
-                return;
-            }
-
-            // Apply dyadic function: x f y (sets machine->result directly or pushes ThrowErrorK)
-            prim->dyadic(machine, nullptr, left_arg, right_arg);
-            return;  // Early exit after dyadic application
-        }
-
-        // TODO: Higher-order operators and other patterns
-        // For now, fall through to regular vector formation (or error)
-        machine->throw_error("SYNTAX ERROR: Unsupported function application pattern in strand", this);
-        return;
-    }
-
-    // Regular vector formation (no function application)
-    // First pass: convert strings to char vectors and calculate total size
-    size_t total_size = 0;
-    for (size_t i = 0; i < values.size(); i++) {
-        Value* val = values[i];
-        if (val->is_string()) {
-            // Convert string to char vector (lazy conversion)
-            values[i] = val->to_char_vector(machine->heap);
-            val = values[i];
-        }
-        if (val->is_scalar()) {
-            total_size += 1;
-        } else if (val->is_array()) {
-            total_size += val->size();
-        } else {
-            machine->throw_error("RANK ERROR: Strand elements must be scalars or arrays", this);
-            return;
-        }
-    }
-
-    // Second pass: build the result vector
-    Eigen::VectorXd vec(total_size);
-    size_t idx = 0;
-    for (size_t i = 0; i < values.size(); i++) {
-        Value* val = values[i];
-        if (val->is_scalar()) {
-            vec(idx++) = val->as_scalar();
-        } else {
-            // Array - copy all elements
-            const Eigen::MatrixXd* mat = val->as_matrix();
-            for (int j = 0; j < mat->size(); j++) {
-                vec(idx++) = (*mat)(j);
-            }
-        }
-    }
-
-    Value* result = machine->heap->allocate_vector(vec);
-    machine->result = result;
-
-    // Phase 3.1: No return needed, trampoline continues
-}
-
-void BuildStrandK::mark(Heap* heap) {
-    // Mark all values
-    for (Value* val : values) {
-        heap->mark(val);
-    }
 }
 
 // ============================================================================

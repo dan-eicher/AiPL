@@ -218,23 +218,11 @@ TEST_F(DfnTest, DfnMultipleLocals) {
 // Return Values
 // ============================================================================
 
-TEST_F(DfnTest, DfnReturnsVector) {
-    // {omega omega omega}5 should return 5 5 5
-    Continuation* k = parser->parse("{⍵ ⍵ ⍵}5");
-
-    ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
-    EXPECT_EQ(parser->get_error(), "");
-
-    machine->push_kont(k);
-    Value* result = machine->execute();
-
-    ASSERT_NE(result, nullptr);
-    ASSERT_TRUE(result->is_vector());
-    ASSERT_EQ(result->size(), 3);
-    const Eigen::MatrixXd* mat = result->as_matrix();
-    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
-    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);
-    EXPECT_DOUBLE_EQ((*mat)(2, 0), 5.0);
+TEST_F(DfnTest, DfnValueValueJuxtapositionIsSyntaxError) {
+    // ISO 13751: value-value juxtaposition is SYNTAX ERROR, even in dfn bodies
+    // {⍵ ⍵ ⍵}5 has adjacent values with no function - SYNTAX ERROR
+    EXPECT_THROW(machine->eval("{⍵ ⍵ ⍵}5"), APLError);
+    EXPECT_THROW(machine->eval("{⍵ ⍵}5"), APLError);
 }
 
 TEST_F(DfnTest, DfnVectorArgument) {

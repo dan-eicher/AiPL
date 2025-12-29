@@ -1560,24 +1560,20 @@ TEST_F(ContinuationTest, PerformAssignKFinalizesDerivedOpCurry) {
     }
 }
 
-// Test: EvalStrandElementK should finalize G_PRIME curry of CLOSURE in strand
-TEST_F(ContinuationTest, StrandFinalizesClosureCurry) {
-    // {⍵+1}5 in a strand context: 1 ({⍵+1}5) 3 should give 1 6 3
-    Value* result = machine->eval("1 ({⍵+1}5) 3");
+// Test: Closure curry should finalize when used in arithmetic
+TEST_F(ContinuationTest, ClosureCurryFinalizesInArithmetic) {
+    // {⍵+1}5 should finalize to 6, then + 10 gives 16
+    Value* result = machine->eval("({⍵+1}5) + 10");
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector()) << "Strand should finalize CLOSURE curry";
-    if (result->is_vector()) {
-        EXPECT_EQ(result->rows(), 3);
-        const Eigen::MatrixXd* m = result->as_matrix();
-        EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
-        EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);
-        EXPECT_DOUBLE_EQ((*m)(2, 0), 3.0);
+    EXPECT_TRUE(result->is_scalar()) << "Closure curry should finalize before arithmetic";
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);
     }
 }
 
-// Test: Assigned reduce result should be usable in strand
-TEST_F(ContinuationTest, AssignedReduceUsableInStrand) {
-    // A←+/1 2 3 should store 6, then 10 A 20 should give 10 6 20
+// Test: Assigned reduce result should be finalized
+TEST_F(ContinuationTest, AssignedReduceIsFinalized) {
+    // A←+/1 2 3 should store 6 (finalized scalar, not curry)
     machine->eval("A←+/1 2 3");
     Value* a_val = machine->env->lookup("A");
     ASSERT_NE(a_val, nullptr);
@@ -1586,16 +1582,12 @@ TEST_F(ContinuationTest, AssignedReduceUsableInStrand) {
         EXPECT_DOUBLE_EQ(a_val->as_scalar(), 6.0);
     }
 
-    // Now use A in a strand - should work without N-wise reduce errors
-    Value* result = machine->eval("10 A 20");
+    // Verify A is usable in arithmetic (not stranding)
+    Value* result = machine->eval("A + 10");
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector());
-    if (result->is_vector()) {
-        EXPECT_EQ(result->rows(), 3);
-        const Eigen::MatrixXd* m = result->as_matrix();
-        EXPECT_DOUBLE_EQ((*m)(0, 0), 10.0);
-        EXPECT_DOUBLE_EQ((*m)(1, 0), 6.0);
-        EXPECT_DOUBLE_EQ((*m)(2, 0), 20.0);
+    EXPECT_TRUE(result->is_scalar());
+    if (result->is_scalar()) {
+        EXPECT_DOUBLE_EQ(result->as_scalar(), 16.0);
     }
 }
 
@@ -1655,21 +1647,12 @@ TEST_F(ContinuationTest, DyadicCurryAsLeftOperand) {
     }
 }
 
-// Test: DYADIC_CURRY in the middle of a strand
-TEST_F(ContinuationTest, DyadicCurryInStrand) {
-    // 1 2 (+/1 2 3) 4 should give 1 2 6 4
-    // The curry must be finalized before strand formation
-    Value* result = machine->eval("1 2 (+/1 2 3) 4");
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector()) << "Strand with curry should produce vector";
-    if (result->is_vector()) {
-        EXPECT_EQ(result->rows(), 4);
-        const Eigen::MatrixXd* m = result->as_matrix();
-        EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
-        EXPECT_DOUBLE_EQ((*m)(1, 0), 2.0);
-        EXPECT_DOUBLE_EQ((*m)(2, 0), 6.0);
-        EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);
-    }
+// Test: ISO 13751 - value-value juxtaposition is SYNTAX ERROR
+TEST_F(ContinuationTest, ValueValueJuxtapositionIsSyntaxError) {
+    // ISO 13751 Phrase Table has no A B pattern - adjacent values require a function
+    // 1 2 (+/1 2 3) 4 has value-value juxtaposition (1 2 is lexer strand, but then
+    // strand-value and value-value juxtapositions occur at runtime)
+    EXPECT_THROW(machine->eval("1 2 (+/1 2 3) 4"), APLError);
 }
 
 // Test: G_PRIME curry as left operand

@@ -5,6 +5,7 @@
 #include <Eigen/Dense>
 #include <string>
 #include <ostream>
+#include <vector>
 
 namespace apl {
 
@@ -56,6 +57,7 @@ enum class ValueType {
     VECTOR,     // 1D array stored as n×1 matrix
     MATRIX,     // 2D array
     STRING,     // Character string (interned pointer)
+    STRAND,     // Nested array (std::vector<Value*>) - can hold any values including other strands
     PRIMITIVE,  // Primitive function (C function pointer)
     CLOSURE,    // User-defined function (continuation graph)
     OPERATOR,   // Higher-order operator (takes functions, returns derived functions)
@@ -128,6 +130,7 @@ public:
         double scalar;              // For SCALAR
         Eigen::MatrixXd* matrix;    // For VECTOR and MATRIX (vectors stored as n×1)
         const char* string;         // For STRING (interned pointer, not owned)
+        std::vector<Value*>* strand;  // For STRAND (nested array, can contain any values)
         PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
         ClosureData* closure;       // For CLOSURE (user-defined function with niladic flag)
         PrimitiveOp* op;            // For OPERATOR (primitive)
@@ -155,6 +158,7 @@ public:
     bool is_vector() const { return tag == ValueType::VECTOR; }
     bool is_matrix() const { return tag == ValueType::MATRIX; }
     bool is_array() const { return tag == ValueType::VECTOR || tag == ValueType::MATRIX; }
+    bool is_strand() const { return tag == ValueType::STRAND; }
     bool is_string() const { return tag == ValueType::STRING; }
     bool is_primitive() const { return tag == ValueType::PRIMITIVE; }
     bool is_closure() const { return tag == ValueType::CLOSURE; }
@@ -163,8 +167,12 @@ public:
     bool is_defined_operator() const { return tag == ValueType::DEFINED_OPERATOR; }
     bool is_derived_operator() const { return tag == ValueType::DERIVED_OPERATOR; }
     bool is_curried_fn() const { return tag == ValueType::CURRIED_FN; }
-    // G2 grammar: "bas" type = basic values (scalars, vectors, matrices, strings)
-    bool is_basic_value() const { return is_scalar() || is_array() || is_string(); }
+    // G2 grammar: "bas" type = basic values (scalars, vectors, matrices, strings, strands)
+    bool is_basic_value() const { return is_scalar() || is_array() || is_string() || is_strand(); }
+
+    // Strand access
+    std::vector<Value*>* as_strand() { return data.strand; }
+    const std::vector<Value*>* as_strand() const { return data.strand; }
 
     // String access
     const char* as_string() const { return data.string; }

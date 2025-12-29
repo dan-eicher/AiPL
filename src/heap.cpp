@@ -82,6 +82,11 @@ Value* Heap::allocate(Value* val) {
         bytes_allocated += val->data.matrix->size() * sizeof(double);
     }
 
+    // For strands, count vector storage (pointers only, elements counted separately)
+    if (val->is_strand() && val->data.strand) {
+        bytes_allocated += val->data.strand->capacity() * sizeof(Value*);
+    }
+
     return val;
 }
 
@@ -173,6 +178,30 @@ Value* Heap::allocate_defined_operator(Value::DefinedOperatorData* op_data) {
     Value* val = new Value();
     val->tag = ValueType::DEFINED_OPERATOR;
     val->data.defined_op_data = op_data;
+    return allocate(val);
+}
+
+// Allocate a strand (nested array) from a vector of elements
+Value* Heap::allocate_strand(const std::vector<Value*>& elements) {
+    Value* val = new Value();
+    val->tag = ValueType::STRAND;
+    val->data.strand = new std::vector<Value*>(elements);
+    return allocate(val);
+}
+
+// Allocate a strand with move semantics
+Value* Heap::allocate_strand(std::vector<Value*>&& elements) {
+    Value* val = new Value();
+    val->tag = ValueType::STRAND;
+    val->data.strand = new std::vector<Value*>(std::move(elements));
+    return allocate(val);
+}
+
+// Allocate an empty strand
+Value* Heap::allocate_empty_strand() {
+    Value* val = new Value();
+    val->tag = ValueType::STRAND;
+    val->data.strand = new std::vector<Value*>();
     return allocate(val);
 }
 
@@ -298,6 +327,9 @@ void Heap::minor_gc(Machine* machine) {
         if (val->is_array() && val->data.matrix) {
             bytes_allocated -= val->data.matrix->size() * sizeof(double);
         }
+        if (val->is_strand() && val->data.strand) {
+            bytes_allocated -= val->data.strand->capacity() * sizeof(Value*);
+        }
         delete val;
     }
     young_objects.erase(young_dead, young_objects.end());
@@ -392,6 +424,9 @@ void Heap::sweep() {
         if (val->is_array() && val->data.matrix) {
             bytes_allocated -= val->data.matrix->size() * sizeof(double);
         }
+        if (val->is_strand() && val->data.strand) {
+            bytes_allocated -= val->data.strand->capacity() * sizeof(Value*);
+        }
         delete val;
     }
     young_objects.erase(young_dead, young_objects.end());
@@ -404,6 +439,9 @@ void Heap::sweep() {
         bytes_allocated -= sizeof(Value);
         if (val->is_array() && val->data.matrix) {
             bytes_allocated -= val->data.matrix->size() * sizeof(double);
+        }
+        if (val->is_strand() && val->data.strand) {
+            bytes_allocated -= val->data.strand->capacity() * sizeof(Value*);
         }
         delete val;
     }

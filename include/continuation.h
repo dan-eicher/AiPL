@@ -34,7 +34,6 @@ class SysVarReadK;
 class SysVarAssignK;
 class PerformSysVarAssignK;
 class LiteralStrandK;
-class StrandK;
 class JuxtaposeK;
 class EvalJuxtaposeLeftK;
 class PerformJuxtaposeK;
@@ -46,8 +45,6 @@ class EvalDyadicLeftK;
 class ApplyMonadicK;
 class ApplyDyadicK;
 class ArgK;
-class EvalStrandElementK;
-class BuildStrandK;
 class FrameK;
 class ApplyFunctionK;
 class EvalApplyFunctionLeftK;
@@ -133,7 +130,6 @@ public:
     virtual void visit(SysVarAssignK*) = 0;
     virtual void visit(PerformSysVarAssignK*) = 0;
     virtual void visit(LiteralStrandK*) = 0;
-    virtual void visit(StrandK*) = 0;
     virtual void visit(JuxtaposeK*) = 0;
     virtual void visit(EvalJuxtaposeLeftK*) = 0;
     virtual void visit(PerformJuxtaposeK*) = 0;
@@ -145,8 +141,6 @@ public:
     virtual void visit(ApplyMonadicK*) = 0;
     virtual void visit(ApplyDyadicK*) = 0;
     virtual void visit(ArgK*) = 0;
-    virtual void visit(EvalStrandElementK*) = 0;
-    virtual void visit(BuildStrandK*) = 0;
     virtual void visit(FrameK*) = 0;
     virtual void visit(ApplyFunctionK*) = 0;
     virtual void visit(EvalApplyFunctionLeftK*) = 0;
@@ -555,30 +549,9 @@ protected:
     void invoke(Machine* machine) override;
 };
 
-// StrandK - Runtime stranding: concatenate two basic values into a vector
-// Used by PerformJuxtaposeK when both values are basic (e.g., {⍵ ⍵}5 → 5 5)
-// TODO: When nested arrays are implemented, this should create boxed values
-// for non-scalar elements instead of flattening.
-class StrandK : public Continuation {
-public:
-    Value* left_val;
-    Value* right_val;
-
-    StrandK(Value* left, Value* right)
-        : left_val(left), right_val(right) {}
-
-    ~StrandK() override {}
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
 // JuxtaposeK - G2 Grammar juxtaposition: fbn-term ::= fb-term fbn-term
 // Implements: if type(x₁) = bas then x₂(x₁) else x₁(x₂)
-// This is different from StrandK - it performs function application based on types
+// ISO 13751: Adjacent values (both basic) are SYNTAX ERROR - no runtime stranding
 class JuxtaposeK : public Continuation {
 public:
     Continuation* left;   // Left fb-term
@@ -777,44 +750,6 @@ public:
     ~ArgK() override {
         // Don't delete next - it's GC-managed
     }
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
-// Auxiliary continuation for StrandK - evaluates remaining strand elements right-to-left
-// Maintains an accumulator of already-evaluated values (in left-to-right order)
-// Evaluates next element from the right, prepends to accumulator, repeats
-class EvalStrandElementK : public Continuation {
-public:
-    std::vector<Continuation*> remaining_elements;  // Elements left to evaluate (left-to-right order)
-    std::vector<Value*> evaluated_values;           // Values evaluated so far (left-to-right order)
-
-    EvalStrandElementK(const std::vector<Continuation*>& remaining, const std::vector<Value*>& evaluated)
-        : remaining_elements(remaining), evaluated_values(evaluated) {}
-
-    ~EvalStrandElementK() override {}
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
-// Auxiliary continuation to build the final strand vector from collected values
-// All elements have been evaluated, now construct the vector Value
-class BuildStrandK : public Continuation {
-public:
-    std::vector<Value*> values;  // All evaluated strand elements (left-to-right order)
-
-    BuildStrandK(const std::vector<Value*>& vals)
-        : values(vals) {}
-
-    ~BuildStrandK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }

@@ -235,13 +235,6 @@ public:
         print_location(k);
     }
 
-    void visit(StrandK* k) override {
-        out << "StrandK";
-        print_value("left", k->left_val);
-        print_value("right", k->right_val);
-        print_location(k);
-    }
-
     void visit(JuxtaposeK* k) override {
         out << "JuxtaposeK";
         print_location(k);
@@ -311,18 +304,6 @@ public:
         print_value("arg", k->arg_value);
         print_location(k);
         print_child("next", k->next);
-    }
-
-    void visit(EvalStrandElementK* k) override {
-        out << "EvalStrandElementK(remaining=" << k->remaining_elements.size()
-            << ", done=" << k->evaluated_values.size() << ")";
-        print_location(k);
-        print_children("remaining", k->remaining_elements);
-    }
-
-    void visit(BuildStrandK* k) override {
-        out << "BuildStrandK(" << k->values.size() << " values)";
-        print_location(k);
     }
 
     void visit(FrameK* k) override {
