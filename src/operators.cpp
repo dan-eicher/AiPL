@@ -2523,7 +2523,67 @@ void fn_catenate_axis_dyadic(Machine* m, Value* curry_axis, Value* lhs, Value* a
             return;
         }
 
-        m->throw_error("RANK ERROR: laminate for matrices not yet implemented");
+        // Matrix laminate: creates 3D NDARRAY
+        // axis_idx determines where the new axis of length 2 is inserted
+        if (lhs->is_matrix() && rhs->is_matrix()) {
+            if (lrows != rrows || lcols != rcols) {
+                m->throw_error("LENGTH ERROR: matrices must have same shape for laminate");
+                return;
+            }
+
+            // Determine result shape based on axis_idx
+            // axis_idx < 0: new axis before first (2×rows×cols)
+            // axis_idx = 0: new axis after first (rows×2×cols)
+            // axis_idx = 1: new axis after second (rows×cols×2)
+            std::vector<int> result_shape;
+            int new_axis_pos;
+            if (axis_idx < 0) {
+                result_shape = {2, lrows, lcols};
+                new_axis_pos = 0;
+            } else if (axis_idx == 0) {
+                result_shape = {lrows, 2, lcols};
+                new_axis_pos = 1;
+            } else {
+                result_shape = {lrows, lcols, 2};
+                new_axis_pos = 2;
+            }
+
+            int total_size = 2 * lrows * lcols;
+            Eigen::VectorXd result(total_size);
+
+            // Copy data with proper indexing
+            for (int i = 0; i < lrows; ++i) {
+                for (int j = 0; j < lcols; ++j) {
+                    int lin_lhs, lin_rhs;
+                    if (new_axis_pos == 0) {
+                        // Shape: 2×rows×cols
+                        lin_lhs = 0 * (lrows * lcols) + i * lcols + j;
+                        lin_rhs = 1 * (lrows * lcols) + i * lcols + j;
+                    } else if (new_axis_pos == 1) {
+                        // Shape: rows×2×cols
+                        lin_lhs = i * (2 * lcols) + 0 * lcols + j;
+                        lin_rhs = i * (2 * lcols) + 1 * lcols + j;
+                    } else {
+                        // Shape: rows×cols×2
+                        lin_lhs = i * (lcols * 2) + j * 2 + 0;
+                        lin_rhs = i * (lcols * 2) + j * 2 + 1;
+                    }
+                    result(lin_lhs) = (*lmat)(i, j);
+                    result(lin_rhs) = (*rmat)(i, j);
+                }
+            }
+
+            m->result = m->heap->allocate_ndarray(std::move(result), std::move(result_shape));
+            return;
+        }
+
+        // Vector-matrix or matrix-vector laminate
+        if ((lhs->is_vector() && rhs->is_matrix()) || (lhs->is_matrix() && rhs->is_vector())) {
+            m->throw_error("RANK ERROR: laminate requires matching ranks");
+            return;
+        }
+
+        m->throw_error("RANK ERROR: unsupported laminate combination");
         return;
     }
 

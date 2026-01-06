@@ -685,6 +685,85 @@ TEST_F(OperatorsTest, CatenateMatrixAxis2) {
 }
 
 // ========================================================================
+// Matrix Laminate Tests (ISO 13751)
+// Fractional axis creates new dimension for matrices, producing 3D NDARRAY
+// ========================================================================
+
+TEST_F(OperatorsTest, LaminateMatrixAxis05) {
+    // (2 3⍴⍳6) ,[0.5] (2 3⍴10+⍳6) - new axis before first → 2×2×3 NDARRAY
+    Value* result = eval(machine, "(2 3⍴⍳6) ,[0.5] (2 3⍴10+⍳6)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);  // new axis: 2 matrices
+    EXPECT_EQ(nd->shape[1], 2);  // rows
+    EXPECT_EQ(nd->shape[2], 3);  // cols
+    // First plane: 1 2 3 / 4 5 6
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 3.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 4.0);
+    // Second plane: 11 12 13 / 14 15 16
+    EXPECT_DOUBLE_EQ((*nd->data)(6), 11.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(7), 12.0);
+}
+
+TEST_F(OperatorsTest, LaminateMatrixAxis15) {
+    // (2 3⍴⍳6) ,[1.5] (2 3⍴10+⍳6) - new axis after first → 2×2×3 NDARRAY
+    Value* result = eval(machine, "(2 3⍴⍳6) ,[1.5] (2 3⍴10+⍳6)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);  // rows
+    EXPECT_EQ(nd->shape[1], 2);  // new axis: 2 "layers"
+    EXPECT_EQ(nd->shape[2], 3);  // cols
+    // Row 0: [1 2 3] then [11 12 13]
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 3.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 11.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(4), 12.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(5), 13.0);
+    // Row 1: [4 5 6] then [14 15 16]
+    EXPECT_DOUBLE_EQ((*nd->data)(6), 4.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(9), 14.0);
+}
+
+TEST_F(OperatorsTest, LaminateMatrixAxis25) {
+    // (2 3⍴⍳6) ,[2.5] (2 3⍴10+⍳6) - new axis after second → 2×3×2 NDARRAY
+    Value* result = eval(machine, "(2 3⍴⍳6) ,[2.5] (2 3⍴10+⍳6)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);  // rows
+    EXPECT_EQ(nd->shape[1], 3);  // cols
+    EXPECT_EQ(nd->shape[2], 2);  // new axis: pairs
+    // Element [0,0]: (1, 11), [0,1]: (2, 12), [0,2]: (3, 13)
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 11.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 12.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(4), 3.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(5), 13.0);
+    // Element [1,0]: (4, 14), [1,1]: (5, 15), [1,2]: (6, 16)
+    EXPECT_DOUBLE_EQ((*nd->data)(6), 4.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(7), 14.0);
+}
+
+TEST_F(OperatorsTest, LaminateMatrixLengthError) {
+    // Matrices must have same shape for laminate
+    EXPECT_THROW(eval(machine, "(2 3⍴⍳6) ,[0.5] (3 2⍴⍳6)"), APLError);
+}
+
+TEST_F(OperatorsTest, LaminateMatrixRankError) {
+    // Vector-matrix laminate is RANK ERROR
+    EXPECT_THROW(eval(machine, "(⍳6) ,[0.5] (2 3⍴⍳6)"), APLError);
+}
+
+// ========================================================================
 // Reduction Identity Elements (ISO 13751 Table 5)
 // Empty vector reduction should return the identity element
 // Note: Using ⍳0 to create empty vector since ⍬ (zilde) not yet in lexer

@@ -4936,18 +4936,7 @@ void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
 // Enlist (∊) - monadic: flatten nested structure to simple vector
 // ISO 13751 §10.2.25: Returns a simple vector containing all simple scalars in B
-//
-// TODO: NESTED ARRAYS NOT YET IMPLEMENTED
-// Currently this just calls ravel because we don't have nested arrays.
-// When nested arrays are implemented:
-//   - ∊ should recursively descend into nested structures
-//   - ∊(1 (2 3) 4) should return 1 2 3 4 (flatten the nested vector)
-//   - ∊ on a simple array should be equivalent to ravel
-//
-// Related: PerformJuxtaposeK in continuation.cpp is where stranding like
-// "1 (2 3) 4" or "{⍵ ⍵}(1 2 3)" would create nested arrays. Currently it
-// flattens strands into simple vectors, which is incorrect for APL2-style
-// semantics but works until nested arrays are implemented.
+// Recursively descends into strands (nested arrays) to collect all scalars.
 //
 // Helper to recursively enlist a value into a vector of scalars
 static void enlist_into(Machine* m, Value* v, std::vector<double>& out) {
