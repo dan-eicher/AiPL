@@ -2063,6 +2063,211 @@ TEST_F(StructuralTest, ExpandFirstLengthError) {
     EXPECT_THROW(machine->eval("1 0 1 ⍀ 3 3⍴⍳9"), APLError);
 }
 
+// ============================================================================
+// Replicate NDARRAY and Strand tests
+// ============================================================================
+
+TEST_F(StructuralTest, ReplicateNDArray3D) {
+    // 2 1/[3] 2 3 4⍴⍳24 → shape 2 3 8
+    // Replicate along last axis (4→8: each element doubled or kept)
+    Value* counts_v = machine->heap->allocate_vector(Eigen::Vector4d(2, 1, 2, 1));
+
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    Value* arr = machine->heap->allocate_ndarray(std::move(data), {2, 3, 4});
+
+    Value* axis = machine->heap->allocate_scalar(3.0);
+    fn_replicate(machine, axis, counts_v, arr);
+
+    ASSERT_TRUE(machine->result->is_ndarray());
+    const Value::NDArrayData* nd = machine->result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3u);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 6);  // 2+1+2+1 = 6
+}
+
+TEST_F(StructuralTest, ReplicateNDArrayFirstAxis) {
+    // 2 0/[1] 2 3 4⍴⍳24 → shape 2 3 4 (first plane doubled, second removed)
+    Value* counts_v = machine->heap->allocate_vector(Eigen::Vector2d(2, 0));
+
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    Value* arr = machine->heap->allocate_ndarray(std::move(data), {2, 3, 4});
+
+    Value* axis = machine->heap->allocate_scalar(1.0);
+    fn_replicate(machine, axis, counts_v, arr);
+
+    ASSERT_TRUE(machine->result->is_ndarray());
+    const Value::NDArrayData* nd = machine->result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3u);
+    EXPECT_EQ(nd->shape[0], 2);  // 2+0 = 2
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+}
+
+TEST_F(StructuralTest, ReplicateNDArrayScalarExtension) {
+    // 2/ 2 3 4⍴⍳24 → each element along last axis doubled
+    Value* counts = machine->heap->allocate_scalar(2.0);
+
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    Value* arr = machine->heap->allocate_ndarray(std::move(data), {2, 3, 4});
+
+    fn_replicate(machine, nullptr, counts, arr);
+
+    ASSERT_TRUE(machine->result->is_ndarray());
+    const Value::NDArrayData* nd = machine->result->as_ndarray();
+    EXPECT_EQ(nd->shape[2], 8);  // 4×2 = 8
+}
+
+TEST_F(StructuralTest, ReplicateStrandBasic) {
+    // 2 1 3 / ('a' 'b' 'c') → ('a' 'a' 'b' 'c' 'c' 'c')
+    Value* counts = machine->heap->allocate_vector(Eigen::Vector3d(2, 1, 3));
+    Value* a = machine->heap->allocate_scalar(static_cast<double>('a'));
+    Value* b = machine->heap->allocate_scalar(static_cast<double>('b'));
+    Value* c = machine->heap->allocate_scalar(static_cast<double>('c'));
+    Value* strand = machine->heap->allocate_strand({a, b, c});
+
+    fn_replicate(machine, nullptr, counts, strand);
+
+    ASSERT_TRUE(machine->result->is_strand());
+    std::vector<Value*>* result = machine->result->as_strand();
+    EXPECT_EQ(result->size(), 6u);  // 2+1+3 = 6
+}
+
+TEST_F(StructuralTest, ReplicateStrandCompress) {
+    // 1 0 1 / (1 2 3) → (1 3)
+    Value* counts = machine->heap->allocate_vector(Eigen::Vector3d(1, 0, 1));
+    Value* v1 = machine->heap->allocate_scalar(1.0);
+    Value* v2 = machine->heap->allocate_scalar(2.0);
+    Value* v3 = machine->heap->allocate_scalar(3.0);
+    Value* strand = machine->heap->allocate_strand({v1, v2, v3});
+
+    fn_replicate(machine, nullptr, counts, strand);
+
+    ASSERT_TRUE(machine->result->is_strand());
+    std::vector<Value*>* result = machine->result->as_strand();
+    EXPECT_EQ(result->size(), 2u);
+    EXPECT_DOUBLE_EQ((*result)[0]->as_scalar(), 1.0);
+    EXPECT_DOUBLE_EQ((*result)[1]->as_scalar(), 3.0);
+}
+
+TEST_F(StructuralTest, ReplicateStrandEmpty) {
+    // 0 0 / (1 2) → empty strand
+    Value* counts = machine->heap->allocate_vector(Eigen::Vector2d(0, 0));
+    Value* v1 = machine->heap->allocate_scalar(1.0);
+    Value* v2 = machine->heap->allocate_scalar(2.0);
+    Value* strand = machine->heap->allocate_strand({v1, v2});
+
+    fn_replicate(machine, nullptr, counts, strand);
+
+    ASSERT_TRUE(machine->result->is_strand());
+    std::vector<Value*>* result = machine->result->as_strand();
+    EXPECT_EQ(result->size(), 0u);
+}
+
+// ============================================================================
+// Expand NDARRAY and Strand tests
+// ============================================================================
+
+TEST_F(StructuralTest, ExpandNDArray3D) {
+    // 1 0 1 0 1 0 \[3] 2 3 3⍴⍳18 → shape 2 3 6
+    Value* mask = machine->heap->allocate_vector(Eigen::VectorXd::Map(
+        std::vector<double>{1, 0, 1, 0, 1, 0}.data(), 6));
+
+    Eigen::VectorXd data(18);
+    for (int i = 0; i < 18; ++i) data(i) = i + 1;
+    Value* arr = machine->heap->allocate_ndarray(std::move(data), {2, 3, 3});
+
+    Value* axis = machine->heap->allocate_scalar(3.0);
+    fn_expand(machine, axis, mask, arr);
+
+    ASSERT_TRUE(machine->result->is_ndarray());
+    const Value::NDArrayData* nd = machine->result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3u);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 6);
+}
+
+TEST_F(StructuralTest, ExpandNDArrayFirstAxis) {
+    // 1 0 1 \[1] 2 3 4⍴⍳24 → shape 3 3 4 (insert zero plane in middle)
+    Value* mask = machine->heap->allocate_vector(Eigen::Vector3d(1, 0, 1));
+
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    Value* arr = machine->heap->allocate_ndarray(std::move(data), {2, 3, 4});
+
+    Value* axis = machine->heap->allocate_scalar(1.0);
+    fn_expand(machine, axis, mask, arr);
+
+    ASSERT_TRUE(machine->result->is_ndarray());
+    const Value::NDArrayData* nd = machine->result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3u);
+    EXPECT_EQ(nd->shape[0], 3);  // mask length
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+
+    // Second plane (index 1) should be all zeros
+    // Linear index for [1;0;0] = 1*12 = 12
+    EXPECT_DOUBLE_EQ((*nd->data)(12), 0.0);
+}
+
+TEST_F(StructuralTest, ExpandStrandBasic) {
+    // 1 0 1 0 1 \ ('a' 'b' 'c') → ('a' 0 'b' 0 'c')
+    Value* mask = machine->heap->allocate_vector(Eigen::VectorXd::Map(
+        std::vector<double>{1, 0, 1, 0, 1}.data(), 5));
+    Value* a = machine->heap->allocate_scalar(static_cast<double>('a'));
+    Value* b = machine->heap->allocate_scalar(static_cast<double>('b'));
+    Value* c = machine->heap->allocate_scalar(static_cast<double>('c'));
+    Value* strand = machine->heap->allocate_strand({a, b, c});
+
+    fn_expand(machine, nullptr, mask, strand);
+
+    ASSERT_TRUE(machine->result->is_strand());
+    std::vector<Value*>* result = machine->result->as_strand();
+    EXPECT_EQ(result->size(), 5u);
+    EXPECT_DOUBLE_EQ((*result)[0]->as_scalar(), static_cast<double>('a'));
+    EXPECT_DOUBLE_EQ((*result)[1]->as_scalar(), 0.0);  // fill
+    EXPECT_DOUBLE_EQ((*result)[2]->as_scalar(), static_cast<double>('b'));
+    EXPECT_DOUBLE_EQ((*result)[3]->as_scalar(), 0.0);  // fill
+    EXPECT_DOUBLE_EQ((*result)[4]->as_scalar(), static_cast<double>('c'));
+}
+
+TEST_F(StructuralTest, ExpandStrandAllOnes) {
+    // 1 1 1 \ (1 2 3) → (1 2 3)
+    Value* mask = machine->heap->allocate_vector(Eigen::Vector3d(1, 1, 1));
+    Value* v1 = machine->heap->allocate_scalar(1.0);
+    Value* v2 = machine->heap->allocate_scalar(2.0);
+    Value* v3 = machine->heap->allocate_scalar(3.0);
+    Value* strand = machine->heap->allocate_strand({v1, v2, v3});
+
+    fn_expand(machine, nullptr, mask, strand);
+
+    ASSERT_TRUE(machine->result->is_strand());
+    std::vector<Value*>* result = machine->result->as_strand();
+    EXPECT_EQ(result->size(), 3u);
+}
+
+TEST_F(StructuralTest, ExpandStrandLeadingZeros) {
+    // 0 0 1 1 \ (1 2) → (0 0 1 2)
+    Value* mask = machine->heap->allocate_vector(Eigen::Vector4d(0, 0, 1, 1));
+    Value* v1 = machine->heap->allocate_scalar(1.0);
+    Value* v2 = machine->heap->allocate_scalar(2.0);
+    Value* strand = machine->heap->allocate_strand({v1, v2});
+
+    fn_expand(machine, nullptr, mask, strand);
+
+    ASSERT_TRUE(machine->result->is_strand());
+    std::vector<Value*>* result = machine->result->as_strand();
+    EXPECT_EQ(result->size(), 4u);
+    EXPECT_DOUBLE_EQ((*result)[0]->as_scalar(), 0.0);  // fill
+    EXPECT_DOUBLE_EQ((*result)[1]->as_scalar(), 0.0);  // fill
+    EXPECT_DOUBLE_EQ((*result)[2]->as_scalar(), 1.0);
+    EXPECT_DOUBLE_EQ((*result)[3]->as_scalar(), 2.0);
+}
+
 TEST_F(StructuralTest, QuestionRegistered) {
     ASSERT_NE(machine->env->lookup("?"), nullptr);
 }
@@ -2081,8 +2286,8 @@ TEST_F(StructuralTest, DyadicTransposeScalar) {
 }
 
 TEST_F(StructuralTest, DyadicTransposeVectorIdentity) {
-    // 0⍉(1 2 3) → 1 2 3
-    Value* lhs = machine->heap->allocate_scalar(0.0);
+    // 1⍉(1 2 3) → 1 2 3 (with ⎕IO=1, axis 1 is the only axis of a vector)
+    Value* lhs = machine->heap->allocate_scalar(1.0);  // axis 1 with ⎕IO=1
     Eigen::VectorXd vec(3);
     vec << 1, 2, 3;
     Value* rhs = machine->heap->allocate_vector(vec);
@@ -3715,6 +3920,1503 @@ TEST_F(StructuralTest, PickFirstFromStrandOneIndex) {
     Value* result = machine->eval("1⊃(⊂10 20),(⊂30 40)");
     ASSERT_TRUE(result->is_vector());
     EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 10.0);
+}
+
+// ========================================================================
+// NDARRAY Tests (Rank 3+)
+// ========================================================================
+
+// Test reshape to 3D array using direct function call
+TEST_F(StructuralTest, Reshape3DBasic) {
+    // 2 3 4⍴⍳24 should produce 2×3×4 array
+    // Create shape vector: 2 3 4
+    Eigen::VectorXd shape_vec(3);
+    shape_vec << 2.0, 3.0, 4.0;
+    Value* shape = machine->heap->allocate_vector(shape_vec);
+
+    // Create data vector: 1..24
+    Eigen::VectorXd data_vec(24);
+    for (int i = 0; i < 24; ++i) data_vec(i) = i + 1;
+    Value* data = machine->heap->allocate_vector(data_vec);
+
+    fn_reshape(machine, nullptr, shape, data);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_ndarray());
+    EXPECT_EQ(result->rank(), 3);
+
+    const auto& result_shape = result->ndarray_shape();
+    ASSERT_EQ(result_shape.size(), 3);
+    EXPECT_EQ(result_shape[0], 2);
+    EXPECT_EQ(result_shape[1], 3);
+    EXPECT_EQ(result_shape[2], 4);
+
+    EXPECT_EQ(result->size(), 24);
+
+    // Verify row-major order: element [0,0,0] = 1, [0,0,1] = 2, etc.
+    const Eigen::VectorXd* nd_data = result->ndarray_data();
+    EXPECT_DOUBLE_EQ((*nd_data)(0), 1.0);   // [0,0,0]
+    EXPECT_DOUBLE_EQ((*nd_data)(1), 2.0);   // [0,0,1]
+    EXPECT_DOUBLE_EQ((*nd_data)(4), 5.0);   // [0,1,0]
+    EXPECT_DOUBLE_EQ((*nd_data)(12), 13.0); // [1,0,0]
+    EXPECT_DOUBLE_EQ((*nd_data)(23), 24.0); // [1,2,3]
+}
+
+// Test shape of 3D array
+TEST_F(StructuralTest, Shape3DArray) {
+    // Create 2×3×4 array directly
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    std::vector<int> shape = {2, 3, 4};
+    Value* ndarray = machine->heap->allocate_ndarray(data, shape);
+
+    fn_shape(machine, nullptr, ndarray);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* shape_result = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape_result)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape_result)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape_result)(2, 0), 4.0);
+}
+
+// Test reshape cycling with 3D target
+TEST_F(StructuralTest, Reshape3DCycling) {
+    // 2 3 4⍴1 2 3 cycles 1 2 3 1 2 3...
+    Eigen::VectorXd shape_vec(3);
+    shape_vec << 2.0, 3.0, 4.0;
+    Value* shape = machine->heap->allocate_vector(shape_vec);
+
+    Eigen::VectorXd data_vec(3);
+    data_vec << 1.0, 2.0, 3.0;
+    Value* data = machine->heap->allocate_vector(data_vec);
+
+    fn_reshape(machine, nullptr, shape, data);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_ndarray());
+    const Eigen::VectorXd* nd_data = result->ndarray_data();
+    EXPECT_DOUBLE_EQ((*nd_data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd_data)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*nd_data)(2), 3.0);
+    EXPECT_DOUBLE_EQ((*nd_data)(3), 1.0);  // Cycles
+    EXPECT_DOUBLE_EQ((*nd_data)(4), 2.0);
+}
+
+// Test reshape from scalar to 3D
+TEST_F(StructuralTest, Reshape3DFromScalar) {
+    // 2 2 2⍴5 fills all 8 elements with 5
+    Eigen::VectorXd shape_vec(3);
+    shape_vec << 2.0, 2.0, 2.0;
+    Value* shape = machine->heap->allocate_vector(shape_vec);
+    Value* scalar = machine->heap->allocate_scalar(5.0);
+
+    fn_reshape(machine, nullptr, shape, scalar);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_ndarray());
+    EXPECT_EQ(result->size(), 8);
+    const Eigen::VectorXd* nd_data = result->ndarray_data();
+    for (int i = 0; i < 8; ++i) {
+        EXPECT_DOUBLE_EQ((*nd_data)(i), 5.0);
+    }
+}
+
+// Test 4D array
+TEST_F(StructuralTest, Reshape4D) {
+    // 2 2 2 2⍴⍳16
+    Eigen::VectorXd shape_vec(4);
+    shape_vec << 2.0, 2.0, 2.0, 2.0;
+    Value* shape = machine->heap->allocate_vector(shape_vec);
+
+    Eigen::VectorXd data_vec(16);
+    for (int i = 0; i < 16; ++i) data_vec(i) = i + 1;
+    Value* data = machine->heap->allocate_vector(data_vec);
+
+    fn_reshape(machine, nullptr, shape, data);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_ndarray());
+    EXPECT_EQ(result->rank(), 4);
+    EXPECT_EQ(result->size(), 16);
+}
+
+// Test reshape 3D to 2D (NDARRAY source, matrix result)
+TEST_F(StructuralTest, Reshape3Dto2D) {
+    // Create 2×3×4 array, reshape to 6×4
+    Eigen::VectorXd nd_data(24);
+    for (int i = 0; i < 24; ++i) nd_data(i) = i + 1;
+    std::vector<int> nd_shape = {2, 3, 4};
+    Value* ndarray = machine->heap->allocate_ndarray(nd_data, nd_shape);
+
+    Eigen::VectorXd new_shape(2);
+    new_shape << 6.0, 4.0;
+    Value* shape = machine->heap->allocate_vector(new_shape);
+
+    fn_reshape(machine, nullptr, shape, ndarray);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 6);
+    EXPECT_EQ(result->cols(), 4);
+    // First row should be 1 2 3 4
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 3), 4.0);
+}
+
+// Test reshape 3D to vector
+TEST_F(StructuralTest, Reshape3DtoVector) {
+    // Create 2×3×4 array, reshape to 24-element vector
+    Eigen::VectorXd nd_data(24);
+    for (int i = 0; i < 24; ++i) nd_data(i) = i + 1;
+    std::vector<int> nd_shape = {2, 3, 4};
+    Value* ndarray = machine->heap->allocate_ndarray(nd_data, nd_shape);
+
+    Eigen::VectorXd new_shape(1);
+    new_shape << 24.0;
+    Value* shape = machine->heap->allocate_vector(new_shape);
+
+    fn_reshape(machine, nullptr, shape, ndarray);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 24);
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*vec)(23, 0), 24.0);
+}
+
+// Test empty shape produces scalar from NDARRAY
+TEST_F(StructuralTest, Reshape3DtoScalar) {
+    // (⍳0)⍴(2 3 4⍴⍳24) → 1 (first element)
+    Eigen::VectorXd nd_data(24);
+    for (int i = 0; i < 24; ++i) nd_data(i) = i + 1;
+    std::vector<int> nd_shape = {2, 3, 4};
+    Value* ndarray = machine->heap->allocate_ndarray(nd_data, nd_shape);
+
+    Eigen::VectorXd empty_shape(0);
+    Value* shape = machine->heap->allocate_vector(empty_shape);
+
+    fn_reshape(machine, nullptr, shape, ndarray);
+    Value* result = machine->result;
+
+    ASSERT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
+}
+
+// Test strides are correct
+TEST_F(StructuralTest, NDArrayStrides) {
+    // 2×3×4 array should have strides {12, 4, 1}
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    std::vector<int> shape = {2, 3, 4};
+    Value* ndarray = machine->heap->allocate_ndarray(data, shape);
+
+    const auto& strides = ndarray->ndarray_strides();
+    ASSERT_EQ(strides.size(), 3);
+    EXPECT_EQ(strides[0], 12);  // stride along first axis
+    EXPECT_EQ(strides[1], 4);   // stride along second axis
+    EXPECT_EQ(strides[2], 1);   // stride along last axis
+}
+
+// Test ndarray_at indexing
+TEST_F(StructuralTest, NDArrayAt) {
+    // Create 2×3×4 array with values 1..24
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    std::vector<int> shape = {2, 3, 4};
+    Value* ndarray = machine->heap->allocate_ndarray(data, shape);
+
+    // [0,0,0] = 1, [0,0,1] = 2, [0,1,0] = 5, [1,0,0] = 13
+    EXPECT_DOUBLE_EQ(ndarray->ndarray_at({0, 0, 0}), 1.0);
+    EXPECT_DOUBLE_EQ(ndarray->ndarray_at({0, 0, 1}), 2.0);
+    EXPECT_DOUBLE_EQ(ndarray->ndarray_at({0, 0, 3}), 4.0);
+    EXPECT_DOUBLE_EQ(ndarray->ndarray_at({0, 1, 0}), 5.0);
+    EXPECT_DOUBLE_EQ(ndarray->ndarray_at({0, 2, 3}), 12.0);
+    EXPECT_DOUBLE_EQ(ndarray->ndarray_at({1, 0, 0}), 13.0);
+    EXPECT_DOUBLE_EQ(ndarray->ndarray_at({1, 2, 3}), 24.0);
+}
+
+// Test ndarray_linear_index
+TEST_F(StructuralTest, NDArrayLinearIndex) {
+    Eigen::VectorXd data(24);
+    for (int i = 0; i < 24; ++i) data(i) = i + 1;
+    std::vector<int> shape = {2, 3, 4};
+    Value* ndarray = machine->heap->allocate_ndarray(data, shape);
+
+    // For 2×3×4 with strides {12, 4, 1}:
+    // [i,j,k] = i*12 + j*4 + k
+    EXPECT_EQ(ndarray->ndarray_linear_index({0, 0, 0}), 0);
+    EXPECT_EQ(ndarray->ndarray_linear_index({0, 0, 1}), 1);
+    EXPECT_EQ(ndarray->ndarray_linear_index({0, 1, 0}), 4);
+    EXPECT_EQ(ndarray->ndarray_linear_index({1, 0, 0}), 12);
+    EXPECT_EQ(ndarray->ndarray_linear_index({1, 2, 3}), 23);
+}
+
+// ========================================================================
+// NDARRAY Integration Tests (via machine->eval())
+// ========================================================================
+
+// Test 3D reshape via eval
+TEST_F(StructuralTest, Eval3DReshape) {
+    Value* result = machine->eval("2 3 4⍴⍳24");
+    ASSERT_TRUE(result->is_ndarray());
+    EXPECT_EQ(result->rank(), 3);
+    EXPECT_EQ(result->size(), 24);
+
+    const auto& shape = result->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+}
+
+// Test shape of 3D array via eval
+TEST_F(StructuralTest, EvalShape3D) {
+    Value* result = machine->eval("⍴2 3 4⍴⍳24");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 4.0);
+}
+
+// Test 4D reshape via eval
+TEST_F(StructuralTest, Eval4DReshape) {
+    Value* result = machine->eval("2 2 2 2⍴⍳16");
+    ASSERT_TRUE(result->is_ndarray());
+    EXPECT_EQ(result->rank(), 4);
+    EXPECT_EQ(result->size(), 16);
+}
+
+// Test reshaping 3D to 2D via eval
+TEST_F(StructuralTest, Eval3Dto2DReshape) {
+    Value* result = machine->eval("4 6⍴2 3 4⍴⍳24");
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 4);
+    EXPECT_EQ(result->cols(), 6);
+}
+
+// Test reshaping 3D to vector via eval
+TEST_F(StructuralTest, Eval3DtoVectorReshape) {
+    Value* result = machine->eval("24⍴2 3 4⍴⍳24");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 24);
+}
+
+// Test cycling with 3D
+TEST_F(StructuralTest, Eval3DCycling) {
+    Value* result = machine->eval("2 2 2⍴1 2 3");
+    ASSERT_TRUE(result->is_ndarray());
+    const Eigen::VectorXd* data = result->ndarray_data();
+    // 1 2 3 1 2 3 1 2 (cycling)
+    EXPECT_DOUBLE_EQ((*data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*data)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*data)(2), 3.0);
+    EXPECT_DOUBLE_EQ((*data)(3), 1.0);
+    EXPECT_DOUBLE_EQ((*data)(7), 2.0);
+}
+
+// Test assignment of 3D array
+TEST_F(StructuralTest, Eval3DAssignment) {
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* result = machine->eval("A");
+    ASSERT_TRUE(result->is_ndarray());
+    EXPECT_EQ(result->rank(), 3);
+}
+
+// Test shape of assigned 3D array
+TEST_F(StructuralTest, EvalShapeAssigned3D) {
+    machine->eval("B←2 2 2⍴⍳8");
+    Value* result = machine->eval("⍴B");
+    ASSERT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+}
+
+// ========================================================================
+// NDARRAY Indexing Tests
+// ========================================================================
+
+// Test scalar indexing: A[i;j;k] → scalar
+TEST_F(StructuralTest, NDArrayIndexScalar) {
+    machine->eval("A←2 3 4⍴⍳24");
+    // A[1;1;1] = 1 (first element, 1-indexed)
+    Value* r1 = machine->eval("A[1;1;1]");
+    ASSERT_TRUE(r1->is_scalar());
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    // A[1;2;3] = 7 (indices 0,1,2 → linear 0*12+1*4+2=6 → value 7)
+    Value* r2 = machine->eval("A[1;2;3]");
+    ASSERT_TRUE(r2->is_scalar());
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 7.0);
+
+    // A[2;1;1] = 13 (indices 1,0,0 → linear 1*12=12 → value 13)
+    Value* r3 = machine->eval("A[2;1;1]");
+    ASSERT_TRUE(r3->is_scalar());
+    EXPECT_DOUBLE_EQ(r3->as_scalar(), 13.0);
+
+    // A[2;3;4] = 24 (last element)
+    Value* r4 = machine->eval("A[2;3;4]");
+    ASSERT_TRUE(r4->is_scalar());
+    EXPECT_DOUBLE_EQ(r4->as_scalar(), 24.0);
+}
+
+// Test elided axis: A[i;;] → matrix (all rows, all columns in plane i)
+TEST_F(StructuralTest, NDArrayIndexElidedPlane) {
+    machine->eval("A←2 3 4⍴⍳24");
+    // A[1;;] = first plane (3×4 matrix)
+    Value* r = machine->eval("A[1;;]");
+    ASSERT_TRUE(r->is_matrix());
+    EXPECT_EQ(r->rows(), 3);
+    EXPECT_EQ(r->cols(), 4);
+    const Eigen::MatrixXd* mat = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 3), 12.0);
+}
+
+// Test elided axis: A[;j;] → matrix (all planes, all columns in row j)
+TEST_F(StructuralTest, NDArrayIndexElidedRow) {
+    machine->eval("A←2 3 4⍴⍳24");
+    // A[;2;] = row 2 from each plane (2×4 matrix)
+    Value* r = machine->eval("A[;2;]");
+    ASSERT_TRUE(r->is_matrix());
+    EXPECT_EQ(r->rows(), 2);
+    EXPECT_EQ(r->cols(), 4);
+    const Eigen::MatrixXd* mat = r->as_matrix();
+    // Plane 0, row 1: values 5,6,7,8
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 3), 8.0);
+    // Plane 1, row 1: values 17,18,19,20
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 17.0);
+}
+
+// Test elided axis: A[;;k] → matrix (all planes, all rows, column k)
+TEST_F(StructuralTest, NDArrayIndexElidedCol) {
+    machine->eval("A←2 3 4⍴⍳24");
+    // A[;;1] = first column from all planes (2×3 matrix)
+    Value* r = machine->eval("A[;;1]");
+    ASSERT_TRUE(r->is_matrix());
+    EXPECT_EQ(r->rows(), 2);
+    EXPECT_EQ(r->cols(), 3);
+    const Eigen::MatrixXd* mat = r->as_matrix();
+    // Plane 0: cols 1,5,9
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 9.0);
+    // Plane 1: cols 13,17,21
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 13.0);
+}
+
+// Test vector result: A[i;j;] → vector
+TEST_F(StructuralTest, NDArrayIndexVector) {
+    machine->eval("A←2 3 4⍴⍳24");
+    // A[1;2;] = row 2 of plane 1 (values 5,6,7,8)
+    Value* r = machine->eval("A[1;2;]");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 4);
+    const Eigen::MatrixXd* mat = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 8.0);
+}
+
+// Test multiple indices per axis
+TEST_F(StructuralTest, NDArrayIndexMultiple) {
+    machine->eval("A←2 3 4⍴⍳24");
+    // A[1 2;1;1] = values from both planes, row 1, col 1 (1 and 13)
+    Value* r = machine->eval("A[1 2;1;1]");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 2);
+    const Eigen::MatrixXd* mat = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 13.0);
+}
+
+// Test linear indexing into ravel via eval
+TEST_F(StructuralTest, NDArrayLinearIndexEval) {
+    machine->eval("A←2 3 4⍴⍳24");
+    // Linear index 1 = first element
+    Value* r1 = machine->eval("A[1]");
+    ASSERT_TRUE(r1->is_scalar());
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    // Linear index 24 = last element
+    Value* r2 = machine->eval("A[24]");
+    ASSERT_TRUE(r2->is_scalar());
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 24.0);
+
+    // Linear indices 1 2 3 = first three elements
+    Value* r3 = machine->eval("A[1 2 3]");
+    ASSERT_TRUE(r3->is_vector());
+    EXPECT_EQ(r3->size(), 3);
+}
+
+// Test 4D array indexing
+TEST_F(StructuralTest, NDArray4DIndex) {
+    machine->eval("B←2 2 2 2⍴⍳16");
+    // B[1;1;1;1] = 1
+    Value* r1 = machine->eval("B[1;1;1;1]");
+    ASSERT_TRUE(r1->is_scalar());
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    // B[2;2;2;2] = 16
+    Value* r2 = machine->eval("B[2;2;2;2]");
+    ASSERT_TRUE(r2->is_scalar());
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 16.0);
+}
+
+// Test index error handling
+TEST_F(StructuralTest, NDArrayIndexOutOfBounds) {
+    machine->eval("A←2 3 4⍴⍳24");
+    EXPECT_THROW(machine->eval("A[3;1;1]"), APLError);  // axis 0 out of bounds
+    EXPECT_THROW(machine->eval("A[1;4;1]"), APLError);  // axis 1 out of bounds
+    EXPECT_THROW(machine->eval("A[1;1;5]"), APLError);  // axis 2 out of bounds
+}
+
+// Test rank error (wrong number of indices)
+TEST_F(StructuralTest, NDArrayIndexRankError) {
+    machine->eval("A←2 3 4⍴⍳24");
+    EXPECT_THROW(machine->eval("A[1;1]"), APLError);    // too few indices
+    EXPECT_THROW(machine->eval("A[1;1;1;1]"), APLError);  // too many indices
+}
+
+// ========================================================================
+// NDARRAY Structural Operations Tests (ISO 13751)
+// ========================================================================
+
+// --- Ravel (,) ISO 13751 §8.2.1 ---
+
+TEST_F(StructuralTest, NDArrayRavel) {
+    // ,A returns vector with elements in row-major order
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval(",A");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 24);
+    const Eigen::MatrixXd* mat = r->as_matrix();
+    for (int i = 0; i < 24; ++i) {
+        EXPECT_DOUBLE_EQ((*mat)(i, 0), i + 1.0);
+    }
+}
+
+TEST_F(StructuralTest, NDArrayRavelShape) {
+    // ⍴,A returns single element (total size)
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval("⍴,A");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 1);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(0, 0), 24.0);
+}
+
+TEST_F(StructuralTest, NDArrayRavel4D) {
+    // Ravel 4D array
+    machine->eval("B←2 2 2 3⍴⍳24");
+    Value* r = machine->eval(",B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 24);
+}
+
+// --- Monadic Transpose (⍉) ISO 13751 §10.1.5 ---
+
+TEST_F(StructuralTest, NDArrayMonadicTransposeShape) {
+    // ⍉ reverses axes: 2×3×4 → 4×3×2
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval("⍴⍉A");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 2.0);
+}
+
+TEST_F(StructuralTest, NDArrayMonadicTransposeValues) {
+    // Verify element positions after transpose
+    // Original A[1;1;1]=1, A[2;3;4]=24
+    // Transposed: [1;1;1]=1, [4;3;2]=24
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←⍉A");
+
+    Value* r1 = machine->eval("B[1;1;1]");
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    Value* r2 = machine->eval("B[4;3;2]");
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 24.0);
+
+    // A[1;2;3]=7 → B[3;2;1]=7
+    Value* r3 = machine->eval("B[3;2;1]");
+    EXPECT_DOUBLE_EQ(r3->as_scalar(), 7.0);
+}
+
+TEST_F(StructuralTest, NDArrayMonadicTranspose4D) {
+    // 4D transpose: 2×2×2×3 → 3×2×2×2
+    machine->eval("B←2 2 2 3⍴⍳24");
+    Value* r = machine->eval("⍴⍉B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 4);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(3, 0), 2.0);
+}
+
+// --- Dyadic Transpose (A⍉B) ISO 13751 §10.2.10 ---
+
+TEST_F(StructuralTest, NDArrayDyadicTransposeIdentity) {
+    // 1 2 3⍉A = A (identity permutation)
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval("⍴1 2 3⍉A");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 4.0);
+}
+
+TEST_F(StructuralTest, NDArrayDyadicTransposeSwap23) {
+    // 1 3 2⍉A swaps axes 2 and 3: 2×3×4 → 2×4×3
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval("⍴1 3 2⍉A");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 3.0);
+}
+
+TEST_F(StructuralTest, NDArrayDyadicTransposeSwap12) {
+    // 2 1 3⍉A swaps axes 1 and 2: 2×3×4 → 3×2×4
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval("⍴2 1 3⍉A");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 4.0);
+}
+
+TEST_F(StructuralTest, NDArrayDyadicTransposeReverse) {
+    // 3 2 1⍉A = ⍉A (reverse all axes)
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval("⍴3 2 1⍉A");
+    ASSERT_TRUE(r->is_vector());
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 2.0);
+}
+
+TEST_F(StructuralTest, NDArrayDyadicTransposeDiagonal) {
+    // 1 1 2⍉A selects diagonal: 2×3×4 → 2×4 (min of axes 1,2 = 2)
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r = machine->eval("⍴1 1 2⍉A");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 2);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);  // min(2,3)
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 4.0);
+}
+
+TEST_F(StructuralTest, NDArrayDyadicTransposeLengthError) {
+    // Wrong number of permutation elements
+    machine->eval("A←2 3 4⍴⍳24");
+    EXPECT_THROW(machine->eval("1 2⍉A"), APLError);  // too few
+    EXPECT_THROW(machine->eval("1 2 3 4⍉A"), APLError);  // too many
+}
+
+// --- Catenate (,) ISO 13751 §10.2.1 ---
+
+TEST_F(StructuralTest, NDArrayCatenateLastAxis) {
+    // A,B catenates along last axis: 2×3×4 , 2×3×4 → 2×3×8
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    Value* r = machine->eval("⍴A,B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 8.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateLastAxisValues) {
+    // Verify values after catenation
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    machine->eval("C←A,B");
+
+    // First element from A
+    Value* r1 = machine->eval("C[1;1;1]");
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    // Last element from A
+    Value* r2 = machine->eval("C[2;3;4]");
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 24.0);
+
+    // First element from B (at position [1;1;5])
+    Value* r3 = machine->eval("C[1;1;5]");
+    EXPECT_DOUBLE_EQ(r3->as_scalar(), 25.0);
+
+    // Last element from B
+    Value* r4 = machine->eval("C[2;3;8]");
+    EXPECT_DOUBLE_EQ(r4->as_scalar(), 48.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateAxis1) {
+    // A,[1]B catenates along first axis: 2×3×4 ,[1] 2×3×4 → 4×3×4
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    Value* r = machine->eval("⍴A,[1]B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 4.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateAxis2) {
+    // A,[2]B catenates along second axis: 2×3×4 ,[2] 2×3×4 → 2×6×4
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    Value* r = machine->eval("⍴A,[2]B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 4.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateAxis3) {
+    // A,[3]B same as A,B for 3D: 2×3×4 ,[3] 2×3×4 → 2×3×8
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    Value* r = machine->eval("⍴A,[3]B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 8.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateLengthError) {
+    // Shape mismatch on non-catenation axes
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 4 4⍴⍳32");  // Different middle dimension
+    EXPECT_THROW(machine->eval("A,B"), APLError);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateAxisError) {
+    // Invalid axis
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    EXPECT_THROW(machine->eval("A,[4]B"), APLError);  // Axis 4 doesn't exist
+    EXPECT_THROW(machine->eval("A,[0]B"), APLError);  // Axis 0 with ⎕IO=1
+}
+
+// ============================================================================
+// NDARRAY Catenate-First (⍪) Tests - ISO 13751 §8.3.2
+// ============================================================================
+
+// A⍪B is equivalent to A,[1]B (catenate along first axis)
+TEST_F(StructuralTest, NDArrayCatenateFirstShape) {
+    // 2×3×4 ⍪ 2×3×4 → 4×3×4
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    Value* r = machine->eval("⍴A⍪B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 4.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateFirstValues) {
+    // Verify values: A elements first, then B elements
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴100+⍳24");
+    machine->eval("C←A⍪B");
+
+    // First element from A
+    Value* r1 = machine->eval("C[1;1;1]");
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+
+    // Last element of first "plane" from A
+    Value* r2 = machine->eval("C[2;3;4]");
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 24.0);
+
+    // First element from B (now at row 3)
+    Value* r3 = machine->eval("C[3;1;1]");
+    EXPECT_DOUBLE_EQ(r3->as_scalar(), 101.0);
+
+    // Last element from B
+    Value* r4 = machine->eval("C[4;3;4]");
+    EXPECT_DOUBLE_EQ(r4->as_scalar(), 124.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateFirstDifferentSizes) {
+    // Different first axis sizes: 2×3×4 ⍪ 3×3×4 → 5×3×4
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←3 3 4⍴⍳36");
+    Value* r = machine->eval("⍴A⍪B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 4.0);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateFirstLengthError) {
+    // Non-first axes must match
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 4 4⍴⍳32");  // Different second dimension
+    EXPECT_THROW(machine->eval("A⍪B"), APLError);
+}
+
+TEST_F(StructuralTest, NDArrayCatenateFirst4D) {
+    // 4D arrays: 2×2×3×4 ⍪ 3×2×3×4 → 5×2×3×4
+    machine->eval("A←2 2 3 4⍴⍳48");
+    machine->eval("B←3 2 3 4⍴⍳72");
+    Value* r = machine->eval("⍴A⍪B");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 4);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 5.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(2, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*shape)(3, 0), 4.0);
+}
+
+// ============================================================================
+// NDARRAY Pervasive Operations Tests - ISO 13751 Scalar Extension
+// ============================================================================
+
+// Monadic scalar function on NDARRAY - result same shape as argument
+TEST_F(StructuralTest, NDArrayPervasiveMonadicNegate) {
+    // -2 3 4⍴⍳24 → negated array with same shape
+    Value* r = machine->eval("-2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape.size(), 3);
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    // First element is -1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), -1.0);
+    // Last element is -24
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(23), -24.0);
+}
+
+TEST_F(StructuralTest, NDArrayPervasiveMonadicAbs) {
+    // |-(2 3 4⍴⍳24) → absolute values, same shape
+    machine->eval("A←-(2 3 4⍴⍳24)");
+    Value* r = machine->eval("|A");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(23), 24.0);
+}
+
+// Dyadic scalar function with scalar extension - scalar op NDARRAY
+TEST_F(StructuralTest, NDArrayPervasiveDyadicScalarLeft) {
+    // 10+2 3 4⍴⍳24 → each element +10, same shape
+    Value* r = machine->eval("10+2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 11.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(23), 34.0);
+}
+
+TEST_F(StructuralTest, NDArrayPervasiveDyadicScalarRight) {
+    // (2 3 4⍴⍳24)×2 → each element ×2, same shape
+    Value* r = machine->eval("(2 3 4⍴⍳24)×2");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 2.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(23), 48.0);
+}
+
+// Dyadic scalar function with same-shape NDARRAYs
+TEST_F(StructuralTest, NDArrayPervasiveDyadicSameShape) {
+    // (2 3 4⍴⍳24)+(2 3 4⍴24+⍳24) → element-wise add
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 4⍴24+⍳24");
+    Value* r = machine->eval("A+B");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    // First: 1+25=26, Last: 24+48=72
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 26.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(23), 72.0);
+}
+
+// Comparison functions on NDARRAY
+TEST_F(StructuralTest, NDArrayPervasiveComparison) {
+    // (2 3 4⍴⍳24)>12 → boolean array, same shape
+    Value* r = machine->eval("(2 3 4⍴⍳24)>12");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    // Elements 1-12 are 0, elements 13-24 are 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 0.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(11), 0.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(12), 1.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(23), 1.0);
+}
+
+// Length error - mismatched shapes
+TEST_F(StructuralTest, NDArrayPervasiveLengthError) {
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←2 3 5⍴⍳30");  // Different last dimension
+    EXPECT_THROW(machine->eval("A+B"), APLError);
+}
+
+// Rank error - different ranks
+TEST_F(StructuralTest, NDArrayPervasiveRankError) {
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("B←3 4⍴⍳12");  // Matrix vs 3D array
+    EXPECT_THROW(machine->eval("A+B"), APLError);
+}
+
+// Chained pervasive operations
+TEST_F(StructuralTest, NDArrayPervasiveChained) {
+    // 2×1+(2 3 4⍴⍳24) → (2×(1+each element))
+    Value* r = machine->eval("2×1+2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    // First: 2×(1+1)=4, Last: 2×(1+24)=50
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 4.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(23), 50.0);
+}
+
+// ============================================================================
+// Strand Monadic Pervasive Tests - ISO 13751 Scalar Extension
+// ============================================================================
+
+// Monadic negate on single-element strand
+TEST_F(StructuralTest, StrandPervasiveMonadicNegateSingle) {
+    // -⊂1 2 3 → (¯1 ¯2 ¯3)
+    Value* r = machine->eval("-⊂1 2 3");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 1);
+    Value* inner = (*r->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_EQ(inner->size(), 3);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), -2.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(2, 0), -3.0);
+}
+
+// Monadic negate on multi-element strand
+TEST_F(StructuralTest, StrandPervasiveMonadicNegateMulti) {
+    // -((⊂1 2 3),⊂4 5) → ((¯1 ¯2 ¯3)(¯4 ¯5))
+    Value* r = machine->eval("-(⊂1 2 3),⊂4 5");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 2);
+
+    Value* first = (*r->as_strand())[0];
+    ASSERT_TRUE(first->is_vector());
+    EXPECT_EQ(first->size(), 3);
+    EXPECT_DOUBLE_EQ((*first->as_matrix())(0, 0), -1.0);
+
+    Value* second = (*r->as_strand())[1];
+    ASSERT_TRUE(second->is_vector());
+    EXPECT_EQ(second->size(), 2);
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(0, 0), -4.0);
+    EXPECT_DOUBLE_EQ((*second->as_matrix())(1, 0), -5.0);
+}
+
+// Monadic absolute value on strand
+TEST_F(StructuralTest, StrandPervasiveMonadicAbs) {
+    // |⊂¯1 ¯2 ¯3 → (1 2 3)
+    Value* r = machine->eval("|⊂¯1 ¯2 ¯3");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 1);
+    Value* inner = (*r->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(2, 0), 3.0);
+}
+
+// Monadic reciprocal on strand
+TEST_F(StructuralTest, StrandPervasiveMonadicReciprocal) {
+    // ÷⊂2 4 8 → (0.5 0.25 0.125)
+    Value* r = machine->eval("÷⊂2 4 8");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 1);
+    Value* inner = (*r->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 0.5);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 0.25);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(2, 0), 0.125);
+}
+
+// Monadic not on strand (boolean)
+TEST_F(StructuralTest, StrandPervasiveMonadicNot) {
+    // ~⊂1 0 1 0 → (0 1 0 1)
+    Value* r = machine->eval("~⊂1 0 1 0");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 1);
+    Value* inner = (*r->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(3, 0), 1.0);
+}
+
+// Chained monadic on strand
+TEST_F(StructuralTest, StrandPervasiveMonadicChained) {
+    // |-⊂1 2 3 → (1 2 3) (negate then abs)
+    Value* r = machine->eval("|-⊂1 2 3");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 1);
+    Value* inner = (*r->as_strand())[0];
+    ASSERT_TRUE(inner->is_vector());
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(2, 0), 3.0);
+}
+
+// Nested strand - monadic applied recursively
+TEST_F(StructuralTest, StrandPervasiveMonadicNested) {
+    // Strand containing matrix
+    // -⊂2 3⍴⍳6 → enclosed negated matrix
+    Value* r = machine->eval("-⊂2 3⍴⍳6");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 1);
+    Value* inner = (*r->as_strand())[0];
+    ASSERT_TRUE(inner->is_matrix());
+    EXPECT_EQ(inner->rows(), 2);
+    EXPECT_EQ(inner->cols(), 3);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(0, 0), -1.0);
+    EXPECT_DOUBLE_EQ((*inner->as_matrix())(1, 2), -6.0);
+}
+
+// ============================================================================
+// NDARRAY Take (↑) Tests - ISO 13751 §10.2.11
+// ============================================================================
+
+// Take from NDARRAY: 1 2 3↑(2 3 4⍴⍳24) → 1×2×3 array
+TEST_F(StructuralTest, NDArrayTakePositive) {
+    Value* r = machine->eval("1 2 3↑2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape.size(), 3);
+    EXPECT_EQ(shape[0], 1);
+    EXPECT_EQ(shape[1], 2);
+    EXPECT_EQ(shape[2], 3);
+    // First element: 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 1.0);
+}
+
+// Negative take: ¯1 ¯2 ¯3↑(2 3 4⍴⍳24) → last plane, last 2 rows, last 3 cols
+TEST_F(StructuralTest, NDArrayTakeNegative) {
+    Value* r = machine->eval("¯1 ¯2 ¯3↑2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 1);
+    EXPECT_EQ(shape[1], 2);
+    EXPECT_EQ(shape[2], 3);
+    // Last 3 elements of last 2 rows of last plane
+    // Plane 2: rows 2-3, cols 2-4 → 22 23 24, 18 19 20
+    // Actually: row 2 (last): 21 22 23 24, take last 3: 22 23 24
+    //          row 1 (second): 17 18 19 20, take last 3: 18 19 20
+    const Eigen::VectorXd* data = r->ndarray_data();
+    // With negative take, we get elements from the end
+    EXPECT_DOUBLE_EQ((*data)(0), 18.0);  // First row of result
+}
+
+// Over-take with padding: 3 4 5↑(2 3 4⍴⍳24) → padded with zeros
+TEST_F(StructuralTest, NDArrayTakeOverPadded) {
+    Value* r = machine->eval("3 4 5↑2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 3);
+    EXPECT_EQ(shape[1], 4);
+    EXPECT_EQ(shape[2], 5);
+    // First element still 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 1.0);
+    // Element at position beyond original should be 0 (padding)
+    // Position [2,3,4] = beyond original 2×3×4
+    int idx = 2 * 4 * 5 + 3 * 5 + 4;  // Last element
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(idx), 0.0);
+}
+
+// Length error: wrong number of elements in left arg
+TEST_F(StructuralTest, NDArrayTakeLengthError) {
+    machine->eval("A←2 3 4⍴⍳24");
+    EXPECT_THROW(machine->eval("1 2↑A"), APLError);  // Need 3 elements for rank-3
+}
+
+// ============================================================================
+// NDARRAY Drop (↓) Tests - ISO 13751 §10.2.12
+// ============================================================================
+
+// Drop from NDARRAY: 1 1 1↓(2 3 4⍴⍳24) → 1×2×3 array
+TEST_F(StructuralTest, NDArrayDropPositive) {
+    Value* r = machine->eval("1 1 1↓2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 1);  // 2-1
+    EXPECT_EQ(shape[1], 2);  // 3-1
+    EXPECT_EQ(shape[2], 3);  // 4-1
+    // First element after dropping: element at [1,1,1] of original
+    // = plane 2, row 2, col 2 = 12 + 4 + 1 + 1 = 18
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 18.0);
+}
+
+// Negative drop: ¯1 ¯1 ¯1↓(2 3 4⍴⍳24) → drop from end
+TEST_F(StructuralTest, NDArrayDropNegative) {
+    Value* r = machine->eval("¯1 ¯1 ¯1↓2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 1);
+    EXPECT_EQ(shape[1], 2);
+    EXPECT_EQ(shape[2], 3);
+    // First element: original [0,0,0] = 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 1.0);
+}
+
+// Over-drop: drop more than exists → empty result
+TEST_F(StructuralTest, NDArrayDropOverEmpty) {
+    Value* r = machine->eval("⍴3 4 5↓2 3 4⍴⍳24");
+    // Shape should be 0 0 0 (or close to it)
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(2, 0), 0.0);
+}
+
+// ============================================================================
+// NDARRAY Reverse (⌽) Tests - ISO 13751 §10.1.4
+// ============================================================================
+
+// Monadic reverse on NDARRAY: ⌽(2 3 4⍴⍳24) → reverse last axis
+TEST_F(StructuralTest, NDArrayReverseLastAxis) {
+    Value* r = machine->eval("⌽2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    // First row reversed: 1 2 3 4 → 4 3 2 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 4.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(1), 3.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(2), 2.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(3), 1.0);
+}
+
+// Reverse with axis: ⌽[1](2 3 4⍴⍳24) → reverse first axis (planes)
+TEST_F(StructuralTest, NDArrayReverseFirstAxis) {
+    Value* r = machine->eval("⌽[1]2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    // First element should now be from plane 2: 13
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 13.0);
+}
+
+// Reverse with axis 2: ⌽[2](2 3 4⍴⍳24) → reverse rows within each plane
+TEST_F(StructuralTest, NDArrayReverseSecondAxis) {
+    Value* r = machine->eval("⌽[2]2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    // First row of first plane should now be last row: 9 10 11 12
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 9.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(1), 10.0);
+}
+
+// ⊖ reverses first axis by default
+TEST_F(StructuralTest, NDArrayReverseFirstDefault) {
+    Value* r = machine->eval("⊖2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    // First element should be from plane 2: 13
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 13.0);
+}
+
+// ============================================================================
+// NDARRAY Rotate (⌽) Dyadic Tests - ISO 13751 §10.2.7
+// ============================================================================
+
+// Scalar rotate on NDARRAY: 1⌽(2 3 4⍴⍳24) → rotate last axis by 1
+TEST_F(StructuralTest, NDArrayRotateLastAxis) {
+    Value* r = machine->eval("1⌽2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    const auto& shape = r->ndarray_shape();
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    // First row rotated by 1: 1 2 3 4 → 2 3 4 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 2.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(1), 3.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(2), 4.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(3), 1.0);
+}
+
+// Negative rotate: ¯1⌽(2 3 4⍴⍳24) → rotate last axis by -1
+TEST_F(StructuralTest, NDArrayRotateNegative) {
+    Value* r = machine->eval("¯1⌽2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    // First row rotated by -1: 1 2 3 4 → 4 1 2 3
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 4.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(1), 1.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(2), 2.0);
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(3), 3.0);
+}
+
+// Rotate with axis: 1⌽[1](2 3 4⍴⍳24) → rotate first axis (planes)
+TEST_F(StructuralTest, NDArrayRotateFirstAxis) {
+    Value* r = machine->eval("1⌽[1]2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    // First element should now be from plane 2: 13
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 13.0);
+}
+
+// ⊖ rotates first axis: 1⊖(2 3 4⍴⍳24)
+TEST_F(StructuralTest, NDArrayRotateFirstDefault) {
+    Value* r = machine->eval("1⊖2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    // First element should be from plane 2: 13
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 13.0);
+}
+
+// Vector left arg for per-subarray rotation
+TEST_F(StructuralTest, NDArrayRotateVector) {
+    // 1 2 3⌽(2 3 4⍴⍳24) → rotate each row by different amount
+    Value* r = machine->eval("1 2 3⌽2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_ndarray());
+    // Row 0 rotated by 1: 1 2 3 4 → 2 3 4 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 2.0);
+    // Row 1 rotated by 2: 5 6 7 8 → 7 8 5 6
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(4), 7.0);
+    // Row 2 rotated by 3: 9 10 11 12 → 12 9 10 11
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(8), 12.0);
+}
+
+// ============================================================================
+// Strand Take (↑) Tests - ISO 13751 §10.2.11
+// ============================================================================
+
+TEST_F(StructuralTest, StrandTakePositive) {
+    // 2↑ strand of 3 elements → first 2 elements
+    machine->eval("S←(⊂1 2 3),(⊂4 5),(⊂6 7 8 9)");
+    Value* r = machine->eval("2↑S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 2);
+    // First element is (1 2 3)
+    EXPECT_TRUE((*r->as_strand())[0]->is_vector());
+}
+
+TEST_F(StructuralTest, StrandTakeNegative) {
+    // ¯2↑ strand → last 2 elements
+    machine->eval("S←(⊂1 2 3),(⊂4 5),(⊂6 7 8 9)");
+    Value* r = machine->eval("¯2↑S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 2);
+    // Last element is (6 7 8 9)
+    EXPECT_TRUE((*r->as_strand())[1]->is_vector());
+    EXPECT_EQ((*r->as_strand())[1]->as_matrix()->rows(), 4);
+}
+
+TEST_F(StructuralTest, StrandTakeOverfill) {
+    // 5↑ strand of 2 elements → 2 elements + 3 fills
+    machine->eval("S←(⊂1 2),(⊂3 4)");
+    Value* r = machine->eval("5↑S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 5);
+    // Fill elements are scalar 0
+    EXPECT_TRUE((*r->as_strand())[2]->is_scalar());
+    EXPECT_DOUBLE_EQ((*r->as_strand())[2]->as_scalar(), 0.0);
+}
+
+// ============================================================================
+// Strand Drop (↓) Tests - ISO 13751 §10.2.12
+// ============================================================================
+
+TEST_F(StructuralTest, StrandDropPositive) {
+    // 1↓ strand of 3 elements → last 2 elements
+    machine->eval("S←(⊂1 2 3),(⊂4 5),(⊂6 7 8 9)");
+    Value* r = machine->eval("1↓S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 2);
+}
+
+TEST_F(StructuralTest, StrandDropNegative) {
+    // ¯1↓ strand → drop last element
+    machine->eval("S←(⊂1 2 3),(⊂4 5),(⊂6 7 8 9)");
+    Value* r = machine->eval("¯1↓S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 2);
+    // First element is still (1 2 3)
+    EXPECT_TRUE((*r->as_strand())[0]->is_vector());
+    EXPECT_EQ((*r->as_strand())[0]->as_matrix()->rows(), 3);
+}
+
+TEST_F(StructuralTest, StrandDropAll) {
+    // 5↓ strand of 2 elements → empty strand
+    machine->eval("S←(⊂1 2),(⊂3 4)");
+    Value* r = machine->eval("5↓S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 0);
+}
+
+// ============================================================================
+// NDARRAY First (↑ monadic) Tests - ISO 13751 §10.1.9
+// ============================================================================
+
+TEST_F(StructuralTest, NDArrayFirst3D) {
+    // ↑ of 2 3 4 array → first plane (3×4 matrix)
+    Value* r = machine->eval("↑2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_matrix());
+    EXPECT_EQ(r->as_matrix()->rows(), 3);
+    EXPECT_EQ(r->as_matrix()->cols(), 4);
+    // First element is 1
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(0, 0), 1.0);
+    // Last element of first plane is 12
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(2, 3), 12.0);
+}
+
+TEST_F(StructuralTest, NDArrayFirst4D) {
+    // ↑ of 2 3 4 5 array → first 3D subarray (3×4×5)
+    Value* r = machine->eval("↑2 3 4 5⍴⍳120");
+    ASSERT_TRUE(r->is_ndarray());
+    auto shape = r->ndarray_shape();
+    EXPECT_EQ(shape.size(), 3);
+    EXPECT_EQ(shape[0], 3);
+    EXPECT_EQ(shape[1], 4);
+    EXPECT_EQ(shape[2], 5);
+    // First element is 1
+    EXPECT_DOUBLE_EQ((*r->ndarray_data())(0), 1.0);
+}
+
+// ============================================================================
+// Multi-dimensional Iota (⍳) Tests - ISO 13751 §10.1.2
+// ============================================================================
+
+TEST_F(StructuralTest, IotaMultiDim2D) {
+    // ⍳2 3 → strand of 6 index pairs
+    Value* r = machine->eval("⍳2 3");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 6);
+    // First element is (1 1)
+    Value* first = (*r->as_strand())[0];
+    ASSERT_TRUE(first->is_strand());
+    EXPECT_EQ(first->as_strand()->size(), 2);
+    EXPECT_DOUBLE_EQ((*first->as_strand())[0]->as_scalar(), 1.0);
+    EXPECT_DOUBLE_EQ((*first->as_strand())[1]->as_scalar(), 1.0);
+    // Last element is (2 3)
+    Value* last = (*r->as_strand())[5];
+    ASSERT_TRUE(last->is_strand());
+    EXPECT_DOUBLE_EQ((*last->as_strand())[0]->as_scalar(), 2.0);
+    EXPECT_DOUBLE_EQ((*last->as_strand())[1]->as_scalar(), 3.0);
+}
+
+TEST_F(StructuralTest, IotaMultiDim3D) {
+    // ⍳2 2 2 → strand of 8 index triples
+    Value* r = machine->eval("⍳2 2 2");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 8);
+    // First element is (1 1 1)
+    Value* first = (*r->as_strand())[0];
+    ASSERT_TRUE(first->is_strand());
+    EXPECT_EQ(first->as_strand()->size(), 3);
+    // Last element is (2 2 2)
+    Value* last = (*r->as_strand())[7];
+    EXPECT_DOUBLE_EQ((*last->as_strand())[0]->as_scalar(), 2.0);
+    EXPECT_DOUBLE_EQ((*last->as_strand())[1]->as_scalar(), 2.0);
+    EXPECT_DOUBLE_EQ((*last->as_strand())[2]->as_scalar(), 2.0);
+}
+
+TEST_F(StructuralTest, IotaStrandArg) {
+    // Strand argument also works
+    machine->eval("S←(⊂2),(⊂3)");
+    Value* r = machine->eval("⍳S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 6);
+}
+
+// ============================================================================
+// NDARRAY Indexed Assignment Tests - ISO 13751 §10.2.16
+// ============================================================================
+
+TEST_F(StructuralTest, NDArrayIndexedAssignScalar) {
+    // A[1;1;1]←99
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("A[1;1;1]←99");
+    Value* r = machine->eval("A[1;1;1]");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 99.0);
+}
+
+TEST_F(StructuralTest, NDArrayIndexedAssignMultiple) {
+    // A[1;1;1 2]←88 99
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("A[1;1;1 2]←88 99");
+    Value* r1 = machine->eval("A[1;1;1]");
+    Value* r2 = machine->eval("A[1;1;2]");
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 88.0);
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 99.0);
+}
+
+TEST_F(StructuralTest, NDArrayIndexedAssignScalarExtend) {
+    // A[1;;]←0 (scalar extends to all selected positions)
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("A[1;;]←0");
+    Value* r = machine->eval("+/,A[1;;]");
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);  // All zeros
+}
+
+TEST_F(StructuralTest, NDArrayIndexedAssignElided) {
+    // A[;;1]←100 (assign to all planes, all rows, column 1)
+    machine->eval("A←2 3 4⍴⍳24");
+    machine->eval("A[;;1]←100");
+    Value* r = machine->eval("A[1;1;1]");
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 100.0);
+    Value* r2 = machine->eval("A[2;3;1]");
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 100.0);
+}
+
+// ============================================================================
+// Strand Indexed Assignment Tests
+// ============================================================================
+
+TEST_F(StructuralTest, StrandIndexedAssign) {
+    machine->eval("S←(⊂1 2 3),(⊂4 5),(⊂6)");
+    machine->eval("S[2]←⊂99 100");
+    Value* r = machine->eval("S[2]");
+    ASSERT_TRUE(r->is_strand());
+    // The enclosed vector 99 100
+    EXPECT_TRUE((*r->as_strand())[0]->is_vector());
+}
+
+TEST_F(StructuralTest, StrandIndexedAssignScalar) {
+    machine->eval("S←(⊂1 2),(⊂3 4),(⊂5 6)");
+    machine->eval("S[1]←42");
+    Value* r = machine->eval("S[1]");
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 42.0);
+}
+
+// ============================================================================
+// NDARRAY Table (⍪B monadic) Tests - ISO 13751 §8.2.4
+// ============================================================================
+
+// Table on 3D: shape 2×3×4 → 2×12 matrix
+TEST_F(StructuralTest, NDArrayTable3D) {
+    Value* r = machine->eval("⍴⍪2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 2);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 12.0);
+}
+
+// Table on 4D: shape 2×3×4×5 → 2×60 matrix
+TEST_F(StructuralTest, NDArrayTable4D) {
+    Value* r = machine->eval("⍴⍪2 3 4 5⍴⍳120");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 2);
+    const Eigen::MatrixXd* shape = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*shape)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*shape)(1, 0), 60.0);
+}
+
+// Table preserves values in row-major order
+TEST_F(StructuralTest, NDArrayTableValues) {
+    machine->eval("T←⍪2 3 4⍴⍳24");
+    // First row should be elements 1-12
+    Value* r1 = machine->eval("T[1;1]");
+    EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
+    Value* r2 = machine->eval("T[1;12]");
+    EXPECT_DOUBLE_EQ(r2->as_scalar(), 12.0);
+    // Second row should be elements 13-24
+    Value* r3 = machine->eval("T[2;1]");
+    EXPECT_DOUBLE_EQ(r3->as_scalar(), 13.0);
+    Value* r4 = machine->eval("T[2;12]");
+    EXPECT_DOUBLE_EQ(r4->as_scalar(), 24.0);
+}
+
+// Table on strand returns strand unchanged (rank 1 → n×1)
+TEST_F(StructuralTest, StrandTable) {
+    machine->eval("S←(⊂1 2),(⊂3 4)");
+    Value* r = machine->eval("⍪S");
+    ASSERT_TRUE(r->is_strand());
+    EXPECT_EQ(r->size(), 2);
+}
+
+// ============================================================================
+// NDARRAY Depth (≡B) Tests - ISO 13751 §8.2.5
+// ============================================================================
+
+// Depth of simple NDARRAY is 1
+TEST_F(StructuralTest, NDArrayDepth3D) {
+    Value* r = machine->eval("≡2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+// Depth of 4D NDARRAY is still 1 (simple array)
+TEST_F(StructuralTest, NDArrayDepth4D) {
+    Value* r = machine->eval("≡2 2 2 2⍴⍳16");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+// ============================================================================
+// NDARRAY Enlist (∊B) Tests - ISO 13751 §8.2.6
+// ============================================================================
+
+// Enlist on NDARRAY is same as ravel (simple array)
+TEST_F(StructuralTest, NDArrayEnlist3D) {
+    Value* r = machine->eval("∊2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 24);
+    // First and last elements
+    const Eigen::MatrixXd* v = r->as_matrix();
+    EXPECT_DOUBLE_EQ((*v)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*v)(23, 0), 24.0);
+}
+
+// Enlist on 4D NDARRAY
+TEST_F(StructuralTest, NDArrayEnlist4D) {
+    Value* r = machine->eval("∊2 2 2 2⍴⍳16");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 16);
+}
+
+// Enlist shape is always 1D
+TEST_F(StructuralTest, NDArrayEnlistShape) {
+    Value* r = machine->eval("⍴∊2 3 4⍴⍳24");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 1);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(0, 0), 24.0);
 }
 
 // ========================================================================

@@ -39,29 +39,72 @@ void op_outer_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
         return;
     }
 
-    // Get dimensions of both arguments, handling strands (ISO 9.3.1)
+    // Get dimensions and shapes of both arguments (ISO 9.3.1)
+    // Result shape is (⍴A),⍴B
     int lhs_size, lhs_cols;
     int rhs_size, rhs_cols;
+    std::vector<int> lhs_shape, rhs_shape;
 
-    if (lhs->is_strand()) {
+    if (lhs->is_scalar()) {
+        lhs_size = 1;
+        lhs_cols = 1;
+        // Scalar has empty shape
+    } else if (lhs->is_strand()) {
         lhs_size = static_cast<int>(lhs->as_strand()->size());
-        lhs_cols = lhs_size;  // Treat strand as 1D
+        lhs_cols = lhs_size;
+        lhs_shape.push_back(lhs_size);
+    } else if (lhs->is_ndarray()) {
+        const Value::NDArrayData* nd = lhs->as_ndarray();
+        lhs_size = static_cast<int>(nd->data->size());
+        lhs_cols = lhs_size;  // Flat iteration
+        lhs_shape = nd->shape;
+    } else if (lhs->is_vector()) {
+        lhs_size = lhs->rows();
+        lhs_cols = 1;
+        lhs_shape.push_back(lhs_size);
     } else {
         lhs_size = lhs->rows() * lhs->cols();
         lhs_cols = lhs->cols();
+        lhs_shape.push_back(lhs->rows());
+        lhs_shape.push_back(lhs->cols());
     }
 
-    if (rhs->is_strand()) {
+    if (rhs->is_scalar()) {
+        rhs_size = 1;
+        rhs_cols = 1;
+        // Scalar has empty shape
+    } else if (rhs->is_strand()) {
         rhs_size = static_cast<int>(rhs->as_strand()->size());
-        rhs_cols = rhs_size;  // Treat strand as 1D
+        rhs_cols = rhs_size;
+        rhs_shape.push_back(rhs_size);
+    } else if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        rhs_size = static_cast<int>(nd->data->size());
+        rhs_cols = rhs_size;  // Flat iteration
+        rhs_shape = nd->shape;
+    } else if (rhs->is_vector()) {
+        rhs_size = rhs->rows();
+        rhs_cols = 1;
+        rhs_shape.push_back(rhs_size);
     } else {
         rhs_size = rhs->rows() * rhs->cols();
         rhs_cols = rhs->cols();
+        rhs_shape.push_back(rhs->rows());
+        rhs_shape.push_back(rhs->cols());
     }
 
+    // Result shape is (⍴lhs),⍴rhs
+    std::vector<int> result_shape;
+    result_shape.insert(result_shape.end(), lhs_shape.begin(), lhs_shape.end());
+    result_shape.insert(result_shape.end(), rhs_shape.begin(), rhs_shape.end());
+
     // Use CellIterK with OUTER mode for Cartesian product iteration
-    m->push_kont(m->heap->allocate<CellIterK>(
-        f, lhs, rhs, lhs_size, rhs_size, lhs_cols, rhs_cols));
+    CellIterK* iter = m->heap->allocate<CellIterK>(
+        f, lhs, rhs, lhs_size, rhs_size, lhs_cols, rhs_cols);
+    if (result_shape.size() > 2) {
+        iter->orig_ndarray_shape = result_shape;
+    }
+    m->push_kont(iter);
 }
 
 // ========================================================================
@@ -174,6 +217,102 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
         rhs = m->heap->allocate_vector(extended);
     }
 
+    // NDARRAY inner product (ISO 9.3.2)
+    // Result shape: (¯1↓⍴A),1↓⍴B
+    // Last dim of A must equal first dim of B
+    if (lhs->is_ndarray() || rhs->is_ndarray()) {
+        std::vector<int> lhs_shape, rhs_shape;
+
+        if (lhs->is_ndarray()) {
+            lhs_shape = lhs->ndarray_shape();
+        } else if (lhs->is_matrix()) {
+            lhs_shape = {lhs->rows(), lhs->cols()};
+        } else if (lhs->is_vector()) {
+            lhs_shape = {lhs->rows()};
+        } else {
+            lhs_shape = {};  // scalar
+        }
+
+        if (rhs->is_ndarray()) {
+            rhs_shape = rhs->ndarray_shape();
+        } else if (rhs->is_matrix()) {
+            rhs_shape = {rhs->rows(), rhs->cols()};
+        } else if (rhs->is_vector()) {
+            rhs_shape = {rhs->rows()};
+        } else {
+            rhs_shape = {};  // scalar
+        }
+
+        // Check dimension compatibility: last of lhs must equal first of rhs
+        int lhs_last = lhs_shape.empty() ? 1 : lhs_shape.back();
+        int rhs_first = rhs_shape.empty() ? 1 : rhs_shape.front();
+        if (lhs_last != rhs_first) {
+            m->throw_error("LENGTH ERROR: inner product dimension mismatch");
+            return;
+        }
+
+        // Result shape: (¯1↓⍴A),1↓⍴B
+        std::vector<int> result_shape;
+        for (size_t i = 0; i + 1 < lhs_shape.size(); i++) {
+            result_shape.push_back(lhs_shape[i]);
+        }
+        for (size_t i = 1; i < rhs_shape.size(); i++) {
+            result_shape.push_back(rhs_shape[i]);
+        }
+
+        // Compute frame sizes
+        int lhs_frame = 1;
+        for (size_t i = 0; i + 1 < lhs_shape.size(); i++) {
+            lhs_frame *= lhs_shape[i];
+        }
+        int rhs_frame = 1;
+        for (size_t i = 1; i < rhs_shape.size(); i++) {
+            rhs_frame *= rhs_shape[i];
+        }
+        int common_dim = lhs_last;
+
+        // Handle empty case
+        if (lhs_frame == 0 || rhs_frame == 0 || common_dim == 0) {
+            double identity = get_identity_for_function(f);
+            if (std::isnan(identity)) {
+                m->throw_error("DOMAIN ERROR: no identity element for empty inner product");
+                return;
+            }
+            if (result_shape.empty()) {
+                m->result = m->heap->allocate_scalar(identity);
+            } else if (result_shape.size() == 1) {
+                Eigen::VectorXd vec(result_shape[0]);
+                vec.setConstant(identity);
+                m->result = m->heap->allocate_vector(vec);
+            } else {
+                int total = 1;
+                for (int d : result_shape) total *= d;
+                Eigen::VectorXd data(total);
+                data.setConstant(identity);
+                m->result = m->heap->allocate_ndarray(data, result_shape);
+            }
+            return;
+        }
+
+        // Use CellIterK INNER mode
+        CellIterK* iter = m->heap->allocate<CellIterK>(
+            f, g, lhs, rhs, lhs_frame, rhs_frame, common_dim, 1, 1);
+        if (result_shape.size() > 2) {
+            iter->orig_ndarray_shape = result_shape;
+        } else if (result_shape.size() == 2) {
+            // 2D result: set orig_rows/orig_cols from result shape
+            iter->orig_rows = result_shape[0];
+            iter->orig_cols = result_shape[1];
+        } else if (result_shape.size() == 1) {
+            // 1D result: vector
+            iter->orig_rows = result_shape[0];
+            iter->orig_cols = 1;
+            iter->orig_is_vector = true;
+        }
+        m->push_kont(iter);
+        return;
+    }
+
     // Get dimensions (after potential extension)
     int lhs_rows = lhs->rows();
     int lhs_cols = lhs->cols();
@@ -217,8 +356,13 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
             return;
         }
         // Result is a vector of length rhs_cols
-        m->push_kont(m->heap->allocate<InnerProductIterK>(
-            f, g, lhs, rhs, 1, lhs_rows, rhs_cols));
+        // lhs_frame=1, rhs_frame=rhs_cols, common=lhs_rows
+        CellIterK* iter = m->heap->allocate<CellIterK>(
+            f, g, lhs, rhs, 1, rhs_cols, lhs_rows, 1, rhs_cols);
+        iter->orig_is_vector = true;
+        iter->orig_rows = rhs_cols;  // Result is rhs_cols length vector
+        iter->orig_cols = 1;
+        m->push_kont(iter);
         return;
     }
 
@@ -230,8 +374,13 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
             return;
         }
         // Result is a vector of length lhs_rows
-        m->push_kont(m->heap->allocate<InnerProductIterK>(
-            f, g, lhs, rhs, lhs_rows, lhs_cols, 1));
+        // lhs_frame=lhs_rows, rhs_frame=1, common=lhs_cols
+        CellIterK* iter = m->heap->allocate<CellIterK>(
+            f, g, lhs, rhs, lhs_rows, 1, lhs_cols, lhs_cols, 1);
+        iter->orig_is_vector = true;
+        iter->orig_rows = lhs_rows;  // Result is lhs_rows length vector
+        iter->orig_cols = 1;
+        m->push_kont(iter);
         return;
     }
 
@@ -242,9 +391,10 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
         return;
     }
 
-    // Use InnerProductIterK for matrix case
-    m->push_kont(m->heap->allocate<InnerProductIterK>(
-        f, g, lhs, rhs, lhs_rows, lhs_cols, rhs_cols));
+    // Use CellIterK INNER mode for matrix case
+    // lhs_frame=lhs_rows, rhs_frame=rhs_cols, common=lhs_cols
+    m->push_kont(m->heap->allocate<CellIterK>(
+        f, g, lhs, rhs, lhs_rows, rhs_cols, lhs_cols, lhs_cols, rhs_cols));
 }
 
 // ========================================================================
@@ -281,6 +431,18 @@ void op_each(Machine* m, Value* axis, Value* f, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    // NDARRAY: apply function to each element, preserve shape
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        int num_cells = static_cast<int>(nd->data->size());
+        CellIterK* iter = m->heap->allocate<CellIterK>(
+            f, nullptr, omega, 0, 0, num_cells,
+            CellIterMode::COLLECT, 1, num_cells, false, false, false);
+        iter->orig_ndarray_shape = nd->shape;
+        m->push_kont(iter);
+        return;
+    }
+
     int rows = omega->rows();
     int cols = omega->cols();
     int num_cells = rows * cols;
@@ -311,13 +473,23 @@ void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Val
         return;
     }
 
-    // Scalar extension: scalar with array/strand
+    // Scalar extension: scalar with array/strand/ndarray
     if (lhs->is_scalar()) {
         if (rhs->is_strand()) {
             int num_cells = static_cast<int>(rhs->as_strand()->size());
             m->push_kont(m->heap->allocate<CellIterK>(
                 f, lhs, rhs, 0, 0, num_cells,
                 CellIterMode::COLLECT, num_cells, 1, true, false, true));
+            return;
+        }
+        if (rhs->is_ndarray()) {
+            const Value::NDArrayData* nd = rhs->as_ndarray();
+            int num_cells = static_cast<int>(nd->data->size());
+            CellIterK* iter = m->heap->allocate<CellIterK>(
+                f, lhs, rhs, 0, 0, num_cells,
+                CellIterMode::COLLECT, 1, num_cells, false, false, false);
+            iter->orig_ndarray_shape = nd->shape;
+            m->push_kont(iter);
             return;
         }
         if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
@@ -339,6 +511,16 @@ void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Val
                 CellIterMode::COLLECT, num_cells, 1, true, false, true));
             return;
         }
+        if (lhs->is_ndarray()) {
+            const Value::NDArrayData* nd = lhs->as_ndarray();
+            int num_cells = static_cast<int>(nd->data->size());
+            CellIterK* iter = m->heap->allocate<CellIterK>(
+                f, lhs, rhs, 0, 0, num_cells,
+                CellIterMode::COLLECT, 1, num_cells, false, false, false);
+            iter->orig_ndarray_shape = nd->shape;
+            m->push_kont(iter);
+            return;
+        }
         if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
         int rows = lhs->rows();
         int cols = lhs->cols();
@@ -347,6 +529,29 @@ void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Val
         m->push_kont(m->heap->allocate<CellIterK>(
             f, lhs, rhs, 0, 0, num_cells,
             CellIterMode::COLLECT, rows, cols, lhs->is_vector(), is_char));
+        return;
+    }
+
+    // Both NDARRAY: shapes must match
+    if (lhs->is_ndarray() && rhs->is_ndarray()) {
+        const Value::NDArrayData* lnd = lhs->as_ndarray();
+        const Value::NDArrayData* rnd = rhs->as_ndarray();
+        if (lnd->shape != rnd->shape) {
+            m->throw_error("LENGTH ERROR: each requires matching shapes");
+            return;
+        }
+        int num_cells = static_cast<int>(lnd->data->size());
+        CellIterK* iter = m->heap->allocate<CellIterK>(
+            f, lhs, rhs, 0, 0, num_cells,
+            CellIterMode::COLLECT, 1, num_cells, false, false, false);
+        iter->orig_ndarray_shape = lnd->shape;
+        m->push_kont(iter);
+        return;
+    }
+
+    // NDARRAY with non-NDARRAY (except scalar handled above): RANK ERROR
+    if (lhs->is_ndarray() || rhs->is_ndarray()) {
+        m->throw_error("RANK ERROR: each requires matching ranks");
         return;
     }
 
@@ -440,37 +645,9 @@ void op_commute(Machine* m, Value* axis, Value* f, Value* omega) {
         return;
     }
 
-    // Handle curried functions (from G2 grammar)
-    if (f->tag == ValueType::CURRIED_FN) {
-        // Curried function: B f B
-        // Create DyadicK to apply the function with both arguments as omega
-        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, omega, omega));
-        return;
-    }
-
-    // Handle derived operators (like -⍨⍨ - commute applied to commuted function)
-    if (f->tag == ValueType::DERIVED_OPERATOR) {
-        // Derived operator: apply with duplicated arguments
-        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, omega, omega));
-        return;
-    }
-
-    // Handle primitive functions
-    if (!f->is_primitive()) {
-        m->throw_error("DOMAIN ERROR: duplicate operator requires primitive, curried, or derived function");
-        return;
-    }
-
-    PrimitiveFn* fn = f->data.primitive_fn;
-
-    // f must have dyadic form for duplicate
-    if (!fn->dyadic) {
-        m->throw_error("DOMAIN ERROR: duplicate operator requires function with dyadic form");
-        return;
-    }
-
-    // Apply: omega f omega (no axis from operator context)
-    fn->dyadic(m, nullptr, omega, omega);
+    // Use DispatchFunctionK for all function types to get proper pervasive dispatch
+    // This handles primitives, curried functions, derived operators, and closures
+    m->push_kont(m->heap->allocate<DispatchFunctionK>(f, omega, omega));
 }
 
 // ========================================================================
@@ -491,68 +668,11 @@ void op_commute_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, 
         return;
     }
 
-    // Handle curried functions (from G2 grammar)
-    if (f->tag == ValueType::CURRIED_FN) {
-        // Apply curried function with swapped arguments: rhs f lhs
-        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, rhs, lhs));
-        return;
-    }
-
-    // Handle derived operators (like -⍨⍨ - commute applied to commuted function)
-    if (f->tag == ValueType::DERIVED_OPERATOR) {
-        // Derived operator: apply with swapped arguments
-        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, rhs, lhs));
-        return;
-    }
-
-    // Handle primitive functions
-    if (!f->is_primitive()) {
-        m->throw_error("DOMAIN ERROR: commute operator requires primitive, curried, or derived function");
-        return;
-    }
-
-    PrimitiveFn* fn = f->data.primitive_fn;
-
-    // f must have dyadic form
-    if (!fn->dyadic) {
-        m->throw_error("DOMAIN ERROR: commute operator requires function with dyadic form");
-        return;
-    }
-
-    // Pervasive strand handling: if either arg is a strand, apply element-wise
-    bool left_strand = rhs->is_strand();  // Note: rhs becomes left after swap
-    bool right_strand = lhs->is_strand(); // Note: lhs becomes right after swap
-    if (fn->is_pervasive && (left_strand || right_strand)) {
-        int left_size = left_strand ? static_cast<int>(rhs->as_strand()->size())
-                                   : (rhs->is_scalar() ? 1 : rhs->size());
-        int right_size = right_strand ? static_cast<int>(lhs->as_strand()->size())
-                                     : (lhs->is_scalar() ? 1 : lhs->size());
-
-        // Scalar extension for strands
-        if (rhs->is_scalar() && right_strand) {
-            std::vector<Value*> extended(right_size, rhs);
-            rhs = m->heap->allocate_strand(std::move(extended));
-            left_size = right_size;
-        } else if (left_strand && lhs->is_scalar()) {
-            std::vector<Value*> extended(left_size, lhs);
-            lhs = m->heap->allocate_strand(std::move(extended));
-            right_size = left_size;
-        }
-
-        if (left_size != right_size) {
-            m->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation");
-            return;
-        }
-
-        // Use CellIterK with COLLECT mode to apply element-wise (swapped: rhs f lhs)
-        m->push_kont(m->heap->allocate<CellIterK>(
-            f, rhs, lhs, 0, 0, left_size,
-            CellIterMode::COLLECT, left_size, 1, true, false, true));
-        return;
-    }
-
-    // Apply: rhs f lhs (swapped, no axis from operator context)
-    fn->dyadic(m, nullptr, rhs, lhs);
+    // Use DispatchFunctionK for all function types to get proper pervasive dispatch
+    // This handles primitives, curried functions, derived operators, closures,
+    // and pervasive operations on strands and NDARRAYs
+    // Commute swaps: A f⍨ B → B f A
+    m->push_kont(m->heap->allocate<DispatchFunctionK>(f, rhs, lhs));
 }
 
 // ========================================================================
@@ -690,6 +810,91 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    // NDARRAY reduction: reduce along specified axis (default: last)
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Determine axis (default: last axis in ⎕IO terms)
+        int k = rank - 1 + m->io;  // Last axis
+        if (axis) {
+            k = validate_axis(m, axis, rank);
+            if (k < 0) return;
+        }
+        int ax = k - m->io;  // Convert to 0-indexed
+
+        int ax_len = shape[ax];
+        if (ax_len == 0) {
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->throw_error("DOMAIN ERROR: function has no identity element for empty reduction");
+                return;
+            }
+            // Result shape: remove the axis dimension
+            std::vector<int> result_shape;
+            for (int d = 0; d < rank; ++d) {
+                if (d != ax) result_shape.push_back(shape[d]);
+            }
+            int result_size = 1;
+            for (int s : result_shape) result_size *= s;
+            Eigen::VectorXd result_data = Eigen::VectorXd::Constant(result_size, identity);
+            if (result_shape.size() <= 2) {
+                if (result_shape.size() == 1) {
+                    m->result = m->heap->allocate_vector(result_data);
+                } else {
+                    Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+                    for (int i = 0; i < result_size; ++i) mat.data()[i] = result_data(i);
+                    m->result = m->heap->allocate_matrix(mat);
+                }
+            } else {
+                m->result = m->heap->allocate_ndarray(result_data, result_shape);
+            }
+            return;
+        }
+
+        if (ax_len == 1) {
+            // Single element along axis: just remove that dimension
+            std::vector<int> result_shape;
+            for (int d = 0; d < rank; ++d) {
+                if (d != ax) result_shape.push_back(shape[d]);
+            }
+            if (result_shape.size() <= 2) {
+                if (result_shape.size() == 1) {
+                    m->result = m->heap->allocate_vector(*nd->data);
+                } else {
+                    Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+                    for (int i = 0; i < nd->data->size(); ++i) mat.data()[i] = (*nd->data)(i);
+                    m->result = m->heap->allocate_matrix(mat);
+                }
+            } else {
+                m->result = m->heap->allocate_ndarray(*nd->data, result_shape);
+            }
+            return;
+        }
+
+        // General case: reduce along axis ax
+        // Result shape: remove dimension ax
+        std::vector<int> result_shape;
+        for (int d = 0; d < rank; ++d) {
+            if (d != ax) result_shape.push_back(shape[d]);
+        }
+
+        int result_size = 1;
+        for (int s : result_shape) result_size *= s;
+
+        // Compute strides for source
+        std::vector<int> src_strides(rank);
+        src_strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            src_strides[d] = src_strides[d + 1] * shape[d + 1];
+        }
+
+        // For each position in result, reduce fiber along axis
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, ax, 0, false));
+        return;
+    }
+
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: / requires array argument");
         return;
@@ -754,7 +959,7 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
             m->result = m->heap->allocate_vector(mat->row(0).transpose());
             return;
         }
-        m->push_kont(m->heap->allocate<RowReduceK>(func, omega, cols, rows, true));
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 0, 0, false));
     } else {
         // k == 2: Reduce along last axis (columns)
         if (cols == 0) {
@@ -771,7 +976,7 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
             m->result = m->heap->allocate_vector(mat->col(0));
             return;
         }
-        m->push_kont(m->heap->allocate<RowReduceK>(func, omega, rows, cols, false));
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 1, 0, false));
     }
 }
 
@@ -797,6 +1002,14 @@ void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega) {
 
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // NDARRAY reduction: reduce along first axis (default)
+    if (omega->is_ndarray()) {
+        // Delegate to fn_reduce - if no axis given, use first axis (⎕IO)
+        Value* axis_val = axis ? axis : m->heap->allocate_scalar(m->io);
+        fn_reduce(m, axis_val, func, omega);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⌿ requires array argument");
@@ -843,7 +1056,7 @@ void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega) {
             m->result = m->heap->allocate_vector(mat->row(0).transpose());
             return;
         }
-        m->push_kont(m->heap->allocate<RowReduceK>(func, omega, cols, rows, true));
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 0, 0, false));
     } else {
         // k == 2: Reduce along last axis (columns)
         if (cols == 0) {
@@ -860,7 +1073,7 @@ void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega) {
             m->result = m->heap->allocate_vector(mat->col(0));
             return;
         }
-        m->push_kont(m->heap->allocate<RowReduceK>(func, omega, rows, cols, false));
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 1, 0, false));
     }
 }
 
@@ -909,6 +1122,39 @@ void fn_scan(Machine* m, Value* axis, Value* func, Value* omega) {
 
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // NDARRAY scan: scan along specified axis (default: last)
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Determine axis (default: last axis in ⎕IO terms)
+        int k = rank - 1 + m->io;  // Last axis
+        if (axis) {
+            k = validate_axis(m, axis, rank);
+            if (k < 0) return;
+        }
+        int ax = k - m->io;  // Convert to 0-indexed
+
+        int ax_len = shape[ax];
+        if (ax_len <= 1) {
+            // Single element or empty along axis: return unchanged
+            m->result = omega;
+            return;
+        }
+
+        // Result has same shape as input
+        // total_positions = product of all dimensions except scan axis
+        int total_positions = 1;
+        for (int d = 0; d < rank; d++) {
+            if (d != ax) total_positions *= shape[d];
+        }
+
+        m->push_kont(m->heap->allocate<RowScanK>(
+            func, omega, ax, shape, total_positions));
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: \\ requires array argument");
@@ -1010,6 +1256,14 @@ void fn_scan_first(Machine* m, Value* axis, Value* func, Value* omega) {
 
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // NDARRAY scan: scan along first axis (default)
+    if (omega->is_ndarray()) {
+        // Delegate to fn_scan - if no axis given, use first axis (⎕IO)
+        Value* axis_val = axis ? axis : m->heap->allocate_scalar(m->io);
+        fn_scan(m, axis_val, func, omega);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⍀ requires array argument");
@@ -1176,8 +1430,55 @@ void fn_reduce_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Value* g,
             return;
         }
 
-        // Use NwiseReduceK (now handles strands)
-        m->push_kont(m->heap->allocate<NwiseReduceK>(func, rhs, abs_n, reverse));
+        // Use FiberReduceK for N-wise reduction on strands
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, rhs, 0, abs_n, reverse));
+        return;
+    }
+
+    // Handle NDARRAY: N-wise reduction along specified axis (default: last)
+    if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        int rank = static_cast<int>(nd->shape.size());
+
+        // Determine axis (default: last axis in ⎕IO terms)
+        int k = rank - 1 + m->io;  // Last axis
+        if (axis) {
+            k = validate_axis(m, axis, rank);
+            if (k < 0) return;
+        }
+        int ax = k - m->io;  // Convert to 0-indexed
+
+        int axis_len = nd->shape[ax];
+        int n = validate_nwise(m, n_val, axis_len);
+        if (n == INT_MIN) return;
+        int abs_n = n < 0 ? -n : n;
+        bool is_reverse = n < 0;
+
+        if (abs_n == 0) {
+            // 0 f/[k] NDARRAY → expand axis by 1, fill with identity
+            double identity = get_identity_for_function(func);
+            if (std::isnan(identity)) {
+                m->throw_error("DOMAIN ERROR: function has no identity element");
+                return;
+            }
+            std::vector<int> result_shape = nd->shape;
+            result_shape[ax] = axis_len + 1;
+            int total_size = 1;
+            for (int d : result_shape) total_size *= d;
+            Eigen::VectorXd result_data = Eigen::VectorXd::Constant(total_size, identity);
+            m->result = m->heap->allocate_ndarray(result_data, result_shape);
+            return;
+        }
+
+        // Result shape: same as input but axis dimension changes
+        int result_axis_len = axis_len - abs_n + 1;
+        if (result_axis_len <= 0) {
+            m->throw_error("DOMAIN ERROR: N too large for array");
+            return;
+        }
+
+        // Use FiberReduceK for N-wise reduction on NDARRAY
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, rhs, ax, abs_n, is_reverse));
         return;
     }
 
@@ -1228,8 +1529,8 @@ void fn_reduce_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Value* g,
             return;
         }
 
-        // Use NwiseReduceK continuation for N-wise reduction
-        m->push_kont(m->heap->allocate<NwiseReduceK>(func, rhs, abs_n, reverse));
+        // Use FiberReduceK for N-wise reduction on vectors
+        m->push_kont(m->heap->allocate<FiberReduceK>(func, rhs, 0, abs_n, reverse));
         return;
     }
 
@@ -1260,8 +1561,8 @@ void fn_reduce_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Value* g,
         return;
     }
 
-    // N-wise on matrix along axis k
-    m->push_kont(m->heap->allocate<NwiseMatrixReduceK>(func, rhs, abs_n, k == 1, reverse));
+    // N-wise on matrix along axis k (k=1 → axis 0, k=2 → axis 1)
+    m->push_kont(m->heap->allocate<FiberReduceK>(func, rhs, k == 1 ? 0 : 1, abs_n, reverse));
 }
 
 // N-wise reduction-first: N f⌿ B or N f⌿[k] B
@@ -1352,7 +1653,8 @@ void fn_reduce_first_nwise(Machine* m, Value* axis, Value* lhs, Value* func, Val
         return;
     }
 
-    m->push_kont(m->heap->allocate<NwiseMatrixReduceK>(func, rhs, abs_n, k == 1, reverse));
+    // N-wise on matrix along axis k (k=1 → axis 0, k=2 → axis 1)
+    m->push_kont(m->heap->allocate<FiberReduceK>(func, rhs, k == 1 ? 0 : 1, abs_n, reverse));
 }
 
 // ========================================================================
@@ -1444,6 +1746,7 @@ static int get_array_rank(Value* v) {
     if (v->is_scalar()) return 0;
     if (v->is_vector()) return 1;
     if (v->is_strand()) return 1;  // Strands are 1D collections
+    if (v->is_ndarray()) return static_cast<int>(v->ndarray_shape().size());
     return 2;  // Matrix
 }
 
@@ -1495,6 +1798,7 @@ static bool parse_rank_spec(Value* rank_spec, int array_rank,
 // Helper: extract a k-cell from an array
 // For 2D: 0-cell = scalar at (row, col), 1-cell = row vector, 2-cell = whole matrix
 // For strands: 0-cell = individual element, 1-cell = whole strand
+// For NDARRAY: k-cell is a subarray with last k dimensions
 static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
     if (k >= get_array_rank(arr)) {
         // Full rank: return whole array
@@ -1514,6 +1818,47 @@ static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
         }
         // k >= 1: whole strand
         return arr;
+    }
+
+    // Handle NDARRAY
+    if (arr->is_ndarray()) {
+        const std::vector<int>& shape = arr->ndarray_shape();
+        const Eigen::VectorXd* data = arr->ndarray_data();
+        int rank = static_cast<int>(shape.size());
+
+        if (k == 0) {
+            // 0-cell: individual scalar
+            return m->heap->allocate_scalar((*data)(cell_index));
+        }
+
+        // k-cell: subarray with last k dimensions
+        // Frame dimensions are first (rank - k) dimensions
+        int frame_rank = rank - k;
+
+        // Compute cell shape (last k dimensions)
+        std::vector<int> cell_shape(shape.begin() + frame_rank, shape.end());
+        int cell_size = 1;
+        for (int d : cell_shape) cell_size *= d;
+
+        // Extract cell data starting at cell_index * cell_size
+        int start = cell_index * cell_size;
+        Eigen::VectorXd cell_data = data->segment(start, cell_size);
+
+        // Return appropriate type based on cell rank
+        if (k == 1) {
+            return m->heap->allocate_vector(cell_data);
+        } else if (k == 2) {
+            Eigen::MatrixXd mat(cell_shape[0], cell_shape[1]);
+            for (int i = 0; i < cell_shape[0]; i++) {
+                for (int j = 0; j < cell_shape[1]; j++) {
+                    mat(i, j) = cell_data(i * cell_shape[1] + j);
+                }
+            }
+            return m->heap->allocate_matrix(mat);
+        } else {
+            // Higher rank cell - return as NDARRAY
+            return m->heap->allocate_ndarray(cell_data, cell_shape);
+        }
     }
 
     const Eigen::MatrixXd* mat = arr->as_matrix();
@@ -1548,6 +1893,7 @@ static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
 }
 
 // Helper: count number of k-cells in an array
+// For NDARRAY: number of k-cells = product of first (rank - k) dimensions (the frame)
 static int count_cells(Value* arr, int k) {
     if (k >= get_array_rank(arr)) return 1;
 
@@ -1556,6 +1902,19 @@ static int count_cells(Value* arr, int k) {
     // Handle strands: 0-cells are individual elements, 1-cell is whole strand
     if (arr->is_strand()) {
         return (k == 0) ? static_cast<int>(arr->as_strand()->size()) : 1;
+    }
+
+    // Handle NDARRAY
+    if (arr->is_ndarray()) {
+        const std::vector<int>& shape = arr->ndarray_shape();
+        int rank = static_cast<int>(shape.size());
+        int frame_rank = rank - k;  // Number of frame dimensions
+
+        int count = 1;
+        for (int i = 0; i < frame_rank; i++) {
+            count *= shape[i];
+        }
+        return count;
     }
 
     const Eigen::MatrixXd* mat = arr->as_matrix();
@@ -1628,7 +1987,13 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
 
         // Handle empty array: return empty array with same shape
         if (num_cells == 0) {
-            if (rhs->is_vector()) {
+            if (rhs->is_ndarray()) {
+                // NDARRAY: return empty with frame shape
+                const std::vector<int>& shape = rhs->ndarray_shape();
+                std::vector<int> frame_shape(shape.begin(), shape.begin() + (rhs_rank - k));
+                Eigen::VectorXd empty_data(0);
+                m->result = m->heap->allocate_ndarray(empty_data, frame_shape);
+            } else if (rhs->is_vector()) {
                 m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
             } else {
                 m->result = m->heap->allocate_matrix(Eigen::MatrixXd(rhs->rows(), rhs->cols()));
@@ -1643,34 +2008,110 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
         }
 
         // Multiple cells: use CellIterK continuation to iterate
-        int rows, cols;
         bool is_strand = rhs->is_strand();
-        if (is_strand) {
-            rows = static_cast<int>(rhs->as_strand()->size());
-            cols = 1;
+        bool is_ndarray = rhs->is_ndarray();
+
+        if (is_ndarray) {
+            // NDARRAY: frame is first (rank - k) dimensions
+            const std::vector<int>& shape = rhs->ndarray_shape();
+            int frame_rank = rhs_rank - k;
+            std::vector<int> frame_shape(shape.begin(), shape.begin() + frame_rank);
+
+            CellIterK* iter = m->heap->allocate<CellIterK>(
+                f, nullptr, rhs, k, k, num_cells,
+                CellIterMode::COLLECT, num_cells, 1, false, false, false);
+
+            // Only use NDARRAY result for frame rank > 2
+            if (frame_rank > 2) {
+                iter->orig_ndarray_shape = frame_shape;
+            } else if (frame_rank == 2) {
+                // 2D frame: use matrix assembly
+                iter->orig_rows = frame_shape[0];
+                iter->orig_cols = frame_shape[1];
+            } else if (frame_rank == 1) {
+                // 1D frame: use vector assembly
+                iter->orig_is_vector = true;
+                iter->orig_rows = frame_shape[0];
+                iter->orig_cols = 1;
+            }
+            // frame_rank == 0 means single cell, already handled above
+
+            m->push_kont(iter);
         } else {
-            rows = rhs->is_scalar() ? 1 : rhs->rows();
-            cols = rhs->is_scalar() ? 1 : rhs->cols();
+            // Non-NDARRAY case: use frame shape (not full array shape)
+            // Frame is the first (rank - k) dimensions
+            int frame_rank = rhs_rank - k;
+
+            CellIterK* iter = m->heap->allocate<CellIterK>(
+                f, nullptr, rhs, k, k, num_cells,
+                CellIterMode::COLLECT, num_cells, 1, false, false, is_strand);
+
+            if (frame_rank >= 2 && rhs->is_matrix()) {
+                // 2D frame: use matrix assembly
+                iter->orig_rows = rhs->rows();
+                iter->orig_cols = rhs->cols();
+            } else if (frame_rank == 1) {
+                // 1D frame: use vector assembly
+                iter->orig_is_vector = true;
+                iter->orig_rows = is_strand ? static_cast<int>(rhs->as_strand()->size()) : rhs->rows();
+                iter->orig_cols = 1;
+            }
+            // frame_rank == 0 means single cell, already handled above
+
+            m->push_kont(iter);
         }
-        m->push_kont(m->heap->allocate<CellIterK>(
-            f, nullptr, rhs, k, k, num_cells,
-            CellIterMode::COLLECT, rows, cols, rhs->is_vector(), false, is_strand));
     } else {
-        // Dyadic: A f⍤k B
+        // Dyadic: A f⍤k B (ISO 9.3.5)
         int lk = std::min(left_r, lhs_rank);
         int rk = std::min(right_r, rhs_rank);
         if (lk < 0) lk = std::max(0, lhs_rank + lk);
         if (rk < 0) rk = std::max(0, rhs_rank + rk);
 
-        int left_cells = count_cells(lhs, lk);
-        int right_cells = count_cells(rhs, rk);
+        // Compute frame shapes (ISO 9.3.5: y10 and y11)
+        // y10 = shape of A with last lk items removed
+        // y11 = shape of B with last rk items removed
+        std::vector<int> left_frame, right_frame;
+        int left_frame_rank = lhs_rank - lk;
+        int right_frame_rank = rhs_rank - rk;
 
-        // Cell counts must match (or one must be 1 for scalar extension)
-        if (left_cells != right_cells && left_cells != 1 && right_cells != 1) {
-            m->throw_error("LENGTH ERROR: rank operator cell count mismatch");
-            return;
+        if (lhs->is_ndarray()) {
+            const std::vector<int>& shape = lhs->ndarray_shape();
+            left_frame = std::vector<int>(shape.begin(), shape.begin() + left_frame_rank);
+        } else if (lhs->is_matrix()) {
+            if (left_frame_rank >= 2) left_frame = {lhs->rows(), lhs->cols()};
+            else if (left_frame_rank == 1) left_frame = {lhs->rows()};
+        } else if (lhs->is_vector()) {
+            if (left_frame_rank >= 1) left_frame = {lhs->rows()};
         }
 
+        if (rhs->is_ndarray()) {
+            const std::vector<int>& shape = rhs->ndarray_shape();
+            right_frame = std::vector<int>(shape.begin(), shape.begin() + right_frame_rank);
+        } else if (rhs->is_matrix()) {
+            if (right_frame_rank >= 2) right_frame = {rhs->rows(), rhs->cols()};
+            else if (right_frame_rank == 1) right_frame = {rhs->rows()};
+        } else if (rhs->is_vector()) {
+            if (right_frame_rank >= 1) right_frame = {rhs->rows()};
+        }
+
+        // ISO 9.3.5: Check frame compatibility
+        bool left_empty = left_frame.empty();
+        bool right_empty = right_frame.empty();
+
+        if (!left_empty && !right_empty) {
+            // Both frames nonempty: must match
+            if (left_frame.size() != right_frame.size()) {
+                m->throw_error("RANK ERROR: frame ranks differ in rank operator");
+                return;
+            }
+            if (left_frame != right_frame) {
+                m->throw_error("LENGTH ERROR: frame shapes differ in rank operator");
+                return;
+            }
+        }
+
+        int left_cells = count_cells(lhs, lk);
+        int right_cells = count_cells(rhs, rk);
         int num_cells = std::max(left_cells, right_cells);
 
         if (num_cells == 1) {
@@ -1680,19 +2121,68 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
         }
 
         // Multiple cells: use CellIterK continuation
-        // Use strand flag from rhs (output follows rhs structure)
-        int rows, cols;
         bool is_strand = rhs->is_strand();
-        if (is_strand) {
-            rows = static_cast<int>(rhs->as_strand()->size());
-            cols = 1;
+        bool rhs_ndarray = rhs->is_ndarray();
+        bool lhs_ndarray = lhs->is_ndarray();
+
+        // For result shape, use the non-scalar operand's frame
+        // If both are NDARRAY, they must have same frame (checked above via cell counts)
+        if (rhs_ndarray || lhs_ndarray) {
+            std::vector<int> frame_shape;
+            int frame_rank = 0;
+
+            if (rhs_ndarray && right_cells > 1) {
+                const std::vector<int>& shape = rhs->ndarray_shape();
+                frame_rank = rhs_rank - rk;
+                frame_shape = std::vector<int>(shape.begin(), shape.begin() + frame_rank);
+            } else if (lhs_ndarray && left_cells > 1) {
+                const std::vector<int>& shape = lhs->ndarray_shape();
+                frame_rank = lhs_rank - lk;
+                frame_shape = std::vector<int>(shape.begin(), shape.begin() + frame_rank);
+            }
+
+            CellIterK* iter = m->heap->allocate<CellIterK>(
+                f, lhs, rhs, lk, rk, num_cells,
+                CellIterMode::COLLECT, num_cells, 1, false, false, false);
+
+            // Only use NDARRAY result for frame rank > 2
+            if (frame_rank > 2) {
+                iter->orig_ndarray_shape = frame_shape;
+            } else if (frame_rank == 2 && !frame_shape.empty()) {
+                // 2D frame: use matrix assembly
+                iter->orig_rows = frame_shape[0];
+                iter->orig_cols = frame_shape[1];
+            } else if (frame_rank == 1 && !frame_shape.empty()) {
+                // 1D frame: use vector assembly
+                iter->orig_is_vector = true;
+                iter->orig_rows = frame_shape[0];
+                iter->orig_cols = 1;
+            }
+
+            m->push_kont(iter);
         } else {
-            rows = rhs->is_scalar() ? 1 : rhs->rows();
-            cols = rhs->is_scalar() ? 1 : rhs->cols();
+            // Non-NDARRAY case: use frame shape (not full array shape)
+            // The frame is the shape used for result assembly
+            std::vector<int>& result_frame = right_cells > 1 ? right_frame : left_frame;
+
+            CellIterK* iter = m->heap->allocate<CellIterK>(
+                f, lhs, rhs, lk, rk, num_cells,
+                CellIterMode::COLLECT, num_cells, 1, false, false, is_strand);
+
+            if (result_frame.size() >= 2) {
+                // 2D frame: use matrix assembly
+                iter->orig_rows = result_frame[0];
+                iter->orig_cols = result_frame[1];
+            } else if (result_frame.size() == 1) {
+                // 1D frame: use vector assembly
+                iter->orig_is_vector = true;
+                iter->orig_rows = result_frame[0];
+                iter->orig_cols = 1;
+            }
+            // Empty frame means single cell, already handled above
+
+            m->push_kont(iter);
         }
-        m->push_kont(m->heap->allocate<CellIterK>(
-            f, lhs, rhs, lk, rk, num_cells,
-            CellIterMode::COLLECT, rows, cols, rhs->is_vector(), false, is_strand));
     }
 }
 
@@ -1801,6 +2291,167 @@ void fn_catenate_axis_dyadic(Machine* m, Value* curry_axis, Value* lhs, Value* a
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: ,[k] requires array argument");
+        return;
+    }
+
+    // Handle NDARRAY catenation
+    if (lhs->is_ndarray() || rhs->is_ndarray()) {
+        if (laminate) {
+            m->throw_error("RANK ERROR: laminate of NDARRAY not yet supported");
+            return;
+        }
+
+        bool is_char = lhs->is_char_data() && rhs->is_char_data();
+
+        // Get shapes of both operands
+        std::vector<int> lhs_shape, rhs_shape;
+        const Eigen::VectorXd* lhs_data = nullptr;
+        const Eigen::VectorXd* rhs_data = nullptr;
+
+        if (lhs->is_ndarray()) {
+            lhs_shape = lhs->ndarray_shape();
+            lhs_data = lhs->ndarray_data();
+        } else if (lhs->is_scalar()) {
+            lhs_shape = {};
+        } else {
+            lhs_shape.push_back(lhs->as_matrix()->rows());
+            if (!lhs->is_vector()) {
+                lhs_shape.push_back(lhs->as_matrix()->cols());
+            }
+        }
+
+        if (rhs->is_ndarray()) {
+            rhs_shape = rhs->ndarray_shape();
+            rhs_data = rhs->ndarray_data();
+        } else if (rhs->is_scalar()) {
+            rhs_shape = {};
+        } else {
+            rhs_shape.push_back(rhs->as_matrix()->rows());
+            if (!rhs->is_vector()) {
+                rhs_shape.push_back(rhs->as_matrix()->cols());
+            }
+        }
+
+        int target_rank = std::max(static_cast<int>(lhs_shape.size()),
+                                   static_cast<int>(rhs_shape.size()));
+        if (target_rank == 0) {
+            m->throw_error("RANK ERROR: cannot catenate scalars along axis");
+            return;
+        }
+
+        if (axis_idx < 0 || axis_idx >= target_rank) {
+            m->throw_error("AXIS ERROR: axis out of range");
+            return;
+        }
+
+        // Promote shapes to same rank by prepending 1s
+        while (static_cast<int>(lhs_shape.size()) < target_rank) {
+            lhs_shape.insert(lhs_shape.begin(), 1);
+        }
+        while (static_cast<int>(rhs_shape.size()) < target_rank) {
+            rhs_shape.insert(rhs_shape.begin(), 1);
+        }
+
+        // Verify all axes except cat_axis match
+        for (int i = 0; i < target_rank; ++i) {
+            if (i != axis_idx && lhs_shape[i] != rhs_shape[i]) {
+                m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+                return;
+            }
+        }
+
+        // Compute result shape
+        std::vector<int> result_shape = lhs_shape;
+        result_shape[axis_idx] = lhs_shape[axis_idx] + rhs_shape[axis_idx];
+
+        // Compute strides
+        auto compute_strides = [](const std::vector<int>& shape) {
+            std::vector<int> strides(shape.size());
+            int stride = 1;
+            for (int i = static_cast<int>(shape.size()) - 1; i >= 0; --i) {
+                strides[i] = stride;
+                stride *= shape[i];
+            }
+            return strides;
+        };
+
+        std::vector<int> lhs_strides = compute_strides(lhs_shape);
+        std::vector<int> rhs_strides = compute_strides(rhs_shape);
+        std::vector<int> result_strides = compute_strides(result_shape);
+
+        int result_size = 1;
+        for (int d : result_shape) result_size *= d;
+
+        Eigen::VectorXd result(result_size);
+
+        // Helper lambdas to get values
+        auto get_lhs_value = [&](const std::vector<int>& indices) -> double {
+            if (lhs->is_scalar()) return lhs->as_scalar();
+            if (lhs->is_ndarray()) {
+                int lin = 0;
+                for (int i = 0; i < target_rank; ++i) {
+                    lin += indices[i] * lhs_strides[i];
+                }
+                return (*lhs_data)(lin);
+            }
+            const Eigen::MatrixXd* mat = lhs->as_matrix();
+            if (lhs->is_vector()) {
+                return (*mat)(indices[target_rank - 1], 0);
+            }
+            return (*mat)(indices[target_rank - 2], indices[target_rank - 1]);
+        };
+
+        auto get_rhs_value = [&](const std::vector<int>& indices) -> double {
+            if (rhs->is_scalar()) return rhs->as_scalar();
+            if (rhs->is_ndarray()) {
+                int lin = 0;
+                for (int i = 0; i < target_rank; ++i) {
+                    lin += indices[i] * rhs_strides[i];
+                }
+                return (*rhs_data)(lin);
+            }
+            const Eigen::MatrixXd* mat = rhs->as_matrix();
+            if (rhs->is_vector()) {
+                return (*mat)(indices[target_rank - 1], 0);
+            }
+            return (*mat)(indices[target_rank - 2], indices[target_rank - 1]);
+        };
+
+        // Fill result
+        std::vector<int> result_indices(target_rank);
+        for (int linear = 0; linear < result_size; ++linear) {
+            int remaining = linear;
+            for (int d = 0; d < target_rank; ++d) {
+                result_indices[d] = remaining / result_strides[d];
+                remaining %= result_strides[d];
+            }
+
+            if (result_indices[axis_idx] < lhs_shape[axis_idx]) {
+                result(linear) = get_lhs_value(result_indices);
+            } else {
+                std::vector<int> rhs_indices = result_indices;
+                rhs_indices[axis_idx] -= lhs_shape[axis_idx];
+                result(linear) = get_rhs_value(rhs_indices);
+            }
+        }
+
+        // Allocate result based on rank
+        if (target_rank <= 2) {
+            if (target_rank == 1) {
+                m->result = m->heap->allocate_vector(result, is_char);
+            } else {
+                Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+                for (int i = 0; i < result_shape[0]; ++i) {
+                    for (int j = 0; j < result_shape[1]; ++j) {
+                        mat(i, j) = result(i * result_shape[1] + j);
+                    }
+                }
+                m->result = m->heap->allocate_matrix(mat, is_char);
+            }
+        } else {
+            m->result = m->heap->allocate_ndarray(std::move(result), std::move(result_shape));
+            m->result->set_char_data(is_char);
+        }
         return;
     }
 

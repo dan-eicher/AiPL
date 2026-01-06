@@ -97,6 +97,11 @@ public:
     Value* allocate_strand(std::vector<Value*>&& elements);
     Value* allocate_empty_strand();
 
+    // NDARRAY allocation (N-dimensional arrays, rank 3+)
+    // Shape vector defines dimensions; strides are computed automatically (row-major)
+    Value* allocate_ndarray(const Eigen::VectorXd& data, const std::vector<int>& shape);
+    Value* allocate_ndarray(Eigen::VectorXd&& data, std::vector<int>&& shape);
+
     // G2 grammar allocation helpers
     Value* allocate_derived_operator(PrimitiveOp* op, Value* first_operand);
     Value* allocate_derived_operator(Value::DefinedOperatorData* op, Value* first_operand, Value* operator_value = nullptr);

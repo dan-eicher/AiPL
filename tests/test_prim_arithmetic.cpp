@@ -3160,9 +3160,12 @@ TEST_F(ArithmeticTest, IotaRankError) {
     EXPECT_THROW(machine->eval("⍳2 3⍴⍳6"), APLError);
 }
 
-TEST_F(ArithmeticTest, IotaLengthError) {
-    // ISO 8.2.3: Count ≠ 1 → LENGTH ERROR
-    EXPECT_THROW(machine->eval("⍳1 2 3"), APLError);
+TEST_F(ArithmeticTest, IotaMultiDim) {
+    // ISO 13751 §10.1.2: Multi-dimensional index generator
+    // ⍳1 2 3 produces 1×2×3 = 6 index triples
+    Value* r = machine->eval("⍳1 2 3");
+    EXPECT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 6);
 }
 
 // --- 8.2.4 Table ---

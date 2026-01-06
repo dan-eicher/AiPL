@@ -57,6 +57,7 @@ enum class ValueType {
     SCALAR,     // Single numeric value (double)
     VECTOR,     // 1D array stored as n×1 matrix
     MATRIX,     // 2D array
+    NDARRAY,    // N-dimensional array (rank 3+), flat storage with shape vector
     STRING,     // Character string (interned pointer)
     STRAND,     // Nested array (std::vector<Value*>) - can hold any values including other strands
     PRIMITIVE,  // Primitive function (C function pointer)
@@ -126,10 +127,18 @@ public:
         bool is_niladic;           // True if function doesn't reference ⍵ or ⍺
     };
 
+    // NDARRAY metadata - shape and precomputed strides for fast indexing
+    struct NDArrayData {
+        Eigen::VectorXd* data;       // Flat contiguous storage
+        std::vector<int> shape;      // e.g., {2, 3, 4} for 2×3×4 array
+        std::vector<int> strides;    // Precomputed: {12, 4, 1} for row-major
+    };
+
     // Union for value storage
     union Data {
         double scalar;              // For SCALAR
         Eigen::MatrixXd* matrix;    // For VECTOR and MATRIX (vectors stored as n×1)
+        NDArrayData* ndarray;       // For NDARRAY (N-dimensional, rank 3+)
         const char* string;         // For STRING (interned pointer, not owned)
         std::vector<Value*>* strand;  // For STRAND (nested array, can contain any values)
         PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
@@ -158,7 +167,8 @@ public:
     bool is_scalar() const { return tag == ValueType::SCALAR; }
     bool is_vector() const { return tag == ValueType::VECTOR; }
     bool is_matrix() const { return tag == ValueType::MATRIX; }
-    bool is_array() const { return tag == ValueType::VECTOR || tag == ValueType::MATRIX; }
+    bool is_ndarray() const { return tag == ValueType::NDARRAY; }
+    bool is_array() const { return tag == ValueType::VECTOR || tag == ValueType::MATRIX || tag == ValueType::NDARRAY; }
     bool is_strand() const { return tag == ValueType::STRAND; }
     bool is_string() const { return tag == ValueType::STRING; }
     bool is_primitive() const { return tag == ValueType::PRIMITIVE; }
@@ -170,10 +180,25 @@ public:
     bool is_curried_fn() const { return tag == ValueType::CURRIED_FN; }
     // G2 grammar: "bas" type = basic values (scalars, vectors, matrices, strings, strands)
     bool is_basic_value() const { return is_scalar() || is_array() || is_string() || is_strand(); }
+    // Rectangular arrays (numeric, not nested) - excludes STRAND
+    bool is_rectangular() const { return is_scalar() || tag == ValueType::VECTOR || tag == ValueType::MATRIX || tag == ValueType::NDARRAY; }
 
     // Strand access
     std::vector<Value*>* as_strand() { return data.strand; }
     const std::vector<Value*>* as_strand() const { return data.strand; }
+
+    // NDARRAY access
+    NDArrayData* as_ndarray() { return data.ndarray; }
+    const NDArrayData* as_ndarray() const { return data.ndarray; }
+    const std::vector<int>& ndarray_shape() const { return data.ndarray->shape; }
+    const std::vector<int>& ndarray_strides() const { return data.ndarray->strides; }
+    Eigen::VectorXd* ndarray_data() { return data.ndarray->data; }
+    const Eigen::VectorXd* ndarray_data() const { return data.ndarray->data; }
+    // Element access by multi-dimensional index (0-based)
+    double& ndarray_at(const std::vector<int>& indices);
+    double ndarray_at(const std::vector<int>& indices) const;
+    // Compute linear index from multi-dimensional indices using strides
+    int ndarray_linear_index(const std::vector<int>& indices) const;
 
     // String access
     const char* as_string() const { return data.string; }

@@ -286,16 +286,18 @@ TEST_F(PrimitivesTest, RankErrorReshapeMatrixShape) {
     EXPECT_THROW(machine->eval("(2 2⍴1 2 3 4)⍴⍳6"), APLError);
 }
 
-TEST_F(PrimitivesTest, ErrorIotaNonScalar) {
+TEST_F(PrimitivesTest, IotaMultiDimVector) {
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    // Iota requires scalar argument
+    // Multi-dimensional iota now accepts vector argument (ISO 13751 §10.1.2)
     fn_iota(machine, nullptr, vec);
-    EXPECT_EQ(machine->kont_stack.size(), 1);
-    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
-
+    // Should succeed and produce a strand of index tuples
+    ASSERT_TRUE(machine->result != nullptr);
+    EXPECT_TRUE(machine->result->is_strand());
+    // ⍳1 2 3 produces 1×2×3 = 6 index triples
+    EXPECT_EQ(machine->result->as_strand()->size(), 6);
 }
 
 TEST_F(PrimitivesTest, ErrorIotaNegative) {
@@ -455,10 +457,12 @@ TEST_F(PrimitivesTest, RankErrorIotaMatrix) {
     EXPECT_THROW(machine->eval("⍳2 2⍴1"), APLError);
 }
 
-// ISO 13751 8.2.3: If count of B ≠ 1, signal length-error
-TEST_F(PrimitivesTest, LengthErrorIotaVector) {
-    // ⍳1 2 3 → LENGTH ERROR (vector argument)
-    EXPECT_THROW(machine->eval("⍳1 2 3"), APLError);
+// ISO 13751 §10.1.2: Multi-dimensional index generator
+TEST_F(PrimitivesTest, IotaVectorMultiDim) {
+    // ⍳1 2 3 → strand of 6 index triples (now valid)
+    Value* r = machine->eval("⍳1 2 3");
+    EXPECT_TRUE(r->is_strand());
+    EXPECT_EQ(r->as_strand()->size(), 6);
 }
 
 TEST_F(PrimitivesTest, IotaZeroValid) {

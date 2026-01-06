@@ -498,37 +498,19 @@ public:
         print_location(k);
     }
 
-    void visit(RowReduceK* k) override {
-        out << "RowReduceK(row=" << k->current_row << "/" << k->total_rows << ")";
+    void visit(FiberReduceK* k) override {
+        out << "FiberReduceK(pos=" << k->current_result << "/" << k->total_results
+            << ", axis=" << k->axis;
+        if (k->window_size > 0) {
+            out << ", win=" << k->window_size;
+        }
+        out << ")";
         print_value("fn", k->fn);
         print_location(k);
     }
 
-    void visit(RowReduceCollectK* k) override {
-        out << "RowReduceCollectK";
-        print_location(k);
-    }
-
-    void visit(NwiseReduceK* k) override {
-        out << "NwiseReduceK(win=" << k->current_window << "/" << k->total_windows
-            << ", size=" << k->window_size << ")";
-        print_value("fn", k->fn);
-        print_location(k);
-    }
-
-    void visit(NwiseCollectK* k) override {
-        out << "NwiseCollectK";
-        print_location(k);
-    }
-
-    void visit(NwiseMatrixReduceK* k) override {
-        out << "NwiseMatrixReduceK(slice=" << k->current_slice << "/" << k->total_slices << ")";
-        print_value("fn", k->fn);
-        print_location(k);
-    }
-
-    void visit(NwiseMatrixCollectK* k) override {
-        out << "NwiseMatrixCollectK";
+    void visit(FiberReduceCollectK* k) override {
+        out << "FiberReduceCollectK";
         print_location(k);
     }
 
@@ -544,7 +526,7 @@ public:
     }
 
     void visit(RowScanK* k) override {
-        out << "RowScanK(row=" << k->current_row << "/" << k->total_rows << ")";
+        out << "RowScanK(pos=" << k->current_pos << "/" << k->total_positions << ")";
         print_value("fn", k->fn);
         print_location(k);
     }
@@ -557,19 +539,6 @@ public:
     void visit(ReduceResultK* k) override {
         out << "ReduceResultK";
         print_value("fn", k->fn);
-        print_location(k);
-    }
-
-    void visit(InnerProductIterK* k) override {
-        out << "InnerProductIterK(" << k->current_i << "," << k->current_j
-            << " / " << k->lhs_rows << "x" << k->rhs_cols << ")";
-        print_value("f", k->f_fn);
-        print_value("g", k->g_fn);
-        print_location(k);
-    }
-
-    void visit(InnerProductCollectK* k) override {
-        out << "InnerProductCollectK";
         print_location(k);
     }
 

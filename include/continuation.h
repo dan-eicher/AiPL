@@ -73,19 +73,13 @@ class ApplyDerivedOperatorK;
 class ApplyAxisK;
 class CellIterK;
 class CellCollectK;
-class RowReduceK;
-class RowReduceCollectK;
-class NwiseReduceK;
-class NwiseCollectK;
-class NwiseMatrixReduceK;
-class NwiseMatrixCollectK;
+class FiberReduceK;
+class FiberReduceCollectK;
 class PrefixScanK;
 class PrefixScanCollectK;
 class RowScanK;
 class RowScanCollectK;
 class ReduceResultK;
-class InnerProductIterK;
-class InnerProductCollectK;
 class IndexedAssignK;
 class IndexedAssignIndexK;
 class PerformIndexedAssignK;
@@ -171,19 +165,13 @@ public:
     virtual void visit(ApplyAxisK*) = 0;
     virtual void visit(CellIterK*) = 0;
     virtual void visit(CellCollectK*) = 0;
-    virtual void visit(RowReduceK*) = 0;
-    virtual void visit(RowReduceCollectK*) = 0;
-    virtual void visit(NwiseReduceK*) = 0;
-    virtual void visit(NwiseCollectK*) = 0;
-    virtual void visit(NwiseMatrixReduceK*) = 0;
-    virtual void visit(NwiseMatrixCollectK*) = 0;
+    virtual void visit(FiberReduceK*) = 0;
+    virtual void visit(FiberReduceCollectK*) = 0;
     virtual void visit(PrefixScanK*) = 0;
     virtual void visit(PrefixScanCollectK*) = 0;
     virtual void visit(RowScanK*) = 0;
     virtual void visit(RowScanCollectK*) = 0;
     virtual void visit(ReduceResultK*) = 0;
-    virtual void visit(InnerProductIterK*) = 0;
-    virtual void visit(InnerProductCollectK*) = 0;
     virtual void visit(IndexedAssignK*) = 0;
     virtual void visit(IndexedAssignIndexK*) = 0;
     virtual void visit(PerformIndexedAssignK*) = 0;
@@ -1310,12 +1298,13 @@ enum class CellIterMode {
     FOLD_RIGHT,   // Accumulate right-to-left, single result (reduce)
     SCAN_RIGHT,   // Accumulate right-to-left, keep all intermediates (scan)
     SCAN_LEFT,    // Accumulate left-to-right, keep all intermediates (strand scan)
-    OUTER         // Cartesian product iteration (outer product)
+    OUTER,        // Cartesian product iteration (outer product)
+    INNER         // Inner product: extract fibers, apply g element-wise, reduce with f
 };
 
 class CellIterK : public Continuation {
 public:
-    Value* fn;              // Function to apply
+    Value* fn;              // Function to apply (f for reduce in INNER mode)
     Value* lhs;             // Left array (nullptr for monadic)
     Value* rhs;             // Right array
     int left_rank;          // Cell rank for left arg (0=scalars, 1=rows, etc.)
@@ -1332,12 +1321,17 @@ public:
     bool orig_is_vector;
     bool orig_is_char;     // Preserve character data flag
     bool orig_is_strand;   // Preserve strand structure for pervasive dispatch
+    std::vector<int> orig_ndarray_shape;  // For NDARRAY: preserve shape for reassembly
 
     // For OUTER mode: dimensions for Cartesian product
-    int lhs_total;          // Total elements in lhs (for OUTER)
-    int rhs_total;          // Total elements in rhs (for OUTER)
+    int lhs_total;          // Total elements in lhs (for OUTER/INNER)
+    int rhs_total;          // Total elements in rhs (for OUTER/INNER)
     int lhs_cols;           // Columns in lhs (for extracting elements)
     int rhs_cols;           // Columns in rhs (for extracting elements)
+
+    // For INNER mode: element-wise function and common dimension
+    Value* g_fn;            // Element-wise function g (fn is reduce function f)
+    int common_dim;         // Length of fibers (last dim of lhs = first dim of rhs)
 
     CellIterK(Value* f, Value* l, Value* r, int lk, int rk, int total,
               CellIterMode m, int rows, int cols, bool is_vec, bool is_char = false,
@@ -1345,7 +1339,8 @@ public:
         : fn(f), lhs(l), rhs(r), left_rank(lk), right_rank(rk),
           total_cells(total), current_cell(0), mode(m), accumulator(nullptr),
           orig_rows(rows), orig_cols(cols), orig_is_vector(is_vec), orig_is_char(is_char),
-          orig_is_strand(is_strand), lhs_total(0), rhs_total(0), lhs_cols(1), rhs_cols(1) {
+          orig_is_strand(is_strand), lhs_total(0), rhs_total(0), lhs_cols(1), rhs_cols(1),
+          g_fn(nullptr), common_dim(0) {
         if (mode == CellIterMode::COLLECT || mode == CellIterMode::SCAN_RIGHT ||
             mode == CellIterMode::SCAN_LEFT || mode == CellIterMode::OUTER) {
             results.reserve(total);
@@ -1362,7 +1357,24 @@ public:
         : fn(f), lhs(l), rhs(r), left_rank(0), right_rank(0),
           total_cells(l_total * r_total), current_cell(0), mode(CellIterMode::OUTER),
           accumulator(nullptr), orig_rows(l_total), orig_cols(r_total), orig_is_vector(false), orig_is_char(false),
-          orig_is_strand(false), lhs_total(l_total), rhs_total(r_total), lhs_cols(l_cols), rhs_cols(r_cols) {
+          orig_is_strand(false), lhs_total(l_total), rhs_total(r_total), lhs_cols(l_cols), rhs_cols(r_cols),
+          g_fn(nullptr), common_dim(0) {
+        results.reserve(total_cells);
+    }
+
+    // Constructor for INNER mode (inner product)
+    // f = reduce function, g = element-wise function
+    // lhs_frame = positions in lhs frame, rhs_frame = positions in rhs frame
+    // common = fiber length (last dim of lhs = first dim of rhs)
+    CellIterK(Value* f, Value* g, Value* l, Value* r,
+              int lhs_frame, int rhs_frame, int common,
+              int l_cols, int r_cols)
+        : fn(f), lhs(l), rhs(r), left_rank(0), right_rank(0),
+          total_cells(lhs_frame * rhs_frame), current_cell(0), mode(CellIterMode::INNER),
+          accumulator(nullptr), orig_rows(lhs_frame), orig_cols(rhs_frame),
+          orig_is_vector(false), orig_is_char(false), orig_is_strand(false),
+          lhs_total(lhs_frame), rhs_total(rhs_frame), lhs_cols(l_cols), rhs_cols(r_cols),
+          g_fn(g), common_dim(common) {
         results.reserve(total_cells);
     }
 
@@ -1392,43 +1404,50 @@ protected:
 };
 
 // ============================================================================
-// RowReduceK - Reduces each row of a matrix independently
+// FiberReduceK - Unified reduction along array fibers
 // ============================================================================
-// For f/ on matrix: reduces each row, returns vector of results
+// Handles all reduction operations: f/ and N f/ on any array type.
+// Iterates over fibers (1D slices) of an array along a specified axis,
+// optionally using sliding windows for N-wise reduction.
+//
+// Examples:
+//   f/ vector        → 1 fiber, full reduce → scalar
+//   f/ strand        → 1 fiber, full reduce → scalar
+//   f/ matrix        → rows fibers (axis=1), full reduce → vector
+//   f/[1] matrix     → cols fibers (axis=0), full reduce → vector
+//   2 f/ vector      → 1 fiber, 2-wise windows → vector
+//   2 f/ matrix      → rows fibers, 2-wise each → matrix
+//   f/ ndarray       → fibers along last axis → shape with axis removed
+//   2 f/[k] ndarray  → fibers along axis k, 2-wise → shape with axis[k] reduced
 
-class RowReduceK : public Continuation {
+class FiberReduceK : public Continuation {
 public:
     Value* fn;              // Function to reduce with
-    Value* matrix;          // Matrix to reduce
-    int current_row;        // Current row being processed
-    int total_rows;         // Total rows to process
-    int cols;               // Number of columns per row
-    std::vector<Value*> results;  // Collected row reduction results
-    bool reduce_first_axis; // True for ⌿ (reduce columns), false for / (reduce rows)
+    Value* source;          // Source array (scalar, vector, strand, matrix, NDARRAY)
+    int axis;               // 0-indexed axis to reduce along
+    int window_size;        // 0 = full reduce, N = N-wise windows
+    bool reverse;           // True if N was negative (reverse window elements)
 
-    RowReduceK(Value* f, Value* m, int rows, int c, bool first_axis = false)
-        : fn(f), matrix(m), current_row(0), total_rows(rows), cols(c),
-          reduce_first_axis(first_axis) {
-        results.reserve(rows);
-    }
+    // Iteration state - flattened over (fiber, window) pairs
+    int current_result;     // Current position in results
+    int total_results;      // total_fibers * windows_per_fiber
+    int total_fibers;       // Product of all dims except axis
+    int fiber_length;       // Length of axis dimension
+    int windows_per_fiber;  // 1 for full reduce, fiber_length - window_size + 1 for N-wise
 
-    ~RowReduceK() override {}
+    // For source indexing
+    std::vector<int> source_shape;   // Shape of source (empty for 1D)
+    std::vector<int> source_strides; // Strides for element access
 
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
+    // Results and output shape
+    std::vector<Value*> results;
+    std::vector<int> result_shape;   // Shape of output array
+    bool is_strand;                  // True if source is strand (results may be non-scalar)
 
-protected:
-    void invoke(Machine* machine) override;
-};
+    // Unified constructor
+    FiberReduceK(Value* f, Value* src, int ax, int window, bool rev);
 
-// RowReduceCollectK - Collects row reduction result and continues
-class RowReduceCollectK : public Continuation {
-public:
-    RowReduceK* iter;
-
-    explicit RowReduceCollectK(RowReduceK* i) : iter(i) {}
-
-    ~RowReduceCollectK() override {}
+    ~FiberReduceK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }
@@ -1437,98 +1456,14 @@ protected:
     void invoke(Machine* machine) override;
 };
 
-// ============================================================================
-// NwiseReduceK - N-wise reduction on vectors
-// ============================================================================
-// ISO-13751 §9.2.3: N f/ B applies f between successive N-element windows
-// Example: 2 +/ 1 2 3 4 5 → (1+2) (2+3) (3+4) (4+5) = 3 5 7 9
-
-class NwiseReduceK : public Continuation {
+// FiberReduceCollectK - Collects reduction result and continues
+class FiberReduceCollectK : public Continuation {
 public:
-    Value* fn;              // Function to reduce with
-    Value* vec;             // Vector or strand to reduce
-    int window_size;        // Size of each window (N)
-    bool reverse;           // True if N was negative (reverse windows)
-    int current_window;     // Current window being processed
-    int total_windows;      // Total number of windows
-    bool is_strand;         // True if input is a strand
-    std::vector<Value*> results;  // Collected window reduction results
+    FiberReduceK* iter;
 
-    NwiseReduceK(Value* f, Value* v, int n, bool rev)
-        : fn(f), vec(v), window_size(n), reverse(rev), current_window(0),
-          is_strand(v->is_strand()) {
-        int len = is_strand ? static_cast<int>(v->as_strand()->size())
-                            : v->as_matrix()->rows();
-        total_windows = len - n + 1;
-        results.reserve(total_windows);
-    }
+    explicit FiberReduceCollectK(FiberReduceK* i) : iter(i) {}
 
-    ~NwiseReduceK() override {}
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
-// NwiseCollectK - Collects N-wise reduction result and continues
-class NwiseCollectK : public Continuation {
-public:
-    NwiseReduceK* iter;
-
-    explicit NwiseCollectK(NwiseReduceK* i) : iter(i) {}
-
-    ~NwiseCollectK() override {}
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
-// ============================================================================
-// NwiseMatrixReduceK - N-wise reduction on matrices along an axis
-// ============================================================================
-
-class NwiseMatrixReduceK : public Continuation {
-public:
-    Value* fn;              // Function to reduce with
-    Value* matrix;          // Matrix to reduce
-    int window_size;        // Size of each window (N)
-    bool first_axis;        // True for axis 1, false for axis 2
-    bool reverse;           // True if N was negative
-    int current_slice;      // Current row/column being processed
-    int total_slices;       // Total number of rows/columns
-    std::vector<Value*> results;  // Collected slice results (each is a vector)
-
-    NwiseMatrixReduceK(Value* f, Value* m, int n, bool first, bool rev)
-        : fn(f), matrix(m), window_size(n), first_axis(first), reverse(rev),
-          current_slice(0) {
-        const Eigen::MatrixXd* mat = m->as_matrix();
-        // We iterate over the non-reduced axis
-        total_slices = first_axis ? mat->cols() : mat->rows();
-        results.reserve(total_slices);
-    }
-
-    ~NwiseMatrixReduceK() override {}
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
-// NwiseMatrixCollectK - Collects N-wise matrix reduction result
-class NwiseMatrixCollectK : public Continuation {
-public:
-    NwiseMatrixReduceK* iter;
-
-    explicit NwiseMatrixCollectK(NwiseMatrixReduceK* i) : iter(i) {}
-
-    ~NwiseMatrixCollectK() override {}
+    ~FiberReduceCollectK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }
@@ -1589,17 +1524,27 @@ protected:
 class RowScanK : public Continuation {
 public:
     Value* fn;              // Function to scan with
-    Value* matrix;          // Matrix to scan
-    int current_row;        // Current row being processed
-    int total_rows;         // Total rows to process
-    int cols;               // Number of columns per row
-    std::vector<Value*> results;  // Collected row scan results (vectors)
-    bool scan_first_axis;   // True for ⍀ (scan columns), false for \ (scan rows)
+    Value* source;          // Array to scan (matrix or ndarray)
+    int current_pos;        // Current result position being processed
+    int total_positions;    // Total result positions to process
+    int slice_len;          // Length of each slice to scan
+    std::vector<Value*> results;  // Collected scan results (vectors)
+    int scan_axis;          // Axis to scan (0-indexed)
+    std::vector<int> result_shape;  // Shape of result (for NDARRAY, same as input)
 
+    // Constructor for matrix scan (backward compatible)
     RowScanK(Value* f, Value* m, int rows, int c, bool first_axis = false)
-        : fn(f), matrix(m), current_row(0), total_rows(rows), cols(c),
-          scan_first_axis(first_axis) {
+        : fn(f), source(m), current_pos(0), total_positions(rows), slice_len(c),
+          scan_axis(first_axis ? 0 : 1) {
         results.reserve(rows);
+    }
+
+    // Constructor for NDARRAY scan
+    RowScanK(Value* f, Value* arr, int axis, const std::vector<int>& shape, int positions)
+        : fn(f), source(arr), current_pos(0), total_positions(positions), slice_len(0),
+          scan_axis(axis), result_shape(shape) {
+        results.reserve(positions);
+        // slice_len is extracted from source shape in invoke()
     }
 
     ~RowScanK() override {}
@@ -1640,58 +1585,6 @@ public:
     explicit ReduceResultK(Value* f) : fn(f) {}
 
     ~ReduceResultK() override {}
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
-// ============================================================================
-// InnerProductIterK - Iterates over output cells for matrix inner product
-// ============================================================================
-// For each output position (i,j), extracts row i from lhs and col j from rhs,
-// then computes vector inner product (g element-wise, f reduce)
-
-class InnerProductIterK : public Continuation {
-public:
-    Value* f_fn;            // Function for reduction
-    Value* g_fn;            // Function for element-wise
-    Value* lhs;             // Left matrix
-    Value* rhs;             // Right matrix
-    int lhs_rows;           // Rows in lhs
-    int lhs_cols;           // Cols in lhs (= common dimension)
-    int rhs_cols;           // Cols in rhs
-    int current_i;          // Current output row
-    int current_j;          // Current output col
-    std::vector<Value*> results;  // Collected results
-
-    InnerProductIterK(Value* f, Value* g, Value* l, Value* r,
-                      int lr, int lc, int rc)
-        : f_fn(f), g_fn(g), lhs(l), rhs(r),
-          lhs_rows(lr), lhs_cols(lc), rhs_cols(rc),
-          current_i(0), current_j(0) {
-        results.reserve(lr * rc);
-    }
-
-    ~InnerProductIterK() override {}
-
-    void mark(Heap* heap) override;
-    void accept(ContinuationVisitor& v) override { v.visit(this); }
-
-protected:
-    void invoke(Machine* machine) override;
-};
-
-// InnerProductCollectK - Collects inner product cell result
-class InnerProductCollectK : public Continuation {
-public:
-    InnerProductIterK* iter;
-
-    explicit InnerProductCollectK(InnerProductIterK* i) : iter(i) {}
-
-    ~InnerProductCollectK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }

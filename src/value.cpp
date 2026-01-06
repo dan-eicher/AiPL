@@ -50,6 +50,14 @@ void Value::cleanup() {
         delete data.matrix;
         data.matrix = nullptr;
     }
+    // Clean up NDARRAY (owns both the NDArrayData struct and the VectorXd inside it)
+    if (tag == ValueType::NDARRAY) {
+        if (data.ndarray) {
+            delete data.ndarray->data;  // Delete the Eigen::VectorXd
+            delete data.ndarray;        // Delete the NDArrayData struct
+            data.ndarray = nullptr;
+        }
+    }
     // Clean up strand vector (elements are GC-managed, but the vector itself is owned)
     if (tag == ValueType::STRAND) {
         delete data.strand;
@@ -93,6 +101,8 @@ int Value::rank() const {
             return 1;
         case ValueType::MATRIX:
             return 2;
+        case ValueType::NDARRAY:
+            return static_cast<int>(data.ndarray->shape.size());
         default:
             throw std::runtime_error("rank() called on non-array value");
     }
@@ -106,6 +116,10 @@ int Value::rows() const {
     if (tag == ValueType::STRAND) {
         return static_cast<int>(data.strand->size());
     }
+    if (tag == ValueType::NDARRAY) {
+        // For NDARRAY, return first axis size
+        return data.ndarray->shape.empty() ? 0 : data.ndarray->shape[0];
+    }
     throw std::runtime_error("rows() called on non-array value");
 }
 
@@ -115,6 +129,10 @@ int Value::cols() const {
     if (tag == ValueType::STRAND) return 1;  // Strands are rank-1 (like vectors)
     if (tag == ValueType::MATRIX) {
         return data.matrix->cols();
+    }
+    if (tag == ValueType::NDARRAY) {
+        // For NDARRAY, return second axis size (or 1 if rank < 2)
+        return data.ndarray->shape.size() >= 2 ? data.ndarray->shape[1] : 1;
     }
     throw std::runtime_error("cols() called on non-array value");
 }
@@ -126,6 +144,14 @@ int Value::size() const {
     }
     if (tag == ValueType::STRAND) {
         return static_cast<int>(data.strand->size());
+    }
+    if (tag == ValueType::NDARRAY) {
+        // Product of all dimensions
+        int product = 1;
+        for (int dim : data.ndarray->shape) {
+            product *= dim;
+        }
+        return product;
     }
     throw std::runtime_error("size() called on non-array value");
 }
@@ -159,6 +185,38 @@ const Eigen::MatrixXd* Value::as_matrix() const {
     // For const version, we need to cast away constness for lazy promotion
     // This is safe because promoted_matrix_ is mutable
     return const_cast<Value*>(this)->as_matrix();
+}
+
+// NDARRAY indexing: compute linear index from multi-dimensional indices (0-based)
+// Note: ⎕IO adjustment happens at the APL evaluation level, not here
+int Value::ndarray_linear_index(const std::vector<int>& indices) const {
+    if (tag != ValueType::NDARRAY) {
+        throw std::runtime_error("ndarray_linear_index() called on non-NDARRAY value");
+    }
+    if (indices.size() != data.ndarray->shape.size()) {
+        throw std::runtime_error("ndarray_linear_index(): index count doesn't match rank");
+    }
+
+    int linear = 0;
+    for (size_t i = 0; i < indices.size(); ++i) {
+        linear += indices[i] * data.ndarray->strides[i];
+    }
+    return linear;
+}
+
+// NDARRAY element access by multi-dimensional index (0-based)
+double& Value::ndarray_at(const std::vector<int>& indices) {
+    if (tag != ValueType::NDARRAY) {
+        throw std::runtime_error("ndarray_at() called on non-NDARRAY value");
+    }
+    return (*data.ndarray->data)(ndarray_linear_index(indices));
+}
+
+double Value::ndarray_at(const std::vector<int>& indices) const {
+    if (tag != ValueType::NDARRAY) {
+        throw std::runtime_error("ndarray_at() called on non-NDARRAY value");
+    }
+    return (*data.ndarray->data)(ndarray_linear_index(indices));
 }
 
 void Value::mark(Heap* heap) {
@@ -418,6 +476,67 @@ std::string format_value(const Value* v) {
             return oss.str();
         }
 
+        case ValueType::NDARRAY: {
+            const auto* nd = v->as_ndarray();
+            const auto& shape = nd->shape;
+            const Eigen::VectorXd* data = nd->data;
+
+            if (shape.empty() || data->size() == 0) return "⍬";
+
+            std::ostringstream oss;
+
+            // For rank 3+, display as planes (last 2 dims) separated by blank lines
+            // Higher dimensions add more blank line separators
+            int rank = static_cast<int>(shape.size());
+            int rows = shape[rank - 2];
+            int cols = shape[rank - 1];
+            int plane_size = rows * cols;
+
+            // Number of planes (product of all but last 2 dimensions)
+            int num_planes = 1;
+            for (int i = 0; i < rank - 2; ++i) {
+                num_planes *= shape[i];
+            }
+
+            for (int plane = 0; plane < num_planes; ++plane) {
+                // Add blank lines between planes
+                // More blank lines for higher dimension boundaries
+                if (plane > 0) {
+                    // Determine how many dimensions rolled over
+                    int blanks = 1;
+                    int p = plane;
+                    for (int d = rank - 3; d >= 0; --d) {
+                        if (p % shape[d] == 0) {
+                            blanks++;
+                            p /= shape[d];
+                        } else {
+                            break;
+                        }
+                    }
+                    for (int b = 0; b < blanks; ++b) {
+                        oss << "\n";
+                    }
+                }
+
+                // Print this plane (rows x cols)
+                int base = plane * plane_size;
+                for (int i = 0; i < rows; ++i) {
+                    if (i > 0) oss << "\n";
+                    for (int j = 0; j < cols; ++j) {
+                        if (j > 0) oss << " ";
+                        int idx = base + i * cols + j;
+                        if (v->is_char_data()) {
+                            uint32_t cp = static_cast<uint32_t>((*data)(idx));
+                            oss << codepoint_to_utf8(cp);
+                        } else {
+                            oss << format_number((*data)(idx));
+                        }
+                    }
+                }
+            }
+            return oss.str();
+        }
+
         case ValueType::STRAND: {
             std::ostringstream oss;
             oss << "(";
@@ -484,6 +603,17 @@ std::string Value::type_name() const {
                 result += "[" + std::to_string(data.matrix->rows()) +
                           "×" + std::to_string(data.matrix->cols()) + "]";
             }
+            return result;
+        }
+        case ValueType::NDARRAY: {
+            std::string result = "ndarray[";
+            if (data.ndarray) {
+                for (size_t i = 0; i < data.ndarray->shape.size(); ++i) {
+                    if (i > 0) result += "×";
+                    result += std::to_string(data.ndarray->shape[i]);
+                }
+            }
+            result += "]";
             return result;
         }
         case ValueType::STRING: return "string";

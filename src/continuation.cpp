@@ -14,6 +14,9 @@ namespace apl {
 // Will be implemented in Phase 1.6
 class Heap;
 
+// Forward declarations for helper functions used by apply_function_immediate
+static int count_cells_for_rank(Value* arr, int k);
+
 // ============================================================================
 // Finalization Helpers
 // ============================================================================
@@ -199,6 +202,29 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
                 m->throw_error("SYNTAX ERROR: Function has no monadic form", nullptr);
                 return false;
             }
+
+            // Pervasive handling for monadic on strand/NDARRAY
+            bool right_strand = right_val->is_strand();
+            bool right_ndarray = right_val->is_ndarray();
+            if (prim_fn->is_pervasive && (right_strand || right_ndarray)) {
+                int total = count_cells_for_rank(right_val, 0);
+
+                if (right_ndarray) {
+                    // NDARRAY: preserve shape
+                    CellIterK* iter = m->heap->allocate<CellIterK>(
+                        fn_val, nullptr, right_val, 0, 0, total,
+                        CellIterMode::COLLECT, total, 1, false, false, false);
+                    iter->orig_ndarray_shape = right_val->ndarray_shape();
+                    m->push_kont(iter);
+                } else {
+                    // Strand: preserve strand structure
+                    m->push_kont(m->heap->allocate<CellIterK>(
+                        fn_val, nullptr, right_val, 0, 0, total,
+                        CellIterMode::COLLECT, total, 1, true, false, true));
+                }
+                return false;  // Continuation pushed
+            }
+
             prim_fn->monadic(m, axis, right_val);
         } else {
             m->throw_error("VALUE ERROR: function requires argument", nullptr);
@@ -217,11 +243,12 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
 // Helper functions for CellIterK that are also used by DispatchFunctionK
 // for pervasive strand dispatch.
 
-// Helper: get the rank of a value (0=scalar, 1=vector/strand, 2=matrix)
+// Helper: get the rank of a value (0=scalar, 1=vector/strand, 2=matrix, N=NDARRAY)
 static int get_value_rank(Value* v) {
     if (v->is_scalar()) return 0;
     if (v->is_vector() || v->is_strand()) return 1;
-    return 2;
+    if (v->is_ndarray()) return static_cast<int>(v->ndarray_shape().size());
+    return 2;  // Matrix
 }
 
 // Helper function for cell counting
@@ -235,6 +262,22 @@ static int count_cells_for_rank(Value* arr, int k) {
     // Handle strands - 0-cells are the elements
     if (arr->is_strand()) {
         return (k == 0) ? static_cast<int>(arr->as_strand()->size()) : 1;
+    }
+
+    // Handle NDARRAY - k-cells are subarrays of rank (arr_rank - k)
+    // Number of k-cells = product of first k dimensions
+    if (arr->is_ndarray()) {
+        const std::vector<int>& shape = arr->ndarray_shape();
+        int count = 1;
+        for (int i = 0; i < std::min(k, static_cast<int>(shape.size())); ++i) {
+            count *= shape[i];
+        }
+        // For k=0, we want total elements = product of all dimensions
+        if (k == 0) {
+            count = 1;
+            for (int d : shape) count *= d;
+        }
+        return count;
     }
 
     const Eigen::MatrixXd* mat = arr->as_matrix();
@@ -274,6 +317,60 @@ static Value* extract_cell(Machine* m, Value* arr, int k, int cell_index) {
             return (*elems)[cell_index];
         }
         return arr;  // k >= 1: return whole strand
+    }
+
+    // Handle NDARRAY
+    if (arr->is_ndarray()) {
+        const std::vector<int>& shape = arr->ndarray_shape();
+        const Eigen::VectorXd* data = arr->ndarray_data();
+        int ndrank = static_cast<int>(shape.size());
+
+        if (k == 0) {
+            // 0-cell: scalar at linear index (row-major order)
+            int total = 1;
+            for (int d : shape) total *= d;
+            if (cell_index >= total) return nullptr;
+            return m->heap->allocate_scalar((*data)(cell_index));
+        }
+
+        // k-cell: subarray formed by LAST k dimensions
+        // Frame = first (rank - k) dimensions
+        // Cell shape = {shape[rank-k], shape[rank-k+1], ..., shape[rank-1]}
+        int frame_rank = ndrank - k;
+
+        // Cell size = product of last k dimensions
+        int cell_size = 1;
+        for (int i = frame_rank; i < ndrank; ++i) {
+            cell_size *= shape[i];
+        }
+
+        int start = cell_index * cell_size;
+        int total = 1;
+        for (int d : shape) total *= d;
+        if (start + cell_size > total) return nullptr;
+
+        // Extract the cell data
+        Eigen::VectorXd cell_data = data->segment(start, cell_size);
+
+        // Build result shape from last k dimensions
+        std::vector<int> cell_shape(shape.begin() + frame_rank, shape.end());
+
+        if (cell_shape.size() == 1) {
+            // Result is a vector
+            return m->heap->allocate_vector(cell_data);
+        } else if (cell_shape.size() == 2) {
+            // Result is a matrix
+            Eigen::MatrixXd mat(cell_shape[0], cell_shape[1]);
+            for (int i = 0; i < cell_shape[0]; ++i) {
+                for (int j = 0; j < cell_shape[1]; ++j) {
+                    mat(i, j) = cell_data(i * cell_shape[1] + j);
+                }
+            }
+            return m->heap->allocate_matrix(mat);
+        } else {
+            // Result is still NDARRAY
+            return m->heap->allocate_ndarray(cell_data, cell_shape);
+        }
     }
 
     const Eigen::MatrixXd* mat = arr->as_matrix();
@@ -1744,34 +1841,58 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
     PrimitiveFn* prim_fn = fn_val->data.primitive_fn;
 
-    // Pervasive dispatch for strands: use CellIterK to iterate elements
+    // Pervasive dispatch for strands and NDARRAYs: use CellIterK to iterate elements
     // Only applies to scalar (pervasive) functions, not structural ones
     // Note: monadic case goes through G_PRIME curry first, so only handle dyadic here
     bool left_strand = left_val && left_val->is_strand();
     bool right_strand = right_val && right_val->is_strand();
+    bool left_ndarray = left_val && left_val->is_ndarray();
+    bool right_ndarray = right_val && right_val->is_ndarray();
 
-    if (prim_fn->is_pervasive && left_val && (left_strand || right_strand)) {
+    if (prim_fn->is_pervasive && left_val && (left_strand || right_strand || left_ndarray || right_ndarray)) {
         int left_cells = left_val ? count_cells_for_rank(left_val, 0) : 0;
         int right_cells = count_cells_for_rank(right_val, 0);
         int total = std::max(left_cells, right_cells);
 
-        // Scalar extension check: mismatched lengths are an error
+        // Scalar extension check: mismatched lengths are an error (unless one is scalar)
         if (left_cells > 1 && right_cells > 1 && left_cells != right_cells) {
-            machine->throw_error("LENGTH ERROR: mismatched strand lengths", this);
+            machine->throw_error("LENGTH ERROR: mismatched array lengths", this);
             return;
         }
 
         // Use CellIterK with rank 0 (iterate 0-cells = elements)
-        // Pass is_strand=true to preserve strand structure in result
-        machine->push_kont(machine->heap->allocate<CellIterK>(
-            fn_val, left_val, right_val, 0, 0, total,
-            CellIterMode::COLLECT, total, 1, true, false, true));
+        // For NDARRAY: preserve shape in result
+        if (left_ndarray || right_ndarray) {
+            // Get shape from the NDARRAY argument (prefer non-scalar)
+            const std::vector<int>* shape = nullptr;
+            if (right_ndarray && right_cells > 1) {
+                shape = &right_val->ndarray_shape();
+            } else if (left_ndarray && left_cells > 1) {
+                shape = &left_val->ndarray_shape();
+            }
+
+            CellIterK* iter = machine->heap->allocate<CellIterK>(
+                fn_val, left_val, right_val, 0, 0, total,
+                CellIterMode::COLLECT, total, 1, false, false, false);
+            if (shape) {
+                iter->orig_ndarray_shape = *shape;
+            }
+            machine->push_kont(iter);
+        } else {
+            // Strand case: preserve strand structure
+            machine->push_kont(machine->heap->allocate<CellIterK>(
+                fn_val, left_val, right_val, 0, 0, total,
+                CellIterMode::COLLECT, total, 1, true, false, true));
+        }
         return;
     }
 
     // Determine monadic vs dyadic based on what arguments we have
     if (left_val == nullptr) {
         // Monadic case: only right argument
+        // Note: Don't handle pervasive here - we need to create G_PRIME curry first
+        // to allow dyadic application if a left arg appears. Pervasive handling
+        // happens during curry finalization in PerformFinalizeK.
         if (prim_fn->monadic) {
             // G_PRIME curry for all monadic functions (not just overloaded)
             // This allows proper error handling if used in dyadic context
@@ -2507,6 +2628,13 @@ void CellIterK::invoke(Machine* machine) {
                 if (orig_is_strand) {
                     // Strand input: preserve strand structure even for single/scalar results
                     machine->result = machine->heap->allocate_strand(std::move(results));
+                } else if (!orig_ndarray_shape.empty()) {
+                    // NDARRAY input: preserve NDARRAY shape
+                    Eigen::VectorXd data(results.size());
+                    for (size_t i = 0; i < results.size(); i++) {
+                        data(i) = results[i]->as_scalar();
+                    }
+                    machine->result = machine->heap->allocate_ndarray(data, orig_ndarray_shape);
                 } else if (results.size() == 1) {
                     // Single scalar result - return as scalar
                     machine->result = results[0];
@@ -2532,26 +2660,100 @@ void CellIterK::invoke(Machine* machine) {
                 if (orig_is_strand) {
                     machine->result = machine->heap->allocate_strand(std::move(results));
                 } else {
-                    // Try to assemble vectors into matrix
-                    bool all_same_len = true;
-                    int vec_len = -1;
-                    for (Value* v : results) {
-                        if (v->is_vector()) {
-                            int len = v->rows();
-                            if (vec_len < 0) vec_len = len;
-                            else if (len != vec_len) all_same_len = false;
-                        } else {
-                            all_same_len = false;
+                    // Check if all results have the same shape
+                    bool all_same_shape = true;
+                    std::vector<int> cell_shape;
+
+                    // Determine cell shape from first result
+                    if (results[0]->is_vector()) {
+                        cell_shape = {results[0]->rows()};
+                    } else if (results[0]->is_matrix()) {
+                        cell_shape = {results[0]->rows(), results[0]->cols()};
+                    } else if (results[0]->is_ndarray()) {
+                        cell_shape = results[0]->ndarray_shape();
+                    } else {
+                        all_same_shape = false;
+                    }
+
+                    // Check all results have same shape
+                    if (all_same_shape) {
+                        for (size_t i = 1; i < results.size(); i++) {
+                            std::vector<int> this_shape;
+                            if (results[i]->is_vector()) {
+                                this_shape = {results[i]->rows()};
+                            } else if (results[i]->is_matrix()) {
+                                this_shape = {results[i]->rows(), results[i]->cols()};
+                            } else if (results[i]->is_ndarray()) {
+                                this_shape = results[i]->ndarray_shape();
+                            } else {
+                                all_same_shape = false;
+                                break;
+                            }
+                            if (this_shape != cell_shape) {
+                                all_same_shape = false;
+                                break;
+                            }
                         }
                     }
 
-                    if (all_same_len && vec_len > 0) {
-                        Eigen::MatrixXd mat(results.size(), vec_len);
-                        for (size_t i = 0; i < results.size(); i++) {
-                            const Eigen::MatrixXd* v = results[i]->as_matrix();
-                            mat.row(i) = v->col(0).transpose();
+                    if (all_same_shape && !cell_shape.empty()) {
+                        // Combine frame_shape + cell_shape into result NDARRAY
+                        std::vector<int> result_shape;
+
+                        // Build frame shape
+                        if (!orig_ndarray_shape.empty()) {
+                            result_shape = orig_ndarray_shape;
+                        } else if (orig_is_vector) {
+                            result_shape = {orig_rows};
+                        } else {
+                            result_shape = {orig_rows, orig_cols};
                         }
-                        machine->result = machine->heap->allocate_matrix(mat, orig_is_char);
+
+                        // Append cell shape
+                        result_shape.insert(result_shape.end(), cell_shape.begin(), cell_shape.end());
+
+                        // Calculate total size
+                        int total_size = 1;
+                        for (int d : result_shape) total_size *= d;
+
+                        // Flatten all results into data vector
+                        Eigen::VectorXd data(total_size);
+                        int pos = 0;
+                        for (Value* v : results) {
+                            if (v->is_vector()) {
+                                const Eigen::MatrixXd* mat = v->as_matrix();
+                                for (int j = 0; j < mat->rows(); j++) {
+                                    data(pos++) = (*mat)(j, 0);
+                                }
+                            } else if (v->is_matrix()) {
+                                const Eigen::MatrixXd* mat = v->as_matrix();
+                                for (int r = 0; r < mat->rows(); r++) {
+                                    for (int c = 0; c < mat->cols(); c++) {
+                                        data(pos++) = (*mat)(r, c);
+                                    }
+                                }
+                            } else if (v->is_ndarray()) {
+                                const Eigen::VectorXd* nd = v->ndarray_data();
+                                for (int j = 0; j < nd->size(); j++) {
+                                    data(pos++) = (*nd)(j);
+                                }
+                            }
+                        }
+
+                        // Create result based on final shape
+                        if (result_shape.size() == 1) {
+                            machine->result = machine->heap->allocate_vector(data, orig_is_char);
+                        } else if (result_shape.size() == 2) {
+                            Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+                            for (int i = 0; i < result_shape[0]; i++) {
+                                for (int j = 0; j < result_shape[1]; j++) {
+                                    mat(i, j) = data(i * result_shape[1] + j);
+                                }
+                            }
+                            machine->result = machine->heap->allocate_matrix(mat, orig_is_char);
+                        } else {
+                            machine->result = machine->heap->allocate_ndarray(data, result_shape);
+                        }
                     } else {
                         // Mixed results - create STRAND
                         machine->result = machine->heap->allocate_strand(std::move(results));
@@ -2707,14 +2909,24 @@ void CellIterK::invoke(Machine* machine) {
             }
 
             if (all_scalars) {
-                // Matrix result (including N×1 and 1×N cases)
-                Eigen::MatrixXd mat(lhs_total, rhs_total);
-                for (int i = 0; i < lhs_total; i++) {
-                    for (int j = 0; j < rhs_total; j++) {
-                        mat(i, j) = results[i * rhs_total + j]->as_scalar();
+                // Check if result should be NDARRAY (rank > 2)
+                if (!orig_ndarray_shape.empty()) {
+                    // NDARRAY result
+                    Eigen::VectorXd data(results.size());
+                    for (size_t i = 0; i < results.size(); i++) {
+                        data(i) = results[i]->as_scalar();
                     }
+                    machine->result = machine->heap->allocate_ndarray(data, orig_ndarray_shape);
+                } else {
+                    // Matrix result (including N×1 and 1×N cases)
+                    Eigen::MatrixXd mat(lhs_total, rhs_total);
+                    for (int i = 0; i < lhs_total; i++) {
+                        for (int j = 0; j < rhs_total; j++) {
+                            mat(i, j) = results[i * rhs_total + j]->as_scalar();
+                        }
+                    }
+                    machine->result = machine->heap->allocate_matrix(mat);
                 }
-                machine->result = machine->heap->allocate_matrix(mat);
             } else {
                 // Nested array result: build strand of strands (lhs_total rows, each with rhs_total elements)
                 std::vector<Value*> outer;
@@ -2746,7 +2958,7 @@ void CellIterK::invoke(Machine* machine) {
         int i = current_cell / rhs_total;
         int j = current_cell % rhs_total;
 
-        // Extract lhs[i] and rhs[j], handling strands
+        // Extract lhs[i] and rhs[j], handling strands and NDARRAY
         Value* left_cell;
         Value* right_cell;
 
@@ -2755,6 +2967,9 @@ void CellIterK::invoke(Machine* machine) {
         } else if (lhs->is_strand()) {
             const std::vector<Value*>* strand = lhs->as_strand();
             left_cell = (*strand)[i];
+        } else if (lhs->is_ndarray()) {
+            const Value::NDArrayData* nd = lhs->as_ndarray();
+            left_cell = machine->heap->allocate_scalar((*nd->data)(i));
         } else {
             const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
             int li = i / lhs_cols;
@@ -2771,6 +2986,9 @@ void CellIterK::invoke(Machine* machine) {
         } else if (rhs->is_strand()) {
             const std::vector<Value*>* strand = rhs->as_strand();
             right_cell = (*strand)[j];
+        } else if (rhs->is_ndarray()) {
+            const Value::NDArrayData* nd = rhs->as_ndarray();
+            right_cell = machine->heap->allocate_scalar((*nd->data)(j));
         } else {
             const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
             int ri = j / rhs_cols;
@@ -2785,6 +3003,144 @@ void CellIterK::invoke(Machine* machine) {
         // Push collector and dispatch function dyadically
         machine->push_kont(machine->heap->allocate<CellCollectK>(this));
         machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, left_cell, right_cell));
+    } else if (mode == CellIterMode::INNER) {
+        // Inner product: extract fibers, apply g element-wise, reduce with f
+        // Result shape is (¯1↓⍴A),1↓⍴B - stored in orig_rows/orig_cols or orig_ndarray_shape
+        if (current_cell >= total_cells) {
+            // Done - assemble results using orig_rows/orig_cols (set by op_inner_product)
+            if (results.size() == 1) {
+                // Scalar result
+                machine->result = results[0];
+            } else if (!orig_ndarray_shape.empty()) {
+                // NDARRAY result (rank > 2)
+                Eigen::VectorXd data(results.size());
+                for (size_t k = 0; k < results.size(); k++) {
+                    data(k) = results[k]->as_scalar();
+                }
+                machine->result = machine->heap->allocate_ndarray(data, orig_ndarray_shape);
+            } else if (orig_is_vector) {
+                // Vector result
+                Eigen::VectorXd vec(results.size());
+                for (size_t k = 0; k < results.size(); k++) {
+                    vec(k) = results[k]->as_scalar();
+                }
+                machine->result = machine->heap->allocate_vector(vec);
+            } else {
+                // Matrix result - use orig_rows × orig_cols
+                Eigen::MatrixXd mat(orig_rows, orig_cols);
+                for (int ii = 0; ii < orig_rows; ii++) {
+                    for (int jj = 0; jj < orig_cols; jj++) {
+                        mat(ii, jj) = results[ii * orig_cols + jj]->as_scalar();
+                    }
+                }
+                machine->result = machine->heap->allocate_matrix(mat);
+            }
+            return;
+        }
+
+        // Compute (i, j) from linear index
+        int i = current_cell / rhs_total;
+        int j = current_cell % rhs_total;
+
+        // Extract fiber i from lhs (along last axis) and fiber j from rhs (along first axis)
+        Value* lhs_fiber;
+        Value* rhs_fiber;
+
+        if (lhs->is_vector()) {
+            // Vector: the whole vector is the fiber
+            lhs_fiber = lhs;
+        } else if (lhs->is_ndarray()) {
+            // NDARRAY: extract fiber along last axis at frame position i
+            const Value::NDArrayData* nd = lhs->as_ndarray();
+            int rank = nd->shape.size();
+            int last_dim = nd->shape[rank - 1];
+            // Compute strides
+            std::vector<int> strides(rank);
+            strides[rank - 1] = 1;
+            for (int k = rank - 2; k >= 0; k--) {
+                strides[k] = strides[k + 1] * nd->shape[k + 1];
+            }
+            // Frame position i -> indices in all but last axis
+            int frame_size = static_cast<int>(nd->data->size()) / last_dim;
+            int pos = i;
+            int base = 0;
+            for (int k = 0; k < rank - 1; k++) {
+                int dim_stride = frame_size / nd->shape[k];
+                int idx = pos / dim_stride;
+                pos = pos % dim_stride;
+                base += idx * strides[k];
+                frame_size = dim_stride;
+            }
+            Eigen::VectorXd fiber(last_dim);
+            for (int k = 0; k < last_dim; k++) {
+                fiber(k) = (*nd->data)(base + k);
+            }
+            lhs_fiber = machine->heap->allocate_vector(fiber);
+        } else {
+            // Matrix: extract row i
+            const Eigen::MatrixXd* mat = lhs->as_matrix();
+            Eigen::VectorXd row = mat->row(i).transpose();
+            lhs_fiber = machine->heap->allocate_vector(row);
+        }
+
+        if (rhs->is_vector()) {
+            // Vector: the whole vector is the fiber
+            rhs_fiber = rhs;
+        } else if (rhs->is_ndarray()) {
+            // NDARRAY: extract fiber along first axis at frame position j
+            const Value::NDArrayData* nd = rhs->as_ndarray();
+            int rank = nd->shape.size();
+            int first_dim = nd->shape[0];
+            // Stride along first axis
+            int first_stride = static_cast<int>(nd->data->size()) / first_dim;
+            // Frame position j -> indices in all but first axis
+            int frame_size = first_stride;
+            int pos = j;
+            int base = 0;
+            for (int k = 1; k < rank; k++) {
+                int dim_stride = frame_size / nd->shape[k];
+                int idx = pos / dim_stride;
+                pos = pos % dim_stride;
+                base += idx;
+                if (k < rank - 1) {
+                    base *= nd->shape[k + 1];
+                }
+                frame_size = dim_stride;
+            }
+            // Re-compute base correctly
+            std::vector<int> strides(rank);
+            strides[rank - 1] = 1;
+            for (int k = rank - 2; k >= 0; k--) {
+                strides[k] = strides[k + 1] * nd->shape[k + 1];
+            }
+            // Convert j to multi-index for axes 1..rank-1
+            pos = j;
+            base = 0;
+            frame_size = first_stride;
+            for (int k = 1; k < rank; k++) {
+                frame_size = frame_size / nd->shape[k];
+                int idx = pos / frame_size;
+                pos = pos % frame_size;
+                base += idx * strides[k];
+            }
+            Eigen::VectorXd fiber(first_dim);
+            for (int k = 0; k < first_dim; k++) {
+                fiber(k) = (*nd->data)(base + k * strides[0]);
+            }
+            rhs_fiber = machine->heap->allocate_vector(fiber);
+        } else {
+            // Matrix: extract column j
+            const Eigen::MatrixXd* mat = rhs->as_matrix();
+            Eigen::VectorXd col = mat->col(j);
+            rhs_fiber = machine->heap->allocate_vector(col);
+        }
+
+        // Push: collector -> ReduceResultK(f) -> CellIterK COLLECT(g, lhs_fiber, rhs_fiber)
+        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate<ReduceResultK>(fn));
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            g_fn, lhs_fiber, rhs_fiber, 0, 0, common_dim,
+            CellIterMode::COLLECT, common_dim, 1, true));
     }
 }
 
@@ -2793,6 +3149,7 @@ void CellIterK::mark(Heap* heap) {
     heap->mark(lhs);
     heap->mark(rhs);
     heap->mark(accumulator);
+    heap->mark(g_fn);  // For INNER mode
     for (Value* v : results) {
         heap->mark(v);
     }
@@ -2818,6 +3175,9 @@ void CellCollectK::invoke(Machine* machine) {
     } else if (iter->mode == CellIterMode::OUTER) {
         iter->results.push_back(result);
         iter->current_cell++;
+    } else if (iter->mode == CellIterMode::INNER) {
+        iter->results.push_back(result);
+        iter->current_cell++;
     }
 
     // Continue iteration
@@ -2830,65 +3190,322 @@ void CellCollectK::mark(Heap* heap) {
 }
 
 // ============================================================================
-// RowReduceK - Implementation
+// FiberReduceK - Unified reduction along array fibers
 // ============================================================================
 
-void RowReduceK::invoke(Machine* machine) {
-    if (current_row >= total_rows) {
-        // Done - assemble results into vector
-        Eigen::VectorXd vec(results.size());
-        for (size_t i = 0; i < results.size(); i++) {
-            vec(i) = results[i]->as_scalar();
+// Constructor: computes all iteration parameters from source array
+FiberReduceK::FiberReduceK(Value* f, Value* src, int ax, int window, bool rev)
+    : fn(f), source(src), axis(ax), window_size(window), reverse(rev),
+      current_result(0), is_strand(src->is_strand()) {
+
+    // Compute source shape and fiber parameters based on array type
+    if (src->is_scalar()) {
+        // Scalar: 1 fiber of length 1
+        source_shape = {};
+        fiber_length = 1;
+        total_fibers = 1;
+    } else if (src->is_strand()) {
+        // Strand: 1 fiber, length = strand size
+        auto* strand = src->as_strand();
+        fiber_length = static_cast<int>(strand->size());
+        total_fibers = 1;
+        source_shape = {fiber_length};
+    } else if (src->is_vector()) {
+        // Vector: 1 fiber, length = vector size
+        const Eigen::MatrixXd* mat = src->as_matrix();
+        fiber_length = mat->rows();
+        total_fibers = 1;
+        source_shape = {fiber_length};
+    } else if (src->is_ndarray()) {
+        // NDARRAY: compute from shape
+        const Value::NDArrayData* nd = src->as_ndarray();
+        source_shape = nd->shape;
+        fiber_length = source_shape[axis];
+        total_fibers = 1;
+        for (size_t d = 0; d < source_shape.size(); ++d) {
+            if (static_cast<int>(d) != axis) {
+                total_fibers *= source_shape[d];
+            }
         }
-        machine->result = machine->heap->allocate_vector(vec);
-        return;
+        // Compute strides for element access
+        int rank = static_cast<int>(source_shape.size());
+        source_strides.resize(rank);
+        source_strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            source_strides[d] = source_strides[d + 1] * source_shape[d + 1];
+        }
+    } else {
+        // Matrix: rows or columns as fibers
+        const Eigen::MatrixXd* mat = src->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+        source_shape = {rows, cols};
+        if (axis == 0) {
+            // Reduce along rows (columns are fibers)
+            fiber_length = rows;
+            total_fibers = cols;
+        } else {
+            // Reduce along columns (rows are fibers)
+            fiber_length = cols;
+            total_fibers = rows;
+        }
     }
 
-    // Extract current row/column as a vector and reduce it
-    const Eigen::MatrixXd* mat = matrix->as_matrix();
-
-    if (!reduce_first_axis) {
-        // Regular reduce (/): reduce each row
-        Eigen::VectorXd row = mat->row(current_row).transpose();
-        Value* row_vec = machine->heap->allocate_vector(row);
-
-        // Push collector, then CellIterK FOLD_RIGHT for this row
-        machine->push_kont(machine->heap->allocate<RowReduceCollectK>(this));
-        int row_len = row.rows();
-        machine->push_kont(machine->heap->allocate<CellIterK>(
-            fn, nullptr, row_vec, 0, 0, row_len,
-            CellIterMode::FOLD_RIGHT, row_len, 1, true));
+    // Compute windows per fiber
+    if (window_size == 0) {
+        // Full reduce: one window covering entire fiber
+        windows_per_fiber = 1;
     } else {
-        // Reduce-first (⌿): reduce each column
-        Eigen::VectorXd col = mat->col(current_row);
-        Value* col_vec = machine->heap->allocate_vector(col);
+        // N-wise: sliding windows
+        windows_per_fiber = fiber_length - window_size + 1;
+        if (windows_per_fiber < 0) windows_per_fiber = 0;
+    }
 
-        // Push collector, then CellIterK FOLD_RIGHT for this column
-        machine->push_kont(machine->heap->allocate<RowReduceCollectK>(this));
-        int col_len = col.rows();
-        machine->push_kont(machine->heap->allocate<CellIterK>(
-            fn, nullptr, col_vec, 0, 0, col_len,
-            CellIterMode::FOLD_RIGHT, col_len, 1, true));
+    total_results = total_fibers * windows_per_fiber;
+    results.reserve(total_results);
+
+    // Compute result shape
+    if (total_results == 0) {
+        result_shape = {};
+    } else if (src->is_scalar() || src->is_vector() || src->is_strand()) {
+        // 1D input
+        if (window_size == 0) {
+            // Full reduce → scalar (no shape needed, single result)
+            result_shape = {};
+        } else {
+            // N-wise → vector of length windows_per_fiber
+            result_shape = {windows_per_fiber};
+        }
+    } else if (src->is_ndarray()) {
+        // N-D input: result shape excludes axis (full) or shrinks axis (N-wise)
+        if (window_size == 0 || windows_per_fiber == 1) {
+            // Full reduce OR N equals axis length: remove axis from shape
+            // Per ISO 9.2.3: when N equals length of axis, result is like full reduce
+            for (size_t d = 0; d < source_shape.size(); ++d) {
+                if (static_cast<int>(d) != axis) {
+                    result_shape.push_back(source_shape[d]);
+                }
+            }
+        } else {
+            // N-wise: axis dimension becomes windows_per_fiber
+            for (size_t d = 0; d < source_shape.size(); ++d) {
+                if (static_cast<int>(d) == axis) {
+                    result_shape.push_back(windows_per_fiber);
+                } else {
+                    result_shape.push_back(source_shape[d]);
+                }
+            }
+        }
+    } else {
+        // Matrix
+        if (window_size == 0) {
+            // Full reduce: vector of length total_fibers
+            result_shape = {total_fibers};
+        } else {
+            // N-wise: matrix with one dimension shrunk
+            if (axis == 0) {
+                result_shape = {windows_per_fiber, total_fibers};
+            } else {
+                result_shape = {total_fibers, windows_per_fiber};
+            }
+        }
     }
 }
 
-void RowReduceK::mark(Heap* heap) {
+void FiberReduceK::invoke(Machine* machine) {
+    // Done: assemble results
+    if (current_result >= total_results) {
+        if (results.empty()) {
+            // Empty result (e.g., N > fiber_length)
+            if (is_strand) {
+                machine->result = machine->heap->allocate_strand(std::vector<Value*>());
+            } else {
+                Eigen::VectorXd empty(0);
+                machine->result = machine->heap->allocate_vector(empty);
+            }
+            return;
+        }
+
+        // Single scalar result (full reduce, or N-wise where N equals fiber length)
+        // Per ISO 9.2.3: when N equals length of B, return f/B directly (unwrapped)
+        if (results.size() == 1 && (result_shape.empty() ||
+            (result_shape.size() == 1 && result_shape[0] == 1))) {
+            machine->result = results[0];
+            return;
+        }
+
+        // Strand result
+        if (is_strand && result_shape.size() <= 1) {
+            if (results.size() == 1) {
+                machine->result = results[0];
+            } else {
+                machine->result = machine->heap->allocate_strand(std::move(results));
+            }
+            return;
+        }
+
+        // Assemble based on result shape
+        if (result_shape.size() == 1) {
+            // Vector result
+            Eigen::VectorXd vec(results.size());
+            for (size_t i = 0; i < results.size(); i++) {
+                vec(i) = results[i]->as_scalar();
+            }
+            machine->result = machine->heap->allocate_vector(vec);
+        } else if (result_shape.size() == 2) {
+            // Matrix result
+            Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+            for (size_t i = 0; i < results.size(); i++) {
+                int row = i / result_shape[1];
+                int col = i % result_shape[1];
+                mat(row, col) = results[i]->as_scalar();
+            }
+            machine->result = machine->heap->allocate_matrix(mat);
+        } else {
+            // NDARRAY result
+            Eigen::VectorXd data(results.size());
+            for (size_t i = 0; i < results.size(); i++) {
+                data(i) = results[i]->as_scalar();
+            }
+            machine->result = machine->heap->allocate_ndarray(data, result_shape);
+        }
+        return;
+    }
+
+    // Compute which fiber and window we're processing
+    // For multi-dimensional results, we iterate in result row-major order
+    // which means window varies slowest, fiber varies fastest (for matrices with axis=0)
+    // For axis=1 (rows are fibers), result is (fibers, windows), so fiber varies slowest
+    int fiber_idx, window_idx;
+    if (source->is_matrix() && axis == 0) {
+        // axis=0: result is (windows, fibers), iterate window first then fiber
+        window_idx = current_result / total_fibers;
+        fiber_idx = current_result % total_fibers;
+    } else {
+        // Default: fiber first, then window (for vectors, strands, axis=1 matrices, NDARRAY)
+        fiber_idx = current_result / windows_per_fiber;
+        window_idx = current_result % windows_per_fiber;
+    }
+
+    // Determine window length (full fiber or window_size)
+    int win_len = (window_size == 0) ? fiber_length : window_size;
+
+    // Extract window elements as a Value*
+    Value* window_val;
+
+    if (source->is_strand()) {
+        // Extract from strand
+        auto* strand = source->as_strand();
+        std::vector<Value*> elements;
+        elements.reserve(win_len);
+        for (int i = 0; i < win_len; i++) {
+            int idx = reverse ? (window_idx + win_len - 1 - i) : (window_idx + i);
+            elements.push_back((*strand)[idx]);
+        }
+        window_val = machine->heap->allocate_strand(std::move(elements));
+
+        // Reduce this window
+        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, window_val, 0, 0, win_len,
+            CellIterMode::FOLD_RIGHT, win_len, 1, true, false, true));
+
+    } else if (source->is_scalar()) {
+        // Scalar: just return it
+        results.push_back(source);
+        current_result++;
+        machine->push_kont(this);
+
+    } else if (source->is_vector()) {
+        // Extract window from vector
+        const Eigen::MatrixXd* mat = source->as_matrix();
+        Eigen::VectorXd window(win_len);
+        for (int i = 0; i < win_len; i++) {
+            int idx = reverse ? (window_idx + win_len - 1 - i) : (window_idx + i);
+            window(i) = (*mat)(idx, 0);
+        }
+        window_val = machine->heap->allocate_vector(window);
+
+        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, window_val, 0, 0, win_len,
+            CellIterMode::FOLD_RIGHT, win_len, 1, true));
+
+    } else if (source->is_ndarray()) {
+        // Extract fiber from NDARRAY, then window from fiber
+        const Value::NDArrayData* nd = source->as_ndarray();
+        int rank = static_cast<int>(source_shape.size());
+
+        // Convert fiber_idx to indices for non-axis dimensions
+        std::vector<int> src_idx(rank, 0);
+        int fidx = fiber_idx;
+        for (int d = rank - 1; d >= 0; --d) {
+            if (d != axis) {
+                src_idx[d] = fidx % source_shape[d];
+                fidx /= source_shape[d];
+            }
+        }
+
+        // Extract window elements from fiber
+        Eigen::VectorXd window(win_len);
+        for (int i = 0; i < win_len; i++) {
+            int ax_pos = reverse ? (window_idx + win_len - 1 - i) : (window_idx + i);
+            src_idx[axis] = ax_pos;
+            int flat = 0;
+            for (int d = 0; d < rank; ++d) {
+                flat += src_idx[d] * source_strides[d];
+            }
+            window(i) = (*nd->data)(flat);
+        }
+        window_val = machine->heap->allocate_vector(window);
+
+        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, window_val, 0, 0, win_len,
+            CellIterMode::FOLD_RIGHT, win_len, 1, true));
+
+    } else {
+        // Matrix: extract row or column, then window
+        const Eigen::MatrixXd* mat = source->as_matrix();
+        Eigen::VectorXd window(win_len);
+
+        if (axis == 0) {
+            // Fibers are columns
+            for (int i = 0; i < win_len; i++) {
+                int row = reverse ? (window_idx + win_len - 1 - i) : (window_idx + i);
+                window(i) = (*mat)(row, fiber_idx);
+            }
+        } else {
+            // Fibers are rows
+            for (int i = 0; i < win_len; i++) {
+                int col = reverse ? (window_idx + win_len - 1 - i) : (window_idx + i);
+                window(i) = (*mat)(fiber_idx, col);
+            }
+        }
+        window_val = machine->heap->allocate_vector(window);
+
+        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate<CellIterK>(
+            fn, nullptr, window_val, 0, 0, win_len,
+            CellIterMode::FOLD_RIGHT, win_len, 1, true));
+    }
+}
+
+void FiberReduceK::mark(Heap* heap) {
     heap->mark(fn);
-    heap->mark(matrix);
+    heap->mark(source);
     for (Value* v : results) {
         heap->mark(v);
     }
 }
 
-void RowReduceCollectK::invoke(Machine* machine) {
-    Value* result = machine->result;
-    iter->results.push_back(result);
-    iter->current_row++;
+void FiberReduceCollectK::invoke(Machine* machine) {
+    iter->results.push_back(machine->result);
+    iter->current_result++;
     machine->push_kont(iter);
 }
 
-void RowReduceCollectK::mark(Heap* heap) {
-    // iter holds Values (fn, matrix, results) that must be marked
+void FiberReduceCollectK::mark(Heap* heap) {
     heap->mark(iter);
 }
 
@@ -2957,18 +3574,79 @@ void PrefixScanCollectK::mark(Heap* heap) {
 // ============================================================================
 
 void RowScanK::invoke(Machine* machine) {
-    if (current_row >= total_rows) {
-        // Done - assemble results into matrix
+    if (current_pos >= total_positions) {
+        // Done - assemble results based on result shape
         if (results.empty()) {
             machine->result = machine->heap->allocate_scalar(0);
             return;
         }
 
-        if (!scan_first_axis) {
+        if (!result_shape.empty()) {
+            // NDARRAY scan: assemble results into NDARRAY
+            int ax_len = result_shape[scan_axis];
+            int total_size = 1;
+            for (int s : result_shape) total_size *= s;
+
+            Eigen::VectorXd data(total_size);
+
+            // Compute strides for result
+            int rank = static_cast<int>(result_shape.size());
+            std::vector<int> strides(rank);
+            strides[rank - 1] = 1;
+            for (int d = rank - 2; d >= 0; --d) {
+                strides[d] = strides[d + 1] * result_shape[d + 1];
+            }
+
+            // Each result is a vector of length ax_len
+            // Map result[pos][k] → data[flat_index]
+            for (int pos = 0; pos < total_positions; pos++) {
+                const Eigen::MatrixXd* vec = results[pos]->as_matrix();
+
+                // Compute base indices (excluding scan axis)
+                std::vector<int> base_idx(rank, 0);
+                int p = pos;
+                int axis_skip = 0;
+                for (int d = rank - 1; d >= 0; --d) {
+                    if (d == scan_axis) {
+                        axis_skip = 1;
+                        continue;
+                    }
+                    int dim_size = result_shape[d];
+                    base_idx[d] = p % dim_size;
+                    p /= dim_size;
+                }
+
+                // Copy scanned values
+                for (int k = 0; k < ax_len; k++) {
+                    base_idx[scan_axis] = k;
+                    int flat = 0;
+                    for (int d = 0; d < rank; ++d) {
+                        flat += base_idx[d] * strides[d];
+                    }
+                    data(flat) = (*vec)(k, 0);
+                }
+            }
+
+            if (result_shape.size() == 2) {
+                Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+                for (int i = 0; i < result_shape[0]; i++) {
+                    for (int j = 0; j < result_shape[1]; j++) {
+                        mat(i, j) = data(i * result_shape[1] + j);
+                    }
+                }
+                machine->result = machine->heap->allocate_matrix(mat);
+            } else {
+                machine->result = machine->heap->allocate_ndarray(data, result_shape);
+            }
+            return;
+        }
+
+        // Matrix scan
+        if (scan_axis == 1) {
             // Regular scan: results are row vectors, assemble into matrix
             int result_cols = results[0]->rows();  // Each result is a vector
-            Eigen::MatrixXd mat(total_rows, result_cols);
-            for (int r = 0; r < total_rows; r++) {
+            Eigen::MatrixXd mat(total_positions, result_cols);
+            for (int r = 0; r < total_positions; r++) {
                 const Eigen::MatrixXd* row_vec = results[r]->as_matrix();
                 mat.row(r) = row_vec->col(0).transpose();
             }
@@ -2976,8 +3654,8 @@ void RowScanK::invoke(Machine* machine) {
         } else {
             // Scan-first: results are column vectors, assemble into matrix
             int result_rows = results[0]->rows();  // Each result is a vector
-            Eigen::MatrixXd mat(result_rows, total_rows);
-            for (int c = 0; c < total_rows; c++) {
+            Eigen::MatrixXd mat(result_rows, total_positions);
+            for (int c = 0; c < total_positions; c++) {
                 const Eigen::MatrixXd* col_vec = results[c]->as_matrix();
                 mat.col(c) = col_vec->col(0);
             }
@@ -2986,36 +3664,76 @@ void RowScanK::invoke(Machine* machine) {
         return;
     }
 
-    // Extract current row/column as a vector and scan it
-    const Eigen::MatrixXd* mat = matrix->as_matrix();
+    // NDARRAY scan
+    if (source->is_ndarray()) {
+        const Value::NDArrayData* nd = source->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+        int ax_len = shape[scan_axis];
 
-    if (!scan_first_axis) {
+        // Compute strides for source array
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        // Compute base indices for current_pos (excluding scan axis)
+        std::vector<int> base_idx(rank, 0);
+        int pos = current_pos;
+        for (int d = rank - 1; d >= 0; --d) {
+            if (d == scan_axis) continue;
+            int dim_size = shape[d];
+            base_idx[d] = pos % dim_size;
+            pos /= dim_size;
+        }
+
+        // Extract fiber along scan axis as vector
+        Eigen::VectorXd fiber(ax_len);
+        for (int k = 0; k < ax_len; ++k) {
+            base_idx[scan_axis] = k;
+            int flat = 0;
+            for (int d = 0; d < rank; ++d) {
+                flat += base_idx[d] * strides[d];
+            }
+            fiber(k) = (*nd->data)(flat);
+        }
+        Value* fiber_vec = machine->heap->allocate_vector(fiber);
+
+        // Push collector, then PrefixScanK for this fiber
+        machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+        if (ax_len <= 1) {
+            machine->result = fiber_vec;
+            return;
+        }
+        machine->push_kont(machine->heap->allocate<PrefixScanK>(fn, fiber_vec, ax_len));
+        return;
+    }
+
+    // Matrix scan (original behavior)
+    const Eigen::MatrixXd* mat = source->as_matrix();
+
+    if (scan_axis == 1) {
         // Regular scan (\): scan each row
-        Eigen::VectorXd row = mat->row(current_row).transpose();
+        Eigen::VectorXd row = mat->row(current_pos).transpose();
         Value* row_vec = machine->heap->allocate_vector(row);
 
-        // Push collector, then PrefixScanK for this row
         machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
         int row_len = row.rows();
         if (row_len <= 1) {
-            // Single element or empty: just return as-is
             machine->result = row_vec;
-            machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
             return;
         }
         machine->push_kont(machine->heap->allocate<PrefixScanK>(fn, row_vec, row_len));
     } else {
         // Scan-first (⍀): scan each column
-        Eigen::VectorXd col = mat->col(current_row);
+        Eigen::VectorXd col = mat->col(current_pos);
         Value* col_vec = machine->heap->allocate_vector(col);
 
-        // Push collector, then PrefixScanK for this column
         machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
         int col_len = col.rows();
         if (col_len <= 1) {
-            // Single element or empty: just return as-is
             machine->result = col_vec;
-            machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
             return;
         }
         machine->push_kont(machine->heap->allocate<PrefixScanK>(fn, col_vec, col_len));
@@ -3024,7 +3742,7 @@ void RowScanK::invoke(Machine* machine) {
 
 void RowScanK::mark(Heap* heap) {
     heap->mark(fn);
-    heap->mark(matrix);
+    heap->mark(source);
     for (Value* v : results) {
         heap->mark(v);
     }
@@ -3033,7 +3751,7 @@ void RowScanK::mark(Heap* heap) {
 void RowScanCollectK::invoke(Machine* machine) {
     Value* result = machine->result;
     iter->results.push_back(result);
-    iter->current_row++;
+    iter->current_pos++;
     machine->push_kont(iter);
 }
 
@@ -3078,279 +3796,6 @@ void ReduceResultK::invoke(Machine* machine) {
 
 void ReduceResultK::mark(Heap* heap) {
     heap->mark(fn);
-}
-
-// ============================================================================
-// InnerProductIterK - Implementation
-// ============================================================================
-// Iterates over output cells for matrix inner product
-
-void InnerProductIterK::invoke(Machine* machine) {
-    int total_cells = lhs_rows * rhs_cols;
-
-    if (current_i * rhs_cols + current_j >= total_cells) {
-        // Done - assemble results
-        if (lhs_rows == 1 && rhs_cols == 1) {
-            // Scalar result
-            machine->result = results[0];
-        } else if (rhs_cols == 1) {
-            // Column vector result (matrix × vector)
-            Eigen::VectorXd vec(lhs_rows);
-            for (int i = 0; i < lhs_rows; i++) {
-                vec(i) = results[i]->as_scalar();
-            }
-            machine->result = machine->heap->allocate_vector(vec);
-        } else if (lhs_rows == 1) {
-            // Row vector result (vector × matrix)
-            Eigen::VectorXd vec(rhs_cols);
-            for (int j = 0; j < rhs_cols; j++) {
-                vec(j) = results[j]->as_scalar();
-            }
-            machine->result = machine->heap->allocate_vector(vec);
-        } else {
-            // Matrix result
-            Eigen::MatrixXd mat(lhs_rows, rhs_cols);
-            for (int i = 0; i < lhs_rows; i++) {
-                for (int j = 0; j < rhs_cols; j++) {
-                    mat(i, j) = results[i * rhs_cols + j]->as_scalar();
-                }
-            }
-            machine->result = machine->heap->allocate_matrix(mat);
-        }
-        return;
-    }
-
-    // Extract row current_i from lhs and column current_j from rhs
-    // Handle vectors specially: vectors are stored as column vectors (N×1)
-    const Eigen::MatrixXd* lhs_mat = lhs->as_matrix();
-    const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
-
-    Eigen::VectorXd row_vec;
-    Eigen::VectorXd col_vec;
-
-    if (lhs->is_vector()) {
-        // Vector × matrix: use whole vector as the "row"
-        row_vec = lhs_mat->col(0);
-    } else {
-        row_vec = lhs_mat->row(current_i).transpose();
-    }
-
-    if (rhs->is_vector()) {
-        // Matrix × vector: use whole vector as the "column"
-        col_vec = rhs_mat->col(0);
-    } else {
-        col_vec = rhs_mat->col(current_j);
-    }
-
-    Value* row = machine->heap->allocate_vector(row_vec);
-    Value* col = machine->heap->allocate_vector(col_vec);
-
-    // For vector inner product: first apply g element-wise, then reduce with f
-    // Push: collector -> ReduceResultK(f) -> dyadic CellIterK COLLECT(g)
-    machine->push_kont(machine->heap->allocate<InnerProductCollectK>(this));
-    machine->push_kont(machine->heap->allocate<ReduceResultK>(f_fn));
-    machine->push_kont(machine->heap->allocate<CellIterK>(
-        g_fn, row, col, 0, 0, lhs_cols,
-        CellIterMode::COLLECT, lhs_cols, 1, true));
-}
-
-void InnerProductIterK::mark(Heap* heap) {
-    heap->mark(f_fn);
-    heap->mark(g_fn);
-    heap->mark(lhs);
-    heap->mark(rhs);
-    for (Value* v : results) {
-        heap->mark(v);
-    }
-}
-
-void InnerProductCollectK::invoke(Machine* machine) {
-    Value* result = machine->result;
-    iter->results.push_back(result);
-
-    // Advance to next cell
-    iter->current_j++;
-    if (iter->current_j >= iter->rhs_cols) {
-        iter->current_j = 0;
-        iter->current_i++;
-    }
-
-    // Continue iteration
-    machine->push_kont(iter);
-}
-
-void InnerProductCollectK::mark(Heap* heap) {
-    // iter holds Values (f_fn, g_fn, lhs, rhs, results) that must be marked
-    heap->mark(iter);
-}
-
-// ============================================================================
-// NwiseReduceK - Implementation
-// ============================================================================
-
-void NwiseReduceK::invoke(Machine* machine) {
-    if (current_window >= total_windows) {
-        // Done - assemble results
-        // Per ISO 9.2.3: when N equals length of B, return f/B directly (unwrapped)
-        if (results.size() == 1) {
-            // Single result - return unwrapped (like 3+/1 2 3 returns 6, not ⊂6)
-            machine->result = results[0];
-        } else if (is_strand) {
-            // Multiple results from strand - return strand of results
-            machine->result = machine->heap->allocate_strand(std::move(results));
-        } else {
-            // Multiple results from vector - return vector of scalar results
-            Eigen::VectorXd result_vec(results.size());
-            for (size_t i = 0; i < results.size(); i++) {
-                result_vec(i) = results[i]->as_scalar();
-            }
-            machine->result = machine->heap->allocate_vector(result_vec);
-        }
-        return;
-    }
-
-    Value* window_val;
-
-    if (is_strand) {
-        // Extract window from strand
-        auto* strand = vec->as_strand();
-        std::vector<Value*> window_elements;
-        window_elements.reserve(window_size);
-        if (reverse) {
-            for (int i = 0; i < window_size; i++) {
-                window_elements.push_back((*strand)[current_window + window_size - 1 - i]);
-            }
-        } else {
-            for (int i = 0; i < window_size; i++) {
-                window_elements.push_back((*strand)[current_window + i]);
-            }
-        }
-        window_val = machine->heap->allocate_strand(std::move(window_elements));
-
-        // Push collector, then CellIterK FOLD_RIGHT to reduce this window strand
-        machine->push_kont(machine->heap->allocate<NwiseCollectK>(this));
-        machine->push_kont(machine->heap->allocate<CellIterK>(
-            fn, nullptr, window_val, 0, 0, window_size,
-            CellIterMode::FOLD_RIGHT, window_size, 1, true, false, true));
-    } else {
-        // Extract window from vector
-        const Eigen::MatrixXd* mat = vec->as_matrix();
-        Eigen::VectorXd window(window_size);
-        if (reverse) {
-            for (int i = 0; i < window_size; i++) {
-                window(i) = (*mat)(current_window + window_size - 1 - i, 0);
-            }
-        } else {
-            for (int i = 0; i < window_size; i++) {
-                window(i) = (*mat)(current_window + i, 0);
-            }
-        }
-        window_val = machine->heap->allocate_vector(window);
-
-        // Push collector, then CellIterK FOLD_RIGHT to reduce this window
-        machine->push_kont(machine->heap->allocate<NwiseCollectK>(this));
-        machine->push_kont(machine->heap->allocate<CellIterK>(
-            fn, nullptr, window_val, 0, 0, window_size,
-            CellIterMode::FOLD_RIGHT, window_size, 1, true));
-    }
-}
-
-void NwiseReduceK::mark(Heap* heap) {
-    heap->mark(fn);
-    heap->mark(vec);
-    for (Value* v : results) {
-        heap->mark(v);
-    }
-}
-
-void NwiseCollectK::invoke(Machine* machine) {
-    Value* result = machine->result;
-    iter->results.push_back(result);
-    iter->current_window++;
-    machine->push_kont(iter);
-}
-
-void NwiseCollectK::mark(Heap* heap) {
-    // iter holds Values (fn, vec, results) that must be marked
-    heap->mark(iter);
-}
-
-// ============================================================================
-// NwiseMatrixReduceK - Implementation
-// ============================================================================
-
-void NwiseMatrixReduceK::invoke(Machine* machine) {
-    const Eigen::MatrixXd* mat = matrix->as_matrix();
-    int rows = mat->rows();
-    int cols = mat->cols();
-
-    if (current_slice >= total_slices) {
-        // Done - assemble results into matrix
-        // Each result is a vector from N-wise reduction
-        // Result shape depends on axis:
-        //   axis 1 (first_axis): (rows - N + 1) x cols
-        //   axis 2 (!first_axis): rows x (cols - N + 1)
-        int axis_len = first_axis ? rows : cols;
-        int result_axis_len = axis_len - window_size + 1;
-
-        if (first_axis) {
-            // Results are column vectors, stack horizontally
-            Eigen::MatrixXd result_mat(result_axis_len, cols);
-            for (int j = 0; j < cols; j++) {
-                const Eigen::MatrixXd* col_result = results[j]->as_matrix();
-                for (int i = 0; i < result_axis_len; i++) {
-                    result_mat(i, j) = (*col_result)(i, 0);
-                }
-            }
-            machine->result = machine->heap->allocate_matrix(result_mat);
-        } else {
-            // Results are row vectors, stack vertically
-            Eigen::MatrixXd result_mat(rows, result_axis_len);
-            for (int i = 0; i < rows; i++) {
-                const Eigen::MatrixXd* row_result = results[i]->as_matrix();
-                for (int j = 0; j < result_axis_len; j++) {
-                    result_mat(i, j) = (*row_result)(j, 0);
-                }
-            }
-            machine->result = machine->heap->allocate_matrix(result_mat);
-        }
-        return;
-    }
-
-    // Extract current slice (row or column) and apply N-wise reduction
-    Eigen::VectorXd slice;
-    if (first_axis) {
-        // Axis 1: extract column, apply N-wise along rows
-        slice = mat->col(current_slice);
-    } else {
-        // Axis 2: extract row, apply N-wise along columns
-        slice = mat->row(current_slice).transpose();
-    }
-    Value* slice_vec = machine->heap->allocate_vector(slice);
-
-    // Push collector, then NwiseReduceK for this slice
-    machine->push_kont(machine->heap->allocate<NwiseMatrixCollectK>(this));
-    machine->push_kont(machine->heap->allocate<NwiseReduceK>(fn, slice_vec, window_size, reverse));
-}
-
-void NwiseMatrixReduceK::mark(Heap* heap) {
-    heap->mark(fn);
-    heap->mark(matrix);
-    for (Value* v : results) {
-        heap->mark(v);
-    }
-}
-
-void NwiseMatrixCollectK::invoke(Machine* machine) {
-    Value* result = machine->result;
-    iter->results.push_back(result);
-    iter->current_slice++;
-    machine->push_kont(iter);
-}
-
-void NwiseMatrixCollectK::mark(Heap* heap) {
-    // iter holds Values (fn, matrix, results) that must be marked
-    heap->mark(iter);
 }
 
 // ============================================================================
@@ -3402,6 +3847,176 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
     if (arr->is_string()) {
         arr = arr->to_char_vector(machine->heap);
         machine->env->define(var_name, arr);  // Update binding to converted array
+    }
+
+    // NDARRAY indexed assignment: A[I;J;K]←V
+    if (arr->is_ndarray()) {
+        if (!index_val->is_strand()) {
+            machine->throw_error("RANK ERROR: NDARRAY requires multi-axis index", this);
+            return;
+        }
+        auto* idx_strand = index_val->as_strand();
+        const Value::NDArrayData* nd = arr->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        if (static_cast<int>(idx_strand->size()) != rank) {
+            machine->throw_error("RANK ERROR: index count must match array rank", this);
+            return;
+        }
+
+        // Helper to check if index is elided
+        auto is_elided = [](Value* idx) -> bool {
+            return idx->is_vector() && idx->size() == 0;
+        };
+
+        // Helper to validate index is near-integer
+        auto validate_index = [machine, this](double val) -> bool {
+            double rounded = std::round(val);
+            if (std::abs(val - rounded) > 1e-10) {
+                machine->throw_error("DOMAIN ERROR: index must be integer", this);
+                return false;
+            }
+            return true;
+        };
+
+        // Gather indices for each axis
+        std::vector<std::vector<int>> axis_indices(rank);
+        for (int d = 0; d < rank; ++d) {
+            Value* idx = (*idx_strand)[d];
+            if (is_elided(idx)) {
+                for (int i = 0; i < shape[d]; ++i) {
+                    axis_indices[d].push_back(i);
+                }
+            } else if (idx->is_scalar()) {
+                double val = idx->as_scalar();
+                if (!validate_index(val)) return;
+                int i = static_cast<int>(std::round(val)) - machine->io;
+                if (i < 0 || i >= shape[d]) {
+                    machine->throw_error("INDEX ERROR: index out of bounds", this);
+                    return;
+                }
+                axis_indices[d].push_back(i);
+            } else if (idx->is_vector()) {
+                const Eigen::MatrixXd* m = idx->as_matrix();
+                for (int j = 0; j < m->rows(); ++j) {
+                    double val = (*m)(j, 0);
+                    if (!validate_index(val)) return;
+                    int i = static_cast<int>(std::round(val)) - machine->io;
+                    if (i < 0 || i >= shape[d]) {
+                        machine->throw_error("INDEX ERROR: index out of bounds", this);
+                        return;
+                    }
+                    axis_indices[d].push_back(i);
+                }
+            } else {
+                machine->throw_error("DOMAIN ERROR: index must be numeric", this);
+                return;
+            }
+        }
+
+        // Compute strides
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        // Create modified copy
+        Eigen::VectorXd new_data = *nd->data;
+
+        // Compute number of positions to assign
+        int num_positions = 1;
+        for (int d = 0; d < rank; ++d) {
+            num_positions *= static_cast<int>(axis_indices[d].size());
+        }
+
+        if (value_val->is_scalar()) {
+            // Scalar extends to all selected positions
+            double v = value_val->as_scalar();
+            std::vector<int> counters(rank, 0);
+            for (int pos = 0; pos < num_positions; ++pos) {
+                // Compute linear index from counters
+                int linear = 0;
+                for (int d = 0; d < rank; ++d) {
+                    linear += axis_indices[d][counters[d]] * strides[d];
+                }
+                new_data(linear) = v;
+
+                // Increment counters
+                for (int d = rank - 1; d >= 0; --d) {
+                    counters[d]++;
+                    if (counters[d] < static_cast<int>(axis_indices[d].size())) break;
+                    counters[d] = 0;
+                }
+            }
+        } else if (value_val->is_vector() || value_val->is_matrix() || value_val->is_ndarray()) {
+            // Value must match selection shape
+            int val_size = value_val->size();
+            if (val_size != num_positions) {
+                machine->throw_error("LENGTH ERROR: value shape doesn't match index", this);
+                return;
+            }
+
+            // Get value data
+            const double* val_data;
+            if (value_val->is_ndarray()) {
+                val_data = value_val->as_ndarray()->data->data();
+            } else {
+                val_data = value_val->as_matrix()->data();
+            }
+
+            std::vector<int> counters(rank, 0);
+            for (int pos = 0; pos < num_positions; ++pos) {
+                int linear = 0;
+                for (int d = 0; d < rank; ++d) {
+                    linear += axis_indices[d][counters[d]] * strides[d];
+                }
+                new_data(linear) = val_data[pos];
+
+                for (int d = rank - 1; d >= 0; --d) {
+                    counters[d]++;
+                    if (counters[d] < static_cast<int>(axis_indices[d].size())) break;
+                    counters[d] = 0;
+                }
+            }
+        } else {
+            machine->throw_error("DOMAIN ERROR: value must be scalar or array", this);
+            return;
+        }
+
+        Value* result = machine->heap->allocate_ndarray(new_data, shape);
+        machine->env->define(var_name, result);
+        machine->result = value_val;
+        return;
+    }
+
+    // Strand indexed assignment (nested arrays)
+    if (arr->is_strand()) {
+        if (!index_val->is_scalar()) {
+            machine->throw_error("RANK ERROR: strand requires scalar index", this);
+            return;
+        }
+        double val = index_val->as_scalar();
+        if (val != std::floor(val)) {
+            machine->throw_error("DOMAIN ERROR: index must be integer", this);
+            return;
+        }
+        int idx = static_cast<int>(val) - machine->io;
+        const std::vector<Value*>* strand = arr->as_strand();
+        int len = static_cast<int>(strand->size());
+        if (idx < 0 || idx >= len) {
+            machine->throw_error("INDEX ERROR: index out of bounds", this);
+            return;
+        }
+
+        // Create modified copy
+        std::vector<Value*> new_strand(*strand);
+        new_strand[idx] = value_val;
+        Value* result = machine->heap->allocate_strand(std::move(new_strand));
+        machine->env->define(var_name, result);
+        machine->result = value_val;
+        return;
     }
 
     // Numeric array indexed assignment

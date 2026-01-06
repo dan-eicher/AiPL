@@ -205,6 +205,41 @@ Value* Heap::allocate_empty_strand() {
     return allocate(val);
 }
 
+// Helper: compute row-major strides from shape
+// For shape {2, 3, 4}, strides are {12, 4, 1} (last index varies fastest)
+static std::vector<int> compute_strides(const std::vector<int>& shape) {
+    std::vector<int> strides(shape.size());
+    if (shape.empty()) return strides;
+
+    strides.back() = 1;
+    for (int i = static_cast<int>(shape.size()) - 2; i >= 0; --i) {
+        strides[i] = strides[i + 1] * shape[i + 1];
+    }
+    return strides;
+}
+
+// Allocate an NDARRAY (N-dimensional array, rank 3+)
+Value* Heap::allocate_ndarray(const Eigen::VectorXd& data, const std::vector<int>& shape) {
+    Value* val = new Value();
+    val->tag = ValueType::NDARRAY;
+    val->data.ndarray = new Value::NDArrayData();
+    val->data.ndarray->data = new Eigen::VectorXd(data);
+    val->data.ndarray->shape = shape;
+    val->data.ndarray->strides = compute_strides(shape);
+    return allocate(val);
+}
+
+// Allocate an NDARRAY with move semantics
+Value* Heap::allocate_ndarray(Eigen::VectorXd&& data, std::vector<int>&& shape) {
+    Value* val = new Value();
+    val->tag = ValueType::NDARRAY;
+    val->data.ndarray = new Value::NDArrayData();
+    val->data.ndarray->data = new Eigen::VectorXd(std::move(data));
+    val->data.ndarray->strides = compute_strides(shape);  // Compute before moving shape
+    val->data.ndarray->shape = std::move(shape);
+    return allocate(val);
+}
+
 // G2 grammar: Allocate a derived operator from primitive op + first operand
 Value* Heap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand) {
     Value* val = new Value();

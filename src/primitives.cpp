@@ -2435,6 +2435,17 @@ void fn_shape(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
+    // NDARRAY shape is its shape vector
+    if (omega->is_ndarray()) {
+        const auto& nd_shape = omega->ndarray_shape();
+        Eigen::VectorXd shape(nd_shape.size());
+        for (size_t i = 0; i < nd_shape.size(); ++i) {
+            shape(i) = static_cast<double>(nd_shape[i]);
+        }
+        m->result = m->heap->allocate_vector(shape);
+        return;
+    }
+
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
@@ -2468,13 +2479,12 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Get target shape
-    int target_rows, target_cols;
+    // Get target shape as a vector of ints
+    std::vector<int> target_shape;
 
     if (lhs->is_scalar()) {
         // Scalar shape means 1D vector of that length
         double dim = lhs->as_scalar();
-        // Validate: must be non-negative integer
         if (dim < 0.0) {
             m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative");
             return;
@@ -2483,31 +2493,36 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: reshape dimension must be an integer");
             return;
         }
-        target_rows = static_cast<int>(dim);
-        target_cols = 1;
+        target_shape.push_back(static_cast<int>(dim));
     } else {
         const Eigen::MatrixXd* shape_mat = lhs->as_matrix();
-        if (shape_mat->rows() == 0) {
+        int shape_len = shape_mat->rows();
+
+        if (shape_len == 0) {
             // ISO 13751 Section 8.3.1: Empty shape produces scalar
             // (⍳0)⍴5 → 5 (scalar)
-            // Get first element of source
             double scalar_val;
             if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
             if (rhs->is_scalar()) {
                 scalar_val = rhs->as_scalar();
             } else if (rhs->size() > 0) {
-                const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
-                scalar_val = (*rhs_mat)(0, 0);
+                if (rhs->is_ndarray()) {
+                    scalar_val = (*rhs->ndarray_data())(0);
+                } else {
+                    const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
+                    scalar_val = (*rhs_mat)(0, 0);
+                }
             } else {
                 m->throw_error("DOMAIN ERROR: cannot reshape empty array to scalar");
                 return;
             }
             m->result = m->heap->allocate_scalar(scalar_val);
             return;
-        } else if (shape_mat->rows() == 1) {
-            // Single element: vector of that length
-            double dim = (*shape_mat)(0, 0);
-            // Validate: must be non-negative integer
+        }
+
+        // Validate and collect all dimensions
+        for (int i = 0; i < shape_len; ++i) {
+            double dim = (*shape_mat)(i, 0);
             if (dim < 0.0) {
                 m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative");
                 return;
@@ -2516,30 +2531,15 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 m->throw_error("DOMAIN ERROR: reshape dimension must be an integer");
                 return;
             }
-            target_rows = static_cast<int>(dim);
-            target_cols = 1;
-        } else if (shape_mat->rows() == 2) {
-            // Two elements: matrix of that shape
-            double dim1 = (*shape_mat)(0, 0);
-            double dim2 = (*shape_mat)(1, 0);
-            // Validate: must be non-negative integers
-            if (dim1 < 0.0 || dim2 < 0.0) {
-                m->throw_error("DOMAIN ERROR: reshape dimensions must be non-negative");
-                return;
-            }
-            if (dim1 != std::floor(dim1) || dim2 != std::floor(dim2)) {
-                m->throw_error("DOMAIN ERROR: reshape dimensions must be integers");
-                return;
-            }
-            target_rows = static_cast<int>(dim1);
-            target_cols = static_cast<int>(dim2);
-        } else {
-            m->throw_error("RANK ERROR: reshape shape must have 1 or 2 elements");
-            return;
+            target_shape.push_back(static_cast<int>(dim));
         }
     }
 
-    int target_size = target_rows * target_cols;
+    // Compute total target size
+    int target_size = 1;
+    for (int dim : target_shape) {
+        target_size *= dim;
+    }
 
     // Check implementation limit (ISO 13751 §A.3)
     if (static_cast<size_t>(target_size) > MAX_ARRAY_SIZE) {
@@ -2555,6 +2555,9 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         source.resize(1);
         source(0) = rhs->as_scalar();
+    } else if (rhs->is_ndarray()) {
+        // NDARRAY is already flat in row-major order
+        source = *rhs->ndarray_data();
     } else {
         if (!rhs->is_array()) {
             m->throw_error("DOMAIN ERROR: ⍴ requires array argument");
@@ -2576,23 +2579,41 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Build result by cycling through source data (row-major order per APL)
-    Eigen::MatrixXd result(target_rows, target_cols);
-    for (int i = 0; i < target_size; ++i) {
-        result(i / target_cols, i % target_cols) = source(i % source.size());
-    }
-
     // Preserve character data flag from source
     bool is_char = rhs->is_char_data();
 
-    if (target_cols == 1) {
-        m->result = m->heap->allocate_vector(result.col(0), is_char);
-    } else {
+    // Build result by cycling through source data (row-major order per APL)
+    int rank = static_cast<int>(target_shape.size());
+
+    if (rank == 1) {
+        // Vector result
+        Eigen::VectorXd result(target_shape[0]);
+        for (int i = 0; i < target_size; ++i) {
+            result(i) = source(i % source.size());
+        }
+        m->result = m->heap->allocate_vector(result, is_char);
+    } else if (rank == 2) {
+        // Matrix result
+        int rows = target_shape[0];
+        int cols = target_shape[1];
+        Eigen::MatrixXd result(rows, cols);
+        for (int i = 0; i < target_size; ++i) {
+            result(i / cols, i % cols) = source(i % source.size());
+        }
         m->result = m->heap->allocate_matrix(result, is_char);
+    } else {
+        // NDARRAY result (rank 3+)
+        Eigen::VectorXd result(target_size);
+        for (int i = 0; i < target_size; ++i) {
+            result(i) = source(i % source.size());
+        }
+        m->result = m->heap->allocate_ndarray(std::move(result), std::move(target_shape));
+        m->result->set_char_data(is_char);
     }
 }
 
 // Ravel (,) - monadic: flatten to vector
+// ISO 13751 §8.2.1: Z is a vector containing the elements of B in row-major order
 void fn_ravel(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
@@ -2605,6 +2626,13 @@ void fn_ravel(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    // NDARRAY: data is already stored flat in row-major order
+    if (omega->is_ndarray()) {
+        const Eigen::VectorXd* data = omega->ndarray_data();
+        m->result = m->heap->allocate_vector(*data, omega->is_char_data());
+        return;
+    }
+
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: , requires array argument");
         return;
@@ -2614,7 +2642,6 @@ void fn_ravel(Machine* m, Value* axis, Value* omega) {
     // Flatten in row-major order (APL standard)
     int size = mat->size();
     Eigen::VectorXd result(size);
-    int rows = mat->rows();
     int cols = mat->cols();
     for (int i = 0; i < size; ++i) {
         result(i) = (*mat)(i / cols, i % cols);
@@ -2681,6 +2708,190 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: , requires array argument");
+        return;
+    }
+
+    // Handle NDARRAY catenation
+    if (lhs->is_ndarray() || rhs->is_ndarray()) {
+        // Determine axis (default: last axis)
+        int cat_axis = -1;  // Will be set to last axis
+        bool is_laminate = false;
+
+        if (axis != nullptr) {
+            if (!axis->is_scalar()) {
+                m->throw_error("RANK ERROR: axis must be scalar");
+                return;
+            }
+            double k_val = axis->as_scalar();
+            double rounded = std::round(k_val);
+            is_laminate = std::abs(k_val - rounded) > 1e-10;
+            cat_axis = static_cast<int>(std::floor(k_val)) - m->io;
+        }
+
+        if (is_laminate) {
+            m->throw_error("RANK ERROR: laminate of NDARRAY not yet supported");
+            return;
+        }
+
+        // Get shapes of both operands
+        std::vector<int> lhs_shape, rhs_shape;
+        const Eigen::VectorXd* lhs_data = nullptr;
+        const Eigen::VectorXd* rhs_data = nullptr;
+
+        if (lhs->is_ndarray()) {
+            lhs_shape = lhs->ndarray_shape();
+            lhs_data = lhs->ndarray_data();
+        } else if (lhs->is_scalar()) {
+            lhs_shape = {};
+        } else {
+            // VECTOR or MATRIX
+            lhs_shape.push_back(lhs->as_matrix()->rows());
+            if (!lhs->is_vector()) {
+                lhs_shape.push_back(lhs->as_matrix()->cols());
+            }
+        }
+
+        if (rhs->is_ndarray()) {
+            rhs_shape = rhs->ndarray_shape();
+            rhs_data = rhs->ndarray_data();
+        } else if (rhs->is_scalar()) {
+            rhs_shape = {};
+        } else {
+            // VECTOR or MATRIX
+            rhs_shape.push_back(rhs->as_matrix()->rows());
+            if (!rhs->is_vector()) {
+                rhs_shape.push_back(rhs->as_matrix()->cols());
+            }
+        }
+
+        // Handle scalar extension
+        int target_rank = std::max(static_cast<int>(lhs_shape.size()),
+                                   static_cast<int>(rhs_shape.size()));
+        if (target_rank == 0) {
+            m->throw_error("RANK ERROR: cannot catenate scalars along axis");
+            return;
+        }
+
+        // Default axis is last axis
+        if (cat_axis < 0) cat_axis = target_rank - 1;
+        if (cat_axis >= target_rank) {
+            m->throw_error("AXIS ERROR: axis out of range");
+            return;
+        }
+
+        // Promote shapes to same rank by prepending 1s
+        while (static_cast<int>(lhs_shape.size()) < target_rank) {
+            lhs_shape.insert(lhs_shape.begin(), 1);
+        }
+        while (static_cast<int>(rhs_shape.size()) < target_rank) {
+            rhs_shape.insert(rhs_shape.begin(), 1);
+        }
+
+        // Verify all axes except cat_axis match
+        for (int i = 0; i < target_rank; ++i) {
+            if (i != cat_axis && lhs_shape[i] != rhs_shape[i]) {
+                m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+                return;
+            }
+        }
+
+        // Compute result shape
+        std::vector<int> result_shape = lhs_shape;
+        result_shape[cat_axis] = lhs_shape[cat_axis] + rhs_shape[cat_axis];
+
+        // Compute strides for lhs, rhs, and result
+        auto compute_strides = [](const std::vector<int>& shape) {
+            std::vector<int> strides(shape.size());
+            int stride = 1;
+            for (int i = static_cast<int>(shape.size()) - 1; i >= 0; --i) {
+                strides[i] = stride;
+                stride *= shape[i];
+            }
+            return strides;
+        };
+
+        std::vector<int> lhs_strides = compute_strides(lhs_shape);
+        std::vector<int> rhs_strides = compute_strides(rhs_shape);
+        std::vector<int> result_strides = compute_strides(result_shape);
+
+        int result_size = 1;
+        for (int d : result_shape) result_size *= d;
+
+        Eigen::VectorXd result(result_size);
+
+        // Helper to get value from source (lhs or rhs)
+        auto get_lhs_value = [&](const std::vector<int>& indices) -> double {
+            if (lhs->is_scalar()) return lhs->as_scalar();
+            if (lhs->is_ndarray()) {
+                int lin = 0;
+                for (int i = 0; i < target_rank; ++i) {
+                    lin += indices[i] * lhs_strides[i];
+                }
+                return (*lhs_data)(lin);
+            }
+            // VECTOR or MATRIX
+            const Eigen::MatrixXd* mat = lhs->as_matrix();
+            if (lhs->is_vector()) {
+                return (*mat)(indices[target_rank - 1], 0);
+            }
+            return (*mat)(indices[target_rank - 2], indices[target_rank - 1]);
+        };
+
+        auto get_rhs_value = [&](const std::vector<int>& indices) -> double {
+            if (rhs->is_scalar()) return rhs->as_scalar();
+            if (rhs->is_ndarray()) {
+                int lin = 0;
+                for (int i = 0; i < target_rank; ++i) {
+                    lin += indices[i] * rhs_strides[i];
+                }
+                return (*rhs_data)(lin);
+            }
+            // VECTOR or MATRIX
+            const Eigen::MatrixXd* mat = rhs->as_matrix();
+            if (rhs->is_vector()) {
+                return (*mat)(indices[target_rank - 1], 0);
+            }
+            return (*mat)(indices[target_rank - 2], indices[target_rank - 1]);
+        };
+
+        // Fill result
+        std::vector<int> result_indices(target_rank);
+        for (int linear = 0; linear < result_size; ++linear) {
+            // Decompose linear index
+            int remaining = linear;
+            for (int d = 0; d < target_rank; ++d) {
+                result_indices[d] = remaining / result_strides[d];
+                remaining %= result_strides[d];
+            }
+
+            // Determine if this comes from lhs or rhs
+            if (result_indices[cat_axis] < lhs_shape[cat_axis]) {
+                result(linear) = get_lhs_value(result_indices);
+            } else {
+                // Adjust index for rhs
+                std::vector<int> rhs_indices = result_indices;
+                rhs_indices[cat_axis] -= lhs_shape[cat_axis];
+                result(linear) = get_rhs_value(rhs_indices);
+            }
+        }
+
+        // Allocate result based on rank
+        if (target_rank <= 2) {
+            if (target_rank == 1) {
+                m->result = m->heap->allocate_vector(result, is_char);
+            } else {
+                Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+                for (int i = 0; i < result_shape[0]; ++i) {
+                    for (int j = 0; j < result_shape[1]; ++j) {
+                        mat(i, j) = result(i * result_shape[1] + j);
+                    }
+                }
+                m->result = m->heap->allocate_matrix(mat, is_char);
+            }
+        } else {
+            m->result = m->heap->allocate_ndarray(std::move(result), std::move(result_shape));
+            m->result->set_char_data(is_char);
+        }
         return;
     }
 
@@ -2798,6 +3009,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 }
 
 // Transpose (⍉) - monadic: reverse dimensions
+// ISO 13751 §10.1.5: Z is B with the order of the axes reversed
 void fn_transpose(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
@@ -2808,6 +3020,56 @@ void fn_transpose(Machine* m, Value* axis, Value* omega) {
 
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // NDARRAY: reverse axes order
+    // Shape {2,3,4} → {4,3,2}
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        const auto& old_shape = nd->shape;
+        const auto& old_strides = nd->strides;
+        int rank = static_cast<int>(old_shape.size());
+
+        // New shape is reversed old shape
+        std::vector<int> new_shape(rank);
+        for (int i = 0; i < rank; ++i) {
+            new_shape[i] = old_shape[rank - 1 - i];
+        }
+
+        // Compute new strides
+        std::vector<int> new_strides(rank);
+        int stride = 1;
+        for (int i = rank - 1; i >= 0; --i) {
+            new_strides[i] = stride;
+            stride *= new_shape[i];
+        }
+
+        int total_size = nd->data->size();
+        Eigen::VectorXd result(total_size);
+
+        // For each position in result, find corresponding source position
+        std::vector<int> new_indices(rank);
+        for (int linear = 0; linear < total_size; ++linear) {
+            // Decompose linear index into new multi-index
+            int remaining = linear;
+            for (int d = 0; d < rank; ++d) {
+                new_indices[d] = remaining / new_strides[d];
+                remaining %= new_strides[d];
+            }
+
+            // Old multi-index is reversed new multi-index
+            // old[i,j,k] corresponds to new[k,j,i]
+            int old_linear = 0;
+            for (int d = 0; d < rank; ++d) {
+                old_linear += new_indices[d] * old_strides[rank - 1 - d];
+            }
+
+            result(linear) = (*nd->data)(old_linear);
+        }
+
+        m->result = m->heap->allocate_ndarray(std::move(result), std::move(new_shape));
+        m->result->set_char_data(omega->is_char_data());
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⍉ requires array argument");
@@ -2827,7 +3089,8 @@ void fn_transpose(Machine* m, Value* axis, Value* omega) {
 }
 
 // Dyadic Transpose (⍉) - reorder axes
-// For 2D: 1 0⍉M is transpose, 0 1⍉M is identity
+// ISO 13751 §10.2.10: Each element of A corresponds to an axis of B by position
+// and to an axis of Z by value. Repeated elements select diagonals.
 void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     // String → char vector conversion for array operations
@@ -2861,12 +3124,123 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    if (rhs->is_vector()) {
-        if (perm.size() != 1 || perm(0) != 0.0) {
-            m->throw_error("AXIS ERROR: invalid axis permutation");
+    int io = m->io;
+    bool is_char = rhs->is_char_data();
+
+    // NDARRAY: general axis permutation
+    if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        const auto& old_shape = nd->shape;
+        const auto& old_strides = nd->strides;
+        int rank = static_cast<int>(old_shape.size());
+
+        if (static_cast<int>(perm.size()) != rank) {
+            m->throw_error("LENGTH ERROR: permutation must match array rank");
             return;
         }
-        m->result = m->heap->allocate_vector(rhs->as_matrix()->col(0));
+
+        // Convert permutation to 0-indexed integers and validate
+        std::vector<int> perm_int(rank);
+        int max_perm = -1;
+        for (int i = 0; i < rank; ++i) {
+            if (!is_near_integer(perm(i), INTEGER_TOLERANCE)) {
+                m->throw_error("DOMAIN ERROR: permutation values must be integers");
+                return;
+            }
+            perm_int[i] = static_cast<int>(std::round(perm(i))) - io;
+            if (perm_int[i] < 0) {
+                m->throw_error("DOMAIN ERROR: permutation values out of range");
+                return;
+            }
+            if (perm_int[i] > max_perm) max_perm = perm_int[i];
+        }
+
+        // ISO 13751: All axes 0..max_perm must be present in perm
+        int result_rank = max_perm + 1;
+        std::vector<bool> axis_present(result_rank, false);
+        for (int i = 0; i < rank; ++i) {
+            axis_present[perm_int[i]] = true;
+        }
+        for (int i = 0; i < result_rank; ++i) {
+            if (!axis_present[i]) {
+                m->throw_error("DOMAIN ERROR: axis missing from permutation");
+                return;
+            }
+        }
+
+        // Compute result shape
+        // For repeated perm values, take min of corresponding source axis lengths
+        std::vector<int> new_shape(result_rank, INT_MAX);
+        for (int i = 0; i < rank; ++i) {
+            int target = perm_int[i];
+            new_shape[target] = std::min(new_shape[target], old_shape[i]);
+        }
+
+        // Compute new strides
+        std::vector<int> new_strides(result_rank);
+        int stride = 1;
+        for (int i = result_rank - 1; i >= 0; --i) {
+            new_strides[i] = stride;
+            stride *= new_shape[i];
+        }
+        int total_size = stride;
+
+        Eigen::VectorXd result(total_size);
+
+        // For each position in result, find corresponding source position
+        std::vector<int> new_indices(result_rank);
+        for (int linear = 0; linear < total_size; ++linear) {
+            // Decompose linear index into new multi-index
+            int remaining = linear;
+            for (int d = 0; d < result_rank; ++d) {
+                new_indices[d] = remaining / new_strides[d];
+                remaining %= new_strides[d];
+            }
+
+            // Source index: src_idx[i] = new_indices[perm_int[i]]
+            int old_linear = 0;
+            for (int i = 0; i < rank; ++i) {
+                old_linear += new_indices[perm_int[i]] * old_strides[i];
+            }
+
+            result(linear) = (*nd->data)(old_linear);
+        }
+
+        if (result_rank <= 2) {
+            // Result is matrix or lower rank
+            if (result_rank == 0 || total_size == 0) {
+                m->result = m->heap->allocate_scalar(0.0);
+            } else if (result_rank == 1) {
+                m->result = m->heap->allocate_vector(result, is_char);
+            } else {
+                Eigen::MatrixXd mat(new_shape[0], new_shape[1]);
+                for (int i = 0; i < new_shape[0]; ++i) {
+                    for (int j = 0; j < new_shape[1]; ++j) {
+                        mat(i, j) = result(i * new_shape[1] + j);
+                    }
+                }
+                m->result = m->heap->allocate_matrix(mat, is_char);
+            }
+        } else {
+            m->result = m->heap->allocate_ndarray(std::move(result), std::move(new_shape));
+            m->result->set_char_data(is_char);
+        }
+        return;
+    }
+
+    if (rhs->is_vector()) {
+        // Vector (rank 1) - only valid permutation is identity (single axis)
+        // Check for io-adjusted permutation: with ⎕IO=1, valid value is 1
+        if (perm.size() != 1) {
+            m->throw_error("LENGTH ERROR: permutation must match array rank");
+            return;
+        }
+        int p0 = static_cast<int>(std::round(perm(0))) - io;
+        if (p0 != 0) {
+            m->throw_error("DOMAIN ERROR: permutation values out of range");
+            return;
+        }
+        m->result = m->heap->allocate_vector(rhs->as_matrix()->col(0), is_char);
         return;
     }
 
@@ -2889,7 +3263,6 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Convert to 0-indexed
-    int io = m->io;
     int p0 = static_cast<int>(std::round(perm(0))) - io;
     int p1 = static_cast<int>(std::round(perm(1))) - io;
 
@@ -2900,7 +3273,6 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     const Eigen::MatrixXd* mat = rhs->as_matrix();
-    bool is_char = rhs->is_char_data();
 
     if (p0 == 0 && p1 == 1) {
         // Identity: 1 2⍉M (with ⎕IO=1)
@@ -2936,6 +3308,12 @@ void fn_matrix_inverse(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
+    // NDARRAY (rank 3+) not supported for matrix inverse
+    if (omega->is_ndarray()) {
+        m->throw_error("RANK ERROR: matrix inverse requires rank ≤ 2");
+        return;
+    }
+
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
         return;
@@ -2961,6 +3339,17 @@ void fn_matrix_inverse(Machine* m, Value* axis, Value* omega) {
 // Matrix Divide (⌹) - dyadic: solve B×X = A for X
 void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
+
+    // NDARRAY (rank 3+) not supported for matrix divide
+    if (lhs->is_ndarray()) {
+        m->throw_error("RANK ERROR: matrix divide requires rank ≤ 2");
+        return;
+    }
+    if (rhs->is_ndarray()) {
+        m->throw_error("RANK ERROR: matrix divide requires rank ≤ 2");
+        return;
+    }
+
     if (rhs->is_scalar()) {
         double divisor = rhs->as_scalar();
         if (divisor == 0.0) {
@@ -3020,36 +3409,160 @@ void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // Iota (⍳) - monadic: generate indices from 0 to n-1
 void fn_iota(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
-    if (!omega->is_scalar()) {
-        m->throw_error("RANK ERROR: iota argument must be scalar");
+
+    // Scalar argument: simple index generator
+    if (omega->is_scalar()) {
+        double val = omega->as_scalar();
+        if (val < 0.0) {
+            m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
+            return;
+        }
+        if (val != std::floor(val)) {
+            m->throw_error("DOMAIN ERROR: iota argument must be an integer");
+            return;
+        }
+        int n = static_cast<int>(val);
+        if (static_cast<size_t>(n) > MAX_ARRAY_SIZE) {
+            m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+            return;
+        }
+        Eigen::VectorXd result(n);
+        for (int i = 0; i < n; ++i) {
+            result(i) = i + m->io;
+        }
+        m->result = m->heap->allocate_vector(result);
         return;
     }
 
-    double val = omega->as_scalar();
+    // Vector argument: multi-dimensional index generator (ISO 13751 §10.1.2)
+    // ⍳2 3 → 2×3 array of index pairs (strands)
+    if (omega->is_vector()) {
+        const Eigen::MatrixXd* shape_vec = omega->as_matrix();
+        int rank = shape_vec->rows();
 
-    // Validate: must be non-negative integer
-    if (val < 0.0) {
-        m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
+        // Validate all elements are non-negative integers
+        std::vector<int> shape(rank);
+        int total = 1;
+        for (int i = 0; i < rank; ++i) {
+            double val = (*shape_vec)(i, 0);
+            if (val < 0.0) {
+                m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
+                return;
+            }
+            if (val != std::floor(val)) {
+                m->throw_error("DOMAIN ERROR: iota argument must be an integer");
+                return;
+            }
+            shape[i] = static_cast<int>(val);
+            total *= shape[i];
+        }
+
+        if (static_cast<size_t>(total) > MAX_ARRAY_SIZE) {
+            m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+            return;
+        }
+
+        // Compute strides for index calculation
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        // Build result: strand of strands (each element is index tuple)
+        std::vector<Value*> result;
+        result.reserve(total);
+
+        std::vector<int> idx(rank);
+        for (int i = 0; i < total; ++i) {
+            // Convert linear index to multi-dimensional
+            int tmp = i;
+            for (int d = 0; d < rank; ++d) {
+                idx[d] = tmp / strides[d];
+                tmp %= strides[d];
+            }
+
+            // Create strand of indices (with ⎕IO offset)
+            std::vector<Value*> index_tuple;
+            index_tuple.reserve(rank);
+            for (int d = 0; d < rank; ++d) {
+                index_tuple.push_back(m->heap->allocate_scalar(idx[d] + m->io));
+            }
+            result.push_back(m->heap->allocate_strand(std::move(index_tuple)));
+        }
+
+        // Reshape to proper dimensions
+        if (rank == 2) {
+            // 2D: return as matrix of strands (but we use strand for now)
+            // Actually need proper nested array structure
+            m->result = m->heap->allocate_strand(std::move(result));
+        } else {
+            m->result = m->heap->allocate_strand(std::move(result));
+        }
         return;
     }
-    if (val != std::floor(val)) {
-        m->throw_error("DOMAIN ERROR: iota argument must be an integer");
+
+    // Strand argument: also valid per ISO
+    if (omega->is_strand()) {
+        const std::vector<Value*>* strand = omega->as_strand();
+        int rank = static_cast<int>(strand->size());
+
+        std::vector<int> shape(rank);
+        int total = 1;
+        for (int i = 0; i < rank; ++i) {
+            Value* elem = (*strand)[i];
+            if (!elem->is_scalar()) {
+                m->throw_error("DOMAIN ERROR: iota shape elements must be scalar");
+                return;
+            }
+            double val = elem->as_scalar();
+            if (val < 0.0) {
+                m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
+                return;
+            }
+            if (val != std::floor(val)) {
+                m->throw_error("DOMAIN ERROR: iota argument must be an integer");
+                return;
+            }
+            shape[i] = static_cast<int>(val);
+            total *= shape[i];
+        }
+
+        if (static_cast<size_t>(total) > MAX_ARRAY_SIZE) {
+            m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+            return;
+        }
+
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        std::vector<Value*> result;
+        result.reserve(total);
+
+        std::vector<int> idx(rank);
+        for (int i = 0; i < total; ++i) {
+            int tmp = i;
+            for (int d = 0; d < rank; ++d) {
+                idx[d] = tmp / strides[d];
+                tmp %= strides[d];
+            }
+
+            std::vector<Value*> index_tuple;
+            index_tuple.reserve(rank);
+            for (int d = 0; d < rank; ++d) {
+                index_tuple.push_back(m->heap->allocate_scalar(idx[d] + m->io));
+            }
+            result.push_back(m->heap->allocate_strand(std::move(index_tuple)));
+        }
+
+        m->result = m->heap->allocate_strand(std::move(result));
         return;
     }
 
-    int n = static_cast<int>(val);
-
-    // Check implementation limit (ISO 13751 §A.3)
-    if (static_cast<size_t>(n) > MAX_ARRAY_SIZE) {
-        m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
-        return;
-    }
-
-    Eigen::VectorXd result(n);
-    for (int i = 0; i < n; ++i) {
-        result(i) = i + m->io;  // Index origin (⎕IO)
-    }
-    m->result = m->heap->allocate_vector(result);
+    m->throw_error("RANK ERROR: iota argument must be scalar or vector");
 }
 
 // First (↑) - monadic: return first element
@@ -3070,6 +3583,44 @@ void fn_first(Machine* m, Value* axis, Value* omega) {
             return;
         }
         m->result = (*strand)[0];
+        return;
+    }
+
+    // NDARRAY: first major cell (subarray along first axis)
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        if (nd->data->size() == 0) {
+            m->result = m->heap->allocate_scalar(0.0);
+            return;
+        }
+
+        if (rank == 3) {
+            // First of 3D array is a matrix (first plane)
+            int rows = shape[1];
+            int cols = shape[2];
+            Eigen::MatrixXd result(rows, cols);
+            for (int i = 0; i < rows; ++i) {
+                for (int j = 0; j < cols; ++j) {
+                    result(i, j) = (*nd->data)(i * cols + j);
+                }
+            }
+            m->result = m->heap->allocate_matrix(result);
+        } else {
+            // For higher ranks, return NDARRAY with one less dimension
+            std::vector<int> new_shape(shape.begin() + 1, shape.end());
+            int cell_size = 1;
+            for (size_t i = 1; i < shape.size(); ++i) {
+                cell_size *= shape[i];
+            }
+            Eigen::VectorXd result_data(cell_size);
+            for (int i = 0; i < cell_size; ++i) {
+                result_data(i) = (*nd->data)(i);
+            }
+            m->result = m->heap->allocate_ndarray(result_data, new_shape);
+        }
         return;
     }
 
@@ -3114,7 +3665,112 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    // Strand take: take first/last n elements
+    if (rhs->is_strand()) {
+        if (!lhs->is_scalar()) {
+            m->throw_error("RANK ERROR: strand take requires scalar count");
+            return;
+        }
+        int n = static_cast<int>(lhs->as_scalar());
+        const std::vector<Value*>* strand = rhs->as_strand();
+        int len = static_cast<int>(strand->size());
+        int abs_n = std::abs(n);
+
+        std::vector<Value*> result;
+        result.reserve(abs_n);
+
+        // Fill element for over-take is scalar 0
+        Value* fill = m->heap->allocate_scalar(0.0);
+
+        for (int i = 0; i < abs_n; ++i) {
+            int src_i = (n >= 0) ? i : (len - abs_n + i);
+            if (src_i >= 0 && src_i < len) {
+                result.push_back((*strand)[src_i]);
+            } else {
+                result.push_back(fill);
+            }
+        }
+        m->result = m->heap->allocate_strand(std::move(result));
+        return;
+    }
+
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    // NDARRAY: multi-axis take
+    if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Left argument must be vector with length = rank
+        if (!lhs->is_vector()) {
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            return;
+        }
+        const Eigen::MatrixXd* counts = lhs->as_matrix();
+        if (counts->rows() != rank) {
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            return;
+        }
+
+        // Compute new shape and source offsets
+        std::vector<int> new_shape(rank);
+        std::vector<int> src_offset(rank);  // Where to start taking from in source
+        for (int d = 0; d < rank; ++d) {
+            int n = static_cast<int>((*counts)(d, 0));
+            new_shape[d] = std::abs(n);
+            // Negative n means take from end
+            src_offset[d] = (n >= 0) ? 0 : (shape[d] - std::abs(n));
+        }
+
+        // Compute total size and allocate result
+        int total = 1;
+        for (int d = 0; d < rank; ++d) total *= new_shape[d];
+
+        Eigen::VectorXd result_data(total);
+        result_data.setZero();  // Fill with zeros for padding
+
+        // Compute strides for source and result
+        std::vector<int> src_strides(rank);
+        std::vector<int> dst_strides(rank);
+        src_strides[rank - 1] = 1;
+        dst_strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            src_strides[d] = src_strides[d + 1] * shape[d + 1];
+            dst_strides[d] = dst_strides[d + 1] * new_shape[d + 1];
+        }
+
+        // Copy data with proper indexing
+        std::vector<int> idx(rank, 0);
+        for (int i = 0; i < total; ++i) {
+            // Convert linear index i to multi-dimensional index
+            int tmp = i;
+            for (int d = 0; d < rank; ++d) {
+                idx[d] = tmp / dst_strides[d];
+                tmp %= dst_strides[d];
+            }
+
+            // Check if source index is valid
+            bool valid = true;
+            int src_linear = 0;
+            for (int d = 0; d < rank; ++d) {
+                int src_idx = idx[d] + src_offset[d];
+                if (src_idx < 0 || src_idx >= shape[d]) {
+                    valid = false;
+                    break;
+                }
+                src_linear += src_idx * src_strides[d];
+            }
+
+            if (valid) {
+                result_data(i) = (*nd->data)(src_linear);
+            }
+        }
+
+        m->result = m->heap->allocate_ndarray(result_data, new_shape);
+        return;
+    }
+
     if (!rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: ↑ requires array argument");
         return;
@@ -3235,7 +3891,101 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    // Strand drop: drop first/last n elements
+    if (rhs->is_strand()) {
+        if (!lhs->is_scalar()) {
+            m->throw_error("RANK ERROR: strand drop requires scalar count");
+            return;
+        }
+        int n = static_cast<int>(lhs->as_scalar());
+        const std::vector<Value*>* strand = rhs->as_strand();
+        int len = static_cast<int>(strand->size());
+        int abs_n = std::abs(n);
+        int result_len = std::max(0, len - abs_n);
+
+        std::vector<Value*> result;
+        result.reserve(result_len);
+
+        // Positive n: drop from start; Negative n: drop from end
+        int start = (n >= 0) ? abs_n : 0;
+        int end = (n >= 0) ? len : len - abs_n;
+
+        for (int i = start; i < end; ++i) {
+            result.push_back((*strand)[i]);
+        }
+        m->result = m->heap->allocate_strand(std::move(result));
+        return;
+    }
+
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    // NDARRAY: multi-axis drop
+    if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Left argument must be vector with length = rank
+        if (!lhs->is_vector()) {
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            return;
+        }
+        const Eigen::MatrixXd* counts = lhs->as_matrix();
+        if (counts->rows() != rank) {
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            return;
+        }
+
+        // Compute new shape and source offsets
+        std::vector<int> new_shape(rank);
+        std::vector<int> src_offset(rank);
+        for (int d = 0; d < rank; ++d) {
+            int n = static_cast<int>((*counts)(d, 0));
+            int abs_n = std::abs(n);
+            new_shape[d] = std::max(0, shape[d] - abs_n);
+            // Positive n: drop from start; Negative n: drop from end
+            src_offset[d] = (n >= 0) ? abs_n : 0;
+        }
+
+        // Compute total size and allocate result
+        int total = 1;
+        for (int d = 0; d < rank; ++d) total *= new_shape[d];
+
+        Eigen::VectorXd result_data(total);
+
+        // Compute strides for source and result
+        std::vector<int> src_strides(rank);
+        std::vector<int> dst_strides(rank);
+        src_strides[rank - 1] = 1;
+        dst_strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            src_strides[d] = src_strides[d + 1] * shape[d + 1];
+            dst_strides[d] = dst_strides[d + 1] * new_shape[d + 1];
+        }
+
+        // Copy data with proper indexing
+        std::vector<int> idx(rank, 0);
+        for (int i = 0; i < total; ++i) {
+            // Convert linear index i to multi-dimensional index
+            int tmp = i;
+            for (int d = 0; d < rank; ++d) {
+                idx[d] = tmp / dst_strides[d];
+                tmp %= dst_strides[d];
+            }
+
+            // Compute source linear index
+            int src_linear = 0;
+            for (int d = 0; d < rank; ++d) {
+                src_linear += (idx[d] + src_offset[d]) * src_strides[d];
+            }
+
+            result_data(i) = (*nd->data)(src_linear);
+        }
+
+        m->result = m->heap->allocate_ndarray(result_data, new_shape);
+        return;
+    }
+
     if (!rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: ↓ requires array argument");
         return;
@@ -3371,6 +4121,63 @@ void fn_reverse(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion for array operations
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    // NDARRAY: reverse along specified axis (default: last)
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Default: last axis (1-indexed)
+        int reverse_axis = rank;
+        if (axis != nullptr) {
+            if (!axis->is_scalar()) {
+                m->throw_error("AXIS ERROR: axis must be a scalar");
+                return;
+            }
+            reverse_axis = static_cast<int>(axis->as_scalar());
+            if (reverse_axis < 1 || reverse_axis > rank) {
+                m->throw_error("AXIS ERROR: invalid axis for array rank");
+                return;
+            }
+        }
+
+        // Convert to 0-indexed
+        int ax = reverse_axis - 1;
+        int total = static_cast<int>(nd->data->size());
+
+        Eigen::VectorXd result_data(total);
+
+        // Compute strides
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        // For each element, compute reversed index
+        std::vector<int> idx(rank);
+        for (int i = 0; i < total; ++i) {
+            // Convert linear index to multi-dimensional
+            int tmp = i;
+            for (int d = 0; d < rank; ++d) {
+                idx[d] = tmp / strides[d];
+                tmp %= strides[d];
+            }
+
+            // Reverse along specified axis
+            int src_linear = 0;
+            for (int d = 0; d < rank; ++d) {
+                int src_idx = (d == ax) ? (shape[d] - 1 - idx[d]) : idx[d];
+                src_linear += src_idx * strides[d];
+            }
+
+            result_data(i) = (*nd->data)(src_linear);
+        }
+
+        m->result = m->heap->allocate_ndarray(result_data, shape);
+        return;
+    }
+
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⌽ requires array argument");
         return;
@@ -3437,6 +4244,64 @@ void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+
+    // NDARRAY: reverse along specified axis (default: first)
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Default: first axis (1-indexed)
+        int reverse_axis = 1;
+        if (axis != nullptr) {
+            if (!axis->is_scalar()) {
+                m->throw_error("AXIS ERROR: axis must be a scalar");
+                return;
+            }
+            reverse_axis = static_cast<int>(axis->as_scalar());
+            if (reverse_axis < 1 || reverse_axis > rank) {
+                m->throw_error("AXIS ERROR: invalid axis for array rank");
+                return;
+            }
+        }
+
+        // Convert to 0-indexed
+        int ax = reverse_axis - 1;
+        int total = static_cast<int>(nd->data->size());
+
+        Eigen::VectorXd result_data(total);
+
+        // Compute strides
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        // For each element, compute reversed index
+        std::vector<int> idx(rank);
+        for (int i = 0; i < total; ++i) {
+            // Convert linear index to multi-dimensional
+            int tmp = i;
+            for (int d = 0; d < rank; ++d) {
+                idx[d] = tmp / strides[d];
+                tmp %= strides[d];
+            }
+
+            // Reverse along specified axis
+            int src_linear = 0;
+            for (int d = 0; d < rank; ++d) {
+                int src_idx = (d == ax) ? (shape[d] - 1 - idx[d]) : idx[d];
+                src_linear += src_idx * strides[d];
+            }
+
+            result_data(i) = (*nd->data)(src_linear);
+        }
+
+        m->result = m->heap->allocate_ndarray(result_data, shape);
+        return;
+    }
+
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⊖ requires array argument");
         return;
@@ -3578,6 +4443,119 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    // NDARRAY: rotate along specified axis (default: last)
+    if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Default: last axis (1-indexed)
+        int rotate_axis = rank;
+        if (axis != nullptr) {
+            rotate_axis = static_cast<int>(axis->as_scalar());
+            if (rotate_axis < 1 || rotate_axis > rank) {
+                m->throw_error("AXIS ERROR: axis out of range");
+                return;
+            }
+        }
+
+        // Convert to 0-indexed
+        int ax = rotate_axis - 1;
+        int ax_len = shape[ax];
+
+        if (ax_len == 0) {
+            m->result = m->heap->allocate_ndarray(*nd->data, shape);
+            return;
+        }
+
+        // Compute strides
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        int total = static_cast<int>(nd->data->size());
+        Eigen::VectorXd result_data(total);
+
+        if (lhs->is_scalar()) {
+            // Scalar rotation count - rotate all by same amount
+            double val = lhs->as_scalar();
+            if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+                m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                return;
+            }
+            int n = static_cast<int>(std::round(val));
+            n = ((n % ax_len) + ax_len) % ax_len;
+
+            std::vector<int> idx(rank);
+            for (int i = 0; i < total; ++i) {
+                int tmp = i;
+                for (int d = 0; d < rank; ++d) {
+                    idx[d] = tmp / strides[d];
+                    tmp %= strides[d];
+                }
+
+                int src_linear = 0;
+                for (int d = 0; d < rank; ++d) {
+                    int src_idx = (d == ax) ? ((idx[d] + n) % ax_len) : idx[d];
+                    src_linear += src_idx * strides[d];
+                }
+
+                result_data(i) = (*nd->data)(src_linear);
+            }
+        } else if (lhs->is_vector()) {
+            // Vector rotation: each "row" (along axis before rotate axis) gets different rotation
+            const Eigen::MatrixXd* rotations = lhs->as_matrix();
+            int num_rotations = rotations->rows();
+
+            // The rotation vector should match dimension before the rotate axis
+            // For 2 3 4⍴⍳24 with default axis 3 (last), rotations match dim 2 (3 rows)
+            int match_dim = (ax > 0) ? ax - 1 : 0;
+            if (num_rotations != shape[match_dim]) {
+                m->throw_error("LENGTH ERROR: rotation count length must match array dimension");
+                return;
+            }
+
+            // Validate all rotation counts are integers
+            for (int i = 0; i < num_rotations; ++i) {
+                if (!is_near_integer((*rotations)(i, 0), INTEGER_TOLERANCE)) {
+                    m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                    return;
+                }
+            }
+
+            std::vector<int> idx(rank);
+            for (int i = 0; i < total; ++i) {
+                int tmp = i;
+                for (int d = 0; d < rank; ++d) {
+                    idx[d] = tmp / strides[d];
+                    tmp %= strides[d];
+                }
+
+                // Get rotation count based on the matching dimension index
+                int rot_idx = idx[match_dim];
+                int n = static_cast<int>(std::round((*rotations)(rot_idx, 0)));
+                n = ((n % ax_len) + ax_len) % ax_len;
+
+                int src_linear = 0;
+                for (int d = 0; d < rank; ++d) {
+                    int src_idx = (d == ax) ? ((idx[d] + n) % ax_len) : idx[d];
+                    src_linear += src_idx * strides[d];
+                }
+
+                result_data(i) = (*nd->data)(src_linear);
+            }
+        } else {
+            m->throw_error("RANK ERROR: rotate count must be scalar or vector");
+            return;
+        }
+
+        m->result = m->heap->allocate_ndarray(result_data, shape);
+        return;
+    }
+
     if (!rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: ⌽ requires array argument");
         return;
@@ -3706,6 +4684,80 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    // NDARRAY: rotate along specified axis (default: first)
+    if (rhs->is_ndarray()) {
+        if (!lhs->is_scalar()) {
+            m->throw_error("RANK ERROR: NDARRAY rotate requires scalar count");
+            return;
+        }
+        double val = lhs->as_scalar();
+        if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            return;
+        }
+        int n = static_cast<int>(std::round(val));
+
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Default: first axis (1-indexed)
+        int rotate_axis = 1;
+        if (axis != nullptr) {
+            rotate_axis = static_cast<int>(axis->as_scalar());
+            if (rotate_axis < 1 || rotate_axis > rank) {
+                m->throw_error("AXIS ERROR: axis out of range");
+                return;
+            }
+        }
+
+        // Convert to 0-indexed
+        int ax = rotate_axis - 1;
+        int ax_len = shape[ax];
+
+        if (ax_len == 0) {
+            m->result = m->heap->allocate_ndarray(*nd->data, shape);
+            return;
+        }
+
+        // Normalize rotation
+        n = ((n % ax_len) + ax_len) % ax_len;
+
+        int total = static_cast<int>(nd->data->size());
+        Eigen::VectorXd result_data(total);
+
+        // Compute strides
+        std::vector<int> strides(rank);
+        strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            strides[d] = strides[d + 1] * shape[d + 1];
+        }
+
+        // For each element, compute rotated source index
+        std::vector<int> idx(rank);
+        for (int i = 0; i < total; ++i) {
+            // Convert linear index to multi-dimensional
+            int tmp = i;
+            for (int d = 0; d < rank; ++d) {
+                idx[d] = tmp / strides[d];
+                tmp %= strides[d];
+            }
+
+            // Rotate along specified axis
+            int src_linear = 0;
+            for (int d = 0; d < rank; ++d) {
+                int src_idx = (d == ax) ? ((idx[d] + n) % ax_len) : idx[d];
+                src_linear += src_idx * strides[d];
+            }
+
+            result_data(i) = (*nd->data)(src_linear);
+        }
+
+        m->result = m->heap->allocate_ndarray(result_data, shape);
+        return;
+    }
+
     if (!rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: ⊖ requires array argument");
         return;
@@ -4438,6 +5490,172 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Get counts from lhs
     Eigen::VectorXd counts = flatten_value(lhs);
 
+    // Strand case: replicate top-level elements
+    if (rhs->is_strand()) {
+        REJECT_AXIS(m, axis);
+        std::vector<Value*>* strand = rhs->as_strand();
+        int n = static_cast<int>(strand->size());
+
+        // Scalar extension for counts
+        if (counts.size() == 1 && n > 1) {
+            double scalar_count = counts(0);
+            counts.resize(n);
+            counts.setConstant(scalar_count);
+        }
+
+        if (static_cast<int>(counts.size()) != n) {
+            m->throw_error("LENGTH ERROR: replicate count must match strand length");
+            return;
+        }
+
+        // Calculate total size and validate counts
+        int total = 0;
+        for (int i = 0; i < n; ++i) {
+            int c = static_cast<int>(counts(i));
+            if (c < 0) {
+                m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+                return;
+            }
+            total += c;
+        }
+
+        if (total == 0) {
+            m->result = m->heap->allocate_strand({});
+            return;
+        }
+
+        std::vector<Value*> result;
+        result.reserve(total);
+        for (int i = 0; i < n; ++i) {
+            int rep = static_cast<int>(counts(i));
+            for (int r = 0; r < rep; ++r) {
+                result.push_back((*strand)[i]);
+            }
+        }
+
+        m->result = m->heap->allocate_strand(result);
+        return;
+    }
+
+    // NDARRAY case: replicate along specified axis (default: last)
+    if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Determine axis (default: last)
+        int ax = rank - 1;
+        if (axis) {
+            if (!axis->is_scalar()) {
+                m->throw_error("AXIS ERROR: axis must be scalar");
+                return;
+            }
+            ax = static_cast<int>(axis->as_scalar()) - m->io;
+            if (ax < 0 || ax >= rank) {
+                m->throw_error("AXIS ERROR: axis out of bounds");
+                return;
+            }
+        }
+
+        int axis_len = shape[ax];
+
+        // Scalar extension for counts
+        if (counts.size() == 1) {
+            double scalar_count = counts(0);
+            counts.resize(axis_len);
+            counts.setConstant(scalar_count);
+        }
+
+        if (static_cast<int>(counts.size()) != axis_len) {
+            m->throw_error("LENGTH ERROR: replicate count must match axis length");
+            return;
+        }
+
+        // Calculate new axis length and validate counts
+        int new_axis_len = 0;
+        for (int i = 0; i < counts.size(); ++i) {
+            int c = static_cast<int>(counts(i));
+            if (c < 0) {
+                m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+                return;
+            }
+            new_axis_len += c;
+        }
+
+        // Build result shape
+        std::vector<int> result_shape = shape;
+        result_shape[ax] = new_axis_len;
+
+        int result_size = 1;
+        for (int d : result_shape) result_size *= d;
+
+        if (result_size == 0) {
+            Eigen::VectorXd empty(0);
+            m->result = m->heap->allocate_vector(empty, is_char);
+            return;
+        }
+
+        // Compute strides for source and result
+        std::vector<int> src_strides(rank), res_strides(rank);
+        src_strides[rank - 1] = 1;
+        res_strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            src_strides[d] = src_strides[d + 1] * shape[d + 1];
+            res_strides[d] = res_strides[d + 1] * result_shape[d + 1];
+        }
+
+        Eigen::VectorXd result(result_size);
+
+        // Iterate through result positions
+        std::vector<int> res_idx(rank, 0);
+        for (int lin = 0; lin < result_size; ++lin) {
+            // Decompose linear index to result indices
+            int tmp = lin;
+            for (int d = 0; d < rank; ++d) {
+                res_idx[d] = tmp / res_strides[d];
+                tmp %= res_strides[d];
+            }
+
+            // Map result axis index back to source axis index
+            int res_ax_idx = res_idx[ax];
+            int src_ax_idx = 0;
+            int cumsum = 0;
+            for (int i = 0; i < axis_len; ++i) {
+                int c = static_cast<int>(counts(i));
+                if (cumsum + c > res_ax_idx) {
+                    src_ax_idx = i;
+                    break;
+                }
+                cumsum += c;
+            }
+
+            // Compute source linear index
+            int src_lin = 0;
+            for (int d = 0; d < rank; ++d) {
+                int idx = (d == ax) ? src_ax_idx : res_idx[d];
+                src_lin += idx * src_strides[d];
+            }
+
+            result(lin) = (*nd->data)(src_lin);
+        }
+
+        // Allocate result based on rank
+        if (result_shape.size() == 1) {
+            m->result = m->heap->allocate_vector(result, is_char);
+        } else if (result_shape.size() == 2) {
+            Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+            for (int i = 0; i < result_shape[0]; ++i) {
+                for (int j = 0; j < result_shape[1]; ++j) {
+                    mat(i, j) = result(i * result_shape[1] + j);
+                }
+            }
+            m->result = m->heap->allocate_matrix(mat, is_char);
+        } else {
+            m->result = m->heap->allocate_ndarray(std::move(result), std::move(result_shape));
+        }
+        return;
+    }
+
     // Determine axis for matrix operations (default is last axis)
     int k = 0;  // 0 means use default (last axis)
     if (axis) {
@@ -4933,6 +6151,135 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
     double fill = is_char ? 32.0 : 0.0;
 
+    // Strand case: expand top-level elements with fill (scalar 0)
+    if (rhs->is_strand()) {
+        REJECT_AXIS(m, axis);
+        std::vector<Value*>* strand = rhs->as_strand();
+        int n = static_cast<int>(strand->size());
+
+        if (ones_count != n) {
+            m->throw_error("LENGTH ERROR: expand mask ones must match strand length");
+            return;
+        }
+
+        std::vector<Value*> result;
+        result.reserve(mask.size());
+        int src_idx = 0;
+        Value* strand_fill = m->heap->allocate_scalar(0.0);  // Numeric fill for strands
+        for (int i = 0; i < mask.size(); ++i) {
+            if (static_cast<int>(mask(i)) == 1) {
+                result.push_back((*strand)[src_idx++]);
+            } else {
+                result.push_back(strand_fill);
+            }
+        }
+
+        m->result = m->heap->allocate_strand(result);
+        return;
+    }
+
+    // NDARRAY case: expand along specified axis (default: last)
+    if (rhs->is_ndarray()) {
+        const Value::NDArrayData* nd = rhs->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int rank = static_cast<int>(shape.size());
+
+        // Determine axis (default: last)
+        int ax = rank - 1;
+        if (axis) {
+            if (!axis->is_scalar()) {
+                m->throw_error("AXIS ERROR: axis must be scalar");
+                return;
+            }
+            ax = static_cast<int>(axis->as_scalar()) - m->io;
+            if (ax < 0 || ax >= rank) {
+                m->throw_error("AXIS ERROR: axis out of bounds");
+                return;
+            }
+        }
+
+        int axis_len = shape[ax];
+
+        // Number of 1s in mask must equal axis length
+        if (ones_count != axis_len) {
+            m->throw_error("LENGTH ERROR: expand mask ones must match axis length");
+            return;
+        }
+
+        // Build result shape - axis dimension becomes mask length
+        std::vector<int> result_shape = shape;
+        result_shape[ax] = static_cast<int>(mask.size());
+
+        int result_size = 1;
+        for (int d : result_shape) result_size *= d;
+
+        // Compute strides for source and result
+        std::vector<int> src_strides(rank), res_strides(rank);
+        src_strides[rank - 1] = 1;
+        res_strides[rank - 1] = 1;
+        for (int d = rank - 2; d >= 0; --d) {
+            src_strides[d] = src_strides[d + 1] * shape[d + 1];
+            res_strides[d] = res_strides[d + 1] * result_shape[d + 1];
+        }
+
+        Eigen::VectorXd result(result_size);
+
+        // Iterate through result positions
+        std::vector<int> res_idx(rank, 0);
+        for (int lin = 0; lin < result_size; ++lin) {
+            // Decompose linear index to result indices
+            int tmp = lin;
+            for (int d = 0; d < rank; ++d) {
+                res_idx[d] = tmp / res_strides[d];
+                tmp %= res_strides[d];
+            }
+
+            int res_ax_idx = res_idx[ax];
+            if (static_cast<int>(mask(res_ax_idx)) == 0) {
+                // Fill element
+                result(lin) = fill;
+            } else {
+                // Map result axis index to source axis index
+                int src_ax_idx = 0;
+                int ones_seen = 0;
+                for (int i = 0; i <= res_ax_idx; ++i) {
+                    if (static_cast<int>(mask(i)) == 1) {
+                        if (i == res_ax_idx) {
+                            src_ax_idx = ones_seen;
+                            break;
+                        }
+                        ones_seen++;
+                    }
+                }
+
+                // Compute source linear index
+                int src_lin = 0;
+                for (int d = 0; d < rank; ++d) {
+                    int idx = (d == ax) ? src_ax_idx : res_idx[d];
+                    src_lin += idx * src_strides[d];
+                }
+
+                result(lin) = (*nd->data)(src_lin);
+            }
+        }
+
+        // Allocate result based on rank
+        if (result_shape.size() == 1) {
+            m->result = m->heap->allocate_vector(result, is_char);
+        } else if (result_shape.size() == 2) {
+            Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+            for (int i = 0; i < result_shape[0]; ++i) {
+                for (int j = 0; j < result_shape[1]; ++j) {
+                    mat(i, j) = result(i * result_shape[1] + j);
+                }
+            }
+            m->result = m->heap->allocate_matrix(mat, is_char);
+        } else {
+            m->result = m->heap->allocate_ndarray(std::move(result), std::move(result_shape));
+        }
+        return;
+    }
+
     // Determine axis for matrix operations (default is last axis)
     int k = 0;  // 0 means use default (last axis)
     if (axis) {
@@ -5405,12 +6752,95 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         auto* idx_strand = indices->as_strand();
         size_t num_axes = idx_strand->size();
 
-        // For matrices, we support 2 axes (row, column)
         if (!array->is_array()) {
             m->throw_error("RANK ERROR: multi-axis indexing requires array");
             return;
         }
 
+        // NDARRAY indexing: A[I;J;K;...] for rank 3+
+        if (array->is_ndarray()) {
+            const auto& shape = array->ndarray_shape();
+            const auto& strides = array->ndarray_strides();
+            const Eigen::VectorXd* data = array->ndarray_data();
+
+            if (num_axes != shape.size()) {
+                m->throw_error("RANK ERROR: index count doesn't match array rank");
+                return;
+            }
+
+            // Get indices for each axis
+            std::vector<std::vector<int>> axis_indices(num_axes);
+            for (size_t ax = 0; ax < num_axes; ++ax) {
+                axis_indices[ax] = get_index_vector((*idx_strand)[ax], shape[ax]);
+                if (had_error) return;
+            }
+
+            // Compute result shape (axes with 1 index become scalar, dropped from shape)
+            std::vector<int> result_shape;
+            for (size_t ax = 0; ax < num_axes; ++ax) {
+                if (axis_indices[ax].size() > 1) {
+                    result_shape.push_back(static_cast<int>(axis_indices[ax].size()));
+                }
+            }
+
+            // Compute total result size
+            int result_size = 1;
+            for (int dim : result_shape) {
+                result_size *= dim;
+            }
+
+            // Single element result → scalar
+            if (result_size == 1) {
+                int linear = 0;
+                for (size_t ax = 0; ax < num_axes; ++ax) {
+                    linear += axis_indices[ax][0] * strides[ax];
+                }
+                m->result = m->heap->allocate_scalar((*data)(linear));
+                return;
+            }
+
+            // Collect result elements
+            Eigen::VectorXd result_data(result_size);
+            std::vector<int> current(num_axes, 0);  // Current position in each axis_indices
+
+            for (int i = 0; i < result_size; ++i) {
+                // Compute linear index in source array
+                int linear = 0;
+                for (size_t ax = 0; ax < num_axes; ++ax) {
+                    linear += axis_indices[ax][current[ax]] * strides[ax];
+                }
+                result_data(i) = (*data)(linear);
+
+                // Advance position (row-major order, last axis varies fastest)
+                for (int ax = static_cast<int>(num_axes) - 1; ax >= 0; --ax) {
+                    current[ax]++;
+                    if (current[ax] < static_cast<int>(axis_indices[ax].size())) {
+                        break;
+                    }
+                    current[ax] = 0;
+                }
+            }
+
+            // Create result based on shape
+            int result_rank = static_cast<int>(result_shape.size());
+            if (result_rank == 0) {
+                m->result = m->heap->allocate_scalar(result_data(0));
+            } else if (result_rank == 1) {
+                m->result = m->heap->allocate_vector(result_data, is_char);
+            } else if (result_rank == 2) {
+                Eigen::MatrixXd mat(result_shape[0], result_shape[1]);
+                for (int i = 0; i < result_size; ++i) {
+                    mat(i / result_shape[1], i % result_shape[1]) = result_data(i);
+                }
+                m->result = m->heap->allocate_matrix(mat, is_char);
+            } else {
+                m->result = m->heap->allocate_ndarray(std::move(result_data), std::move(result_shape));
+                m->result->set_char_data(is_char);
+            }
+            return;
+        }
+
+        // Matrix indexing (rank 2)
         const Eigen::MatrixXd* arr = array->as_matrix();
         int rows = arr->rows();
         int cols = arr->cols();
@@ -5499,7 +6929,42 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Single-axis indexing (original behavior)
+    // NDARRAY single-axis indexing (linear indexing into ravel)
+    if (array->is_ndarray()) {
+        const Eigen::VectorXd* data = array->ndarray_data();
+        int arr_size = array->size();
+
+        if (indices->is_scalar()) {
+            double idx_val = indices->as_scalar();
+            if (!validate_index(idx_val)) return;
+            int idx = static_cast<int>(std::round(idx_val)) - m->io;
+            if (idx < 0 || idx >= arr_size) {
+                m->throw_error("INDEX ERROR: index out of bounds");
+                return;
+            }
+            m->result = m->heap->allocate_scalar((*data)(idx));
+        } else if (indices->is_array()) {
+            const Eigen::MatrixXd* idx_mat = indices->as_matrix();
+            int n = idx_mat->rows();
+            Eigen::VectorXd result(n);
+            for (int i = 0; i < n; i++) {
+                double idx_val = (*idx_mat)(i, 0);
+                if (!validate_index(idx_val)) return;
+                int idx = static_cast<int>(std::round(idx_val)) - m->io;
+                if (idx < 0 || idx >= arr_size) {
+                    m->throw_error("INDEX ERROR: index out of bounds");
+                    return;
+                }
+                result(i) = (*data)(idx);
+            }
+            m->result = m->heap->allocate_vector(result, is_char);
+        } else {
+            m->throw_error("DOMAIN ERROR: index must be numeric");
+        }
+        return;
+    }
+
+    // Single-axis indexing for vector/matrix
     const Eigen::MatrixXd* arr = array->as_matrix();
     int rows = arr->rows();
     int cols = arr->cols();
@@ -5584,13 +7049,41 @@ void fn_table(Machine* m, Value* axis, Value* omega) {
     // String → char vector conversion
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
+    // Strand: rank 1, so n×1 result - stays as strand (nested data)
+    if (omega->is_strand()) {
+        // Already 1D, Table conceptually makes it n×1 but we keep as strand
+        m->result = omega;
+        return;
+    }
+
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⍪ requires array argument");
         return;
     }
+
+    // NDARRAY: shape s1×s2×...×sn → s1 × (s2×s3×...×sn) matrix
+    // ISO 13751 §8.2.4: first-item × product-of-rest
+    if (omega->is_ndarray()) {
+        const Value::NDArrayData* nd = omega->as_ndarray();
+        const std::vector<int>& shape = nd->shape;
+        int first_dim = shape[0];
+        int rest_product = 1;
+        for (size_t i = 1; i < shape.size(); ++i) {
+            rest_product *= shape[i];
+        }
+        Eigen::MatrixXd result(first_dim, rest_product);
+        // Data is already in row-major order, just reshape
+        for (int i = 0; i < first_dim; ++i) {
+            for (int j = 0; j < rest_product; ++j) {
+                result(i, j) = (*nd->data)(i * rest_product + j);
+            }
+        }
+        m->result = m->heap->allocate_matrix(result);
+        return;
+    }
+
     const Eigen::MatrixXd* mat = omega->as_matrix();
     int rows = mat->rows();
-    int cols = mat->cols();
 
     if (omega->is_vector()) {
         // Vector → n×1 matrix
@@ -5602,8 +7095,7 @@ void fn_table(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // Matrix → same matrix (already 2D, so shape s1 × s2 is unchanged)
-    // For higher-dimensional arrays (not yet supported), would be s1 × (product of rest)
+    // Matrix → same matrix (already 2D)
     m->result = m->heap->allocate_matrix(*mat);
 }
 
@@ -5728,6 +7220,13 @@ void fn_right_dyadic(Machine* m, Value* axis, Value* /* alpha */, Value* omega) 
 // Catenate First (⍪ dyadic) - join along first axis
 // ISO 13751 Section 8.3.2: A⍪B is A,[1]B
 void fn_catenate_first(Machine* m, Value* axis, Value* alpha, Value* omega) {
+    // NDARRAY: delegate to fn_catenate with axis=first (⎕IO)
+    if (alpha->is_ndarray() || omega->is_ndarray()) {
+        Value* first_axis = m->heap->allocate_scalar(static_cast<double>(m->io));
+        fn_catenate(m, first_axis, alpha, omega);
+        return;
+    }
+
     // String → char vector conversion
     if (alpha->is_string()) alpha = alpha->to_char_vector(m->heap);
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);

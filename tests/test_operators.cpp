@@ -25,6 +25,11 @@ protected:
     }
 };
 
+// Helper to evaluate APL expression
+static Value* eval(Machine* m, const char* expr) {
+    return m->eval(expr);
+}
+
 // ========================================================================
 // Inner Product Error Tests (functional tests are in test_grammar.cpp)
 // ========================================================================
@@ -56,68 +61,42 @@ TEST_F(OperatorsTest, InnerProductDimensionMismatch) {
 
 TEST_F(OperatorsTest, DuplicateScalar) {
     // +⍨3 → 3+3 = 6
-    Value* omega = machine->heap->allocate_scalar(3.0);
-    Value* fn = machine->heap->allocate_primitive(&prim_plus);
-
-    op_commute(machine, nullptr, fn, omega);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 6.0);
+    Value* result = eval(machine, "+⍨3");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
 }
 
 TEST_F(OperatorsTest, DuplicateVector) {
-    // ×⍨vector → vector × vector (element-wise)
-    Eigen::VectorXd vec(3);
-    vec << 2, 3, 4;
-    Value* omega = machine->heap->allocate_vector(vec);
-    Value* fn = machine->heap->allocate_primitive(&prim_times);
+    // ×⍨(2 3 4) → (2 3 4) × (2 3 4) (element-wise)
+    Value* result = eval(machine, "×⍨(2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
 
-    op_commute(machine, nullptr, fn, omega);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_vector());
-
-    const Eigen::MatrixXd* result = machine->result->as_matrix();
-    EXPECT_DOUBLE_EQ((*result)(0, 0), 4.0);   // 2*2
-    EXPECT_DOUBLE_EQ((*result)(1, 0), 9.0);   // 3*3
-    EXPECT_DOUBLE_EQ((*result)(2, 0), 16.0);  // 4*4
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 4.0);   // 2*2
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 9.0);   // 3*3
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 16.0);  // 4*4
 }
 
 TEST_F(OperatorsTest, CommuteScalars) {
     // 3-⍨4 → 4-3 = 1 (commute swaps arguments)
-    Value* lhs = machine->heap->allocate_scalar(3.0);
-    Value* rhs = machine->heap->allocate_scalar(4.0);
-    Value* fn = machine->heap->allocate_primitive(&prim_minus);
-
-    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);  // 4-3, not 3-4
+    Value* result = eval(machine, "3-⍨4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);  // 4-3, not 3-4
 }
 
 TEST_F(OperatorsTest, CommuteVectors) {
-    // vector1 - ⍨ vector2 → vector2 - vector1
-    Eigen::VectorXd vec1(3);
-    vec1 << 10, 20, 30;
-    Value* lhs = machine->heap->allocate_vector(vec1);
+    // (10 20 30) -⍨ (1 2 3) → (1 2 3) - (10 20 30) = ¯9 ¯18 ¯27
+    Value* result = eval(machine, "(10 20 30)-⍨(1 2 3)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
 
-    Eigen::VectorXd vec2(3);
-    vec2 << 1, 2, 3;
-    Value* rhs = machine->heap->allocate_vector(vec2);
-
-    Value* fn = machine->heap->allocate_primitive(&prim_minus);
-
-    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_vector());
-
-    const Eigen::MatrixXd* result = machine->result->as_matrix();
-    EXPECT_DOUBLE_EQ((*result)(0, 0), -9.0);   // 1-10
-    EXPECT_DOUBLE_EQ((*result)(1, 0), -18.0);  // 2-20
-    EXPECT_DOUBLE_EQ((*result)(2, 0), -27.0);  // 3-30
+    const Eigen::MatrixXd* m = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*m)(0, 0), -9.0);   // 1-10
+    EXPECT_DOUBLE_EQ((*m)(1, 0), -18.0);  // 2-20
+    EXPECT_DOUBLE_EQ((*m)(2, 0), -27.0);  // 3-30
 }
 
 TEST_F(OperatorsTest, ReplicateViaReduce) {
@@ -161,45 +140,26 @@ TEST_F(OperatorsTest, ErrorScanNonFunction) {
 
 TEST_F(OperatorsTest, DuplicateWithDivide) {
     // ÷⍨4 → 4÷4 = 1
-    Value* omega = machine->heap->allocate_scalar(4.0);
-    Value* fn = machine->heap->allocate_primitive(&prim_divide);
-
-    op_commute(machine, nullptr, fn, omega);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+    Value* result = eval(machine, "÷⍨4");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 }
 
 TEST_F(OperatorsTest, CommuteWithDivide) {
     // 3÷⍨12 → 12÷3 = 4
-    Value* lhs = machine->heap->allocate_scalar(3.0);
-    Value* rhs = machine->heap->allocate_scalar(12.0);
-    Value* fn = machine->heap->allocate_primitive(&prim_divide);
-
-    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 4.0);
+    Value* result = eval(machine, "3÷⍨12");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
 }
 
 TEST_F(OperatorsTest, CommuteMatrix) {
-    // Matrix commute: swap left and right matrix args
-    Eigen::MatrixXd lmat(2, 2);
-    lmat << 10, 20, 30, 40;
-    Eigen::MatrixXd rmat(2, 2);
-    rmat << 1, 2, 3, 4;
-    Value* lhs = machine->heap->allocate_matrix(lmat);
-    Value* rhs = machine->heap->allocate_matrix(rmat);
-    Value* fn = machine->heap->allocate_primitive(&prim_minus);
-
     // lhs -⍨ rhs → rhs - lhs = (1-10, 2-20, 3-30, 4-40) = (-9, -18, -27, -36)
-    op_commute_dyadic(machine, nullptr, lhs, fn, nullptr, rhs);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_matrix());
-    const Eigen::MatrixXd* m = machine->result->as_matrix();
+    Value* result = eval(machine, "(2 2⍴10 20 30 40)-⍨(2 2⍴1 2 3 4)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), -9.0);
     EXPECT_DOUBLE_EQ((*m)(0, 1), -18.0);
     EXPECT_DOUBLE_EQ((*m)(1, 0), -27.0);
@@ -207,24 +167,17 @@ TEST_F(OperatorsTest, CommuteMatrix) {
 }
 
 TEST_F(OperatorsTest, DuplicateMatrix) {
-    // Test duplicate with matrix subtraction
-    Eigen::MatrixXd mat(2, 2);
-    mat << 5, 6,
-           7, 8;
-    Value* omega = machine->heap->allocate_matrix(mat);
-    Value* fn = machine->heap->allocate_primitive(&prim_minus);
+    // Test duplicate with matrix subtraction: -⍨ mat → mat - mat = zero matrix
+    Value* result = eval(machine, "-⍨(2 2⍴5 6 7 8)");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_matrix());
 
-    op_commute(machine, nullptr, fn, omega);
-
-    ASSERT_NE(machine->result, nullptr);
-    EXPECT_TRUE(machine->result->is_matrix());
-
-    const Eigen::MatrixXd* result = machine->result->as_matrix();
+    const Eigen::MatrixXd* m = result->as_matrix();
     // Matrix - itself = zero matrix
-    EXPECT_DOUBLE_EQ((*result)(0, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*result)(0, 1), 0.0);
-    EXPECT_DOUBLE_EQ((*result)(1, 0), 0.0);
-    EXPECT_DOUBLE_EQ((*result)(1, 1), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 0.0);
 }
 
 // Test postfix monadic operator: +¨ creates DERIVED_OPERATOR
@@ -289,11 +242,6 @@ TEST_F(OperatorsTest, RankCellCountMismatch) {
 // ========================================================================
 // Axis Specification Tests (f/[k] and f\[k])
 // ========================================================================
-
-// Helper to evaluate APL expression
-static Value* eval(Machine* m, const char* expr) {
-    return m->eval(expr);
-}
 
 TEST_F(OperatorsTest, ReduceAxisLastOnMatrix) {
     // +/[2] is same as +/ (reduce along last axis)
@@ -2806,6 +2754,1006 @@ TEST_F(OperatorsTest, NwiseReduceStrandNegative) {
     ASSERT_TRUE((*strand)[1]->is_vector());
     EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(0,0), 2.0);
     EXPECT_DOUBLE_EQ((*(*strand)[1]->as_matrix())(1,0), 2.0);
+}
+
+// ========================================================================
+// NDARRAY Reduce Tests (ISO 13751 §9.2.1)
+// ========================================================================
+
+// ISO 9.2.1: f/B on rank>2 array reduces along last axis
+// Result shape: shape of B with last dimension removed
+TEST_F(OperatorsTest, NDArrayReduceLastAxis) {
+    // +/2 3 4⍴⍳24 - reduce 2×3×4 along last axis → 2×3 matrix
+    Value* result = machine->eval("+/2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    const auto* mat = result->as_matrix();
+    // Row 0: sums of 1-4, 5-8, 9-12
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 10.0);   // 1+2+3+4
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 26.0);   // 5+6+7+8
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 42.0);   // 9+10+11+12
+    // Row 1: sums of 13-16, 17-20, 21-24
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 58.0);   // 13+14+15+16
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 74.0);   // 17+18+19+20
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 90.0);   // 21+22+23+24
+}
+
+// ISO 9.2.1: f/[K]B reduces along axis K
+TEST_F(OperatorsTest, NDArrayReduceAxisFirst) {
+    // +/[1]2 3 4⍴⍳24 - reduce along first axis → 3×4 matrix
+    Value* result = machine->eval("+/[1]2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 4);
+    const auto* mat = result->as_matrix();
+    // Position [0,0]: 1+13=14, [0,1]: 2+14=16, etc.
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 14.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 16.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 18.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 3), 20.0);
+}
+
+// ISO 9.2.1: f/[K]B reduces along middle axis
+TEST_F(OperatorsTest, NDArrayReduceAxisMiddle) {
+    // +/[2]2 3 4⍴⍳24 - reduce along axis 2 → 2×4 matrix
+    Value* result = machine->eval("+/[2]2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 4);
+    const auto* mat = result->as_matrix();
+    // Position [0,0]: 1+5+9=15, [0,1]: 2+6+10=18, etc.
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 15.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 18.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 21.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 3), 24.0);
+    // Position [1,0]: 13+17+21=51
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 51.0);
+}
+
+// ISO 9.2.1: f⌿B reduces along first axis (reduce-first)
+TEST_F(OperatorsTest, NDArrayReduceFirst) {
+    // +⌿2 3 4⍴⍳24 - same as +/[1]
+    Value* result = machine->eval("+⌿2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 4);
+    const auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 14.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 16.0);
+}
+
+// ISO 9.2.1: Reduce on 4D array produces 3D result
+TEST_F(OperatorsTest, NDArrayReduce4D) {
+    // +/2 3 4 5⍴⍳120 - reduce along last axis → 2×3×4 NDARRAY
+    Value* result = machine->eval("+/2 3 4 5⍴⍳120");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // First element: 1+2+3+4+5 = 15
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 15.0);
+}
+
+// ISO 9.2.1: Reduce with ⎕IO=0
+TEST_F(OperatorsTest, NDArrayReduceIO0) {
+    // With ⎕IO=0, axes are 0-indexed
+    Value* result = machine->eval("⎕IO←0 ⋄ +/2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const auto* mat = result->as_matrix();
+    // With ⎕IO=0, ⍳24 is 0..23, sum of 0+1+2+3=6
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 6.0);
+}
+
+// ISO 9.2.1: Reduce with explicit axis and ⎕IO=0
+TEST_F(OperatorsTest, NDArrayReduceAxisIO0) {
+    // +/[0] with ⎕IO=0 reduces along first axis
+    Value* result = machine->eval("⎕IO←0 ⋄ +/[0]2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 4);
+    const auto* mat = result->as_matrix();
+    // Position [0,0]: 0+12=12
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 12.0);
+}
+
+// ISO 9.2.1: Times reduce (product)
+TEST_F(OperatorsTest, NDArrayReduceTimes) {
+    // ×/2 2 3⍴⍳12
+    Value* result = machine->eval("×/2 2 3⍴⍳12");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const auto* mat = result->as_matrix();
+    // Position [0,0]: 1×2×3=6
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 6.0);
+    // Position [0,1]: 4×5×6=120
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 120.0);
+}
+
+// ISO 9.2.1: Max reduce
+TEST_F(OperatorsTest, NDArrayReduceMax) {
+    Value* result = machine->eval("⌈/2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const auto* mat = result->as_matrix();
+    // Max of 1 2 3 4 is 4
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 4.0);
+    // Max of 5 6 7 8 is 8
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 8.0);
+}
+
+// ISO 9.2.1: Minus reduce (right-to-left)
+TEST_F(OperatorsTest, NDArrayReduceMinus) {
+    // -/2 2 4⍴1 2 3 4 5 6 7 8
+    // First row: 1-2-3-4 = 1-(2-(3-4)) = 1-(2-(-1)) = 1-3 = -2
+    Value* result = machine->eval("-/2 2 4⍴1 2 3 4 5 6 7 8");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), -2.0);  // 1-(2-(3-4))
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), -2.0);  // 5-(6-(7-8))
+}
+
+// ========================================================================
+// NDARRAY N-wise Reduce Tests (ISO 13751 §9.2.3)
+// ========================================================================
+
+// ISO 9.2.3: N f/B applies f between successive N-element windows
+// For NDARRAY, reduces along last axis by default
+TEST_F(OperatorsTest, NDArrayNwiseReduceLastAxis) {
+    // 2+/2 3 4⍴⍳24 - pairwise sums along last axis → 2×3×3 NDARRAY
+    Value* result = machine->eval("2+/2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 3);  // 4 - 2 + 1 = 3
+    // First fiber [0,0,*]: pairwise sums of 1,2,3,4 → 3,5,7
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 3.0);   // 1+2
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 5.0);   // 2+3
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 7.0);   // 3+4
+}
+
+// ISO 9.2.3: N f/[K]B applies N-wise reduction along axis K
+TEST_F(OperatorsTest, NDArrayNwiseReduceFirstAxis) {
+    // 2+/[1]2 3 4⍴⍳24 - pairwise along first axis → 1×3×4 which collapses to 3×4 matrix
+    Value* result = machine->eval("2+/[1]2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    // 2 - 2 + 1 = 1 along first axis, result is 1×3×4 (or scalar/matrix depending on impl)
+    // Position [0,0,0]: 1+13=14
+    if (result->is_ndarray()) {
+        const auto* nd = result->as_ndarray();
+        EXPECT_EQ(nd->shape[0], 1);
+        EXPECT_EQ(nd->shape[1], 3);
+        EXPECT_EQ(nd->shape[2], 4);
+        EXPECT_DOUBLE_EQ((*nd->data)(0), 14.0);  // 1+13
+    } else if (result->is_matrix()) {
+        // Collapsed to matrix
+        const auto* mat = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*mat)(0, 0), 14.0);
+    }
+}
+
+// ISO 9.2.3: N-wise along middle axis
+TEST_F(OperatorsTest, NDArrayNwiseReduceMiddleAxis) {
+    // 2+/[2]2 3 4⍴⍳24 - pairwise along axis 2 → 2×2×4 NDARRAY
+    Value* result = machine->eval("2+/[2]2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 2);  // 3 - 2 + 1 = 2
+    EXPECT_EQ(nd->shape[2], 4);
+    // Position [0,0,0]: 1+5=6 (row 0, col 0 of first plane + row 1, col 0)
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 6.0);
+}
+
+// ISO 9.2.3: Triplets (N=3)
+TEST_F(OperatorsTest, NDArrayNwiseReduceTriplets) {
+    // 3+/2 3 5⍴⍳30 - triplet sums along last axis → 2×3×3 NDARRAY
+    Value* result = machine->eval("3+/2 3 5⍴⍳30");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape[2], 3);  // 5 - 3 + 1 = 3
+    // First fiber: sums of [1,2,3], [2,3,4], [3,4,5] → 6, 9, 12
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 6.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 9.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 12.0);
+}
+
+// ISO 9.2.3: Negative N reverses window elements
+TEST_F(OperatorsTest, NDArrayNwiseReduceReversed) {
+    // ¯2-/2 2 4⍴1 2 3 4 5 6 7 8 - reversed pairwise difference
+    // Windows [1,2],[2,3],[3,4] reversed to [2,1],[3,2],[4,3]
+    // Results: 2-1=1, 3-2=1, 4-3=1
+    Value* result = machine->eval("¯2-/2 2 4⍴1 2 3 4 5 6 7 8");
+    ASSERT_NE(result, nullptr);
+    // First row, first plane: differences of 1,2,3,4 reversed → all 1s
+    if (result->is_ndarray()) {
+        const auto* nd = result->as_ndarray();
+        EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);  // 2-1
+        EXPECT_DOUBLE_EQ((*nd->data)(1), 1.0);  // 3-2
+        EXPECT_DOUBLE_EQ((*nd->data)(2), 1.0);  // 4-3
+    } else if (result->is_matrix()) {
+        const auto* mat = result->as_matrix();
+        EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+        EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);
+        EXPECT_DOUBLE_EQ((*mat)(0, 2), 1.0);
+    }
+}
+
+// ISO 9.2.3: N equals axis length returns one result per fiber
+TEST_F(OperatorsTest, NDArrayNwiseReduceFullWindow) {
+    // 4+/2 3 4⍴⍳24 - window size equals last axis → 2×3 matrix
+    Value* result = machine->eval("4+/2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const auto* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    // Same as full reduce
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 10.0);  // 1+2+3+4
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 26.0);  // 5+6+7+8
+}
+
+// ISO 9.2.3: 4D N-wise reduction
+TEST_F(OperatorsTest, NDArrayNwiseReduce4D) {
+    // 2+/2 2 3 4⍴⍳48 - pairwise along last axis → 2×2×3×3 NDARRAY
+    Value* result = machine->eval("2+/2 2 3 4⍴⍳48");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 4);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 2);
+    EXPECT_EQ(nd->shape[2], 3);
+    EXPECT_EQ(nd->shape[3], 3);  // 4 - 2 + 1 = 3
+}
+
+// ISO 9.2.3: ⎕IO=0 support
+TEST_F(OperatorsTest, NDArrayNwiseReduceIO0) {
+    // With ⎕IO=0, axis numbers are 0-indexed
+    Value* result = machine->eval("⎕IO←0 ⋄ 2+/[0]2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    // Axis 0 with window 2 on dimension 2 → 1×3×4
+    if (result->is_ndarray()) {
+        const auto* nd = result->as_ndarray();
+        EXPECT_EQ(nd->shape[0], 1);
+        // 0+12=12 (⎕IO=0 so ⍳24 is 0..23)
+        EXPECT_DOUBLE_EQ((*nd->data)(0), 12.0);
+    }
+}
+
+// ISO 9.2.3: Times N-wise
+TEST_F(OperatorsTest, NDArrayNwiseReduceTimes) {
+    // 2×/2 3 4⍴⍳24 - pairwise products
+    Value* result = machine->eval("2×/2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    // First fiber: products of [1,2],[2,3],[3,4] → 2, 6, 12
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 2.0);   // 1×2
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 6.0);   // 2×3
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 12.0);  // 3×4
+}
+
+// ========================================================================
+// NDARRAY Scan Tests (ISO 13751 §9.2.2)
+// ========================================================================
+
+// ISO 9.2.2: f\B - result has same shape as B, contains prefix reductions
+TEST_F(OperatorsTest, NDArrayScanLastAxis) {
+    // +\2 3 4⍴⍳24 - scan along last axis, result is 2×3×4
+    Value* result = machine->eval("+\\2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // First fiber [0,0,*]: 1, 1+2=3, 3+3=6, 6+4=10
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 3.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 6.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 10.0);
+}
+
+// ISO 9.2.2: f⍀B - scan along first axis
+TEST_F(OperatorsTest, NDArrayScanFirst) {
+    // +⍀2 3 4⍴⍳24 - scan along first axis
+    Value* result = machine->eval("+⍀2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape[0], 2);
+    // First "plane" unchanged: 1..12
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    // Second "plane" [1,0,0]: 1+13=14
+    EXPECT_DOUBLE_EQ((*nd->data)(12), 14.0);
+    // [1,0,1]: 2+14=16
+    EXPECT_DOUBLE_EQ((*nd->data)(13), 16.0);
+}
+
+// ISO 9.2.2: f\[K]B - scan along axis K
+TEST_F(OperatorsTest, NDArrayScanAxisMiddle) {
+    // +\[2]2 3 4⍴⍳24 - scan along axis 2 (middle)
+    Value* result = machine->eval("+\\[2]2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    // Shape unchanged
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // Fiber [0,*,0]: 1, 1+5=6, 6+9=15
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(4), 6.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(8), 15.0);
+}
+
+// ISO 9.2.2: Scan on 4D array
+TEST_F(OperatorsTest, NDArrayScan4D) {
+    // +\2 2 2 3⍴⍳24 - scan along last axis
+    Value* result = machine->eval("+\\2 2 2 3⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 4);
+    // First fiber: 1, 1+2=3, 3+3=6
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 3.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 6.0);
+}
+
+// ISO 9.2.2: Times scan (running product)
+TEST_F(OperatorsTest, NDArrayScanTimes) {
+    // ×\2 2 3⍴⍳12 - 3D NDARRAY
+    Value* result = machine->eval("×\\2 2 3⍴⍳12");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    // First fiber [0,0,*]: 1, 1×2=2, 2×3=6
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 6.0);
+}
+
+// ISO 9.2.2: Scan with ⎕IO=0
+TEST_F(OperatorsTest, NDArrayScanIO0) {
+    Value* result = machine->eval("⎕IO←0 ⋄ +\\2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    // With ⎕IO=0, ⍳24 is 0..23
+    // First fiber: 0, 0+1=1, 1+2=3, 3+3=6
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 0.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 3.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 6.0);
+}
+
+// ============================================================================
+// NDARRAY Duplicate/Commute (f⍨) Tests - ISO 9.2.4-5
+// ============================================================================
+// ISO 9.2.4 Duplicate: f⍨ B → B f B
+// ISO 9.2.5 Commute: A f⍨ B → B f A
+
+// Duplicate on 3D NDARRAY: +⍨ preserves shape, doubles values
+TEST_F(OperatorsTest, NDArrayDuplicatePlus) {
+    Value* result = eval(machine, "+⍨ 2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // Each element doubled: 1+1=2, 2+2=4, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 4.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(23), 48.0);
+}
+
+// Duplicate on 3D NDARRAY: ×⍨ squares each element
+TEST_F(OperatorsTest, NDArrayDuplicateTimes) {
+    Value* result = eval(machine, "×⍨ 2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    // Each element squared: 1×1=1, 2×2=4, 3×3=9, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 4.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 9.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(23), 576.0);  // 24×24
+}
+
+// Duplicate on 3D NDARRAY: -⍨ gives zeros (B-B=0)
+TEST_F(OperatorsTest, NDArrayDuplicateMinus) {
+    Value* result = eval(machine, "-⍨ 2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    // Each element minus itself = 0
+    for (int i = 0; i < 24; i++) {
+        EXPECT_DOUBLE_EQ((*nd->data)(i), 0.0);
+    }
+}
+
+// Commute with scalar and NDARRAY: scalar -⍨ NDARRAY → NDARRAY - scalar
+TEST_F(OperatorsTest, NDArrayCommuteScalarLeft) {
+    Value* result = eval(machine, "10 -⍨ 2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    // B - A: 1-10=-9, 2-10=-8, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), -9.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), -8.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(9), 0.0);   // 10-10
+    EXPECT_DOUBLE_EQ((*nd->data)(23), 14.0); // 24-10
+}
+
+// Commute with NDARRAY and scalar: NDARRAY -⍨ scalar → scalar - NDARRAY
+TEST_F(OperatorsTest, NDArrayCommuteScalarRight) {
+    Value* result = eval(machine, "(2 3 4⍴⍳24) -⍨ 100");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    // B - A: 100-1=99, 100-2=98, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 99.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 98.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(23), 76.0);  // 100-24
+}
+
+// Commute with two NDARRAYs of same shape
+TEST_F(OperatorsTest, NDArrayCommuteBothNDArray) {
+    Value* result = eval(machine, "(2 3 4⍴⍳24) -⍨ (2 3 4⍴24-⍳24)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 3);
+    // Left: 1,2,3,...,24  Right: 23,22,21,...,0
+    // Commute: Right - Left = (23-1), (22-2), etc. = 22, 20, 18, ...
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 22.0);   // 23-1
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 20.0);   // 22-2
+    EXPECT_DOUBLE_EQ((*nd->data)(11), 0.0);   // 12-12
+}
+
+// Commute on 4D NDARRAY
+TEST_F(OperatorsTest, NDArrayCommute4D) {
+    Value* result = eval(machine, "1 +⍨ 2 2 2 3⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    EXPECT_EQ(nd->shape.size(), 4);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 2);
+    EXPECT_EQ(nd->shape[2], 2);
+    EXPECT_EQ(nd->shape[3], 3);
+    // B + A: 1+1=2, 2+1=3, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 3.0);
+}
+
+// Duplicate with *⍨ (power): B*B = B squared
+TEST_F(OperatorsTest, NDArrayDuplicatePower) {
+    Value* result = eval(machine, "*⍨ 2 3⍴1 2 3 4 5 6");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    const Eigen::MatrixXd* m = result->as_matrix();
+    // 1^1=1, 2^2=4, 3^3=27, 4^4=256, 5^5=3125, 6^6=46656
+    EXPECT_DOUBLE_EQ((*m)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*m)(0, 2), 27.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 256.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 1), 3125.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 2), 46656.0);
+}
+
+// Commute with ÷⍨: A ÷⍨ B → B ÷ A
+TEST_F(OperatorsTest, NDArrayCommuteDivide) {
+    Value* result = eval(machine, "2 ÷⍨ 2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    // B ÷ A: 1÷2=0.5, 2÷2=1, 3÷2=1.5, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 0.5);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 1.5);
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 2.0);
+}
+
+// ============================================================================
+// NDARRAY Each (f¨) Tests - ISO 9.2.6
+// ============================================================================
+
+// ISO 9.2.6: Monadic each on 3D NDARRAY - apply function to each element
+TEST_F(OperatorsTest, NDArrayEachMonadic) {
+    Value* result = machine->eval("-¨2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // Each element negated: 1→-1, 2→-2, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), -1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), -2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(23), -24.0);
+}
+
+// ISO 9.2.6: Dyadic each with scalar extension (scalar + NDARRAY)
+TEST_F(OperatorsTest, NDArrayEachScalarLeft) {
+    Value* result = machine->eval("10+¨2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // 10 + each element: 10+1=11, 10+2=12, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 11.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 12.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(23), 34.0);
+}
+
+// ISO 9.2.6: Dyadic each with scalar extension (NDARRAY + scalar)
+TEST_F(OperatorsTest, NDArrayEachScalarRight) {
+    Value* result = machine->eval("(2 3 4⍴⍳24)×¨10");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    // Each element × 10: 1×10=10, 2×10=20, etc.
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 10.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 20.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(23), 240.0);
+}
+
+// ISO 9.2.6: Dyadic each with matching NDARRAY shapes
+TEST_F(OperatorsTest, NDArrayEachBothNDArray) {
+    Value* result = machine->eval("(2 3 4⍴⍳24)+¨2 3 4⍴24-⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    // (⍳24) +¨ (24-⍳24) = 24 for all elements
+    // 1+(24-1)=24, 2+(24-2)=24, etc.
+    for (int i = 0; i < 24; i++) {
+        EXPECT_DOUBLE_EQ((*nd->data)(i), 24.0);
+    }
+}
+
+// ISO 9.2.6: Each preserves 4D shape
+TEST_F(OperatorsTest, NDArrayEach4D) {
+    Value* result = machine->eval("⌈¨2 2 2 3⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 4);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 2);
+    EXPECT_EQ(nd->shape[2], 2);
+    EXPECT_EQ(nd->shape[3], 3);
+}
+
+// ISO 9.2.6: Each with ⎕IO=0
+TEST_F(OperatorsTest, NDArrayEachIO0) {
+    Value* result = machine->eval("⎕IO←0 ⋄ -¨2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    // With ⎕IO=0, ⍳24 is 0..23, negated: 0, -1, -2, ..., -23
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 0.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), -1.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(23), -23.0);
+}
+
+// ============================================================================
+// NDARRAY Outer Product (∘.f) Tests - ISO 9.3.1
+// ============================================================================
+
+// ISO 9.3.1: Matrix ∘.f vector produces 3D NDARRAY
+// Result shape: (⍴A),⍴B = (2 3),(4) = 2 3 4
+TEST_F(OperatorsTest, NDArrayOuterMatrixVector) {
+    Value* result = machine->eval("(2 3⍴⍳6)∘.+⍳4");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // Element [0,0,0] = mat[0,0] + vec[0] = 1+1 = 2
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 2.0);
+    // Element [0,0,1] = mat[0,0] + vec[1] = 1+2 = 3
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 3.0);
+    // Element [0,0,3] = mat[0,0] + vec[3] = 1+4 = 5
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 5.0);
+    // Element [0,1,0] = mat[0,1] + vec[0] = 2+1 = 3
+    EXPECT_DOUBLE_EQ((*nd->data)(4), 3.0);
+}
+
+// ISO 9.3.1: Vector ∘.f matrix produces 3D NDARRAY
+// Result shape: (⍴A),⍴B = (3),(2 4) = 3 2 4
+TEST_F(OperatorsTest, NDArrayOuterVectorMatrix) {
+    Value* result = machine->eval("(⍳3)∘.×2 4⍴⍳8");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 3);
+    EXPECT_EQ(nd->shape[1], 2);
+    EXPECT_EQ(nd->shape[2], 4);
+    // Element [0,0,0] = vec[0] × mat[0,0] = 1×1 = 1
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    // Element [0,0,1] = vec[0] × mat[0,1] = 1×2 = 2
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 2.0);
+    // Element [1,0,0] = vec[1] × mat[0,0] = 2×1 = 2
+    EXPECT_DOUBLE_EQ((*nd->data)(8), 2.0);
+}
+
+// ISO 9.3.1: Matrix ∘.f matrix produces 4D NDARRAY
+// Result shape: (⍴A),⍴B = (2 3),(2 2) = 2 3 2 2
+TEST_F(OperatorsTest, NDArrayOuterMatrixMatrix) {
+    Value* result = machine->eval("(2 3⍴⍳6)∘.+2 2⍴⍳4");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 4);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 2);
+    EXPECT_EQ(nd->shape[3], 2);
+    // Element [0,0,0,0] = A[0,0] + B[0,0] = 1+1 = 2
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 2.0);
+    // Element [0,0,0,1] = A[0,0] + B[0,1] = 1+2 = 3
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 3.0);
+}
+
+// ISO 9.3.1: NDARRAY ∘.f vector produces higher-dim result
+// Result shape: (⍴A),⍴B = (2 3 4),(2) = 2 3 4 2
+TEST_F(OperatorsTest, NDArrayOuterNDArrayVector) {
+    Value* result = machine->eval("(2 3 4⍴⍳24)∘.+1 2");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 4);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    EXPECT_EQ(nd->shape[3], 2);
+    // Element [0,0,0,0] = nd[0,0,0] + vec[0] = 1+1 = 2
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 2.0);
+    // Element [0,0,0,1] = nd[0,0,0] + vec[1] = 1+2 = 3
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 3.0);
+}
+
+// ISO 9.3.1: Vector ∘.f NDARRAY produces higher-dim result
+// Result shape: (⍴A),⍴B = (2),(2 3 4) = 2 2 3 4
+TEST_F(OperatorsTest, NDArrayOuterVectorNDArray) {
+    Value* result = machine->eval("(1 2)∘.×2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 4);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 2);
+    EXPECT_EQ(nd->shape[2], 3);
+    EXPECT_EQ(nd->shape[3], 4);
+    // Element [0,0,0,0] = vec[0] × nd[0,0,0] = 1×1 = 1
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 1.0);
+    // Element [1,0,0,0] = vec[1] × nd[0,0,0] = 2×1 = 2
+    EXPECT_DOUBLE_EQ((*nd->data)(24), 2.0);
+}
+
+// ISO 9.3.1: Outer product with multiplication (table)
+TEST_F(OperatorsTest, NDArrayOuterMultiply3D) {
+    Value* result = machine->eval("(2 3⍴1 2 3 4 5 6)∘.×⍳4");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    // Shape is 2 3 4
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+}
+
+// ISO 9.3.1: Outer product with ⎕IO=0
+TEST_F(OperatorsTest, NDArrayOuterIO0) {
+    Value* result = machine->eval("⎕IO←0 ⋄ (2 3⍴⍳6)∘.+⍳4");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    // With ⎕IO=0: mat is 0..5, vec is 0..3
+    // Element [0,0,0] = mat[0,0] + vec[0] = 0+0 = 0
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 0.0);
+    // Element [0,0,1] = mat[0,0] + vec[1] = 0+1 = 1
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 1.0);
+}
+
+// ============================================================================
+// NDARRAY Inner Product (f.g) Tests - ISO 9.3.2
+// ============================================================================
+// Result shape: (⍴A)[⍳0⌈¯1+⍴⍴A],(⍴B)[1+⍳0⌈¯1+⍴⍴B]
+// i.e., (¯1↓⍴A),1↓⍴B - all but last of A, all but first of B
+
+// ISO 9.3.2: 3D NDARRAY +.× vector
+// Shape: (2×3×4) +.× (4) → 2×3 matrix
+// Last dim of A (4) = length of B (4)
+TEST_F(OperatorsTest, NDArrayInnerNDArrayVector) {
+    Value* result = machine->eval("(2 3 4⍴⍳24)+.×⍳4");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    // Result[0,0] = +/ (1 2 3 4) × (1 2 3 4) = 1+4+9+16 = 30
+    const auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 30.0);
+    // Result[0,1] = +/ (5 6 7 8) × (1 2 3 4) = 5+12+21+32 = 70
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 70.0);
+}
+
+// ISO 9.3.2: vector +.× 3D NDARRAY
+// Shape: (4) +.× (4×3×2) → 3×2 matrix
+TEST_F(OperatorsTest, NDArrayInnerVectorNDArray) {
+    Value* result = machine->eval("(⍳4)+.×4 3 2⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 2);
+    // Result[0,0] = +/ (1 2 3 4) × (1 7 13 19) = 1+14+39+76 = 130
+    const auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 130.0);
+}
+
+// ISO 9.3.2: Matrix +.× 3D NDARRAY → 3D result
+// Shape: (2×4) +.× (4×3×2) → 2×3×2 (3D NDARRAY)
+TEST_F(OperatorsTest, NDArrayInnerMatrixNDArray) {
+    Value* result = machine->eval("(2 4⍴⍳8)+.×4 3 2⍴⍳24");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 2);
+}
+
+// ISO 9.3.2: 3D NDARRAY +.× matrix → 3D result
+// Shape: (2×3×4) +.× (4×5) → 2×3×5 (3D NDARRAY)
+TEST_F(OperatorsTest, NDArrayInnerNDArrayMatrix) {
+    Value* result = machine->eval("(2 3 4⍴⍳24)+.×4 5⍴⍳20");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 5);
+}
+
+// ISO 9.3.2: 3D +.× 3D → 4D result
+// Shape: (2×3×4) +.× (4×5×6) → 2×3×5×6 (4D NDARRAY)
+TEST_F(OperatorsTest, NDArrayInnerNDArrayNDArray) {
+    Value* result = machine->eval("(2 3 4⍴⍳24)+.×4 5 6⍴⍳120");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 4);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 5);
+    EXPECT_EQ(nd->shape[3], 6);
+}
+
+// ISO 9.3.2: Dimension mismatch error
+// Last dim of lhs (4) must equal first dim of rhs - here rhs first dim is 5
+TEST_F(OperatorsTest, NDArrayInnerDimensionMismatch) {
+    Value* lhs = machine->eval("2 3 4⍴⍳24");
+    Value* rhs = machine->eval("5 6⍴⍳30");
+    Value* f = machine->heap->allocate_primitive(&prim_plus);
+    Value* g = machine->heap->allocate_primitive(&prim_times);
+
+    machine->kont_stack.clear();
+    op_inner_product(machine, nullptr, lhs, f, g, rhs);
+
+    // Should have pushed a ThrowErrorK for LENGTH ERROR
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
+}
+
+// ISO 9.3.2: Inner product with ⌈.+ (max-plus)
+TEST_F(OperatorsTest, NDArrayInnerMaxPlus) {
+    Value* result = machine->eval("(2 3 4⍴⍳24)⌈.+4 5⍴⍳20");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 5);
+}
+
+// ============================================================================
+// NDARRAY Rank Operator Tests (ISO 9.3.3-5)
+// ============================================================================
+
+// ISO 9.3.4: Monadic rank on 3D NDARRAY - apply +/ to each 1-cell (vector)
+// +/⍤1 on 2×3×4 array reduces each row (4 elements) to scalar
+// Result shape: 2×3 (frame shape)
+TEST_F(OperatorsTest, NDArrayRankMonadicReduce1Cell) {
+    Value* result = machine->eval("+/⍤1 (2 3 4⍴⍳24)");
+    ASSERT_NE(result, nullptr);
+    // Result should be 2×3 matrix (frame of 2×3×4 with 1-cells removed)
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    // First row: sums of rows 1-3 of first matrix
+    // Row 0: 1+2+3+4=10, Row 1: 5+6+7+8=26, Row 2: 9+10+11+12=42
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 10.0);  // 1+2+3+4
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 26.0);  // 5+6+7+8
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 42.0);  // 9+10+11+12
+}
+
+// ISO 9.3.4: Apply ⌽ (reverse) to each 2-cell of 3D array
+// ⌽⍤2 on 2×3×4 reverses within each row of each 3×4 matrix
+TEST_F(OperatorsTest, NDArrayRankMonadicReverse2Cell) {
+    Value* result = machine->eval("⌽⍤2 (2 3 4⍴⍳24)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // ⌽ reverses along LAST axis (within each row)
+    // Original row 0: [1,2,3,4] → reversed: [4,3,2,1]
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 4.0);   // First element: 4
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 1.0);   // Last of first row: 1
+    // Original row 2: [9,10,11,12] → reversed: [12,11,10,9]
+    EXPECT_DOUBLE_EQ((*nd->data)(8), 12.0);  // First of third row: 12
+}
+
+// ISO 9.3.5: Dyadic rank - matrix + each 2-cell of 3D array
+// N34+⍤2 N234 adds 3×4 matrix to each 3×4 cell of 2×3×4 array
+TEST_F(OperatorsTest, NDArrayRankDyadicMatrixPlus2Cell) {
+    Value* result = machine->eval("(3 4⍴10×⍳12)+⍤2 (2 3 4⍴⍳24)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 3);
+    EXPECT_EQ(nd->shape[2], 4);
+    // First element: 10 + 1 = 11
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 11.0);
+    // Element at [0,1,0]: 50 + 5 = 55
+    EXPECT_DOUBLE_EQ((*nd->data)(4), 55.0);
+}
+
+// ISO 9.3.5: Scalar extension - scalar ⍤0 applied to each 0-cell
+// 10+⍤0 on 2×3×4 array adds 10 to each element
+TEST_F(OperatorsTest, NDArrayRankDyadicScalarExtension) {
+    Value* result = machine->eval("10+⍤0 (2 3 4⍴⍳24)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    // Each element increased by 10
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 11.0);   // 1+10
+    EXPECT_DOUBLE_EQ((*nd->data)(23), 34.0);  // 24+10
+}
+
+// ISO 9.3.5: Vector catenated to each row of matrix (spec example: N3,⍤1 N34)
+// Left: 3-vector (frame empty, 1 cell), Right: 3×4 matrix (frame [3], 3 cells)
+// With scalar extension, same vector is catenated to each row → 3×7 matrix
+TEST_F(OperatorsTest, NDArrayRankDyadicVectorCatRow) {
+    Value* result = machine->eval("(100 200 300),⍤1 (3 4⍴⍳12)");
+    ASSERT_NE(result, nullptr);
+    // Per ISO 9.3.5: A conforms to B when left frame empty
+    // Result: 3 rows × 7 cols (3-vector + 4-element row)
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 3);
+    EXPECT_EQ(result->cols(), 7);
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    // Each row: (100 200 300) , (row from matrix)
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 100.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 3), 1.0);   // First element of first matrix row
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 100.0); // Same vector repeated
+    EXPECT_DOUBLE_EQ((*mat)(1, 3), 5.0);   // First element of second matrix row
+}
+
+// ISO 9.3.4: Apply ⍳ to each 0-cell of vector → matrix result
+// ⍳⍤0 on 3-vector gives matrix where row i is ⍳(i)
+TEST_F(OperatorsTest, NDArrayRankIotaEach0Cell) {
+    Value* result = machine->eval("⍳⍤0 (1 2 3)");
+    ASSERT_NE(result, nullptr);
+    // Result: matrix with rows ⍳1, ⍳2, ⍳3
+    // But these have different lengths! So should be strand of vectors
+    ASSERT_TRUE(result->is_strand());
+    const auto* strand = result->as_strand();
+    ASSERT_EQ(strand->size(), 3);
+    // ⍳1 = 1
+    ASSERT_TRUE((*strand)[0]->is_vector());
+    EXPECT_EQ((*strand)[0]->size(), 1);
+    // ⍳2 = 1 2
+    ASSERT_TRUE((*strand)[1]->is_vector());
+    EXPECT_EQ((*strand)[1]->size(), 2);
+    // ⍳3 = 1 2 3
+    ASSERT_TRUE((*strand)[2]->is_vector());
+    EXPECT_EQ((*strand)[2]->size(), 3);
+}
+
+// 4D NDARRAY rank test
+TEST_F(OperatorsTest, NDArrayRank4D) {
+    // +/⍤1 on 2×2×3×4 reduces each innermost row
+    // Result shape: 2×2×3
+    Value* result = machine->eval("+/⍤1 (2 2 3 4⍴⍳48)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 2);
+    EXPECT_EQ(nd->shape[2], 3);
+    // First cell: 1+2+3+4=10
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 10.0);
+}
+
+// Negative rank specification (relative to array rank)
+TEST_F(OperatorsTest, NDArrayRankNegative) {
+    // +/⍤¯1 means rank = array_rank + (¯1) = 3 - 1 = 2
+    // So +/⍤¯1 on 2×3×4 applies +/ to 2-cells (3×4 matrices)
+    // +/ on 3×4 matrix reduces along LAST axis (sums each row)
+    // Each 3×4 matrix → 3-vector (one sum per row)
+    // Frame [2] + cell result [3] = 2×3 matrix
+    Value* result = machine->eval("+/⍤¯1 (2 3 4⍴⍳24)");
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_matrix());
+    EXPECT_EQ(result->rows(), 2);
+    EXPECT_EQ(result->cols(), 3);
+    // First matrix rows: [1,2,3,4]=10, [5,6,7,8]=26, [9,10,11,12]=42
+    const Eigen::MatrixXd* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 26.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 42.0);
+}
+
+// Length error: frame mismatch in dyadic rank (ISO 9.3.5)
+TEST_F(OperatorsTest, NDArrayRankLengthError) {
+    // Frame mismatch: [2,3] vs [3,2] frames
+    Value* lhs = machine->eval("2 3 4⍴1");
+    Value* rhs = machine->eval("3 2 4⍴1");
+    Value* fn = machine->heap->allocate_primitive(&prim_plus);
+    Value* rank_spec = machine->heap->allocate_scalar(1.0);
+
+    machine->kont_stack.clear();
+    op_rank(machine, nullptr, lhs, fn, rank_spec, rhs);
+
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
 int main(int argc, char** argv) {

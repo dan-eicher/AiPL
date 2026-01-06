@@ -221,6 +221,59 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
         return v->as_string();
     }
 
+    // NDARRAY (rank 3+): display as planes separated by blank lines
+    if (v->is_ndarray()) {
+        const auto* nd = v->as_ndarray();
+        const auto& shape = nd->shape;
+        const Eigen::VectorXd* data = nd->data;
+
+        if (shape.empty() || data->size() == 0) return "⍬";
+
+        std::ostringstream oss;
+        int rank = static_cast<int>(shape.size());
+        int rows = shape[rank - 2];
+        int cols = shape[rank - 1];
+        int plane_size = rows * cols;
+
+        // Number of planes (product of all but last 2 dimensions)
+        int num_planes = 1;
+        for (int i = 0; i < rank - 2; ++i) {
+            num_planes *= shape[i];
+        }
+
+        for (int plane = 0; plane < num_planes; ++plane) {
+            // Add blank lines between planes (after previous plane's content)
+            if (plane > 0) {
+                // One newline to end the previous row, plus blank line separators
+                oss << "\n";  // End previous plane's last row
+                int blanks = 1;  // At least one blank line between planes
+                int p = plane;
+                for (int d = rank - 3; d >= 0; --d) {
+                    if (p % shape[d] == 0) {
+                        blanks++;
+                        p /= shape[d];
+                    } else {
+                        break;
+                    }
+                }
+                for (int b = 0; b < blanks; ++b) {
+                    oss << "\n";
+                }
+            }
+
+            // Print this plane
+            int base = plane * plane_size;
+            for (int i = 0; i < rows; ++i) {
+                if (i > 0) oss << "\n";
+                for (int j = 0; j < cols; ++j) {
+                    if (j > 0) oss << " ";
+                    oss << format_number((*data)(base + i * cols + j));
+                }
+            }
+        }
+        return oss.str();
+    }
+
     if (v->is_array()) {
         std::ostringstream oss;
         const Eigen::MatrixXd* mat = v->as_matrix();

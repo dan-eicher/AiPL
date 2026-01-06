@@ -857,11 +857,11 @@ TEST_F(ContinuationTest, CellIterKReduceRowsSimple) {
 }
 
 // ============================================================================
-// RowReduceK Tests
+// FiberReduceK Tests (unified reduce continuation)
 // ============================================================================
 
-TEST_F(ContinuationTest, RowReduceKBasic) {
-    // Reduce each row of 2x3 matrix with +
+TEST_F(ContinuationTest, FiberReduceKMatrixRows) {
+    // Reduce each row of 2x3 matrix with + (axis=1)
     // [[1,2,3],[4,5,6]] -> [6, 15]
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3,
@@ -869,7 +869,8 @@ TEST_F(ContinuationTest, RowReduceKBasic) {
     Value* rhs = machine->heap->allocate_matrix(mat);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    RowReduceK* iter = heap->allocate<RowReduceK>(plus_fn, rhs, 2, 3, false);
+    // axis=1 reduces along columns (rows are fibers), window=0 for full reduce
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 1, 0, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -881,8 +882,8 @@ TEST_F(ContinuationTest, RowReduceKBasic) {
     EXPECT_DOUBLE_EQ((*m)(1, 0), 15.0);  // 4+5+6
 }
 
-TEST_F(ContinuationTest, RowReduceKFirstAxis) {
-    // Reduce each column of 2x3 matrix with + (first axis)
+TEST_F(ContinuationTest, FiberReduceKMatrixCols) {
+    // Reduce each column of 2x3 matrix with + (axis=0)
     // [[1,2,3],[4,5,6]] -> [5, 7, 9]
     Eigen::MatrixXd mat(2, 3);
     mat << 1, 2, 3,
@@ -890,8 +891,8 @@ TEST_F(ContinuationTest, RowReduceKFirstAxis) {
     Value* rhs = machine->heap->allocate_matrix(mat);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    // reduce_first_axis=true means iterate over columns
-    RowReduceK* iter = heap->allocate<RowReduceK>(plus_fn, rhs, 3, 2, true);
+    // axis=0 reduces along rows (columns are fibers), window=0 for full reduce
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 0, 0, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -904,7 +905,7 @@ TEST_F(ContinuationTest, RowReduceKFirstAxis) {
     EXPECT_DOUBLE_EQ((*m)(2, 0), 9.0);   // 3+6
 }
 
-TEST_F(ContinuationTest, RowReduceKMultiply) {
+TEST_F(ContinuationTest, FiberReduceKMatrixMultiply) {
     // Reduce each row with × (multiply)
     // [[2,3],[4,5]] -> [6, 20]
     Eigen::MatrixXd mat(2, 2);
@@ -913,7 +914,7 @@ TEST_F(ContinuationTest, RowReduceKMultiply) {
     Value* rhs = machine->heap->allocate_matrix(mat);
     Value* times_fn = machine->heap->allocate_primitive(&prim_times);
 
-    RowReduceK* iter = heap->allocate<RowReduceK>(times_fn, rhs, 2, 2, false);
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(times_fn, rhs, 1, 0, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -1038,17 +1039,18 @@ TEST_F(ContinuationTest, RowScanKFirstAxis) {
 }
 
 // ============================================================================
-// NwiseReduceK Tests - N-wise reduction on vectors
+// FiberReduceK N-wise Tests - N-wise reduction on vectors and matrices
 // ============================================================================
 
-TEST_F(ContinuationTest, NwiseReduceKBasicPairwise) {
+TEST_F(ContinuationTest, FiberReduceKNwiseBasicPairwise) {
     // 2 +/ 1 2 3 4 5 -> pairwise sums: 3 5 7 9
     Eigen::VectorXd vec(5);
     vec << 1, 2, 3, 4, 5;
     Value* rhs = machine->heap->allocate_vector(vec);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 2, false);
+    // axis=0 (only axis for vector), window=2
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 0, 2, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -1062,14 +1064,14 @@ TEST_F(ContinuationTest, NwiseReduceKBasicPairwise) {
     EXPECT_DOUBLE_EQ((*m)(3, 0), 9.0);   // 4+5
 }
 
-TEST_F(ContinuationTest, NwiseReduceKTriplets) {
+TEST_F(ContinuationTest, FiberReduceKNwiseTriplets) {
     // 3 +/ 1 2 3 4 5 -> sums of 3: 6 9 12
     Eigen::VectorXd vec(5);
     vec << 1, 2, 3, 4, 5;
     Value* rhs = machine->heap->allocate_vector(vec);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 3, false);
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 0, 3, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -1082,7 +1084,7 @@ TEST_F(ContinuationTest, NwiseReduceKTriplets) {
     EXPECT_DOUBLE_EQ((*m)(2, 0), 12.0);  // 3+4+5
 }
 
-TEST_F(ContinuationTest, NwiseReduceKReversed) {
+TEST_F(ContinuationTest, FiberReduceKNwiseReversed) {
     // ISO 13751 §9.2.3: Negative N reverses EACH WINDOW before reduction
     // For subtraction: ¯2 -/ 1 2 4 7 11
     // Windows before reversal: [1,2] [2,4] [4,7] [7,11]
@@ -1094,7 +1096,7 @@ TEST_F(ContinuationTest, NwiseReduceKReversed) {
     Value* rhs = machine->heap->allocate_vector(vec);
     Value* minus_fn = machine->heap->allocate_primitive(&prim_minus);
 
-    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(minus_fn, rhs, 2, true);  // reverse=true
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(minus_fn, rhs, 0, 2, true);  // reverse=true
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -1109,7 +1111,7 @@ TEST_F(ContinuationTest, NwiseReduceKReversed) {
     EXPECT_DOUBLE_EQ((*m)(3, 0), 4.0);   // [11,7] → 11-7=4
 }
 
-TEST_F(ContinuationTest, NwiseReduceKFullWindow) {
+TEST_F(ContinuationTest, FiberReduceKNwiseFullWindow) {
     // N equals vector length - single result
     // 4 +/ 1 2 3 4 -> 10
     Eigen::VectorXd vec(4);
@@ -1117,7 +1119,7 @@ TEST_F(ContinuationTest, NwiseReduceKFullWindow) {
     Value* rhs = machine->heap->allocate_vector(vec);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 4, false);
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 0, 4, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -1127,14 +1129,14 @@ TEST_F(ContinuationTest, NwiseReduceKFullWindow) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);  // 1+2+3+4
 }
 
-TEST_F(ContinuationTest, NwiseReduceKMarking) {
+TEST_F(ContinuationTest, FiberReduceKMarking) {
     // Test GC marking
     Eigen::VectorXd vec(3);
     vec << 1, 2, 3;
     Value* rhs = machine->heap->allocate_vector(vec);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    NwiseReduceK* iter = heap->allocate<NwiseReduceK>(plus_fn, rhs, 2, false);
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 0, 2, false);
 
     machine->heap->clear_marks();
     iter->mark(machine->heap);
@@ -1143,12 +1145,8 @@ TEST_F(ContinuationTest, NwiseReduceKMarking) {
     EXPECT_TRUE(rhs->marked);
 }
 
-// ============================================================================
-// NwiseMatrixReduceK Tests - N-wise reduction on matrices
-// ============================================================================
-
-TEST_F(ContinuationTest, NwiseMatrixReduceKAxis2) {
-    // 2 +/[2] on 2x4 matrix - pairwise sums along columns (axis 2)
+TEST_F(ContinuationTest, FiberReduceKNwiseMatrixAxis1) {
+    // 2 +/[2] on 2x4 matrix - pairwise sums along columns (axis 1)
     // [[1,2,3,4],[5,6,7,8]] -> [[3,5,7],[11,13,15]]
     Eigen::MatrixXd mat(2, 4);
     mat << 1, 2, 3, 4,
@@ -1156,8 +1154,8 @@ TEST_F(ContinuationTest, NwiseMatrixReduceKAxis2) {
     Value* rhs = machine->heap->allocate_matrix(mat);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    // first_axis=false means axis 2 (columns)
-    NwiseMatrixReduceK* iter = heap->allocate<NwiseMatrixReduceK>(plus_fn, rhs, 2, false, false);
+    // axis=1 (reduce along columns), window=2
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 1, 2, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -1176,8 +1174,8 @@ TEST_F(ContinuationTest, NwiseMatrixReduceKAxis2) {
     EXPECT_DOUBLE_EQ((*m)(1, 2), 15.0);
 }
 
-TEST_F(ContinuationTest, NwiseMatrixReduceKAxis1) {
-    // 2 +/[1] on 3x2 matrix - pairwise sums along rows (axis 1)
+TEST_F(ContinuationTest, FiberReduceKNwiseMatrixAxis0) {
+    // 2 +/[1] on 3x2 matrix - pairwise sums along rows (axis 0)
     // [[1,2],[3,4],[5,6]] -> [[4,6],[8,10]]
     Eigen::MatrixXd mat(3, 2);
     mat << 1, 2,
@@ -1186,8 +1184,8 @@ TEST_F(ContinuationTest, NwiseMatrixReduceKAxis1) {
     Value* rhs = machine->heap->allocate_matrix(mat);
     Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
 
-    // first_axis=true means axis 1 (rows)
-    NwiseMatrixReduceK* iter = heap->allocate<NwiseMatrixReduceK>(plus_fn, rhs, 2, true, false);
+    // axis=0 (reduce along rows), window=2
+    FiberReduceK* iter = heap->allocate<FiberReduceK>(plus_fn, rhs, 0, 2, false);
     machine->push_kont(iter);
     Value* result = machine->execute();
 
@@ -1202,23 +1200,6 @@ TEST_F(ContinuationTest, NwiseMatrixReduceKAxis1) {
     // Col 1: 2+4=6, 4+6=10
     EXPECT_DOUBLE_EQ((*m)(0, 1), 6.0);
     EXPECT_DOUBLE_EQ((*m)(1, 1), 10.0);
-}
-
-TEST_F(ContinuationTest, NwiseMatrixReduceKMarking) {
-    // Test GC marking
-    Eigen::MatrixXd mat(2, 3);
-    mat << 1, 2, 3,
-           4, 5, 6;
-    Value* rhs = machine->heap->allocate_matrix(mat);
-    Value* plus_fn = machine->heap->allocate_primitive(&prim_plus);
-
-    NwiseMatrixReduceK* iter = heap->allocate<NwiseMatrixReduceK>(plus_fn, rhs, 2, false, false);
-
-    machine->heap->clear_marks();
-    iter->mark(machine->heap);
-
-    EXPECT_TRUE(plus_fn->marked);
-    EXPECT_TRUE(rhs->marked);
 }
 
 // ============================================================================
