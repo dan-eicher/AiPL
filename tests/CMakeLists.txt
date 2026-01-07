@@ -85,3 +85,8 @@ add_test(NAME OperatorsTest COMMAND test_operators)
 add_executable(test_strings test_strings.cpp)
 target_link_libraries(test_strings apl_vm GTest::gtest)
 add_test(NAME StringTest COMMAND test_strings)
+
+# Error handling tests (ISO 13751 §11 - ⎕EA, ⎕ES, ⎕ET, ⎕EM)
+add_executable(test_error test_error.cpp)
+target_link_libraries(test_error apl_vm GTest::gtest)
+add_test(NAME ErrorTest COMMAND test_error)

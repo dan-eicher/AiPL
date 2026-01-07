@@ -205,6 +205,7 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_NUMBER_VECTOR:
                 case TOK_STRING:
                 case TOK_LPAREN:
+                case TOK_LBRACE:  // Dfn literals can be juxtaposed
                 case TOK_NAME:
                 case TOK_ALPHA:  // ⍺ in dfns
                 case TOK_OMEGA:  // ⍵ in dfns
@@ -527,6 +528,20 @@ Continuation* Parser::nud(const Token& token) {
         }
 
         case TOK_QUAD_NAME: {
+            // Build the full quad name (⎕ + name)
+            std::string quad_name = "⎕";
+            quad_name += token.name;
+            const char* interned_quad = machine->string_pool.intern(quad_name.c_str());
+
+            // First check environment for quad-named functions (⎕ET, ⎕EM, ⎕ES, ⎕EA, etc.)
+            Value* env_val = machine->env->lookup(interned_quad);
+            if (env_val) {
+                // Found in environment - treat as a name reference
+                LookupK* lookup = machine->heap->allocate<LookupK>(interned_quad);
+                lookup->set_location(token.line, token.column);
+                return lookup;
+            }
+
             // System variable reference or assignment (⎕IO, ⎕PP, etc.)
             SysVarId var_id = lookup_sysvar(token.name, machine->sysvar_mask);
             if (var_id == SysVarId::INVALID) {
@@ -536,6 +551,11 @@ Continuation* Parser::nud(const Token& token) {
 
             // Check for assignment: ⎕IO ← VALUE
             if (current_token_.type == TOK_ASSIGN) {
+                // Check if read-only
+                if (sysvar_is_readonly(var_id)) {
+                    set_error(std::string("⎕") + token.name + " is read-only", token);
+                    return nullptr;
+                }
                 advance();  // consume ←
                 Continuation* value = parse_expression(BP_ASSIGN);
                 if (!value) {
@@ -772,6 +792,16 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                     jux->set_location(token.line, token.column);
                     return jux;
                 }
+            }
+
+            // Check if there's a right argument to parse
+            // If we're at end of input or a separator, use JuxtaposeK to let runtime
+            // determine function/value semantics (e.g., "⎕EA {99}" vs "5{1}")
+            if (at_end() || is_separator(current())) {
+                // JuxtaposeK handles the G2 semantics at runtime
+                JuxtaposeK* jux = machine->heap->allocate<JuxtaposeK>(left, closure_lit);
+                jux->set_location(token.line, token.column);
+                return jux;
             }
 
             // Regular dyadic dfn application (e.g., "3 {⍺+⍵} 5")

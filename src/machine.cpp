@@ -82,6 +82,11 @@ void Machine::init_globals() {
     env->define("⊂", heap->allocate_primitive(&prim_enclose));
     env->define("⊃", heap->allocate_primitive(&prim_disclose));
 
+    // Error handling system functions (ISO 13751 §11.5.7-11.6.5)
+    // Note: ⎕ET and ⎕EM are system variables (read-only), not primitives
+    env->define("⎕ES", heap->allocate_primitive(&prim_quad_es));
+    env->define("⎕EA", heap->allocate_primitive(&prim_quad_ea));
+
     // Operators (higher-order functions)
     env->define(".", heap->allocate_operator(&op_dot));
     env->define("∘.", heap->allocate_operator(&op_outer_dot));
@@ -115,7 +120,7 @@ Value* Machine::eval(const std::string& input) {
 
     if (!k) {
         // Parse error - route through the same error mechanism as runtime errors
-        throw_error(parser->get_error().c_str());
+        throw_error(parser->get_error().c_str(), nullptr, 1, 0);
     } else {
         push_kont(k);
     }
@@ -224,10 +229,16 @@ std::string Machine::format_stack_trace() const {
 }
 
 // Throw an error: captures stack trace, creates ThrowErrorK, and pushes it
-void Machine::throw_error(const char* msg, Continuation* source) {
+void Machine::throw_error(const char* msg, Continuation* source,
+                          int error_class, int error_subclass) {
     // Use control (the currently executing continuation) as fallback
     // This allows primitives to get location info from their calling continuation
     Continuation* error_source = source ? source : control;
+
+    // Set error state (ISO 13751 §11.4.4-11.4.5)
+    event_type[0] = error_class;
+    event_type[1] = error_subclass;
+    event_message = string_pool.intern(msg);
 
     // Capture the current stack for error traces
     error_stack = kont_stack;
@@ -238,8 +249,7 @@ void Machine::throw_error(const char* msg, Continuation* source) {
     }
 
     // Create and push ThrowErrorK
-    const char* interned_msg = string_pool.intern(msg);
-    ThrowErrorK* err = heap->allocate<ThrowErrorK>(interned_msg);
+    ThrowErrorK* err = heap->allocate<ThrowErrorK>(event_message);
 
     // Copy source location to ThrowErrorK if available
     if (error_source && error_source->has_location()) {

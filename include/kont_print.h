@@ -171,6 +171,11 @@ public:
         print_location(k);
     }
 
+    void visit(ClearErrorStateK* k) override {
+        out << "ClearErrorStateK";
+        print_location(k);
+    }
+
     void visit(ThrowErrorK* k) override {
         out << "ThrowErrorK";
         if (k->error_message) out << "(\"" << k->error_message << "\")";

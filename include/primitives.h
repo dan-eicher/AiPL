@@ -154,4 +154,12 @@ extern PrimitiveFn prim_uptack;    // ↑ symbol (first/take)
 extern PrimitiveFn prim_downtack;  // ↓ symbol (drop)
 extern PrimitiveFn prim_squad;     // ⌷ symbol (index/squad) - used by A[I] syntax
 
+// Error handling system functions (ISO 13751 §11.4.4-11.6.5)
+void fn_quad_es(Machine* m, Value* axis, Value* omega);           // ⎕ES monadic (signal error)
+void fn_quad_es_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs); // ⎕ES dyadic (signal with message)
+void fn_quad_ea(Machine* m, Value* axis, Value* lhs, Value* rhs); // ⎕EA dyadic (execute alternate)
+
+extern PrimitiveFn prim_quad_es;   // ⎕ES (error signal)
+extern PrimitiveFn prim_quad_ea;   // ⎕EA (execute alternate)
+
 } // namespace apl

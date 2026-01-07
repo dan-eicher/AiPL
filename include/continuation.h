@@ -23,6 +23,7 @@ class CatchReturnK;
 class CatchBreakK;
 class CatchContinueK;
 class CatchErrorK;
+class ClearErrorStateK;
 class ThrowErrorK;
 class LiteralK;
 class ClosureLiteralK;
@@ -115,6 +116,7 @@ public:
     virtual void visit(CatchBreakK*) = 0;
     virtual void visit(CatchContinueK*) = 0;
     virtual void visit(CatchErrorK*) = 0;
+    virtual void visit(ClearErrorStateK*) = 0;
     virtual void visit(ThrowErrorK*) = 0;
     virtual void visit(LiteralK*) = 0;
     virtual void visit(ClosureLiteralK*) = 0;
@@ -326,9 +328,25 @@ protected:
 
 // CatchErrorK - Catches THROW completions for error handling (Phase 5)
 // Can be pushed at any point to establish an error boundary
+// For ⎕EA: holds handler continuation to execute when error is caught
 class CatchErrorK : public Continuation {
 public:
-    CatchErrorK() {}
+    Continuation* handler;  // Handler to execute on error (nullptr = discard error)
+
+    CatchErrorK(Continuation* h = nullptr) : handler(h) {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ClearErrorStateK - Clears ⎕ET and ⎕EM after error handler completes successfully
+// ISO 13751: Error state should be current state, not historical
+class ClearErrorStateK : public Continuation {
+public:
+    ClearErrorStateK() {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }

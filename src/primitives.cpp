@@ -20,7 +20,7 @@ namespace apl {
 // Reject axis specification for functions that don't support it
 #define REJECT_AXIS(m, axis) \
     if ((axis) != nullptr) { \
-        (m)->throw_error("AXIS ERROR: function does not support axis"); \
+        (m)->throw_error("AXIS ERROR: function does not support axis", (m)->control, 4, 0); \
         return; \
     }
 
@@ -119,6 +119,11 @@ PrimitiveFn prim_right     = { "⊢", fn_right, fn_right_dyadic, false };
 PrimitiveFn prim_enclose   = { "⊂", fn_enclose, nullptr, false };
 PrimitiveFn prim_disclose  = { "⊃", fn_disclose, fn_pick, false };
 
+// Error handling system functions (ISO 13751 §11.5.7-11.6.5)
+// Note: ⎕ET and ⎕EM are system variables, accessed via SysVarReadK
+PrimitiveFn prim_quad_es   = { "⎕ES", fn_quad_es, fn_quad_es_dyadic, false };
+PrimitiveFn prim_quad_ea   = { "⎕EA", nullptr, fn_quad_ea, false };
+
 // ============================================================================
 // Dyadic Arithmetic Functions
 // ============================================================================
@@ -139,7 +144,7 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension using Eigen broadcasting
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: + requires numeric argument");
+            m->throw_error("DOMAIN ERROR: + requires numeric argument", nullptr, 11, 0);
             return;
         }
         Eigen::MatrixXd result =
@@ -155,7 +160,7 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: + requires numeric argument");
+            m->throw_error("DOMAIN ERROR: + requires numeric argument", nullptr, 11, 0);
             return;
         }
         Eigen::MatrixXd result =
@@ -171,7 +176,7 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array + Array: element-wise
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: + requires numeric argument");
+        m->throw_error("DOMAIN ERROR: + requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -179,7 +184,7 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Shape checking
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in addition");
+        m->throw_error("LENGTH ERROR: mismatched shapes in addition", nullptr, 5, 0);
         return;
     }
 
@@ -208,7 +213,7 @@ void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: - requires numeric argument");
+            m->throw_error("DOMAIN ERROR: - requires numeric argument", nullptr, 11, 0);
             return;
         }
         Eigen::MatrixXd result =
@@ -224,7 +229,7 @@ void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: - requires numeric argument");
+            m->throw_error("DOMAIN ERROR: - requires numeric argument", nullptr, 11, 0);
             return;
         }
         Eigen::MatrixXd result =
@@ -240,14 +245,14 @@ void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array - Array
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: - requires numeric argument");
+        m->throw_error("DOMAIN ERROR: - requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in subtraction");
+        m->throw_error("LENGTH ERROR: mismatched shapes in subtraction", nullptr, 5, 0);
         return;
     }
 
@@ -276,7 +281,7 @@ void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: × requires numeric argument");
+            m->throw_error("DOMAIN ERROR: × requires numeric argument", nullptr, 11, 0);
             return;
         }
         Eigen::MatrixXd result =
@@ -292,7 +297,7 @@ void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: × requires numeric argument");
+            m->throw_error("DOMAIN ERROR: × requires numeric argument", nullptr, 11, 0);
             return;
         }
         Eigen::MatrixXd result =
@@ -308,14 +313,14 @@ void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array × Array: element-wise multiplication
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: × requires numeric argument");
+        m->throw_error("DOMAIN ERROR: × requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in multiplication");
+        m->throw_error("LENGTH ERROR: mismatched shapes in multiplication", nullptr, 5, 0);
         return;
     }
 
@@ -349,7 +354,7 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
         double result;
         if (!safe_divide(lhs->data.scalar, rhs->data.scalar, result)) {
-            m->throw_error("DOMAIN ERROR: division by zero");
+            m->throw_error("DOMAIN ERROR: division by zero", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -363,7 +368,7 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension: scalar ÷ array
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ÷ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -371,7 +376,7 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         double lval = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
             if (!safe_divide(lval, rmat->data()[i], result(i))) {
-                m->throw_error("DOMAIN ERROR: division by zero");
+                m->throw_error("DOMAIN ERROR: division by zero", nullptr, 11, 0);
                 return;
             }
         }
@@ -387,7 +392,7 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension: array ÷ scalar
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ÷ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -395,7 +400,7 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
             if (!safe_divide(lmat->data()[i], rval, result(i))) {
-                m->throw_error("DOMAIN ERROR: division by zero");
+                m->throw_error("DOMAIN ERROR: division by zero", nullptr, 11, 0);
                 return;
             }
         }
@@ -410,21 +415,21 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array ÷ Array
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ÷ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in division");
+        m->throw_error("LENGTH ERROR: mismatched shapes in division", nullptr, 5, 0);
         return;
     }
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
         if (!safe_divide(lmat->data()[i], rmat->data()[i], result(i))) {
-            m->throw_error("DOMAIN ERROR: division by zero");
+            m->throw_error("DOMAIN ERROR: division by zero", nullptr, 11, 0);
             return;
         }
     }
@@ -449,7 +454,7 @@ static double power_scalar(Machine* m, double base, double exp) {
     }
     // ISO 13751 7.2.7: If A is zero and real-part of B is negative, signal domain-error
     if (base == 0.0 && exp < 0.0) {
-        m->throw_error("DOMAIN ERROR: 0 raised to negative power");
+        m->throw_error("DOMAIN ERROR: 0 raised to negative power", nullptr, 11, 0);
     }
     return std::pow(base, exp);
 }
@@ -469,7 +474,7 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: * requires numeric argument");
+            m->throw_error("DOMAIN ERROR: * requires numeric argument", nullptr, 11, 0);
             return;
         }
         // lhs is scalar base, rhs is array of exponents: lhs^rhs[i]
@@ -489,7 +494,7 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: * requires numeric argument");
+            m->throw_error("DOMAIN ERROR: * requires numeric argument", nullptr, 11, 0);
             return;
         }
         // lhs is array of bases, rhs is scalar exponent
@@ -509,14 +514,14 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array * Array: element-wise power
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: * requires numeric argument");
+        m->throw_error("DOMAIN ERROR: * requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in power");
+        m->throw_error("LENGTH ERROR: mismatched shapes in power", nullptr, 5, 0);
         return;
     }
 
@@ -550,7 +555,7 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: = requires numeric argument");
+            m->throw_error("DOMAIN ERROR: = requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -568,7 +573,7 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: = requires numeric argument");
+            m->throw_error("DOMAIN ERROR: = requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -586,14 +591,14 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array = Array: element-wise equality
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: = requires numeric argument");
+        m->throw_error("DOMAIN ERROR: = requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in equality");
+        m->throw_error("LENGTH ERROR: mismatched shapes in equality", nullptr, 5, 0);
         return;
     }
 
@@ -627,7 +632,7 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ≠ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ≠ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -645,7 +650,7 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ≠ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ≠ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -663,14 +668,14 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array ≠ Array: element-wise not equal
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ≠ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ≠ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in not-equal");
+        m->throw_error("LENGTH ERROR: mismatched shapes in not-equal", nullptr, 5, 0);
         return;
     }
 
@@ -705,7 +710,7 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: < requires numeric argument");
+            m->throw_error("DOMAIN ERROR: < requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -725,7 +730,7 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: < requires numeric argument");
+            m->throw_error("DOMAIN ERROR: < requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -745,14 +750,14 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array < Array: element-wise less than
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: < requires numeric argument");
+        m->throw_error("DOMAIN ERROR: < requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in less-than");
+        m->throw_error("LENGTH ERROR: mismatched shapes in less-than", nullptr, 5, 0);
         return;
     }
 
@@ -788,7 +793,7 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: > requires numeric argument");
+            m->throw_error("DOMAIN ERROR: > requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -808,7 +813,7 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: > requires numeric argument");
+            m->throw_error("DOMAIN ERROR: > requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -828,14 +833,14 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array > Array: element-wise greater than
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: > requires numeric argument");
+        m->throw_error("DOMAIN ERROR: > requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in greater-than");
+        m->throw_error("LENGTH ERROR: mismatched shapes in greater-than", nullptr, 5, 0);
         return;
     }
 
@@ -871,7 +876,7 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ≤ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ≤ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -891,7 +896,7 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ≤ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ≤ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -911,14 +916,14 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array ≤ Array: element-wise less than or equal
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ≤ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ≤ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in less-or-equal");
+        m->throw_error("LENGTH ERROR: mismatched shapes in less-or-equal", nullptr, 5, 0);
         return;
     }
 
@@ -954,7 +959,7 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Scalar extension
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ≥ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ≥ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -974,7 +979,7 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ≥ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ≥ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -994,14 +999,14 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Array ≥ Array: element-wise greater than or equal
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ≥ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ≥ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in greater-or-equal");
+        m->throw_error("LENGTH ERROR: mismatched shapes in greater-or-equal", nullptr, 5, 0);
         return;
     }
 
@@ -1036,7 +1041,7 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1051,7 +1056,7 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1065,14 +1070,14 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in maximum");
+        m->throw_error("LENGTH ERROR: mismatched shapes in maximum", nullptr, 5, 0);
         return;
     }
 
@@ -1099,7 +1104,7 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1114,7 +1119,7 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1128,14 +1133,14 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in minimum");
+        m->throw_error("LENGTH ERROR: mismatched shapes in minimum", nullptr, 5, 0);
         return;
     }
 
@@ -1162,7 +1167,7 @@ void fn_ceiling(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -1204,7 +1209,7 @@ void fn_floor(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -1294,7 +1299,7 @@ void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ∧ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ∧ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1313,7 +1318,7 @@ void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ∧ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ∧ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1331,14 +1336,14 @@ void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ∧ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ∧ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in and");
+        m->throw_error("LENGTH ERROR: mismatched shapes in and", nullptr, 5, 0);
         return;
     }
 
@@ -1382,7 +1387,7 @@ void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ∨ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ∨ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1401,7 +1406,7 @@ void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ∨ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ∨ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1419,14 +1424,14 @@ void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ∨ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ∨ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in or");
+        m->throw_error("LENGTH ERROR: mismatched shapes in or", nullptr, 5, 0);
         return;
     }
 
@@ -1449,7 +1454,7 @@ void fn_not(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         double d = omega->data.scalar;
         if (!is_near_boolean(d)) {
-            m->throw_error("DOMAIN ERROR: ~ requires boolean argument");
+            m->throw_error("DOMAIN ERROR: ~ requires boolean argument", nullptr, 11, 0);
             return;
         }
         // Round to nearest integer (0 or 1) then complement
@@ -1462,7 +1467,7 @@ void fn_not(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ~ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ~ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -1470,7 +1475,7 @@ void fn_not(Machine* m, Value* axis, Value* omega) {
     // Check all elements are near-boolean
     for (int i = 0; i < mat->size(); ++i) {
         if (!is_near_boolean(mat->data()[i])) {
-            m->throw_error("DOMAIN ERROR: ~ requires boolean argument");
+            m->throw_error("DOMAIN ERROR: ~ requires boolean argument", nullptr, 11, 0);
             return;
         }
     }
@@ -1511,7 +1516,7 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
         double result = nand_bool(lhs->data.scalar, rhs->data.scalar, error);
         if (error) {
-            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
+            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -1524,7 +1529,7 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1532,7 +1537,7 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = nand_bool(lhs->data.scalar, rmat->data()[i], error);
             if (error) {
-                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
+                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
                 return;
             }
         }
@@ -1546,7 +1551,7 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1554,7 +1559,7 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = nand_bool(lmat->data()[i], rhs->data.scalar, error);
             if (error) {
-                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
+                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
                 return;
             }
         }
@@ -1567,14 +1572,14 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in nand");
+        m->throw_error("LENGTH ERROR: mismatched shapes in nand", nullptr, 5, 0);
         return;
     }
 
@@ -1582,7 +1587,7 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     for (int i = 0; i < lmat->size(); ++i) {
         result(i) = nand_bool(lmat->data()[i], rmat->data()[i], error);
         if (error) {
-            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments");
+            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
             return;
         }
     }
@@ -1615,7 +1620,7 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lhs->is_scalar() && rhs->is_scalar()) {
         double result = nor_bool(lhs->data.scalar, rhs->data.scalar, error);
         if (error) {
-            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
+            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -1628,7 +1633,7 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1636,7 +1641,7 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = nor_bool(lhs->data.scalar, rmat->data()[i], error);
             if (error) {
-                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
+                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
                 return;
             }
         }
@@ -1650,7 +1655,7 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1658,7 +1663,7 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = nor_bool(lmat->data()[i], rhs->data.scalar, error);
             if (error) {
-                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
+                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
                 return;
             }
         }
@@ -1671,14 +1676,14 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in nor");
+        m->throw_error("LENGTH ERROR: mismatched shapes in nor", nullptr, 5, 0);
         return;
     }
 
@@ -1686,7 +1691,7 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     for (int i = 0; i < lmat->size(); ++i) {
         result(i) = nor_bool(lmat->data()[i], rmat->data()[i], error);
         if (error) {
-            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments");
+            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
             return;
         }
     }
@@ -1714,7 +1719,7 @@ void fn_magnitude(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: | requires numeric argument");
+        m->throw_error("DOMAIN ERROR: | requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -1769,7 +1774,7 @@ void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: | requires numeric argument");
+            m->throw_error("DOMAIN ERROR: | requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1787,7 +1792,7 @@ void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: | requires numeric argument");
+            m->throw_error("DOMAIN ERROR: | requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1804,14 +1809,14 @@ void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: | requires numeric argument");
+        m->throw_error("DOMAIN ERROR: | requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in residue");
+        m->throw_error("LENGTH ERROR: mismatched shapes in residue", nullptr, 5, 0);
         return;
     }
 
@@ -1833,7 +1838,7 @@ void fn_natural_log(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         if (val <= 0.0) {
-            m->throw_error("DOMAIN ERROR: ⍟ of non-positive number");
+            m->throw_error("DOMAIN ERROR: ⍟ of non-positive number", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(std::log(val));
@@ -1844,13 +1849,13 @@ void fn_natural_log(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for non-positive values
     if ((mat->array() <= 0.0).any()) {
-        m->throw_error("DOMAIN ERROR: logarithm of non-positive number");
+        m->throw_error("DOMAIN ERROR: logarithm of non-positive number", nullptr, 11, 0);
         return;
     }
     Eigen::MatrixXd result = mat->array().log();
@@ -1869,11 +1874,11 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Domain errors: base <= 0, base == 1, value <= 0
     auto check_domain = [m](double base, double val) -> bool {
         if (base <= 0.0 || base == 1.0) {
-            m->throw_error("DOMAIN ERROR: invalid logarithm base");
+            m->throw_error("DOMAIN ERROR: invalid logarithm base", nullptr, 11, 0);
             return false;
         }
         if (val <= 0.0) {
-            m->throw_error("DOMAIN ERROR: logarithm of non-positive number");
+            m->throw_error("DOMAIN ERROR: logarithm of non-positive number", nullptr, 11, 0);
             return false;
         }
         return true;
@@ -1895,7 +1900,7 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -1911,7 +1916,7 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -1929,14 +1934,14 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in logarithm");
+        m->throw_error("LENGTH ERROR: mismatched shapes in logarithm", nullptr, 5, 0);
         return;
     }
 
@@ -1962,7 +1967,7 @@ void fn_factorial(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->data.scalar;
         if (is_negative_int(val)) {
-            m->throw_error("DOMAIN ERROR: ! of negative integer");
+            m->throw_error("DOMAIN ERROR: ! of negative integer", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(std::tgamma(val + 1.0));
@@ -1973,14 +1978,14 @@ void fn_factorial(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ! requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for negative integers
     for (int i = 0; i < mat->size(); ++i) {
         if (is_negative_int(mat->data()[i])) {
-            m->throw_error("DOMAIN ERROR: factorial of negative integer");
+            m->throw_error("DOMAIN ERROR: factorial of negative integer", nullptr, 11, 0);
             return;
         }
     }
@@ -2019,7 +2024,7 @@ static double binomial_scalar(Machine* m, double A, double B) {
     }
     if (!A_neg_int && B_neg_int && !BmA_neg_int) {
         // Case 0 1 0: A non-neg, B neg int, B-A non-neg → signal domain-error
-        m->throw_error("DOMAIN ERROR: invalid binomial arguments");
+        m->throw_error("DOMAIN ERROR: invalid binomial arguments", nullptr, 11, 0);
         return 0.0;
     }
     if (!A_neg_int && B_neg_int && BmA_neg_int) {
@@ -2071,7 +2076,7 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ! requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -2089,7 +2094,7 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (rhs->is_scalar()) {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+            m->throw_error("DOMAIN ERROR: ! requires numeric argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
@@ -2106,14 +2111,14 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_array() || !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ! requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ! requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* lmat = lhs->as_matrix();
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-        m->throw_error("LENGTH ERROR: mismatched shapes in binomial");
+        m->throw_error("LENGTH ERROR: mismatched shapes in binomial", nullptr, 5, 0);
         return;
     }
 
@@ -2145,7 +2150,7 @@ void fn_pi_times(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ○ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ○ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -2214,7 +2219,7 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     // Left argument must be scalar integer in range -12 to 12
     if (!lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: circular function code must be scalar");
+        m->throw_error("RANK ERROR: circular function code must be scalar", nullptr, 4, 0);
         return;
     }
 
@@ -2222,13 +2227,13 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int fn_code = static_cast<int>(std::round(fn_val));
 
     if (std::abs(fn_val - fn_code) > 1e-10) {
-        m->throw_error("DOMAIN ERROR: circular function code must be integer");
+        m->throw_error("DOMAIN ERROR: circular function code must be integer", nullptr, 11, 0);
         return;
     }
 
     // ISO 13751: fn_code must be in [-12, 12]
     if (fn_code < -12 || fn_code > 12) {
-        m->throw_error("DOMAIN ERROR: circular function code must be -12 to 12");
+        m->throw_error("DOMAIN ERROR: circular function code must be -12 to 12", nullptr, 11, 0);
         return;
     }
 
@@ -2236,7 +2241,7 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         double result = circular_function(fn_code, rhs->data.scalar);
         if (std::isnan(result)) {
-            m->throw_error("DOMAIN ERROR: invalid argument for circular function");
+            m->throw_error("DOMAIN ERROR: invalid argument for circular function", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(result);
@@ -2247,7 +2252,7 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ○ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ○ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = rhs->as_matrix();
@@ -2256,7 +2261,7 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     for (int i = 0; i < mat->size(); ++i) {
         result(i) = circular_function(fn_code, mat->data()[i]);
         if (std::isnan(result(i))) {
-            m->throw_error("DOMAIN ERROR: invalid argument for circular function");
+            m->throw_error("DOMAIN ERROR: invalid argument for circular function", nullptr, 11, 0);
             return;
         }
     }
@@ -2290,7 +2295,7 @@ void fn_conjugate(Machine* m, Value* axis, Value* omega) {
     } else if (omega->is_matrix()) {
         m->result = m->heap->allocate_matrix(*omega->as_matrix(), omega->is_char_data());
     } else {
-        m->throw_error("DOMAIN ERROR: + requires numeric argument");
+        m->throw_error("DOMAIN ERROR: + requires numeric argument", nullptr, 11, 0);
     }
 }
 
@@ -2306,7 +2311,7 @@ void fn_negate(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: - requires numeric argument");
+        m->throw_error("DOMAIN ERROR: - requires numeric argument", nullptr, 11, 0);
         return;
     }
     Eigen::MatrixXd result = -omega->as_matrix()->array();
@@ -2332,7 +2337,7 @@ void fn_signum(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: × requires numeric argument");
+        m->throw_error("DOMAIN ERROR: × requires numeric argument", nullptr, 11, 0);
         return;
     }
     // For arrays, apply sign element-wise
@@ -2359,7 +2364,7 @@ void fn_reciprocal(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
         if (omega->data.scalar == 0.0) {
-            m->throw_error("DOMAIN ERROR: reciprocal of zero");
+            m->throw_error("DOMAIN ERROR: reciprocal of zero", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(1.0 / omega->data.scalar);
@@ -2370,13 +2375,13 @@ void fn_reciprocal(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ÷ requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ÷ requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
     // Check for zeros
     if ((mat->array() == 0.0).any()) {
-        m->throw_error("DOMAIN ERROR: reciprocal of zero");
+        m->throw_error("DOMAIN ERROR: reciprocal of zero", nullptr, 11, 0);
         return;
     }
 
@@ -2401,7 +2406,7 @@ void fn_exponential(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: * requires numeric argument");
+        m->throw_error("DOMAIN ERROR: * requires numeric argument", nullptr, 11, 0);
         return;
     }
     Eigen::MatrixXd result = omega->as_matrix()->array().exp();
@@ -2450,7 +2455,7 @@ void fn_shape(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍴ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍴ requires array argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -2475,7 +2480,7 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     // lhs must be a scalar or vector specifying new shape
     if (!lhs->is_scalar() && !lhs->is_vector()) {
-        m->throw_error("RANK ERROR: left argument to reshape must be scalar or vector");
+        m->throw_error("RANK ERROR: left argument to reshape must be scalar or vector", nullptr, 4, 0);
         return;
     }
 
@@ -2486,11 +2491,11 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         // Scalar shape means 1D vector of that length
         double dim = lhs->as_scalar();
         if (dim < 0.0) {
-            m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative");
+            m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative", nullptr, 11, 0);
             return;
         }
         if (dim != std::floor(dim)) {
-            m->throw_error("DOMAIN ERROR: reshape dimension must be an integer");
+            m->throw_error("DOMAIN ERROR: reshape dimension must be an integer", nullptr, 11, 0);
             return;
         }
         target_shape.push_back(static_cast<int>(dim));
@@ -2513,7 +2518,7 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                     scalar_val = (*rhs_mat)(0, 0);
                 }
             } else {
-                m->throw_error("DOMAIN ERROR: cannot reshape empty array to scalar");
+                m->throw_error("DOMAIN ERROR: cannot reshape empty array to scalar", nullptr, 11, 0);
                 return;
             }
             m->result = m->heap->allocate_scalar(scalar_val);
@@ -2524,11 +2529,11 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < shape_len; ++i) {
             double dim = (*shape_mat)(i, 0);
             if (dim < 0.0) {
-                m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative");
+                m->throw_error("DOMAIN ERROR: reshape dimension must be non-negative", nullptr, 11, 0);
                 return;
             }
             if (dim != std::floor(dim)) {
-                m->throw_error("DOMAIN ERROR: reshape dimension must be an integer");
+                m->throw_error("DOMAIN ERROR: reshape dimension must be an integer", nullptr, 11, 0);
                 return;
             }
             target_shape.push_back(static_cast<int>(dim));
@@ -2543,7 +2548,7 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Check implementation limit (ISO 13751 §A.3)
     if (static_cast<size_t>(target_size) > MAX_ARRAY_SIZE) {
-        m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+        m->throw_error("LIMIT ERROR: array size exceeds implementation limit", m->control, 10, 0);
         return;
     }
 
@@ -2560,7 +2565,7 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         source = *rhs->ndarray_data();
     } else {
         if (!rhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍴ requires array argument");
+            m->throw_error("DOMAIN ERROR: ⍴ requires array argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* rhs_mat = rhs->as_matrix();
@@ -2575,7 +2580,7 @@ void fn_reshape(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // APL reshape cycles through source data; empty source with non-empty target is an error
     if (source.size() == 0 && target_size > 0) {
-        m->throw_error("DOMAIN ERROR: cannot reshape empty array to non-empty shape");
+        m->throw_error("DOMAIN ERROR: cannot reshape empty array to non-empty shape", nullptr, 11, 0);
         return;
     }
 
@@ -2634,7 +2639,7 @@ void fn_ravel(Machine* m, Value* axis, Value* omega) {
     }
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: , requires array argument");
+        m->throw_error("DOMAIN ERROR: , requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = omega->is_char_data();
@@ -2656,7 +2661,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Handle strands (nested arrays) - catenate element-wise
     if (lhs->is_strand() || rhs->is_strand()) {
         if (axis != nullptr) {
-            m->throw_error("AXIS ERROR: cannot catenate strands with axis");
+            m->throw_error("AXIS ERROR: cannot catenate strands with axis", m->control, 4, 0);
             return;
         }
         std::vector<Value*> result;
@@ -2691,7 +2696,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Handle scalar cases by promoting to 1-element vector
     if (lhs->is_scalar() && rhs->is_scalar()) {
         if (axis != nullptr) {
-            m->throw_error("AXIS ERROR: cannot catenate scalars with axis");
+            m->throw_error("AXIS ERROR: cannot catenate scalars with axis", m->control, 4, 0);
             return;
         }
         Eigen::VectorXd result(2);
@@ -2703,11 +2708,11 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Validate both arguments are arrays (or scalars which were handled above)
     if (!lhs->is_scalar() && !lhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: , requires array argument");
+        m->throw_error("DOMAIN ERROR: , requires array argument", nullptr, 11, 0);
         return;
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: , requires array argument");
+        m->throw_error("DOMAIN ERROR: , requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -2719,7 +2724,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         if (axis != nullptr) {
             if (!axis->is_scalar()) {
-                m->throw_error("RANK ERROR: axis must be scalar");
+                m->throw_error("RANK ERROR: axis must be scalar", nullptr, 4, 0);
                 return;
             }
             double k_val = axis->as_scalar();
@@ -2729,7 +2734,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
 
         if (is_laminate) {
-            m->throw_error("RANK ERROR: laminate of NDARRAY not yet supported");
+            m->throw_error("RANK ERROR: laminate of NDARRAY not yet supported", nullptr, 4, 0);
             return;
         }
 
@@ -2768,14 +2773,14 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int target_rank = std::max(static_cast<int>(lhs_shape.size()),
                                    static_cast<int>(rhs_shape.size()));
         if (target_rank == 0) {
-            m->throw_error("RANK ERROR: cannot catenate scalars along axis");
+            m->throw_error("RANK ERROR: cannot catenate scalars along axis", nullptr, 4, 0);
             return;
         }
 
         // Default axis is last axis
         if (cat_axis < 0) cat_axis = target_rank - 1;
         if (cat_axis >= target_rank) {
-            m->throw_error("AXIS ERROR: axis out of range");
+            m->throw_error("AXIS ERROR: axis out of range", m->control, 4, 0);
             return;
         }
 
@@ -2790,7 +2795,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         // Verify all axes except cat_axis match
         for (int i = 0; i < target_rank; ++i) {
             if (i != cat_axis && lhs_shape[i] != rhs_shape[i]) {
-                m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+                m->throw_error("LENGTH ERROR: incompatible shapes for catenation", nullptr, 5, 0);
                 return;
             }
         }
@@ -2908,7 +2913,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("RANK ERROR: axis must be scalar");
+            m->throw_error("RANK ERROR: axis must be scalar", nullptr, 4, 0);
             return;
         }
         k_val = axis->as_scalar();
@@ -2923,7 +2928,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         // Both must have same shape for laminate
         if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
-            m->throw_error("LENGTH ERROR: incompatible shapes for laminate");
+            m->throw_error("LENGTH ERROR: incompatible shapes for laminate", nullptr, 5, 0);
             return;
         }
 
@@ -2948,7 +2953,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             }
         } else {
             // Laminate matrices - not yet supported
-            m->throw_error("RANK ERROR: laminate of matrices not supported");
+            m->throw_error("RANK ERROR: laminate of matrices not supported", nullptr, 4, 0);
         }
         return;
     }
@@ -2959,7 +2964,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (axis != nullptr) {
             int cat_axis = static_cast<int>(std::round(k_val));
             if (cat_axis != 1) {
-                m->throw_error("AXIS ERROR: vectors only have axis 1");
+                m->throw_error("AXIS ERROR: vectors only have axis 1", m->control, 4, 0);
                 return;
             }
         }
@@ -2980,7 +2985,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (axis != nullptr) {
         cat_axis = static_cast<int>(std::round(k_val));
         if (cat_axis < 1 || cat_axis > 2) {
-            m->throw_error("AXIS ERROR: axis must be 1 or 2 for matrix");
+            m->throw_error("AXIS ERROR: axis must be 1 or 2 for matrix", m->control, 4, 0);
             return;
         }
     }
@@ -2988,7 +2993,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (cat_axis == 1) {
         // Catenate along first axis (rows)
         if (lmat->cols() != rmat->cols()) {
-            m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+            m->throw_error("LENGTH ERROR: incompatible shapes for catenation", nullptr, 5, 0);
             return;
         }
 
@@ -2998,7 +3003,7 @@ void fn_catenate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     } else {
         // Catenate along second axis (columns)
         if (lmat->rows() != rmat->rows()) {
-            m->throw_error("LENGTH ERROR: incompatible shapes for catenation");
+            m->throw_error("LENGTH ERROR: incompatible shapes for catenation", nullptr, 5, 0);
             return;
         }
 
@@ -3072,7 +3077,7 @@ void fn_transpose(Machine* m, Value* axis, Value* omega) {
     }
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍉ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍉ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -3105,7 +3110,7 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         perm = lhs->as_matrix()->col(0);
     } else {
         if (!lhs->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍉ requires array argument");
+            m->throw_error("DOMAIN ERROR: ⍉ requires array argument", nullptr, 11, 0);
             return;
         }
         // Flatten matrix row-major
@@ -3135,7 +3140,7 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int rank = static_cast<int>(old_shape.size());
 
         if (static_cast<int>(perm.size()) != rank) {
-            m->throw_error("LENGTH ERROR: permutation must match array rank");
+            m->throw_error("LENGTH ERROR: permutation must match array rank", nullptr, 5, 0);
             return;
         }
 
@@ -3144,12 +3149,12 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int max_perm = -1;
         for (int i = 0; i < rank; ++i) {
             if (!is_near_integer(perm(i), INTEGER_TOLERANCE)) {
-                m->throw_error("DOMAIN ERROR: permutation values must be integers");
+                m->throw_error("DOMAIN ERROR: permutation values must be integers", nullptr, 11, 0);
                 return;
             }
             perm_int[i] = static_cast<int>(std::round(perm(i))) - io;
             if (perm_int[i] < 0) {
-                m->throw_error("DOMAIN ERROR: permutation values out of range");
+                m->throw_error("DOMAIN ERROR: permutation values out of range", nullptr, 11, 0);
                 return;
             }
             if (perm_int[i] > max_perm) max_perm = perm_int[i];
@@ -3163,7 +3168,7 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
         for (int i = 0; i < result_rank; ++i) {
             if (!axis_present[i]) {
-                m->throw_error("DOMAIN ERROR: axis missing from permutation");
+                m->throw_error("DOMAIN ERROR: axis missing from permutation", nullptr, 11, 0);
                 return;
             }
         }
@@ -3232,12 +3237,12 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         // Vector (rank 1) - only valid permutation is identity (single axis)
         // Check for io-adjusted permutation: with ⎕IO=1, valid value is 1
         if (perm.size() != 1) {
-            m->throw_error("LENGTH ERROR: permutation must match array rank");
+            m->throw_error("LENGTH ERROR: permutation must match array rank", nullptr, 5, 0);
             return;
         }
         int p0 = static_cast<int>(std::round(perm(0))) - io;
         if (p0 != 0) {
-            m->throw_error("DOMAIN ERROR: permutation values out of range");
+            m->throw_error("DOMAIN ERROR: permutation values out of range", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_vector(rhs->as_matrix()->col(0), is_char);
@@ -3245,20 +3250,20 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍉ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍉ requires array argument", nullptr, 11, 0);
         return;
     }
 
     // Matrix: permutation must be length 2
     if (perm.size() != 2) {
-        m->throw_error("LENGTH ERROR: permutation must match array rank");
+        m->throw_error("LENGTH ERROR: permutation must match array rank", nullptr, 5, 0);
         return;
     }
 
     // ISO 13751 10.2.10: Permutation values must be near-integers
     if (!is_near_integer(perm(0), INTEGER_TOLERANCE) ||
         !is_near_integer(perm(1), INTEGER_TOLERANCE)) {
-        m->throw_error("DOMAIN ERROR: permutation values must be integers");
+        m->throw_error("DOMAIN ERROR: permutation values must be integers", nullptr, 11, 0);
         return;
     }
 
@@ -3268,7 +3273,7 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Validate permutation values
     if (p0 < 0 || p0 > 1 || p1 < 0 || p1 > 1) {
-        m->throw_error("DOMAIN ERROR: permutation values out of range");
+        m->throw_error("DOMAIN ERROR: permutation values out of range", nullptr, 11, 0);
         return;
     }
 
@@ -3291,7 +3296,7 @@ void fn_dyadic_transpose(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
         m->result = m->heap->allocate_vector(diag, is_char);
     } else {
-        m->throw_error("AXIS ERROR: invalid axis permutation");
+        m->throw_error("AXIS ERROR: invalid axis permutation", m->control, 4, 0);
     }
 }
 
@@ -3301,7 +3306,7 @@ void fn_matrix_inverse(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->as_scalar();
         if (val == 0.0) {
-            m->throw_error("DOMAIN ERROR: cannot invert zero");
+            m->throw_error("DOMAIN ERROR: cannot invert zero", nullptr, 11, 0);
             return;
         }
         m->result = m->heap->allocate_scalar(1.0 / val);
@@ -3310,12 +3315,12 @@ void fn_matrix_inverse(Machine* m, Value* axis, Value* omega) {
 
     // NDARRAY (rank 3+) not supported for matrix inverse
     if (omega->is_ndarray()) {
-        m->throw_error("RANK ERROR: matrix inverse requires rank ≤ 2");
+        m->throw_error("RANK ERROR: matrix inverse requires rank ≤ 2", nullptr, 4, 0);
         return;
     }
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⌹ requires array argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -3342,25 +3347,25 @@ void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // NDARRAY (rank 3+) not supported for matrix divide
     if (lhs->is_ndarray()) {
-        m->throw_error("RANK ERROR: matrix divide requires rank ≤ 2");
+        m->throw_error("RANK ERROR: matrix divide requires rank ≤ 2", nullptr, 4, 0);
         return;
     }
     if (rhs->is_ndarray()) {
-        m->throw_error("RANK ERROR: matrix divide requires rank ≤ 2");
+        m->throw_error("RANK ERROR: matrix divide requires rank ≤ 2", nullptr, 4, 0);
         return;
     }
 
     if (rhs->is_scalar()) {
         double divisor = rhs->as_scalar();
         if (divisor == 0.0) {
-            m->throw_error("DOMAIN ERROR: division by zero");
+            m->throw_error("DOMAIN ERROR: division by zero", nullptr, 11, 0);
             return;
         }
         if (lhs->is_scalar()) {
             m->result = m->heap->allocate_scalar(lhs->as_scalar() / divisor);
         } else {
             if (!lhs->is_array()) {
-                m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
+                m->throw_error("DOMAIN ERROR: ⌹ requires array argument", nullptr, 11, 0);
                 return;
             }
             Eigen::MatrixXd result = lhs->as_matrix()->array() / divisor;
@@ -3375,11 +3380,11 @@ void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Validate arguments
     if (!lhs->is_scalar() && !lhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⌹ requires array argument", nullptr, 11, 0);
         return;
     }
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌹ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⌹ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -3391,7 +3396,7 @@ void fn_matrix_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Check dimensions: B's rows must match A's rows
     if (B.rows() != A.rows()) {
-        m->throw_error("LENGTH ERROR: incompatible shapes for matrix divide");
+        m->throw_error("LENGTH ERROR: incompatible shapes for matrix divide", nullptr, 5, 0);
         return;
     }
 
@@ -3414,16 +3419,16 @@ void fn_iota(Machine* m, Value* axis, Value* omega) {
     if (omega->is_scalar()) {
         double val = omega->as_scalar();
         if (val < 0.0) {
-            m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
+            m->throw_error("DOMAIN ERROR: iota argument must be non-negative", nullptr, 11, 0);
             return;
         }
         if (val != std::floor(val)) {
-            m->throw_error("DOMAIN ERROR: iota argument must be an integer");
+            m->throw_error("DOMAIN ERROR: iota argument must be an integer", nullptr, 11, 0);
             return;
         }
         int n = static_cast<int>(val);
         if (static_cast<size_t>(n) > MAX_ARRAY_SIZE) {
-            m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+            m->throw_error("LIMIT ERROR: array size exceeds implementation limit", m->control, 10, 0);
             return;
         }
         Eigen::VectorXd result(n);
@@ -3446,11 +3451,11 @@ void fn_iota(Machine* m, Value* axis, Value* omega) {
         for (int i = 0; i < rank; ++i) {
             double val = (*shape_vec)(i, 0);
             if (val < 0.0) {
-                m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
+                m->throw_error("DOMAIN ERROR: iota argument must be non-negative", nullptr, 11, 0);
                 return;
             }
             if (val != std::floor(val)) {
-                m->throw_error("DOMAIN ERROR: iota argument must be an integer");
+                m->throw_error("DOMAIN ERROR: iota argument must be an integer", nullptr, 11, 0);
                 return;
             }
             shape[i] = static_cast<int>(val);
@@ -3458,7 +3463,7 @@ void fn_iota(Machine* m, Value* axis, Value* omega) {
         }
 
         if (static_cast<size_t>(total) > MAX_ARRAY_SIZE) {
-            m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+            m->throw_error("LIMIT ERROR: array size exceeds implementation limit", m->control, 10, 0);
             return;
         }
 
@@ -3512,16 +3517,16 @@ void fn_iota(Machine* m, Value* axis, Value* omega) {
         for (int i = 0; i < rank; ++i) {
             Value* elem = (*strand)[i];
             if (!elem->is_scalar()) {
-                m->throw_error("DOMAIN ERROR: iota shape elements must be scalar");
+                m->throw_error("DOMAIN ERROR: iota shape elements must be scalar", nullptr, 11, 0);
                 return;
             }
             double val = elem->as_scalar();
             if (val < 0.0) {
-                m->throw_error("DOMAIN ERROR: iota argument must be non-negative");
+                m->throw_error("DOMAIN ERROR: iota argument must be non-negative", nullptr, 11, 0);
                 return;
             }
             if (val != std::floor(val)) {
-                m->throw_error("DOMAIN ERROR: iota argument must be an integer");
+                m->throw_error("DOMAIN ERROR: iota argument must be an integer", nullptr, 11, 0);
                 return;
             }
             shape[i] = static_cast<int>(val);
@@ -3529,7 +3534,7 @@ void fn_iota(Machine* m, Value* axis, Value* omega) {
         }
 
         if (static_cast<size_t>(total) > MAX_ARRAY_SIZE) {
-            m->throw_error("LIMIT ERROR: array size exceeds implementation limit");
+            m->throw_error("LIMIT ERROR: array size exceeds implementation limit", m->control, 10, 0);
             return;
         }
 
@@ -3562,7 +3567,7 @@ void fn_iota(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    m->throw_error("RANK ERROR: iota argument must be scalar or vector");
+    m->throw_error("RANK ERROR: iota argument must be scalar or vector", nullptr, 4, 0);
 }
 
 // First (↑) - monadic: return first element
@@ -3626,7 +3631,7 @@ void fn_first(Machine* m, Value* axis, Value* omega) {
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ↑ requires array argument");
+        m->throw_error("DOMAIN ERROR: ↑ requires array argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -3655,7 +3660,7 @@ void fn_first(Machine* m, Value* axis, Value* omega) {
 void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_scalar()) {
         if (!lhs->is_scalar()) {
-            m->throw_error("RANK ERROR: take from scalar requires scalar count");
+            m->throw_error("RANK ERROR: take from scalar requires scalar count", nullptr, 4, 0);
             return;
         }
         int n = static_cast<int>(lhs->as_scalar());
@@ -3668,7 +3673,7 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Strand take: take first/last n elements
     if (rhs->is_strand()) {
         if (!lhs->is_scalar()) {
-            m->throw_error("RANK ERROR: strand take requires scalar count");
+            m->throw_error("RANK ERROR: strand take requires scalar count", nullptr, 4, 0);
             return;
         }
         int n = static_cast<int>(lhs->as_scalar());
@@ -3704,12 +3709,12 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         // Left argument must be vector with length = rank
         if (!lhs->is_vector()) {
-            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank", nullptr, 5, 0);
             return;
         }
         const Eigen::MatrixXd* counts = lhs->as_matrix();
         if (counts->rows() != rank) {
-            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank", nullptr, 5, 0);
             return;
         }
 
@@ -3772,7 +3777,7 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ↑ requires array argument");
+        m->throw_error("DOMAIN ERROR: ↑ requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = rhs->is_char_data();
@@ -3786,7 +3791,7 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int rank = rhs->is_vector() ? 1 : 2;
 
         if (lhs_len != rank) {
-            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank", nullptr, 5, 0);
             return;
         }
 
@@ -3827,7 +3832,7 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: take count must be scalar or vector");
+        m->throw_error("RANK ERROR: take count must be scalar or vector", nullptr, 4, 0);
         return;
     }
 
@@ -3837,12 +3842,12 @@ void fn_take(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be a scalar");
+            m->throw_error("AXIS ERROR: axis must be a scalar", m->control, 4, 0);
             return;
         }
         take_axis = static_cast<int>(axis->as_scalar());
         if (take_axis < 1 || take_axis > rank) {
-            m->throw_error("AXIS ERROR: invalid axis for array rank");
+            m->throw_error("AXIS ERROR: invalid axis for array rank", m->control, 4, 0);
             return;
         }
     }
@@ -3894,7 +3899,7 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Strand drop: drop first/last n elements
     if (rhs->is_strand()) {
         if (!lhs->is_scalar()) {
-            m->throw_error("RANK ERROR: strand drop requires scalar count");
+            m->throw_error("RANK ERROR: strand drop requires scalar count", nullptr, 4, 0);
             return;
         }
         int n = static_cast<int>(lhs->as_scalar());
@@ -3927,12 +3932,12 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         // Left argument must be vector with length = rank
         if (!lhs->is_vector()) {
-            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank", nullptr, 5, 0);
             return;
         }
         const Eigen::MatrixXd* counts = lhs->as_matrix();
         if (counts->rows() != rank) {
-            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank", nullptr, 5, 0);
             return;
         }
 
@@ -3987,7 +3992,7 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ↓ requires array argument");
+        m->throw_error("DOMAIN ERROR: ↓ requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = rhs->is_char_data();
@@ -4000,7 +4005,7 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int rank = rhs->is_vector() ? 1 : 2;
 
         if (lhs_len != rank) {
-            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank");
+            m->throw_error("LENGTH ERROR: left argument length must equal right argument rank", nullptr, 5, 0);
             return;
         }
 
@@ -4040,7 +4045,7 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: drop count must be scalar or vector");
+        m->throw_error("RANK ERROR: drop count must be scalar or vector", nullptr, 4, 0);
         return;
     }
 
@@ -4062,12 +4067,12 @@ void fn_drop(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int drop_axis = 1;
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("RANK ERROR: axis must be scalar");
+            m->throw_error("RANK ERROR: axis must be scalar", nullptr, 4, 0);
             return;
         }
         drop_axis = static_cast<int>(axis->as_scalar());
         if (drop_axis < 1 || drop_axis > 2) {
-            m->throw_error("AXIS ERROR: axis must be 1 or 2 for matrix");
+            m->throw_error("AXIS ERROR: axis must be 1 or 2 for matrix", m->control, 4, 0);
             return;
         }
     }
@@ -4131,12 +4136,12 @@ void fn_reverse(Machine* m, Value* axis, Value* omega) {
         int reverse_axis = rank;
         if (axis != nullptr) {
             if (!axis->is_scalar()) {
-                m->throw_error("AXIS ERROR: axis must be a scalar");
+                m->throw_error("AXIS ERROR: axis must be a scalar", m->control, 4, 0);
                 return;
             }
             reverse_axis = static_cast<int>(axis->as_scalar());
             if (reverse_axis < 1 || reverse_axis > rank) {
-                m->throw_error("AXIS ERROR: invalid axis for array rank");
+                m->throw_error("AXIS ERROR: invalid axis for array rank", m->control, 4, 0);
                 return;
             }
         }
@@ -4179,7 +4184,7 @@ void fn_reverse(Machine* m, Value* axis, Value* omega) {
     }
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌽ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⌽ requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = omega->is_char_data();
@@ -4192,13 +4197,13 @@ void fn_reverse(Machine* m, Value* axis, Value* omega) {
 
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be a scalar");
+            m->throw_error("AXIS ERROR: axis must be a scalar", m->control, 4, 0);
             return;
         }
         reverse_axis = static_cast<int>(axis->as_scalar());
         // Validate axis (1-indexed with ⎕IO=1)
         if (reverse_axis < 1 || reverse_axis > rank) {
-            m->throw_error("AXIS ERROR: invalid axis for array rank");
+            m->throw_error("AXIS ERROR: invalid axis for array rank", m->control, 4, 0);
             return;
         }
     }
@@ -4255,12 +4260,12 @@ void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
         int reverse_axis = 1;
         if (axis != nullptr) {
             if (!axis->is_scalar()) {
-                m->throw_error("AXIS ERROR: axis must be a scalar");
+                m->throw_error("AXIS ERROR: axis must be a scalar", m->control, 4, 0);
                 return;
             }
             reverse_axis = static_cast<int>(axis->as_scalar());
             if (reverse_axis < 1 || reverse_axis > rank) {
-                m->throw_error("AXIS ERROR: invalid axis for array rank");
+                m->throw_error("AXIS ERROR: invalid axis for array rank", m->control, 4, 0);
                 return;
             }
         }
@@ -4303,7 +4308,7 @@ void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
     }
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⊖ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⊖ requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = omega->is_char_data();
@@ -4316,13 +4321,13 @@ void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
 
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be a scalar");
+            m->throw_error("AXIS ERROR: axis must be a scalar", m->control, 4, 0);
             return;
         }
         reverse_axis = static_cast<int>(axis->as_scalar());
         // Validate axis (1-indexed with ⎕IO=1)
         if (reverse_axis < 1 || reverse_axis > rank) {
-            m->throw_error("AXIS ERROR: invalid axis for array rank");
+            m->throw_error("AXIS ERROR: invalid axis for array rank", m->control, 4, 0);
             return;
         }
     }
@@ -4372,7 +4377,7 @@ void fn_tally(Machine* m, Value* axis, Value* omega) {
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ≢ requires array argument");
+        m->throw_error("DOMAIN ERROR: ≢ requires array argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -4384,19 +4389,19 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // ISO 13751 10.2.7: Validate axis if provided
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be scalar");
+            m->throw_error("AXIS ERROR: axis must be scalar", m->control, 4, 0);
             return;
         }
         double ax = axis->as_scalar();
         if (!is_near_integer(ax, INTEGER_TOLERANCE)) {
-            m->throw_error("AXIS ERROR: axis must be integer");
+            m->throw_error("AXIS ERROR: axis must be integer", m->control, 4, 0);
             return;
         }
         int ax_int = static_cast<int>(std::round(ax));
         int io = m->io;
         int rank = rhs->is_scalar() ? 0 : (rhs->is_vector() ? 1 : 2);
         if (ax_int < io || ax_int > io + rank - 1) {
-            m->throw_error("AXIS ERROR: axis out of range");
+            m->throw_error("AXIS ERROR: axis out of range", m->control, 4, 0);
             return;
         }
     }
@@ -4406,7 +4411,7 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (lhs->is_scalar()) {
             double val = lhs->as_scalar();
             if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-                m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
                 return;
             }
         }
@@ -4417,12 +4422,12 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // Strand rotation: rotate elements (ISO 10.2.7)
     if (rhs->is_strand()) {
         if (!lhs->is_scalar()) {
-            m->throw_error("RANK ERROR: strand rotation requires scalar count");
+            m->throw_error("RANK ERROR: strand rotation requires scalar count", nullptr, 4, 0);
             return;
         }
         double val = lhs->as_scalar();
         if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
             return;
         }
         int n = static_cast<int>(std::round(val));
@@ -4455,7 +4460,7 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (axis != nullptr) {
             rotate_axis = static_cast<int>(axis->as_scalar());
             if (rotate_axis < 1 || rotate_axis > rank) {
-                m->throw_error("AXIS ERROR: axis out of range");
+                m->throw_error("AXIS ERROR: axis out of range", m->control, 4, 0);
                 return;
             }
         }
@@ -4483,7 +4488,7 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             // Scalar rotation count - rotate all by same amount
             double val = lhs->as_scalar();
             if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-                m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
                 return;
             }
             int n = static_cast<int>(std::round(val));
@@ -4514,14 +4519,14 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             // For 2 3 4⍴⍳24 with default axis 3 (last), rotations match dim 2 (3 rows)
             int match_dim = (ax > 0) ? ax - 1 : 0;
             if (num_rotations != shape[match_dim]) {
-                m->throw_error("LENGTH ERROR: rotation count length must match array dimension");
+                m->throw_error("LENGTH ERROR: rotation count length must match array dimension", nullptr, 5, 0);
                 return;
             }
 
             // Validate all rotation counts are integers
             for (int i = 0; i < num_rotations; ++i) {
                 if (!is_near_integer((*rotations)(i, 0), INTEGER_TOLERANCE)) {
-                    m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                    m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
                     return;
                 }
             }
@@ -4548,7 +4553,7 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 result_data(i) = (*nd->data)(src_linear);
             }
         } else {
-            m->throw_error("RANK ERROR: rotate count must be scalar or vector");
+            m->throw_error("RANK ERROR: rotate count must be scalar or vector", nullptr, 4, 0);
             return;
         }
 
@@ -4557,7 +4562,7 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⌽ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⌽ requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = rhs->is_char_data();
@@ -4567,7 +4572,7 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         // Scalar rotation count
         double val = lhs->as_scalar();
         if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
             return;
         }
         int n = static_cast<int>(std::round(val));
@@ -4606,12 +4611,12 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // ISO 13751 10.2.7: Vector rotation count - each row rotated by different amount
     if (!lhs->is_vector()) {
-        m->throw_error("RANK ERROR: rotate count must be scalar or vector");
+        m->throw_error("RANK ERROR: rotate count must be scalar or vector", nullptr, 4, 0);
         return;
     }
 
     if (!rhs->is_matrix()) {
-        m->throw_error("RANK ERROR: vector rotate requires matrix right argument");
+        m->throw_error("RANK ERROR: vector rotate requires matrix right argument", nullptr, 4, 0);
         return;
     }
 
@@ -4620,14 +4625,14 @@ void fn_rotate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int cols = mat->cols();
 
     if (lmat->rows() != rows) {
-        m->throw_error("LENGTH ERROR: rotate count length must match number of rows");
+        m->throw_error("LENGTH ERROR: rotate count length must match number of rows", nullptr, 5, 0);
         return;
     }
 
     // Validate all rotation counts are near-integers
     for (int i = 0; i < rows; ++i) {
         if (!is_near_integer((*lmat)(i, 0), INTEGER_TOLERANCE)) {
-            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
             return;
         }
     }
@@ -4653,19 +4658,19 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // ISO 13751 10.2.7: Validate axis if provided
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be scalar");
+            m->throw_error("AXIS ERROR: axis must be scalar", m->control, 4, 0);
             return;
         }
         double ax = axis->as_scalar();
         if (!is_near_integer(ax, INTEGER_TOLERANCE)) {
-            m->throw_error("AXIS ERROR: axis must be integer");
+            m->throw_error("AXIS ERROR: axis must be integer", m->control, 4, 0);
             return;
         }
         int ax_int = static_cast<int>(std::round(ax));
         int io = m->io;
         int rank = rhs->is_scalar() ? 0 : (rhs->is_vector() ? 1 : 2);
         if (ax_int < io || ax_int > io + rank - 1) {
-            m->throw_error("AXIS ERROR: axis out of range");
+            m->throw_error("AXIS ERROR: axis out of range", m->control, 4, 0);
             return;
         }
     }
@@ -4675,7 +4680,7 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (lhs->is_scalar()) {
             double val = lhs->as_scalar();
             if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-                m->throw_error("DOMAIN ERROR: rotate count must be integer");
+                m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
                 return;
             }
         }
@@ -4688,12 +4693,12 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // NDARRAY: rotate along specified axis (default: first)
     if (rhs->is_ndarray()) {
         if (!lhs->is_scalar()) {
-            m->throw_error("RANK ERROR: NDARRAY rotate requires scalar count");
+            m->throw_error("RANK ERROR: NDARRAY rotate requires scalar count", nullptr, 4, 0);
             return;
         }
         double val = lhs->as_scalar();
         if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
             return;
         }
         int n = static_cast<int>(std::round(val));
@@ -4707,7 +4712,7 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (axis != nullptr) {
             rotate_axis = static_cast<int>(axis->as_scalar());
             if (rotate_axis < 1 || rotate_axis > rank) {
-                m->throw_error("AXIS ERROR: axis out of range");
+                m->throw_error("AXIS ERROR: axis out of range", m->control, 4, 0);
                 return;
             }
         }
@@ -4759,7 +4764,7 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⊖ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⊖ requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = rhs->is_char_data();
@@ -4768,7 +4773,7 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lhs->is_scalar()) {
         double val = lhs->as_scalar();
         if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
             return;
         }
         int n = static_cast<int>(std::round(val));
@@ -4806,12 +4811,12 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // ISO 13751 10.2.7: Vector rotation count - each column rotated by different amount
     if (!lhs->is_vector()) {
-        m->throw_error("RANK ERROR: rotate count must be scalar or vector");
+        m->throw_error("RANK ERROR: rotate count must be scalar or vector", nullptr, 4, 0);
         return;
     }
 
     if (!rhs->is_matrix()) {
-        m->throw_error("RANK ERROR: vector rotate requires matrix right argument");
+        m->throw_error("RANK ERROR: vector rotate requires matrix right argument", nullptr, 4, 0);
         return;
     }
 
@@ -4820,14 +4825,14 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int cols = mat->cols();
 
     if (lmat->rows() != cols) {
-        m->throw_error("LENGTH ERROR: rotate count length must match number of columns");
+        m->throw_error("LENGTH ERROR: rotate count length must match number of columns", nullptr, 5, 0);
         return;
     }
 
     // Validate all rotation counts are near-integers
     for (int i = 0; i < cols; ++i) {
         if (!is_near_integer((*lmat)(i, 0), INTEGER_TOLERANCE)) {
-            m->throw_error("DOMAIN ERROR: rotate count must be integer");
+            m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
             return;
         }
     }
@@ -4878,7 +4883,7 @@ void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // ISO 13751: left argument must be a vector
     if (!lhs->is_scalar() && !lhs->is_vector()) {
-        m->throw_error("RANK ERROR: left argument of index-of must be a vector");
+        m->throw_error("RANK ERROR: left argument of index-of must be a vector", nullptr, 4, 0);
         return;
     }
 
@@ -4913,7 +4918,7 @@ void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (!rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍳ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍳ requires array argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* rmat = rhs->as_matrix();
@@ -4995,11 +5000,11 @@ void fn_member_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (!lhs->is_scalar() && !lhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ∊ requires array argument");
+        m->throw_error("DOMAIN ERROR: ∊ requires array argument", nullptr, 11, 0);
         return;
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ∊ requires array argument");
+        m->throw_error("DOMAIN ERROR: ∊ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -5056,13 +5061,13 @@ void fn_member_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 void fn_grade_up(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
-        m->throw_error("RANK ERROR: grade requires array");
+        m->throw_error("RANK ERROR: grade requires array", nullptr, 4, 0);
         return;
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍋ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍋ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -5126,13 +5131,13 @@ void fn_grade_up(Machine* m, Value* axis, Value* omega) {
 void fn_grade_down(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
     if (omega->is_scalar()) {
-        m->throw_error("RANK ERROR: grade requires array");
+        m->throw_error("RANK ERROR: grade requires array", nullptr, 4, 0);
         return;
     }
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍒ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍒ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -5201,17 +5206,17 @@ void fn_grade_up_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     // Validate A (collating sequence) is character array with rank > 0
     if (lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: collating sequence must have rank > 0");
+        m->throw_error("RANK ERROR: collating sequence must have rank > 0", nullptr, 4, 0);
         return;
     }
     if (!lhs->is_char_data() && !lhs->is_string()) {
-        m->throw_error("DOMAIN ERROR: collating sequence must be character");
+        m->throw_error("DOMAIN ERROR: collating sequence must be character", nullptr, 11, 0);
         return;
     }
 
     // Validate B is character array
     if (!rhs->is_char_data() && !rhs->is_string()) {
-        m->throw_error("DOMAIN ERROR: right argument must be character");
+        m->throw_error("DOMAIN ERROR: right argument must be character", nullptr, 11, 0);
         return;
     }
 
@@ -5332,17 +5337,17 @@ void fn_grade_down_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     // Validate A (collating sequence) is character array with rank > 0
     if (lhs->is_scalar()) {
-        m->throw_error("RANK ERROR: collating sequence must have rank > 0");
+        m->throw_error("RANK ERROR: collating sequence must have rank > 0", nullptr, 4, 0);
         return;
     }
     if (!lhs->is_char_data() && !lhs->is_string()) {
-        m->throw_error("DOMAIN ERROR: collating sequence must be character");
+        m->throw_error("DOMAIN ERROR: collating sequence must be character", nullptr, 11, 0);
         return;
     }
 
     // Validate B is character array
     if (!rhs->is_char_data() && !rhs->is_string()) {
-        m->throw_error("DOMAIN ERROR: right argument must be character");
+        m->throw_error("DOMAIN ERROR: right argument must be character", nullptr, 11, 0);
         return;
     }
 
@@ -5493,7 +5498,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
 
         if (static_cast<int>(counts.size()) != n) {
-            m->throw_error("LENGTH ERROR: replicate count must match strand length");
+            m->throw_error("LENGTH ERROR: replicate count must match strand length", nullptr, 5, 0);
             return;
         }
 
@@ -5502,7 +5507,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < n; ++i) {
             int c = static_cast<int>(counts(i));
             if (c < 0) {
-                m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+                m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
                 return;
             }
             total += c;
@@ -5536,12 +5541,12 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int ax = rank - 1;
         if (axis) {
             if (!axis->is_scalar()) {
-                m->throw_error("AXIS ERROR: axis must be scalar");
+                m->throw_error("AXIS ERROR: axis must be scalar", m->control, 4, 0);
                 return;
             }
             ax = static_cast<int>(axis->as_scalar()) - m->io;
             if (ax < 0 || ax >= rank) {
-                m->throw_error("AXIS ERROR: axis out of bounds");
+                m->throw_error("AXIS ERROR: axis out of bounds", m->control, 4, 0);
                 return;
             }
         }
@@ -5556,7 +5561,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
 
         if (static_cast<int>(counts.size()) != axis_len) {
-            m->throw_error("LENGTH ERROR: replicate count must match axis length");
+            m->throw_error("LENGTH ERROR: replicate count must match axis length", nullptr, 5, 0);
             return;
         }
 
@@ -5565,7 +5570,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < counts.size(); ++i) {
             int c = static_cast<int>(counts(i));
             if (c < 0) {
-                m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+                m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
                 return;
             }
             new_axis_len += c;
@@ -5650,16 +5655,16 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (axis) {
         int max_rank = rhs->is_vector() ? 1 : (rhs->is_matrix() ? 2 : 0);
         if (max_rank == 0) {
-            m->throw_error("AXIS ERROR: replicate with axis requires array argument");
+            m->throw_error("AXIS ERROR: replicate with axis requires array argument", m->control, 4, 0);
             return;
         }
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be a scalar");
+            m->throw_error("AXIS ERROR: axis must be a scalar", m->control, 4, 0);
             return;
         }
         k = static_cast<int>(axis->as_scalar()) - static_cast<int>(m->io);
         if (k < 0 || k >= max_rank) {
-            m->throw_error("AXIS ERROR: axis out of bounds");
+            m->throw_error("AXIS ERROR: axis out of bounds", m->control, 4, 0);
             return;
         }
         k += 1;  // Convert to 1-based internal representation
@@ -5677,7 +5682,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (k == 1) {
             // Replicate along first axis (rows)
             if (counts.size() != rows) {
-                m->throw_error("LENGTH ERROR: replicate count must match array length");
+                m->throw_error("LENGTH ERROR: replicate count must match array length", nullptr, 5, 0);
                 return;
             }
 
@@ -5686,7 +5691,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             for (int i = 0; i < counts.size(); ++i) {
                 int c = static_cast<int>(counts(i));
                 if (c < 0) {
-                    m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+                    m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
                     return;
                 }
                 total_rows += c;
@@ -5713,7 +5718,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         // k == 2: Replicate along last axis (columns)
         if (counts.size() != cols) {
-            m->throw_error("LENGTH ERROR: replicate count must match array length");
+            m->throw_error("LENGTH ERROR: replicate count must match array length", nullptr, 5, 0);
             return;
         }
 
@@ -5722,7 +5727,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         for (int i = 0; i < counts.size(); ++i) {
             int c = static_cast<int>(counts(i));
             if (c < 0) {
-                m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+                m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
                 return;
             }
             total_cols += c;
@@ -5758,7 +5763,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     if (counts.size() != data.size()) {
-        m->throw_error("LENGTH ERROR: replicate count must match array length");
+        m->throw_error("LENGTH ERROR: replicate count must match array length", nullptr, 5, 0);
         return;
     }
 
@@ -5767,7 +5772,7 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     for (int i = 0; i < counts.size(); ++i) {
         int c = static_cast<int>(counts(i));
         if (c < 0) {
-            m->throw_error("DOMAIN ERROR: replicate count must be non-negative");
+            m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
             return;
         }
         total += c;
@@ -5812,7 +5817,7 @@ void fn_unique(Machine* m, Value* axis, Value* omega) {
 
     // ISO 13751 10.1.8: Unique requires vector or scalar
     if (omega->is_matrix()) {
-        m->throw_error("RANK ERROR: unique requires vector or scalar argument");
+        m->throw_error("RANK ERROR: unique requires vector or scalar argument", nullptr, 4, 0);
         return;
     }
 
@@ -5823,7 +5828,7 @@ void fn_unique(Machine* m, Value* axis, Value* omega) {
 
     if (omega->is_string()) omega = omega->to_char_vector(m->heap);
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ∪ requires array argument");
+        m->throw_error("DOMAIN ERROR: ∪ requires array argument", nullptr, 11, 0);
         return;
     }
     bool is_char = omega->is_char_data();
@@ -5878,11 +5883,11 @@ void fn_union(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (!lhs->is_scalar() && !lhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ∪ requires array argument");
+        m->throw_error("DOMAIN ERROR: ∪ requires array argument", nullptr, 11, 0);
         return;
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ∪ requires array argument");
+        m->throw_error("DOMAIN ERROR: ∪ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -5947,11 +5952,11 @@ void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
     if (!lhs->is_scalar() && !lhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ~ requires array argument");
+        m->throw_error("DOMAIN ERROR: ~ requires array argument", nullptr, 11, 0);
         return;
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ~ requires array argument");
+        m->throw_error("DOMAIN ERROR: ~ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -6009,11 +6014,11 @@ void fn_roll(Machine* m, Value* axis, Value* omega) {
         double val = omega->data.scalar;
         int n = static_cast<int>(val);
         if (n != val) {
-            m->throw_error("DOMAIN ERROR: ? argument must be integer");
+            m->throw_error("DOMAIN ERROR: ? argument must be integer", nullptr, 11, 0);
             return;
         }
         if (n <= 0) {
-            m->throw_error("DOMAIN ERROR: ? argument must be positive");
+            m->throw_error("DOMAIN ERROR: ? argument must be positive", nullptr, 11, 0);
             return;
         }
         std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
@@ -6022,7 +6027,7 @@ void fn_roll(Machine* m, Value* axis, Value* omega) {
     }
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ? requires numeric argument");
+        m->throw_error("DOMAIN ERROR: ? requires numeric argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -6032,11 +6037,11 @@ void fn_roll(Machine* m, Value* axis, Value* omega) {
         double val = mat->data()[i];
         int n = static_cast<int>(val);
         if (n != val) {
-            m->throw_error("DOMAIN ERROR: roll argument must be integer");
+            m->throw_error("DOMAIN ERROR: roll argument must be integer", nullptr, 11, 0);
             return;
         }
         if (n <= 0) {
-            m->throw_error("DOMAIN ERROR: roll argument must be positive");
+            m->throw_error("DOMAIN ERROR: roll argument must be positive", nullptr, 11, 0);
             return;
         }
         std::uniform_int_distribution<int> dist(io, n - 1 + io);  // ⎕IO
@@ -6055,7 +6060,7 @@ void fn_roll(Machine* m, Value* axis, Value* omega) {
 void fn_deal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
     if (!lhs->is_scalar() || !rhs->is_scalar()) {
-        m->throw_error("DOMAIN ERROR: deal arguments must be scalars");
+        m->throw_error("DOMAIN ERROR: deal arguments must be scalars", nullptr, 11, 0);
         return;
     }
 
@@ -6064,11 +6069,11 @@ void fn_deal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Check for integer values using ⎕CT
     if (std::abs(lval - std::round(lval)) > m->ct) {
-        m->throw_error("DOMAIN ERROR: deal count must be integer");
+        m->throw_error("DOMAIN ERROR: deal count must be integer", nullptr, 11, 0);
         return;
     }
     if (std::abs(rval - std::round(rval)) > m->ct) {
-        m->throw_error("DOMAIN ERROR: deal range must be integer");
+        m->throw_error("DOMAIN ERROR: deal range must be integer", nullptr, 11, 0);
         return;
     }
 
@@ -6076,12 +6081,12 @@ void fn_deal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int b = static_cast<int>(std::round(rval));
 
     if (a < 0 || b <= 0) {
-        m->throw_error("DOMAIN ERROR: deal arguments must be positive");
+        m->throw_error("DOMAIN ERROR: deal arguments must be positive", nullptr, 11, 0);
         return;
     }
 
     if (a > b) {
-        m->throw_error("DOMAIN ERROR: cannot deal more values than range");
+        m->throw_error("DOMAIN ERROR: cannot deal more values than range", nullptr, 11, 0);
         return;
     }
 
@@ -6131,7 +6136,7 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     for (int i = 0; i < mask.size(); ++i) {
         int val = static_cast<int>(mask(i));
         if (val != 0 && val != 1) {
-            m->throw_error("DOMAIN ERROR: expand mask must be boolean");
+            m->throw_error("DOMAIN ERROR: expand mask must be boolean", nullptr, 11, 0);
             return;
         }
         if (val == 1) ones_count++;
@@ -6147,7 +6152,7 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int n = static_cast<int>(strand->size());
 
         if (ones_count != n) {
-            m->throw_error("LENGTH ERROR: expand mask ones must match strand length");
+            m->throw_error("LENGTH ERROR: expand mask ones must match strand length", nullptr, 5, 0);
             return;
         }
 
@@ -6177,12 +6182,12 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int ax = rank - 1;
         if (axis) {
             if (!axis->is_scalar()) {
-                m->throw_error("AXIS ERROR: axis must be scalar");
+                m->throw_error("AXIS ERROR: axis must be scalar", m->control, 4, 0);
                 return;
             }
             ax = static_cast<int>(axis->as_scalar()) - m->io;
             if (ax < 0 || ax >= rank) {
-                m->throw_error("AXIS ERROR: axis out of bounds");
+                m->throw_error("AXIS ERROR: axis out of bounds", m->control, 4, 0);
                 return;
             }
         }
@@ -6191,7 +6196,7 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         // Number of 1s in mask must equal axis length
         if (ones_count != axis_len) {
-            m->throw_error("LENGTH ERROR: expand mask ones must match axis length");
+            m->throw_error("LENGTH ERROR: expand mask ones must match axis length", nullptr, 5, 0);
             return;
         }
 
@@ -6274,16 +6279,16 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (axis) {
         int max_rank = rhs->is_vector() ? 1 : (rhs->is_matrix() ? 2 : 0);
         if (max_rank == 0 && !rhs->is_scalar()) {
-            m->throw_error("AXIS ERROR: expand with axis requires array argument");
+            m->throw_error("AXIS ERROR: expand with axis requires array argument", m->control, 4, 0);
             return;
         }
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be a scalar");
+            m->throw_error("AXIS ERROR: axis must be a scalar", m->control, 4, 0);
             return;
         }
         k = static_cast<int>(axis->as_scalar()) - static_cast<int>(m->io);
         if (k < 0 || k >= max_rank) {
-            m->throw_error("AXIS ERROR: axis out of bounds");
+            m->throw_error("AXIS ERROR: axis out of bounds", m->control, 4, 0);
             return;
         }
         k += 1;  // Convert to 1-based internal representation
@@ -6317,7 +6322,7 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (k == 1) {
             // Expand along first axis (rows)
             if (ones_count != rows) {
-                m->throw_error("LENGTH ERROR: expand mask ones must match array length");
+                m->throw_error("LENGTH ERROR: expand mask ones must match array length", nullptr, 5, 0);
                 return;
             }
 
@@ -6337,7 +6342,7 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         // k == 2: Expand along last axis (columns)
         if (ones_count != cols) {
-            m->throw_error("LENGTH ERROR: expand mask ones must match array length");
+            m->throw_error("LENGTH ERROR: expand mask ones must match array length", nullptr, 5, 0);
             return;
         }
 
@@ -6359,7 +6364,7 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     Eigen::VectorXd data = flatten_value(rhs);
 
     if (ones_count != data.size()) {
-        m->throw_error("LENGTH ERROR: expand mask ones must match array length");
+        m->throw_error("LENGTH ERROR: expand mask ones must match array length", nullptr, 5, 0);
         return;
     }
 
@@ -6394,7 +6399,7 @@ void fn_expand_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     for (int i = 0; i < mask.size(); ++i) {
         int val = static_cast<int>(mask(i));
         if (val != 0 && val != 1) {
-            m->throw_error("DOMAIN ERROR: expand mask must be boolean");
+            m->throw_error("DOMAIN ERROR: expand mask must be boolean", nullptr, 11, 0);
             return;
         }
         if (val == 1) ones_count++;
@@ -6430,7 +6435,7 @@ void fn_expand_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int cols = mat->cols();
 
     if (ones_count != rows) {
-        m->throw_error("LENGTH ERROR: expand mask ones must match array length");
+        m->throw_error("LENGTH ERROR: expand mask ones must match array length", nullptr, 5, 0);
         return;
     }
 
@@ -6461,11 +6466,11 @@ void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Reject character data
     if (lhs->is_string() || lhs->is_char_data()) {
-        m->throw_error("DOMAIN ERROR: decode requires numeric arguments");
+        m->throw_error("DOMAIN ERROR: decode requires numeric arguments", nullptr, 11, 0);
         return;
     }
     if (rhs->is_string() || rhs->is_char_data()) {
-        m->throw_error("DOMAIN ERROR: decode requires numeric arguments");
+        m->throw_error("DOMAIN ERROR: decode requires numeric arguments", nullptr, 11, 0);
         return;
     }
 
@@ -6494,7 +6499,7 @@ void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int p = B->cols();
 
         if (B->rows() != n) {
-            m->throw_error("LENGTH ERROR: decode inner dimensions must match");
+            m->throw_error("LENGTH ERROR: decode inner dimensions must match", nullptr, 5, 0);
             return;
         }
 
@@ -6512,11 +6517,11 @@ void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Validate arguments before flattening
     if (!lhs->is_scalar() && !lhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⊥ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⊥ requires array argument", nullptr, 11, 0);
         return;
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⊥ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⊥ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -6541,7 +6546,7 @@ void fn_decode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Radix and digits must have same length after extension
     if (radix.size() != n) {
-        m->throw_error("LENGTH ERROR: decode radix and digits must have same length");
+        m->throw_error("LENGTH ERROR: decode radix and digits must have same length", nullptr, 5, 0);
         return;
     }
 
@@ -6563,21 +6568,21 @@ void fn_encode(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Reject character data
     if (lhs->is_string() || lhs->is_char_data()) {
-        m->throw_error("DOMAIN ERROR: encode requires numeric arguments");
+        m->throw_error("DOMAIN ERROR: encode requires numeric arguments", nullptr, 11, 0);
         return;
     }
     if (rhs->is_string() || rhs->is_char_data()) {
-        m->throw_error("DOMAIN ERROR: encode requires numeric arguments");
+        m->throw_error("DOMAIN ERROR: encode requires numeric arguments", nullptr, 11, 0);
         return;
     }
 
     // Validate arguments before flattening
     if (!lhs->is_scalar() && !lhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⊤ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⊤ requires array argument", nullptr, 11, 0);
         return;
     }
     if (!rhs->is_scalar() && !rhs->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⊤ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⊤ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -6669,11 +6674,11 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // Handle array indexing - scalars cannot be indexed (ISO 13751)
     if (array->is_scalar()) {
-        m->throw_error("RANK ERROR: cannot index scalar");
+        m->throw_error("RANK ERROR: cannot index scalar", nullptr, 4, 0);
         return;
     }
     if (!array->is_array() && !array->is_strand()) {
-        m->throw_error("DOMAIN ERROR: cannot index non-array value");
+        m->throw_error("DOMAIN ERROR: cannot index non-array value", nullptr, 11, 0);
         return;
     }
 
@@ -6681,7 +6686,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     auto validate_index = [m](double val) -> bool {
         double rounded = std::round(val);
         if (std::abs(val - rounded) > 1e-10) {
-            m->throw_error("DOMAIN ERROR: index must be integer");
+            m->throw_error("DOMAIN ERROR: index must be integer", nullptr, 11, 0);
             return false;
         }
         return true;
@@ -6709,7 +6714,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             if (!validate_index(val)) { had_error = true; return {}; }
             int i = static_cast<int>(std::round(val)) - m->io;
             if (i < 0 || i >= max_dim) {
-                m->throw_error("INDEX ERROR: index out of bounds");
+                m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                 had_error = true;
                 return {};
             }
@@ -6722,14 +6727,14 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 if (!validate_index(val)) { had_error = true; return {}; }
                 int i = static_cast<int>(std::round(val)) - m->io;
                 if (i < 0 || i >= max_dim) {
-                    m->throw_error("INDEX ERROR: index out of bounds");
+                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                     had_error = true;
                     return {};
                 }
                 result.push_back(i);
             }
         } else {
-            m->throw_error("DOMAIN ERROR: index must be numeric");
+            m->throw_error("DOMAIN ERROR: index must be numeric", nullptr, 11, 0);
             had_error = true;
             return {};
         }
@@ -6742,7 +6747,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         size_t num_axes = idx_strand->size();
 
         if (!array->is_array()) {
-            m->throw_error("RANK ERROR: multi-axis indexing requires array");
+            m->throw_error("RANK ERROR: multi-axis indexing requires array", nullptr, 4, 0);
             return;
         }
 
@@ -6753,7 +6758,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             const Eigen::VectorXd* data = array->ndarray_data();
 
             if (num_axes != shape.size()) {
-                m->throw_error("RANK ERROR: index count doesn't match array rank");
+                m->throw_error("RANK ERROR: index count doesn't match array rank", nullptr, 4, 0);
                 return;
             }
 
@@ -6836,7 +6841,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         bool is_vec = (cols == 1);
 
         if (num_axes != 2) {
-            m->throw_error("RANK ERROR: matrix requires exactly 2 indices");
+            m->throw_error("RANK ERROR: matrix requires exactly 2 indices", nullptr, 4, 0);
             return;
         }
 
@@ -6892,7 +6897,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             if (!validate_index(idx_val)) return;
             int idx = static_cast<int>(std::round(idx_val)) - m->io;
             if (idx < 0 || idx >= len) {
-                m->throw_error("INDEX ERROR: index out of bounds");
+                m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                 return;
             }
             m->result = (*strand)[idx];
@@ -6906,14 +6911,14 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 if (!validate_index(idx_val)) return;
                 int idx = static_cast<int>(std::round(idx_val)) - m->io;
                 if (idx < 0 || idx >= len) {
-                    m->throw_error("INDEX ERROR: index out of bounds");
+                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                     return;
                 }
                 result.push_back((*strand)[idx]);
             }
             m->result = m->heap->allocate_strand(std::move(result));
         } else {
-            m->throw_error("DOMAIN ERROR: index must be numeric");
+            m->throw_error("DOMAIN ERROR: index must be numeric", nullptr, 11, 0);
         }
         return;
     }
@@ -6928,7 +6933,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             if (!validate_index(idx_val)) return;
             int idx = static_cast<int>(std::round(idx_val)) - m->io;
             if (idx < 0 || idx >= arr_size) {
-                m->throw_error("INDEX ERROR: index out of bounds");
+                m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                 return;
             }
             m->result = m->heap->allocate_scalar((*data)(idx));
@@ -6941,14 +6946,14 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 if (!validate_index(idx_val)) return;
                 int idx = static_cast<int>(std::round(idx_val)) - m->io;
                 if (idx < 0 || idx >= arr_size) {
-                    m->throw_error("INDEX ERROR: index out of bounds");
+                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                     return;
                 }
                 result(i) = (*data)(idx);
             }
             m->result = m->heap->allocate_vector(result, is_char);
         } else {
-            m->throw_error("DOMAIN ERROR: index must be numeric");
+            m->throw_error("DOMAIN ERROR: index must be numeric", nullptr, 11, 0);
         }
         return;
     }
@@ -6965,7 +6970,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
         if (is_vec) {
             if (idx < 0 || idx >= rows) {
-                m->throw_error("INDEX ERROR: index out of bounds");
+                m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                 return;
             }
             m->result = m->heap->allocate_scalar((*arr)(idx, 0));
@@ -6973,7 +6978,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             // Linear indexing into matrix (row-major order)
             int size = rows * cols;
             if (idx < 0 || idx >= size) {
-                m->throw_error("INDEX ERROR: index out of bounds");
+                m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                 return;
             }
             int row = idx / cols;
@@ -6991,7 +6996,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 if (!validate_index(idx_val)) return;
                 int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
-                    m->throw_error("INDEX ERROR: index out of bounds");
+                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                     return;
                 }
                 result(i) = (*arr)(idx, 0);
@@ -7004,7 +7009,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 if (!validate_index(idx_val)) return;
                 int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
                 if (idx < 0 || idx >= rows) {
-                    m->throw_error("INDEX ERROR: index out of bounds");
+                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                     return;
                 }
                 result.row(i) = arr->row(idx);
@@ -7012,7 +7017,7 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->result = m->heap->allocate_matrix(result, is_char);
         }
     } else {
-        m->throw_error("DOMAIN ERROR: index must be numeric");
+        m->throw_error("DOMAIN ERROR: index must be numeric", nullptr, 11, 0);
     }
 }
 
@@ -7046,7 +7051,7 @@ void fn_table(Machine* m, Value* axis, Value* omega) {
     }
 
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍪ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍪ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -7234,11 +7239,11 @@ void fn_catenate_first(Machine* m, Value* axis, Value* alpha, Value* omega) {
 
     // Validate both arguments are arrays (or scalars which are handled below)
     if (!alpha->is_scalar() && !alpha->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍪ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍪ requires array argument", nullptr, 11, 0);
         return;
     }
     if (!omega->is_scalar() && !omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍪ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍪ requires array argument", nullptr, 11, 0);
         return;
     }
 
@@ -7287,7 +7292,7 @@ void fn_catenate_first(Machine* m, Value* axis, Value* alpha, Value* omega) {
 
     // Check column compatibility (must match for first-axis catenation)
     if (mat_a.cols() != mat_b.cols()) {
-        m->throw_error("LENGTH ERROR: incompatible shapes for ⍪");
+        m->throw_error("LENGTH ERROR: incompatible shapes for ⍪", nullptr, 5, 0);
         return;
     }
 
@@ -7313,7 +7318,7 @@ void fn_execute(Machine* m, Value* axis, Value* omega) {
     } else if (omega->is_array() && omega->is_char_data()) {
         str_val = omega->to_string_value(m->heap);
     } else {
-        m->throw_error("DOMAIN ERROR: execute requires a string");
+        m->throw_error("DOMAIN ERROR: execute requires a string", nullptr, 11, 0);
         return;
     }
 
@@ -7329,7 +7334,7 @@ void fn_execute(Machine* m, Value* axis, Value* omega) {
 
     if (!k) {
         // Parse error
-        m->throw_error(m->parser->get_error().c_str());
+        m->throw_error(m->parser->get_error().c_str(), m->control, 1, 0);
         return;
     }
 
@@ -7506,7 +7511,7 @@ void fn_format_monadic(Machine* m, Value* axis, Value* omega) {
 
     // Vector or Matrix: format as space-separated values
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍕ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍕ requires array argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -7580,19 +7585,19 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
     REJECT_AXIS(m, axis);
     // A must be numeric
     if (alpha->is_string() || (alpha->is_array() && alpha->is_char_data())) {
-        m->throw_error("DOMAIN ERROR: format left argument must be numeric");
+        m->throw_error("DOMAIN ERROR: format left argument must be numeric", nullptr, 11, 0);
         return;
     }
 
     // B must be numeric
     if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
-        m->throw_error("DOMAIN ERROR: format right argument must be numeric");
+        m->throw_error("DOMAIN ERROR: format right argument must be numeric", nullptr, 11, 0);
         return;
     }
 
     // A must be a vector (rank <= 1)
     if (alpha->is_matrix()) {
-        m->throw_error("RANK ERROR: format left argument must be a vector");
+        m->throw_error("RANK ERROR: format left argument must be a vector", nullptr, 4, 0);
         return;
     }
 
@@ -7611,21 +7616,21 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
         // Single scalar - interpret as width with 0 decimals
         double v = alpha->as_scalar();
         if (!is_near_integer(v)) {
-            m->throw_error("DOMAIN ERROR: format specification must be integer");
+            m->throw_error("DOMAIN ERROR: format specification must be integer", nullptr, 11, 0);
             return;
         }
         int w = (int)std::round(v);
         specs.push_back({w, 0});
     } else {
         if (!alpha->is_array()) {
-            m->throw_error("DOMAIN ERROR: ⍕ requires array argument");
+            m->throw_error("DOMAIN ERROR: ⍕ requires array argument", nullptr, 11, 0);
             return;
         }
         const Eigen::MatrixXd* a_mat = alpha->as_matrix();
         int a_size = a_mat->rows();
 
         if (a_size % 2 != 0) {
-            m->throw_error("LENGTH ERROR: format left argument must have even length");
+            m->throw_error("LENGTH ERROR: format left argument must have even length", nullptr, 5, 0);
             return;
         }
 
@@ -7633,7 +7638,7 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
             double w_val = (*a_mat)(i, 0);
             double p_val = (*a_mat)(i + 1, 0);
             if (!is_near_integer(w_val) || !is_near_integer(p_val)) {
-                m->throw_error("DOMAIN ERROR: format specification must be integer");
+                m->throw_error("DOMAIN ERROR: format specification must be integer", nullptr, 11, 0);
                 return;
             }
             int w = (int)std::round(w_val);
@@ -7645,7 +7650,7 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
     // Validate width is positive
     for (const auto& spec : specs) {
         if (spec.first <= 0) {
-            m->throw_error("DOMAIN ERROR: format width must be positive");
+            m->throw_error("DOMAIN ERROR: format width must be positive", nullptr, 11, 0);
             return;
         }
     }
@@ -7686,7 +7691,7 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
         }
 
         if (char_count > width) {
-            m->throw_error("DOMAIN ERROR: format width too narrow");
+            m->throw_error("DOMAIN ERROR: format width too narrow", nullptr, 11, 0);
             return;
         }
 
@@ -7696,7 +7701,7 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
 
     // Format vector or matrix
     if (!omega->is_array()) {
-        m->throw_error("DOMAIN ERROR: ⍕ requires array argument");
+        m->throw_error("DOMAIN ERROR: ⍕ requires array argument", nullptr, 11, 0);
         return;
     }
     const Eigen::MatrixXd* mat = omega->as_matrix();
@@ -7720,7 +7725,7 @@ void fn_format_dyadic(Machine* m, Value* axis, Value* alpha, Value* omega) {
 
     // Check we have right number of specs
     if ((int)specs.size() != cols) {
-        m->throw_error("LENGTH ERROR: format specs must match number of columns");
+        m->throw_error("LENGTH ERROR: format specs must match number of columns", nullptr, 5, 0);
         return;
     }
 
@@ -7766,7 +7771,7 @@ void fn_enclose(Machine* m, Value* axis, Value* omega) {
     // Handle axis specification - ISO 13751 Section 10.2.27
     if (axis != nullptr) {
         if (!axis->is_scalar()) {
-            m->throw_error("AXIS ERROR: axis must be scalar");
+            m->throw_error("AXIS ERROR: axis must be scalar", m->control, 4, 0);
             return;
         }
         int enc_axis = static_cast<int>(axis->as_scalar());
@@ -7776,7 +7781,7 @@ void fn_enclose(Machine* m, Value* axis, Value* omega) {
 
         int rank = omega->rank();
         if (enc_axis < 1 || enc_axis > rank) {
-            m->throw_error("AXIS ERROR: axis out of range");
+            m->throw_error("AXIS ERROR: axis out of range", m->control, 4, 0);
             return;
         }
 
@@ -7827,7 +7832,7 @@ void fn_enclose(Machine* m, Value* axis, Value* omega) {
             return;
         }
 
-        m->throw_error("DOMAIN ERROR: cannot enclose with axis on this type");
+        m->throw_error("DOMAIN ERROR: cannot enclose with axis on this type", nullptr, 11, 0);
         return;
     }
 
@@ -7912,13 +7917,13 @@ void fn_disclose(Machine* m, Value* axis, Value* omega) {
                 axis_vals.push_back(static_cast<int>((*mat)(i, 0)));
             }
         } else {
-            m->throw_error("AXIS ERROR: axis must be scalar or vector");
+            m->throw_error("AXIS ERROR: axis must be scalar or vector", m->control, 4, 0);
             return;
         }
 
         // Validate: count of axis values must equal rank of disclosed value
         if (static_cast<int>(axis_vals.size()) != rank) {
-            m->throw_error("AXIS ERROR: axis count must equal rank of result");
+            m->throw_error("AXIS ERROR: axis count must equal rank of result", m->control, 4, 0);
             return;
         }
 
@@ -7926,11 +7931,11 @@ void fn_disclose(Machine* m, Value* axis, Value* omega) {
         std::vector<bool> seen(rank, false);
         for (int a : axis_vals) {
             if (a < 1 || a > rank) {
-                m->throw_error("AXIS ERROR: axis value out of range");
+                m->throw_error("AXIS ERROR: axis value out of range", m->control, 4, 0);
                 return;
             }
             if (seen[a - 1]) {
-                m->throw_error("AXIS ERROR: duplicate axis value");
+                m->throw_error("AXIS ERROR: duplicate axis value", m->control, 4, 0);
                 return;
             }
             seen[a - 1] = true;
@@ -7966,7 +7971,7 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
             // APL uses 1-based indexing by default
             int adjusted = idx - 1;  // Assuming ⎕IO=1
             if (adjusted < 0 || adjusted >= static_cast<int>(strand->size())) {
-                m->throw_error("INDEX ERROR: index out of range");
+                m->throw_error("INDEX ERROR: index out of range", nullptr, 3, 0);
                 return;
             }
             m->result = (*strand)[adjusted];
@@ -7978,7 +7983,7 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
             const Eigen::MatrixXd* mat = omega->as_matrix();
             int adjusted = idx - 1;
             if (adjusted < 0 || adjusted >= mat->rows()) {
-                m->throw_error("INDEX ERROR: index out of range");
+                m->throw_error("INDEX ERROR: index out of range", nullptr, 3, 0);
                 return;
             }
             m->result = m->heap->allocate_scalar((*mat)(adjusted, 0));
@@ -7986,7 +7991,7 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
         }
 
         if (omega->is_matrix()) {
-            m->throw_error("RANK ERROR: scalar pick on matrix requires vector index");
+            m->throw_error("RANK ERROR: scalar pick on matrix requires vector index", nullptr, 4, 0);
             return;
         }
     }
@@ -8002,22 +8007,22 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
             if (current->is_strand()) {
                 std::vector<Value*>* strand = current->as_strand();
                 if (idx < 0 || idx >= static_cast<int>(strand->size())) {
-                    m->throw_error("INDEX ERROR: index out of range");
+                    m->throw_error("INDEX ERROR: index out of range", nullptr, 3, 0);
                     return;
                 }
                 current = (*strand)[idx];
             } else if (current->is_vector()) {
                 const Eigen::MatrixXd* mat = current->as_matrix();
                 if (idx < 0 || idx >= mat->rows()) {
-                    m->throw_error("INDEX ERROR: index out of range");
+                    m->throw_error("INDEX ERROR: index out of range", nullptr, 3, 0);
                     return;
                 }
                 current = m->heap->allocate_scalar((*mat)(idx, 0));
             } else if (current->is_matrix()) {
-                m->throw_error("RANK ERROR: cannot pick from matrix with scalar index");
+                m->throw_error("RANK ERROR: cannot pick from matrix with scalar index", nullptr, 4, 0);
                 return;
             } else {
-                m->throw_error("RANK ERROR: cannot pick from scalar");
+                m->throw_error("RANK ERROR: cannot pick from scalar", nullptr, 4, 0);
                 return;
             }
         }
@@ -8026,7 +8031,214 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
         return;
     }
 
-    m->throw_error("DOMAIN ERROR: left argument of ⊃ must be integer index");
+    m->throw_error("DOMAIN ERROR: left argument of ⊃ must be integer index", nullptr, 11, 0);
+}
+
+// ============================================================================
+// Error Handling System Functions (ISO 13751 §11.5.7-11.6.5)
+// Note: ⎕ET and ⎕EM are system variables, implemented in SysVarReadK
+// ============================================================================
+
+// Helper: check if a double is a near-integer per ISO 13751
+static bool is_near_integer(double x) {
+    double rounded = std::round(x);
+    return std::fabs(x - rounded) <= INTEGER_TOLERANCE;
+}
+
+// ⎕ES - Error Signal (monadic) - ISO 13751 §11.5.7
+// Signal an error based on the argument:
+//   - 2-element numeric vector {class, subclass}: signal that error type
+//   - Character vector: signal unclassified error with that message
+//   - 0 0: clear error state without signaling
+//   - Empty: conditional no-op
+void fn_quad_es(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
+
+    // ISO 13751: B must be scalar or vector (rank ≤ 1)
+    if (omega->is_array() && omega->rank() > 1) {
+        m->throw_error("RANK ERROR: ⎕ES argument must be scalar or vector", nullptr, 4, 0);
+        return;
+    }
+
+    // Empty argument = conditional no-op
+    if (omega->is_string()) {
+        if (strlen(omega->as_string()) == 0) {
+            m->result = omega;
+            return;
+        }
+    } else if (omega->is_vector() && omega->size() == 0) {
+        m->result = omega;
+        return;
+    }
+
+    if ((omega->is_vector() || omega->is_scalar()) && omega->size() == 2 && !omega->is_char_data()) {
+        // 2-element numeric vector: {class, subclass}
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        double class_val = (*mat)(0, 0);
+        double subclass_val = (*mat)(1, 0);
+
+        // ISO 13751: elements must be near-integers
+        if (!is_near_integer(class_val) || !is_near_integer(subclass_val)) {
+            m->throw_error("DOMAIN ERROR: ⎕ES error codes must be integers", nullptr, 11, 0);
+            return;
+        }
+
+        int error_class = static_cast<int>(std::round(class_val));
+        int error_subclass = static_cast<int>(std::round(subclass_val));
+
+        // 0 0 = clear error state, no signal
+        if (error_class == 0 && error_subclass == 0) {
+            m->event_type[0] = 0;
+            m->event_type[1] = 0;
+            m->event_message = nullptr;
+            m->result = omega;
+            return;
+        }
+
+        // Signal with specified type, preserving existing message if any
+        const char* msg = m->event_message ? m->event_message : "";
+        m->throw_error(msg, nullptr, error_class, error_subclass);
+
+    } else if (omega->is_string() || (omega->is_vector() && omega->is_char_data())) {
+        // Character vector/string: signal unclassified error with this message
+        const char* msg = omega->as_string();
+        m->throw_error(msg, nullptr, 0, 1);  // 0 1 = unclassified
+
+    } else {
+        m->throw_error("DOMAIN ERROR: ⎕ES requires 2-element vector or character vector", nullptr, 11, 0);
+    }
+}
+
+// ⎕ES - Dyadic Event Simulation - ISO 13751 §11.6.5
+// A ⎕ES B: A is character (message), B is 2-element integer (class, subclass) or empty
+void fn_quad_es_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
+
+    // ISO 13751: A must be scalar or vector (rank ≤ 1)
+    if (lhs->is_array() && lhs->rank() > 1) {
+        m->throw_error("RANK ERROR: ⎕ES left argument must be scalar or vector", nullptr, 4, 0);
+        return;
+    }
+
+    // A must be character scalar or vector
+    bool lhs_is_char = lhs->is_string() || (lhs->is_array() && lhs->is_char_data());
+    if (!lhs_is_char) {
+        m->throw_error("DOMAIN ERROR: ⎕ES left argument must be character", nullptr, 11, 0);
+        return;
+    }
+
+    // ISO 13751: B must be scalar or vector (rank ≤ 1)
+    if (rhs->is_array() && rhs->rank() > 1) {
+        m->throw_error("RANK ERROR: ⎕ES right argument must be scalar or vector", nullptr, 4, 0);
+        return;
+    }
+
+    // Empty B = conditional no-op
+    if (rhs->is_vector() && rhs->size() == 0) {
+        m->result = lhs;
+        return;
+    }
+
+    // B must be numeric
+    if (rhs->is_char_data()) {
+        m->throw_error("DOMAIN ERROR: ⎕ES right argument must be numeric", nullptr, 11, 0);
+        return;
+    }
+    if (rhs->size() != 2) {
+        m->throw_error("LENGTH ERROR: ⎕ES right argument must be 2-element vector", nullptr, 5, 0);
+        return;
+    }
+
+    const Eigen::MatrixXd* mat = rhs->as_matrix();
+    double class_val = (*mat)(0, 0);
+    double subclass_val = (*mat)(1, 0);
+
+    // ISO 13751: elements must be near-integers
+    if (!is_near_integer(class_val) || !is_near_integer(subclass_val)) {
+        m->throw_error("DOMAIN ERROR: ⎕ES error codes must be integers", nullptr, 11, 0);
+        return;
+    }
+
+    int error_class = static_cast<int>(std::round(class_val));
+    int error_subclass = static_cast<int>(std::round(subclass_val));
+
+    // Get message from left argument
+    const char* msg = lhs->is_string() ? lhs->as_string()
+                      : lhs->to_string_value(m->heap)->as_string();
+
+    // 0 0 = clear error state, no signal
+    if (error_class == 0 && error_subclass == 0) {
+        m->event_type[0] = 0;
+        m->event_type[1] = 0;
+        m->event_message = nullptr;
+        m->result = lhs;
+        return;
+    }
+
+    // Signal with specified type and message
+    m->throw_error(msg, nullptr, error_class, error_subclass);
+}
+
+// ⎕EA - Execute Alternate (dyadic) - ISO 13751 §11.6.4
+// A ⎕EA B: A and B are character vectors representing executable expressions.
+// Execute B first. If error occurs, execute A instead.
+void fn_quad_ea(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
+
+    // ISO 13751: A must be scalar or vector (rank ≤ 1)
+    if (lhs->is_array() && lhs->rank() > 1) {
+        m->throw_error("RANK ERROR: ⎕EA left argument must be scalar or vector", nullptr, 4, 0);
+        return;
+    }
+
+    // ISO 13751: B must be scalar or vector (rank ≤ 1)
+    if (rhs->is_array() && rhs->rank() > 1) {
+        m->throw_error("RANK ERROR: ⎕EA right argument must be scalar or vector", nullptr, 4, 0);
+        return;
+    }
+
+    // Both arguments must be character vectors (ISO 13751: "A and B are both character vectors")
+    bool lhs_is_char = lhs->is_string() || (lhs->is_array() && lhs->is_char_data());
+    bool rhs_is_char = rhs->is_string() || (rhs->is_array() && rhs->is_char_data());
+
+    if (!lhs_is_char) {
+        m->throw_error("DOMAIN ERROR: ⎕EA left argument must be character vector", nullptr, 11, 0);
+        return;
+    }
+    if (!rhs_is_char) {
+        m->throw_error("DOMAIN ERROR: ⎕EA right argument must be character vector", nullptr, 11, 0);
+        return;
+    }
+
+    // Get the strings to execute
+    const char* try_code = rhs->is_string() ? rhs->as_string()
+                           : rhs->to_string_value(m->heap)->as_string();
+    const char* alt_code = lhs->is_string() ? lhs->as_string()
+                           : lhs->to_string_value(m->heap)->as_string();
+
+    // Parse the alternate expression (handler) - parse now so errors are caught early
+    Continuation* alt_k = m->parser->parse(alt_code);
+    if (!alt_k) {
+        m->throw_error(m->parser->get_error().c_str(), m->control, 1, 0);
+        return;
+    }
+
+    // Parse the try expression
+    Continuation* try_k = m->parser->parse(try_code);
+    if (!try_k) {
+        m->throw_error(m->parser->get_error().c_str(), m->control, 1, 0);
+        return;
+    }
+
+    // Push the error catcher with handler (alt expression)
+    CatchErrorK* catcher = m->heap->allocate<CatchErrorK>(alt_k);
+    m->push_kont(catcher);
+
+    // Wrap the try expression in FinalizeK to ensure G_PRIME curries (e.g., from dfn calls)
+    // are finalized BEFORE CatchErrorK is reached. Otherwise errors during finalization
+    // would not be caught.
+    FinalizeK* finalize_k = m->heap->allocate<FinalizeK>(try_k, true);
+    m->push_kont(finalize_k);
 }
 
 } // namespace apl
