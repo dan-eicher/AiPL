@@ -111,15 +111,6 @@ static std::unordered_map<std::string, Replxx::Color> APL_COLORS = {
     {"}", Replxx::Color::MAGENTA},
 };
 
-// Get UTF-8 character length
-static int utf8_char_len(unsigned char c) {
-    if ((c & 0x80) == 0) return 1;
-    if ((c & 0xE0) == 0xC0) return 2;
-    if ((c & 0xF0) == 0xE0) return 3;
-    if ((c & 0xF8) == 0xF0) return 4;
-    return 1;
-}
-
 // Syntax highlighting callback
 void hook_color(const std::string& context, Replxx::colors_t& colors,
                 const std::unordered_map<std::string, Replxx::Color>& word_color) {
@@ -127,7 +118,7 @@ void hook_color(const std::string& context, Replxx::colors_t& colors,
     int color_idx = 0;
 
     while (i < context.length()) {
-        int char_len = utf8_char_len(static_cast<unsigned char>(context[i]));
+        int char_len = apl::String::utf8_sequence_length(static_cast<unsigned char>(context[i]));
         std::string ch = context.substr(i, char_len);
 
         auto it = word_color.find(ch);
@@ -173,7 +164,7 @@ Replxx::completions_t hook_completion(const std::string& context, int& contextLe
     std::string prefix = context.substr(start);
     contextLen = 0;
     for (size_t j = 0; j < prefix.length(); ) {
-        j += utf8_char_len(static_cast<unsigned char>(prefix[j]));
+        j += apl::String::utf8_sequence_length(static_cast<unsigned char>(prefix[j]));
         ++contextLen;
     }
 
@@ -209,27 +200,6 @@ static std::string format_number(double val) {
     return oss.str();
 }
 
-// Encode a Unicode codepoint to UTF-8
-static std::string codepoint_to_utf8(uint32_t cp) {
-    std::string result;
-    if (cp <= 0x7F) {
-        result += static_cast<char>(cp);
-    } else if (cp <= 0x7FF) {
-        result += static_cast<char>(0xC0 | (cp >> 6));
-        result += static_cast<char>(0x80 | (cp & 0x3F));
-    } else if (cp <= 0xFFFF) {
-        result += static_cast<char>(0xE0 | (cp >> 12));
-        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        result += static_cast<char>(0x80 | (cp & 0x3F));
-    } else {
-        result += static_cast<char>(0xF0 | (cp >> 18));
-        result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
-        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
-        result += static_cast<char>(0x80 | (cp & 0x3F));
-    }
-    return result;
-}
-
 // Format value for display
 std::string format_value(apl::Value* v, apl::Machine* m) {
     if (!v) return "nil";
@@ -239,7 +209,7 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
     }
 
     if (v->tag == apl::ValueType::STRING) {
-        return v->as_string();
+        return v->as_string()->str();
     }
 
     // NDARRAY (rank 3+): display as planes separated by blank lines
@@ -304,7 +274,7 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
                 // Character vector - display as characters (no quotes, no spaces)
                 for (int i = 0; i < mat->rows(); ++i) {
                     uint32_t cp = static_cast<uint32_t>((*mat)(i, 0));
-                    oss << codepoint_to_utf8(cp);
+                    oss << apl::String::encode_codepoint(cp);
                 }
             } else {
                 // Numeric vector - space-separated
@@ -321,7 +291,7 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
                     // Character matrix - display characters (no spaces between)
                     for (int j = 0; j < mat->cols(); ++j) {
                         uint32_t cp = static_cast<uint32_t>((*mat)(i, j));
-                        oss << codepoint_to_utf8(cp);
+                        oss << apl::String::encode_codepoint(cp);
                     }
                 } else {
                     // Numeric matrix - space-separated

@@ -84,7 +84,8 @@ public:
     // Convenient Value allocation helpers
     Value* allocate_vector(const Eigen::VectorXd& v, bool is_char_data = false);
     Value* allocate_matrix(const Eigen::MatrixXd& m, bool is_char_data = false);
-    Value* allocate_string(const char* s);  // s must be interned (stable pointer)
+    Value* allocate_string(const char* s);  // Will be interned
+    Value* allocate_string(String* s);      // Already interned String*
     Value* allocate_primitive(PrimitiveFn* fn);
     Value* allocate_operator(PrimitiveOp* op);
     Value* allocate_closure(Continuation* body, bool is_niladic = false);

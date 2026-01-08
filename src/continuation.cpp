@@ -610,7 +610,7 @@ void ThrowErrorK::invoke(Machine* machine) {
     Completion* throw_comp = machine->heap->allocate<Completion>(
         CompletionType::THROW,
         nullptr,  // No value for errors
-        error_message  // Error message in target field
+        error_message->c_str()  // Error message in target field
     );
 
     // Push PropagateCompletionK to unwind the stack
@@ -619,8 +619,7 @@ void ThrowErrorK::invoke(Machine* machine) {
 }
 
 void ThrowErrorK::mark(Heap* heap) {
-    // No GC references to mark (error_message is static or pooled)
-    (void)heap;
+    heap->mark(error_message);
 }
 
 // ============================================================================
@@ -664,8 +663,8 @@ void DefinedOperatorLiteralK::invoke(Machine* machine) {
     op_data->is_ambivalent = true;  // dfn-style operators are always ambivalent
     op_data->left_operand_name = left_operand_name;
     op_data->right_operand_name = right_operand_name;
-    op_data->left_arg_name = "⍺";   // dfn convention
-    op_data->right_arg_name = "⍵";  // dfn convention
+    op_data->left_arg_name = machine->string_pool.intern("⍺");   // dfn convention
+    op_data->right_arg_name = machine->string_pool.intern("⍵");  // dfn convention
     op_data->result_name = nullptr; // dfn-style doesn't name result
     op_data->lexical_env = machine->env;  // Capture current environment
 
@@ -678,7 +677,9 @@ void DefinedOperatorLiteralK::invoke(Machine* machine) {
 
 void DefinedOperatorLiteralK::mark(Heap* heap) {
     heap->mark(body);
-    // operator_name, left_operand_name, right_operand_name are interned strings
+    heap->mark(operator_name);
+    heap->mark(left_operand_name);
+    heap->mark(right_operand_name);
 }
 
 // InvokeDefinedOperatorK implementation
@@ -690,19 +691,19 @@ void InvokeDefinedOperatorK::invoke(Machine* machine) {
     // Bind the left operand to named parameter (always present)
     env->define(op->left_operand_name, left_operand);
     // Also bind to ⍺⍺ for APL compatibility
-    env->define("⍺⍺", left_operand);
+    env->define(machine->string_pool.intern("⍺⍺"), left_operand);
 
     // Bind the right operand for dyadic operators
     if (op->is_dyadic_operator && right_operand && op->right_operand_name) {
         env->define(op->right_operand_name, right_operand);
         // Also bind to ⍵⍵ for APL compatibility
-        env->define("⍵⍵", right_operand);
+        env->define(machine->string_pool.intern("⍵⍵"), right_operand);
     }
 
     // Bind ∇∇ for recursive self-reference to the operator
     // (∇ is for functions, ∇∇ is for operators)
     if (operator_value) {
-        env->define("∇∇", operator_value);
+        env->define(machine->string_pool.intern("∇∇"), operator_value);
     }
 
     // Bind arguments using dfn conventions (⍺ and ⍵)
@@ -744,7 +745,7 @@ void LookupK::invoke(Machine* machine) {
 
     if (!val) {
         // Variable not found - throw error with our location
-        std::string msg = std::string("VALUE ERROR: Undefined variable: ") + var_name;
+        std::string msg = std::string("VALUE ERROR: Undefined variable: ") + var_name->c_str();
         machine->throw_error(msg.c_str(), this, 2, 0);
         return;
     }
@@ -754,8 +755,7 @@ void LookupK::invoke(Machine* machine) {
 }
 
 void LookupK::mark(Heap* heap) {
-    // var_name is interned const char*, doesn't need GC marking
-    (void)heap;  // Unused
+    heap->mark(var_name);
 }
 
 // AssignK implementation
@@ -772,6 +772,7 @@ void AssignK::invoke(Machine* machine) {
 }
 
 void AssignK::mark(Heap* heap) {
+    heap->mark(var_name);
     heap->mark(expr);
 }
 
@@ -790,7 +791,7 @@ void PerformAssignK::invoke(Machine* machine) {
 
     // Special handling for ⍺←value (alpha default): only assign if ⍺ not already defined
     // This implements APL's conditional default argument syntax
-    if (strcmp(var_name, "⍺") == 0 && machine->env->lookup(var_name) != nullptr) {
+    if (*var_name == "⍺" && machine->env->lookup(var_name) != nullptr) {
         // ⍺ already defined (left arg was passed) - skip assignment
         // result stays as-is for the expression value
     } else {
@@ -804,8 +805,7 @@ void PerformAssignK::invoke(Machine* machine) {
 }
 
 void PerformAssignK::mark(Heap* heap) {
-    // var_name is interned const char*, doesn't need GC marking
-    (void)heap;  // Unused
+    heap->mark(var_name);
 }
 
 // SysVarReadK implementation - read a system variable
@@ -899,7 +899,7 @@ void SysVarReadK::invoke(Machine* machine) {
         }
         case SysVarId::LX:
             // Latent expression: character vector (ISO 13751 §12.2.5)
-            if (machine->lx && *machine->lx) {
+            if (machine->lx && !machine->lx->empty()) {
                 machine->result = machine->heap->allocate_string(machine->lx);
             } else {
                 // Empty string
@@ -1257,6 +1257,7 @@ void MonadicK::invoke(Machine* machine) {
 }
 
 void MonadicK::mark(Heap* heap) {
+    heap->mark(op_name);
     heap->mark(operand);
 }
 
@@ -1276,6 +1277,7 @@ void DyadicK::invoke(Machine* machine) {
 }
 
 void DyadicK::mark(Heap* heap) {
+    heap->mark(op_name);
     heap->mark(left);
     heap->mark(right);
 }
@@ -1297,6 +1299,7 @@ void EvalDyadicLeftK::invoke(Machine* machine) {
 }
 
 void EvalDyadicLeftK::mark(Heap* heap) {
+    heap->mark(op_name);
     heap->mark(left);
     heap->mark(right_val);
 }
@@ -1317,7 +1320,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
     // Look up the operator at evaluation time
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
-        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
+        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name->c_str();
         machine->throw_error(msg.c_str(), this, 2, 0);
         return;
     }
@@ -1325,7 +1328,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
     PrimitiveFn* prim_fn = op_val->data.primitive_fn;
 
     if (!prim_fn->monadic) {
-        std::string msg = std::string("SYNTAX ERROR: Operator has no monadic form: ") + op_name;
+        std::string msg = std::string("SYNTAX ERROR: Operator has no monadic form: ") + op_name->c_str();
         machine->throw_error(msg.c_str(), this, 2, 0);
         return;
     }
@@ -1346,8 +1349,7 @@ void ApplyMonadicK::invoke(Machine* machine) {
 }
 
 void ApplyMonadicK::mark(Heap* heap) {
-    // ApplyMonadicK has no Values to mark, only the function pointer
-    (void)heap;  // Unused
+    heap->mark(op_name);
 }
 
 // ArgK implementation
@@ -1380,7 +1382,7 @@ void ApplyDyadicK::invoke(Machine* machine) {
     // Look up the operator at evaluation time
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val || op_val->tag != ValueType::PRIMITIVE) {
-        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
+        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name->c_str();
         machine->throw_error(msg.c_str(), this, 2, 0);
         return;
     }
@@ -1388,7 +1390,7 @@ void ApplyDyadicK::invoke(Machine* machine) {
     PrimitiveFn* prim_fn = op_val->data.primitive_fn;
 
     if (!prim_fn->dyadic) {
-        std::string msg = std::string("SYNTAX ERROR: Operator has no dyadic form: ") + op_name;
+        std::string msg = std::string("SYNTAX ERROR: Operator has no dyadic form: ") + op_name->c_str();
         machine->throw_error(msg.c_str(), this, 2, 0);
         return;
     }
@@ -1430,7 +1432,7 @@ void ApplyDyadicK::invoke(Machine* machine) {
 }
 
 void ApplyDyadicK::mark(Heap* heap) {
-    // Mark the saved right value
+    heap->mark(op_name);
     heap->mark(right_val);
 }
 
@@ -2321,6 +2323,7 @@ void ForK::invoke(Machine* machine) {
 }
 
 void ForK::mark(Heap* heap) {
+    heap->mark(var_name);
     heap->mark(array_expr);
     heap->mark(body);
 }
@@ -2388,6 +2391,7 @@ void ForIterateK::invoke(Machine* machine) {
 }
 
 void ForIterateK::mark(Heap* heap) {
+    heap->mark(var_name);
     heap->mark(array);
     heap->mark(body);
 }
@@ -2577,13 +2581,13 @@ void FunctionCallK::invoke(Machine* machine) {
 
     // Bind arguments in function environment
     if (right_arg) {
-        call_env->define("⍵", right_arg);
+        call_env->define(machine->string_pool.intern("⍵"), right_arg);
     }
     if (left_arg) {
-        call_env->define("⍺", left_arg);
+        call_env->define(machine->string_pool.intern("⍺"), left_arg);
     }
     // Bind ∇ for recursive self-reference
-    call_env->define("∇", fn_value);
+    call_env->define(machine->string_pool.intern("∇"), fn_value);
 
     // Save current environment
     Environment* saved_env = machine->env;
@@ -2601,7 +2605,7 @@ void FunctionCallK::invoke(Machine* machine) {
     machine->push_kont(finalize_k);
 
     // Push CatchReturnK to establish function boundary for →0 and :Return
-    CatchReturnK* catch_k = machine->heap->allocate<CatchReturnK>("dfn");
+    CatchReturnK* catch_k = machine->heap->allocate<CatchReturnK>(machine->string_pool.intern("dfn"));
     machine->push_kont(catch_k);
 
     // Execute function body
@@ -2641,6 +2645,7 @@ void DerivedOperatorK::invoke(Machine* machine) {
 }
 
 void DerivedOperatorK::mark(Heap* heap) {
+    heap->mark(op_name);
     heap->mark(operand_cont);
     heap->mark(axis_cont);
 }
@@ -2652,7 +2657,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
     // Look up the operator by name from environment
     Value* op_val = machine->env->lookup(op_name);
     if (!op_val) {
-        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name;
+        std::string msg = std::string("VALUE ERROR: Unknown operator: ") + op_name->c_str();
         machine->throw_error(msg.c_str(), this, 2, 0);
         return;
     }
@@ -2674,7 +2679,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
     }
 
     if (op_val->tag != ValueType::OPERATOR) {
-        std::string msg = std::string("VALUE ERROR: Not an operator: ") + op_name;
+        std::string msg = std::string("VALUE ERROR: Not an operator: ") + op_name->c_str();
         machine->throw_error(msg.c_str(), this, 2, 0);
         return;
     }
@@ -2704,6 +2709,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
 }
 
 void ApplyDerivedOperatorK::mark(Heap* heap) {
+    heap->mark(op_name);
     heap->mark(axis_cont);
 }
 
@@ -3939,6 +3945,7 @@ void IndexedAssignK::invoke(Machine* machine) {
 }
 
 void IndexedAssignK::mark(Heap* heap) {
+    heap->mark(var_name);
     heap->mark(index_cont);
     heap->mark(value_cont);
 }
@@ -3951,6 +3958,7 @@ void IndexedAssignIndexK::invoke(Machine* machine) {
 }
 
 void IndexedAssignIndexK::mark(Heap* heap) {
+    heap->mark(var_name);
     heap->mark(value_val);
     heap->mark(index_cont);
 }
@@ -4394,6 +4402,7 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
 }
 
 void PerformIndexedAssignK::mark(Heap* heap) {
+    heap->mark(var_name);
     heap->mark(value_val);
     heap->mark(index_val);
 }

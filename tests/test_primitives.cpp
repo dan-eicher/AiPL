@@ -34,28 +34,28 @@ int main(int argc, char** argv) {
 
 TEST_F(PrimitivesTest, EnvironmentInit) {
     // Verify arithmetic primitives are bound
-    Value* plus = machine->env->lookup("+");
+    Value* plus = machine->env->lookup(machine->string_pool.intern("+"));
     ASSERT_NE(plus, nullptr);
     ASSERT_TRUE(plus->is_function());
     EXPECT_EQ(plus->data.primitive_fn, &prim_plus);
 
-    Value* minus = machine->env->lookup("-");
+    Value* minus = machine->env->lookup(machine->string_pool.intern("-"));
     ASSERT_NE(minus, nullptr);
     ASSERT_TRUE(minus->is_function());
 
     // Verify array operations are bound
-    Value* rho = machine->env->lookup("⍴");
+    Value* rho = machine->env->lookup(machine->string_pool.intern("⍴"));
     ASSERT_NE(rho, nullptr);
     ASSERT_TRUE(rho->is_function());
 
-    Value* iota = machine->env->lookup("⍳");
+    Value* iota = machine->env->lookup(machine->string_pool.intern("⍳"));
     ASSERT_NE(iota, nullptr);
     ASSERT_TRUE(iota->is_function());
 }
 
 TEST_F(PrimitivesTest, PrimitiveLookupAndApply) {
     // Lookup primitive from environment and apply it
-    Value* plus = machine->env->lookup("+");
+    Value* plus = machine->env->lookup(machine->string_pool.intern("+"));
     ASSERT_NE(plus, nullptr);
 
     // Use it to add two numbers
@@ -75,19 +75,20 @@ TEST_F(PrimitivesTest, EnvironmentDefineAndUpdate) {
 
     // Define a variable
     Value* x = machine->heap->allocate_scalar(42.0);
-    env.define("x", x);
+    String* x_name = machine->string_pool.intern("x");
+    env.define(x_name, x);
 
     // Lookup the variable
-    Value* lookup = env.lookup("x");
+    Value* lookup = env.lookup(x_name);
     ASSERT_NE(lookup, nullptr);
     EXPECT_DOUBLE_EQ(lookup->as_scalar(), 42.0);
 
     // Update the variable
     Value* y = machine->heap->allocate_scalar(100.0);
-    bool updated = env.update("x", y);
+    bool updated = env.update(x_name, y);
     ASSERT_TRUE(updated);
 
-    Value* lookup2 = env.lookup("x");
+    Value* lookup2 = env.lookup(x_name);
     EXPECT_DOUBLE_EQ(lookup2->as_scalar(), 100.0);
 
 }
@@ -98,21 +99,23 @@ TEST_F(PrimitivesTest, EnvironmentScoping) {
 
     // Define in parent
     Value* x = machine->heap->allocate_scalar(10.0);
-    parent.define("x", x);
+    String* x_name = machine->string_pool.intern("x");
+    parent.define(x_name, x);
 
     // Define in child
     Value* y = machine->heap->allocate_scalar(20.0);
-    child.define("y", y);
+    String* y_name = machine->string_pool.intern("y");
+    child.define(y_name, y);
 
     // Child can see both
-    EXPECT_NE(child.lookup("x"), nullptr);
-    EXPECT_NE(child.lookup("y"), nullptr);
-    EXPECT_DOUBLE_EQ(child.lookup("x")->as_scalar(), 10.0);
-    EXPECT_DOUBLE_EQ(child.lookup("y")->as_scalar(), 20.0);
+    EXPECT_NE(child.lookup(x_name), nullptr);
+    EXPECT_NE(child.lookup(y_name), nullptr);
+    EXPECT_DOUBLE_EQ(child.lookup(x_name)->as_scalar(), 10.0);
+    EXPECT_DOUBLE_EQ(child.lookup(y_name)->as_scalar(), 20.0);
 
     // Parent can only see its own
-    EXPECT_NE(parent.lookup("x"), nullptr);
-    EXPECT_EQ(parent.lookup("y"), nullptr);
+    EXPECT_NE(parent.lookup(x_name), nullptr);
+    EXPECT_EQ(parent.lookup(y_name), nullptr);
 
 }
 

@@ -9,6 +9,20 @@
 
 namespace apl {
 
+// Hash functor for String* using string content
+struct StringPtrHash {
+    size_t operator()(String* s) const {
+        return std::hash<std::string_view>{}(s->c_str());
+    }
+};
+
+// Equality functor for String* using string content
+struct StringPtrEqual {
+    bool operator()(String* a, String* b) const {
+        return a == b || (a && b && a->str() == b->str());
+    }
+};
+
 // Environment - Maps names to values
 // Now GC-managed for proper memory safety
 class Environment : public GCObject {
@@ -24,8 +38,8 @@ public:
     // Parent environment for lexical scoping
     Environment* parent;
 
-    // Variable bindings
-    std::unordered_map<std::string, Value*> bindings;
+    // Variable bindings - keyed by interned String*
+    std::unordered_map<String*, Value*, StringPtrHash, StringPtrEqual> bindings;
 
     // Constructor
     Environment(Environment* p = nullptr) : GCObject(), parent(p) {}
@@ -36,8 +50,8 @@ public:
         // Don't delete parent - it's managed by the heap
     }
 
-    // Lookup a variable
-    Value* lookup(const char* name) {
+    // Lookup a variable by String*
+    Value* lookup(String* name) {
         auto it = bindings.find(name);
         if (it != bindings.end()) {
             return it->second;
@@ -52,12 +66,12 @@ public:
     }
 
     // Define or update a variable
-    void define(const char* name, Value* value) {
+    void define(String* name, Value* value) {
         bindings[name] = value;
     }
 
     // Update existing variable (searches parent chain)
-    bool update(const char* name, Value* value) {
+    bool update(String* name, Value* value) {
         auto it = bindings.find(name);
         if (it != bindings.end()) {
             it->second = value;
@@ -73,7 +87,7 @@ public:
 
     // Erase a variable (searches parent chain)
     // Returns true if found and removed, false if not found
-    bool erase(const char* name) {
+    bool erase(String* name) {
         auto it = bindings.find(name);
         if (it != bindings.end()) {
             bindings.erase(it);

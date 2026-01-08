@@ -125,7 +125,7 @@ TEST_F(ContinuationTest, ArgKNotBoundary) {
 // Test FrameK basic
 TEST_F(ContinuationTest, FrameKBasic) {
     HaltK* halt = heap->allocate<HaltK>();
-    FrameK* frame = heap->allocate<FrameK>("test_func", halt);
+    FrameK* frame = heap->allocate<FrameK>(machine->string_pool.intern("test_func"), halt);
 
     Value* v = machine->heap->allocate_scalar(7.0);
     machine->result = v;
@@ -141,7 +141,7 @@ TEST_F(ContinuationTest, FrameKBasic) {
 
 // Test FrameK is function boundary
 TEST_F(ContinuationTest, FrameKIsFunctionBoundary) {
-    FrameK* frame = heap->allocate<FrameK>("my_func", nullptr);
+    FrameK* frame = heap->allocate<FrameK>(machine->string_pool.intern("my_func"), nullptr);
 
     EXPECT_TRUE(frame->is_function_boundary());
     EXPECT_FALSE(frame->is_loop_boundary());
@@ -149,7 +149,7 @@ TEST_F(ContinuationTest, FrameKIsFunctionBoundary) {
 
 // Test FrameK without return continuation
 TEST_F(ContinuationTest, FrameKWithoutReturn) {
-    FrameK* frame = heap->allocate<FrameK>("func", nullptr);
+    FrameK* frame = heap->allocate<FrameK>(machine->string_pool.intern("func"), nullptr);
 
     Value* v = machine->heap->allocate_scalar(88.0);
     machine->result = v;
@@ -165,7 +165,7 @@ TEST_F(ContinuationTest, FrameKWithoutReturn) {
 // Test FrameK mark
 TEST_F(ContinuationTest, FrameKMark) {
     HaltK* halt = heap->allocate<HaltK>();
-    FrameK* frame = heap->allocate<FrameK>("test", halt);
+    FrameK* frame = heap->allocate<FrameK>(machine->string_pool.intern("test"), halt);
 
     // Should not crash
     frame->mark(nullptr);
@@ -174,11 +174,11 @@ TEST_F(ContinuationTest, FrameKMark) {
 
 // Test FrameK function name
 TEST_F(ContinuationTest, FrameKFunctionName) {
-    const char* name = "my_function";
+    String* name = machine->string_pool.intern("my_function");
     FrameK* frame = heap->allocate<FrameK>(name, nullptr);
 
     EXPECT_EQ(frame->function_name, name);
-    EXPECT_STREQ(frame->function_name, "my_function");
+    EXPECT_STREQ(frame->function_name->c_str(), "my_function");
 
 }
 
@@ -238,7 +238,7 @@ TEST_F(ContinuationTest, FrameKChaining) {
     Value* v = machine->heap->allocate_scalar(99.0);
 
     HaltK* halt = heap->allocate<HaltK>();
-    FrameK* frame = heap->allocate<FrameK>("outer", halt);
+    FrameK* frame = heap->allocate<FrameK>(machine->string_pool.intern("outer"), halt);
     ArgK* argk = heap->allocate<ArgK>(v, frame);
 
     machine->result = v;
@@ -339,7 +339,7 @@ TEST_F(ContinuationTest, DerivedOperatorKCreation) {
     LiteralK* operand_lit = heap->allocate<LiteralK>(3.0);
 
     // Create DerivedOperatorK for ¨ operator
-    const char* op_name = machine->string_pool.intern("¨");
+    String* op_name = machine->string_pool.intern("¨");
     DerivedOperatorK* derived_k = heap->allocate<DerivedOperatorK>(operand_lit, op_name);
 
     EXPECT_NE(derived_k, nullptr);
@@ -354,7 +354,7 @@ TEST_F(ContinuationTest, ApplyDerivedOperatorKExecution) {
     machine->result = operand;
 
     // Create ApplyDerivedOperatorK for . operator (inner product - dyadic)
-    const char* op_name = machine->string_pool.intern(".");
+    String* op_name = machine->string_pool.intern(".");
     ApplyDerivedOperatorK* apply_k = heap->allocate<ApplyDerivedOperatorK>(op_name);
 
     // Push and execute
@@ -372,7 +372,7 @@ TEST_F(ContinuationTest, ApplyDerivedOperatorKExecution) {
 // Test DerivedOperatorK marking for GC
 TEST_F(ContinuationTest, DerivedOperatorKMarking) {
     LiteralK* operand_cont = heap->allocate<LiteralK>(5.0);
-    const char* op_name = machine->string_pool.intern("⍨");
+    String* op_name = machine->string_pool.intern("⍨");
 
     DerivedOperatorK* derived = heap->allocate<DerivedOperatorK>(operand_cont, op_name);
 
@@ -395,7 +395,7 @@ TEST_F(ContinuationTest, GprimeFinalizationAtTopLevel) {
 
     // Create MonadicK for "×5" (signum of 5)
     LiteralK* lit = heap->allocate<LiteralK>(5.0);
-    const char* times_name = machine->string_pool.intern("×");
+    String* times_name = machine->string_pool.intern("×");
     MonadicK* monadic = heap->allocate<MonadicK>(times_name, lit);
 
     machine->push_kont(monadic);
@@ -1275,7 +1275,7 @@ TEST_F(ContinuationTest, IndexedAssignKBasic) {
     Eigen::VectorXd vec(3);
     vec << 1, 2, 3;
     Value* arr = machine->heap->allocate_vector(vec);
-    const char* var_name = machine->string_pool.intern("TestVar");
+    String* var_name = machine->string_pool.intern("TestVar");
     machine->env->define(var_name, arr);
 
     // Create continuations: index=2, value=99
@@ -1306,7 +1306,7 @@ TEST_F(ContinuationTest, IndexedAssignKFirstElement) {
     Eigen::VectorXd vec(4);
     vec << 10, 20, 30, 40;
     Value* arr = machine->heap->allocate_vector(vec);
-    const char* var_name = machine->string_pool.intern("First");
+    String* var_name = machine->string_pool.intern("First");
     machine->env->define(var_name, arr);
 
     LiteralK* index_cont = heap->allocate<LiteralK>(1.0);
@@ -1327,7 +1327,7 @@ TEST_F(ContinuationTest, IndexedAssignKLastElement) {
     Eigen::VectorXd vec(4);
     vec << 10, 20, 30, 40;
     Value* arr = machine->heap->allocate_vector(vec);
-    const char* var_name = machine->string_pool.intern("Last");
+    String* var_name = machine->string_pool.intern("Last");
     machine->env->define(var_name, arr);
 
     LiteralK* index_cont = heap->allocate<LiteralK>(4.0);
@@ -1346,7 +1346,7 @@ TEST_F(ContinuationTest, IndexedAssignKMarking) {
     // Test that IndexedAssignK properly marks continuations for GC
     LiteralK* index_cont = heap->allocate<LiteralK>(1.0);
     LiteralK* value_cont = heap->allocate<LiteralK>(42.0);
-    const char* var_name = machine->string_pool.intern("MarkTest");
+    String* var_name = machine->string_pool.intern("MarkTest");
 
     IndexedAssignK* assign_k = heap->allocate<IndexedAssignK>(var_name, index_cont, value_cont);
 
@@ -1362,7 +1362,7 @@ TEST_F(ContinuationTest, IndexedAssignIndexKMarking) {
     // Test IndexedAssignIndexK marking
     Value* val = machine->heap->allocate_scalar(42.0);
     LiteralK* index_cont = heap->allocate<LiteralK>(1.0);
-    const char* var_name = machine->string_pool.intern("IdxMarkTest");
+    String* var_name = machine->string_pool.intern("IdxMarkTest");
 
     IndexedAssignIndexK* idx_k = heap->allocate<IndexedAssignIndexK>(var_name, val, index_cont);
 
@@ -1377,7 +1377,7 @@ TEST_F(ContinuationTest, PerformIndexedAssignKMarking) {
     // Test PerformIndexedAssignK marking
     Value* val = machine->heap->allocate_scalar(42.0);
     Value* idx = machine->heap->allocate_scalar(1.0);
-    const char* var_name = machine->string_pool.intern("PerfMarkTest");
+    String* var_name = machine->string_pool.intern("PerfMarkTest");
 
     PerformIndexedAssignK* perf_k = heap->allocate<PerformIndexedAssignK>(var_name, val, idx);
 
@@ -1501,7 +1501,7 @@ TEST_F(ContinuationTest, PerformAssignKFinalizesClosureCurry) {
 
     // Assign it: A←curried should finalize to 6
     machine->result = curried;
-    const char* var_name = machine->string_pool.intern("TestA");
+    String* var_name = machine->string_pool.intern("TestA");
     PerformAssignK* assign = heap->allocate<PerformAssignK>(var_name);
     machine->push_kont(assign);
     result = machine->execute();
@@ -1528,7 +1528,7 @@ TEST_F(ContinuationTest, PerformAssignKFinalizesDerivedOpCurry) {
 
     // Assign it: A←curried should finalize to 15
     machine->result = curried;
-    const char* var_name = machine->string_pool.intern("TestB");
+    String* var_name = machine->string_pool.intern("TestB");
     PerformAssignK* assign = heap->allocate<PerformAssignK>(var_name);
     machine->push_kont(assign);
     Value* result = machine->execute();
@@ -1555,7 +1555,7 @@ TEST_F(ContinuationTest, ClosureCurryFinalizesInArithmetic) {
 TEST_F(ContinuationTest, AssignedReduceIsFinalized) {
     // A←+/1 2 3 should store 6 (finalized scalar, not curry)
     machine->eval("A←+/1 2 3");
-    Value* a_val = machine->env->lookup("A");
+    Value* a_val = machine->env->lookup(machine->string_pool.intern("A"));
     ASSERT_NE(a_val, nullptr);
     EXPECT_TRUE(a_val->is_scalar()) << "Assignment should store finalized value, not curry";
     if (a_val->is_scalar()) {
@@ -1606,7 +1606,7 @@ TEST_F(ContinuationTest, AssignExecuteWithCurry) {
     }
 
     // Verify the variable got the finalized value
-    Value* a_val = machine->env->lookup("A");
+    Value* a_val = machine->env->lookup(machine->string_pool.intern("A"));
     ASSERT_NE(a_val, nullptr);
     EXPECT_TRUE(a_val->is_scalar());
     if (a_val->is_scalar()) {
@@ -1687,7 +1687,7 @@ TEST_F(ContinuationTest, CurryInIndexedAssignment) {
     ASSERT_NE(result, nullptr);
 
     // Check that A[6] is now 99
-    Value* a_val = machine->env->lookup("A");
+    Value* a_val = machine->env->lookup(machine->string_pool.intern("A"));
     ASSERT_NE(a_val, nullptr);
     EXPECT_TRUE(a_val->is_vector());
     if (a_val->is_vector()) {
@@ -1897,7 +1897,7 @@ TEST_F(ContinuationTest, ApplyDerivedOperatorKWithDefinedOperator) {
     machine->result = operand;
 
     // Create ApplyDerivedOperatorK for the user-defined operator
-    const char* op_name = machine->string_pool.intern("TWICE");
+    String* op_name = machine->string_pool.intern("TWICE");
     ApplyDerivedOperatorK* apply_k = heap->allocate<ApplyDerivedOperatorK>(op_name);
 
     // Push and execute
@@ -1924,7 +1924,7 @@ TEST_F(ContinuationTest, ApplyDerivedOperatorKWithDyadicDefinedOperator) {
     machine->result = first_operand;
 
     // Create ApplyDerivedOperatorK for COMPOSE
-    const char* op_name = machine->string_pool.intern("COMPOSE");
+    String* op_name = machine->string_pool.intern("COMPOSE");
     ApplyDerivedOperatorK* apply_k = heap->allocate<ApplyDerivedOperatorK>(op_name);
 
     // Push and execute - should create DERIVED_OPERATOR waiting for second operand
@@ -1945,7 +1945,7 @@ TEST_F(ContinuationTest, DerivedOperatorKWithDefinedOperatorName) {
 
     // Create DerivedOperatorK which evaluates operand and creates derived operator
     LookupK* operand_cont = heap->allocate<LookupK>(machine->string_pool.intern("-"));
-    const char* op_name = machine->string_pool.intern("TWICE");
+    String* op_name = machine->string_pool.intern("TWICE");
     DerivedOperatorK* derived_k = heap->allocate<DerivedOperatorK>(operand_cont, op_name);
 
     machine->push_kont(derived_k);

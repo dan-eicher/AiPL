@@ -51,12 +51,12 @@ public:
     double ct = 0.0;                        // Comparison tolerance (⎕CT): 0 = exact (Eigen fast path)
     uint64_t rl;                            // Random link (⎕RL): seeded from system at startup
     std::mt19937_64 rng;                    // Random number generator (seeded by rl)
-    const char* lx = nullptr;               // Latent expression (⎕LX): interned in string_pool
+    String* lx = nullptr;                   // Latent expression (⎕LX): interned in string_pool
     uint32_t sysvar_mask = SYSVAR_ALL;      // Enabled system variables (for sandboxing)
 
     // Error state (ISO 13751 §11.4.4-11.4.5)
     int event_type[2] = {0, 0};             // {class, subclass} - 0 0 = no error
-    const char* event_message = nullptr;    // Error message (⎕EM) - interned in string_pool
+    String* event_message = nullptr;        // Error message (⎕EM) - interned in string_pool
 
     // Memory management
     Heap* heap;                          // Garbage-collected heap

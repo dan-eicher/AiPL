@@ -126,9 +126,9 @@ TEST_F(ErrorTest, QuadEMContainsDomainError) {
     ASSERT_NE(result, nullptr);
     std::string msg;
     if (result->is_string()) {
-        msg = result->as_string();
+        msg = result->as_string()->str();
     } else {
-        msg = result->to_string_value(machine->heap)->as_string();
+        msg = result->to_string_value(machine->heap)->as_string()->str();
     }
     // Should mention DOMAIN ERROR
     EXPECT_TRUE(msg.find("DOMAIN") != std::string::npos || msg.find("divide") != std::string::npos);
@@ -140,7 +140,7 @@ TEST_F(ErrorTest, QuadEMEmptyWhenNoError) {
     ASSERT_NE(result, nullptr);
     // Empty string
     if (result->is_string()) {
-        EXPECT_STREQ(result->as_string(), "");
+        EXPECT_STREQ(result->as_string()->c_str(), "");
     } else if (result->is_array()) {
         EXPECT_EQ(result->size(), 0);
     }
@@ -206,9 +206,9 @@ TEST_F(ErrorTest, QuadESDyadicWithMessage) {
     ASSERT_NE(result, nullptr);
     std::string msg;
     if (result->is_string()) {
-        msg = result->as_string();
+        msg = result->as_string()->str();
     } else {
-        msg = result->to_string_value(machine->heap)->as_string();
+        msg = result->to_string_value(machine->heap)->as_string()->str();
     }
     EXPECT_TRUE(msg.find("my error") != std::string::npos);
 }
@@ -373,7 +373,7 @@ TEST_F(ErrorTest, QuadEMClearedAfterHandler) {
     Value* result = machine->eval("⎕EM");
     ASSERT_NE(result, nullptr);
     if (result->is_string()) {
-        EXPECT_STREQ(result->as_string(), "");
+        EXPECT_STREQ(result->as_string()->c_str(), "");
     } else if (result->is_array()) {
         EXPECT_EQ(result->size(), 0);
     }

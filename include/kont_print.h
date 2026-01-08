@@ -123,7 +123,7 @@ private:
                 break;
             }
             case ValueType::STRING:
-                out << "\"" << (v->data.string ? v->data.string : "") << "\"";
+                out << "\"" << (v->data.string ? v->data.string->c_str() : "") << "\"";
                 break;
             case ValueType::PRIMITIVE:
                 out << "<prim:" << (v->data.primitive_fn ? v->data.primitive_fn->name : "?") << ">";

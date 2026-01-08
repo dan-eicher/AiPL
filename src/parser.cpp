@@ -110,7 +110,7 @@ Continuation* Parser::led_juxtapose(Continuation* left, int bp) {
         bool needs_second_operand = false;
 
         // Built-in operators that need second operand: "." and "⍤"
-        if (strcmp(derived->op_name, ".") == 0 || strcmp(derived->op_name, "⍤") == 0) {
+        if (*derived->op_name == "." || *derived->op_name == "⍤") {
             needs_second_operand = true;
         } else {
             // Check for user-defined dyadic operators
@@ -185,7 +185,7 @@ Continuation* Parser::parse_expression(int min_bp) {
 
         // Check if TOK_NAME is a defined operator - operators have higher precedence
         if (next.type == TOK_NAME && bp == BP_NONE) {
-            const char* interned = machine->string_pool.intern(next.name);
+            String* interned = machine->string_pool.intern(next.name);
             Value* val = machine->env->lookup(interned);
             if (val && val->is_defined_operator()) {
                 // Defined operator: use operator binding power, handled in led
@@ -373,13 +373,13 @@ Continuation* Parser::nud(const Token& token) {
                 Continuation* axis_cont = machine->heap->allocate<FinalizeK>(inner, true);
                 // Create DerivedOperatorK with op_catenate_axis
                 // axis_cont is the first (and only) operand
-                const char* interned_name = machine->string_pool.intern(",⌷");
+                String* interned_name = machine->string_pool.intern(",⌷");
                 DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(axis_cont, interned_name);
                 derived->set_location(token.line, token.column);
                 return derived;
             }
             // No axis - fall through to normal comma handling
-            const char* interned_name = machine->string_pool.intern(",");
+            String* interned_name = machine->string_pool.intern(",");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -437,7 +437,7 @@ Continuation* Parser::nud(const Token& token) {
             // Monadic behavior emerges from juxtaposition + runtime semantics
             // So ALWAYS create LookupK for primitive function tokens
 
-            const char* interned_name = machine->string_pool.intern(token_type_name(token.type));
+            String* interned_name = machine->string_pool.intern(token_type_name(token.type));
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -446,7 +446,7 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_NAME: {
             // Variable reference or assignment
             // Intern the name in the string pool
-            const char* interned_name = machine->string_pool.intern(token.name);
+            String* interned_name = machine->string_pool.intern(token.name);
 
             // Check for assignment: NAME ← VALUE
             // Assignment binds only the immediate name, not larger expressions
@@ -471,7 +471,7 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_ALPHA: {
             // ⍺ (alpha) - left argument in dfn
             dfn_uses_alpha = true;  // Track for niladic detection
-            const char* interned_name = machine->string_pool.intern("⍺");
+            String* interned_name = machine->string_pool.intern("⍺");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -480,7 +480,7 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_OMEGA: {
             // ⍵ (omega) - right argument in dfn
             dfn_uses_omega = true;  // Track for niladic detection
-            const char* interned_name = machine->string_pool.intern("⍵");
+            String* interned_name = machine->string_pool.intern("⍵");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -488,7 +488,7 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_ALPHA_ALPHA: {
             // ⍺⍺ - left operand in defined operator
-            const char* interned_name = machine->string_pool.intern("⍺⍺");
+            String* interned_name = machine->string_pool.intern("⍺⍺");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -496,7 +496,7 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_OMEGA_OMEGA: {
             // ⍵⍵ - right operand in defined operator
-            const char* interned_name = machine->string_pool.intern("⍵⍵");
+            String* interned_name = machine->string_pool.intern("⍵⍵");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -504,7 +504,7 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_DEL: {
             // ∇ (del) - self-reference in recursive dfn
-            const char* interned_name = machine->string_pool.intern("∇");
+            String* interned_name = machine->string_pool.intern("∇");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -512,7 +512,7 @@ Continuation* Parser::nud(const Token& token) {
 
         case TOK_DEL_DEL: {
             // ∇∇ (del-del) - self-reference in recursive defined operator
-            const char* interned_name = machine->string_pool.intern("∇∇");
+            String* interned_name = machine->string_pool.intern("∇∇");
             LookupK* lookup = machine->heap->allocate<LookupK>(interned_name);
             lookup->set_location(token.line, token.column);
             return lookup;
@@ -531,7 +531,7 @@ Continuation* Parser::nud(const Token& token) {
             // Build the full quad name (⎕ + name)
             std::string quad_name = "⎕";
             quad_name += token.name;
-            const char* interned_quad = machine->string_pool.intern(quad_name.c_str());
+            String* interned_quad = machine->string_pool.intern(quad_name.c_str());
 
             // First check environment for quad-named functions (⎕ET, ⎕EM, ⎕ES, ⎕EA, etc.)
             Value* env_val = machine->env->lookup(interned_quad);
@@ -592,7 +592,7 @@ Continuation* Parser::nud(const Token& token) {
                 return nullptr;
             }
 
-            const char* interned_name = machine->string_pool.intern("∘.");
+            String* interned_name = machine->string_pool.intern("∘.");
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
             derived->set_location(token.line, token.column);
             return derived;
@@ -676,7 +676,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                 JuxtaposeK* inner = dynamic_cast<JuxtaposeK*>(outer->right);
                 if (inner) {
                     LookupK* squad_lookup = dynamic_cast<LookupK*>(inner->left);
-                    if (squad_lookup && strcmp(squad_lookup->var_name, "⌷") == 0) {
+                    if (squad_lookup && *squad_lookup->var_name == "⌷") {
                         // Extract variable name from inner->right (the array)
                         LookupK* var_lookup = dynamic_cast<LookupK*>(inner->right);
                         if (!var_lookup) {
@@ -776,7 +776,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                 bool needs_second_operand = false;
 
                 // Built-in operators that need second operand: "." and "⍤"
-                if (strcmp(derived->op_name, ".") == 0 || strcmp(derived->op_name, "⍤") == 0) {
+                if (*derived->op_name == "." || *derived->op_name == "⍤") {
                     needs_second_operand = true;
                 } else {
                     // Check for user-defined dyadic operators
@@ -840,7 +840,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                 default: break;
             }
 
-            const char* interned_name = machine->string_pool.intern(op_name);
+            String* interned_name = machine->string_pool.intern(op_name);
 
             // Check for axis specification: f/[k] syntax
             Continuation* axis_cont = nullptr;
@@ -876,7 +876,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
                 return nullptr;
             }
 
-            const char* interned_name = machine->string_pool.intern("∘.");
+            String* interned_name = machine->string_pool.intern("∘.");
 
             // Create derived operator from ∘. and the function
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(fn_operand, interned_name);
@@ -893,7 +893,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Inner product (.)
             // G2 Grammar Rule 4: fb-term dyadic-operator → derived-operator
             // The second operand will be delivered via juxtaposition (Rule 3: derived-operator fb → fb-term)
-            const char* interned_name = machine->string_pool.intern(".");
+            String* interned_name = machine->string_pool.intern(".");
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             derived->set_location(token.line, token.column);
             return derived;
@@ -903,7 +903,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
             // Rank operator (⍤)
             // f⍤k applies function f to k-cells of the argument(s)
             // Dyadic operator: first operand is function, second is rank specification
-            const char* interned_name = machine->string_pool.intern("⍤");
+            String* interned_name = machine->string_pool.intern("⍤");
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             derived->set_location(token.line, token.column);
             return derived;
@@ -912,7 +912,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
         case TOK_NAME: {
             // Defined operator: handle like primitive operators
             // At this point we already checked it's a defined operator in the parsing loop
-            const char* interned_name = machine->string_pool.intern(token.name);
+            String* interned_name = machine->string_pool.intern(token.name);
             DerivedOperatorK* derived = machine->heap->allocate<DerivedOperatorK>(left, interned_name);
             derived->set_location(token.line, token.column);
             return derived;
@@ -992,7 +992,7 @@ Continuation* Parser::led(Continuation* left, const Token& token) {
 
             // Build I⌷A as JuxtaposeK(I, JuxtaposeK(⌷, A))
             // This goes through DispatchFunctionK which handles curry finalization
-            const char* squad_name = machine->string_pool.intern("⌷");
+            String* squad_name = machine->string_pool.intern("⌷");
             LookupK* squad_lookup = machine->heap->allocate<LookupK>(squad_name);
             squad_lookup->set_location(token.line, token.column);
             JuxtaposeK* squad_array = machine->heap->allocate<JuxtaposeK>(squad_lookup, left);
@@ -1256,7 +1256,7 @@ Continuation* Parser::parse_for_statement() {
         return nullptr;
     }
     // Intern the variable name in the string pool
-    const char* var_name = machine->string_pool.intern(current().name);
+    String* var_name = machine->string_pool.intern(current().name);
     advance();  // consume variable name
 
     skip_separators();

@@ -101,28 +101,28 @@ TEST_F(MachineTest, ExecuteEmptyStack) {
 // Test environment variable lookup
 TEST_F(MachineTest, EnvironmentLookup) {
     Value* v = machine->heap->allocate_scalar(5.0);
-    machine->env->define("x", v);
+    machine->env->define(machine->string_pool.intern("x"), v);
 
-    Value* result = machine->env->lookup("x");
+    Value* result = machine->env->lookup(machine->string_pool.intern("x"));
     EXPECT_EQ(result, v);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 }
 
 // Test environment lookup failure
 TEST_F(MachineTest, EnvironmentLookupFailure) {
-    Value* result = machine->env->lookup("nonexistent");
+    Value* result = machine->env->lookup(machine->string_pool.intern("nonexistent"));
     EXPECT_EQ(result, nullptr);
 }
 
 // Test environment update
 TEST_F(MachineTest, EnvironmentUpdate) {
     Value* v1 = machine->heap->allocate_scalar(10.0);
-    machine->env->define("y", v1);
+    machine->env->define(machine->string_pool.intern("y"), v1);
 
     Value* v2 = machine->heap->allocate_scalar(20.0);
-    machine->env->define("y", v2);
+    machine->env->define(machine->string_pool.intern("y"), v2);
 
-    Value* result = machine->env->lookup("y");
+    Value* result = machine->env->lookup(machine->string_pool.intern("y"));
     EXPECT_EQ(result, v2);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
 }
@@ -130,22 +130,23 @@ TEST_F(MachineTest, EnvironmentUpdate) {
 // Test nested environment
 TEST_F(MachineTest, NestedEnvironment) {
     Value* v1 = machine->heap->allocate_scalar(1.0);
-    machine->env->define("a", v1);
+    machine->env->define(machine->string_pool.intern("a"), v1);
 
     Environment* child = machine->heap->allocate<Environment>(machine->env);
     Value* v2 = machine->heap->allocate_scalar(2.0);
-    child->define("b", v2);
+    String* b_name = machine->string_pool.intern("b");
+    child->define(b_name, v2);
 
     // Child can see parent's binding
-    Value* result = child->lookup("a");
+    Value* result = child->lookup(machine->string_pool.intern("a"));
     EXPECT_EQ(result, v1);
 
     // Child can see its own binding
-    result = child->lookup("b");
+    result = child->lookup(b_name);
     EXPECT_EQ(result, v2);
 
     // Parent cannot see child's binding
-    result = machine->env->lookup("b");
+    result = machine->env->lookup(machine->string_pool.intern("b"));
     EXPECT_EQ(result, nullptr);
 
 }
@@ -153,19 +154,20 @@ TEST_F(MachineTest, NestedEnvironment) {
 // Test nested environment shadowing
 TEST_F(MachineTest, NestedEnvironmentShadowing) {
     Value* v1 = machine->heap->allocate_scalar(10.0);
-    machine->env->define("x", v1);
+    machine->env->define(machine->string_pool.intern("x"), v1);
 
     Environment* child = machine->heap->allocate<Environment>(machine->env);
     Value* v2 = machine->heap->allocate_scalar(20.0);
-    child->define("x", v2);
+    String* x_name = machine->string_pool.intern("x");
+    child->define(x_name, v2);
 
     // Child sees its own binding, not parent's
-    Value* result = child->lookup("x");
+    Value* result = child->lookup(x_name);
     EXPECT_EQ(result, v2);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 20.0);
 
     // Parent still has original binding
-    result = machine->env->lookup("x");
+    result = machine->env->lookup(machine->string_pool.intern("x"));
     EXPECT_EQ(result, v1);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
 
@@ -218,8 +220,8 @@ TEST_F(MachineTest, GCWithEnvironment) {
     Value* v2 = machine->heap->allocate_scalar(2.0);
     Value* v3 = machine->heap->allocate_scalar(3.0);
 
-    machine->env->define("a", v1);
-    machine->env->define("b", v2);
+    machine->env->define(machine->string_pool.intern("a"), v1);
+    machine->env->define(machine->string_pool.intern("b"), v2);
     // v3 is not stored anywhere
 
     // Force a GC
@@ -234,7 +236,7 @@ TEST_F(MachineTest, GCWithEnvironment) {
 // Test multiple continuations on stack
 TEST_F(MachineTest, MultipleContinuations) {
     Continuation* k1 = machine->heap->allocate<HaltK>();
-    Continuation* k2 = machine->heap->allocate<FrameK>("func", nullptr);
+    Continuation* k2 = machine->heap->allocate<FrameK>(machine->string_pool.intern("func"), nullptr);
     Continuation* k3 = machine->heap->allocate<HaltK>();
 
     machine->push_kont(k1);
@@ -252,17 +254,17 @@ TEST_F(MachineTest, MultipleContinuations) {
 
 // Test string pool
 TEST_F(MachineTest, StringPool) {
-    const char* s1 = machine->string_pool.intern("hello");
-    const char* s2 = machine->string_pool.intern("hello");
-    const char* s3 = machine->string_pool.intern("world");
+    String* s1 = machine->string_pool.intern("hello");
+    String* s2 = machine->string_pool.intern("hello");
+    String* s3 = machine->string_pool.intern("world");
 
     // Same string should return same pointer
     EXPECT_EQ(s1, s2);
     // Different string should return different pointer
     EXPECT_NE(s1, s3);
 
-    EXPECT_STREQ(s1, "hello");
-    EXPECT_STREQ(s3, "world");
+    EXPECT_STREQ(s1->c_str(), "hello");
+    EXPECT_STREQ(s3->c_str(), "world");
 }
 
 // Test environment mark for GC
@@ -270,8 +272,8 @@ TEST_F(MachineTest, EnvironmentMarkForGC) {
     Value* v1 = machine->heap->allocate_scalar(10.0);
     Value* v2 = machine->heap->allocate_scalar(20.0);
 
-    machine->env->define("x", v1);
-    machine->env->define("y", v2);
+    machine->env->define(machine->string_pool.intern("x"), v1);
+    machine->env->define(machine->string_pool.intern("y"), v2);
 
     // Clear marks
     machine->heap->clear_marks();
@@ -289,11 +291,11 @@ TEST_F(MachineTest, EnvironmentMarkForGC) {
 // Test nested environment mark
 TEST_F(MachineTest, NestedEnvironmentMark) {
     Value* v1 = machine->heap->allocate_scalar(1.0);
-    machine->env->define("a", v1);
+    machine->env->define(machine->string_pool.intern("a"), v1);
 
     Environment* child = machine->heap->allocate<Environment>(machine->env);
     Value* v2 = machine->heap->allocate_scalar(2.0);
-    child->define("b", v2);
+    child->define(machine->string_pool.intern("b"), v2);
 
     machine->heap->clear_marks();
     child->mark(machine->heap);

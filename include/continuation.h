@@ -283,9 +283,9 @@ protected:
 // Pushed by FrameK to establish function call boundaries
 class CatchReturnK : public Continuation {
 public:
-    const char* function_name;  // For debugging (not GC-managed, assumed static)
+    String* function_name;  // For debugging (GC-managed interned string)
 
-    CatchReturnK(const char* name = nullptr) : function_name(name) {}
+    CatchReturnK(String* name = nullptr) : function_name(name) {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }
@@ -359,9 +359,9 @@ protected:
 // Used by primitives and other code to signal errors through completions
 class ThrowErrorK : public Continuation {
 public:
-    const char* error_message;  // Error message (not GC-managed, assumed static or pooled)
+    String* error_message;      // Error message (interned)
 
-    ThrowErrorK(const char* msg) : error_message(msg) {}
+    ThrowErrorK(String* msg) : error_message(msg) {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }
@@ -415,12 +415,12 @@ protected:
 class DefinedOperatorLiteralK : public Continuation {
 public:
     Continuation* body;              // The operator body
-    const char* operator_name;       // OP - the name being defined
-    const char* left_operand_name;   // FF - left operand parameter
-    const char* right_operand_name;  // GG - right operand (nullptr for monadic)
+    String* operator_name;           // OP - the name being defined
+    String* left_operand_name;       // FF - left operand parameter
+    String* right_operand_name;      // GG - right operand (nullptr for monadic)
 
-    DefinedOperatorLiteralK(Continuation* b, const char* op_name,
-                            const char* left_op, const char* right_op = nullptr)
+    DefinedOperatorLiteralK(Continuation* b, String* op_name,
+                            String* left_op, String* right_op = nullptr)
         : body(b), operator_name(op_name),
           left_operand_name(left_op), right_operand_name(right_op) {}
 
@@ -440,9 +440,9 @@ protected:
 // At runtime, looks up the variable in the environment
 class LookupK : public Continuation {
 public:
-    const char* var_name;       // Variable name (interned pointer)
+    String* var_name;           // Variable name (interned)
 
-    LookupK(const char* name)
+    LookupK(String* name)
         : var_name(name) {}
 
     ~LookupK() override {}
@@ -459,10 +459,10 @@ protected:
 // Syntax: name ← expression
 class AssignK : public Continuation {
 public:
-    const char* var_name;       // Variable name to assign to (interned pointer)
+    String* var_name;           // Variable name to assign to (interned)
     Continuation* expr;         // Expression to evaluate
 
-    AssignK(const char* name, Continuation* e)
+    AssignK(String* name, Continuation* e)
         : var_name(name), expr(e) {}
 
     ~AssignK() override {
@@ -479,9 +479,9 @@ protected:
 // Auxiliary continuation for AssignK - performs the actual binding after expression is evaluated
 class PerformAssignK : public Continuation {
 public:
-    const char* var_name;       // Variable name to assign to (interned pointer)
+    String* var_name;           // Variable name to assign to (interned)
 
-    PerformAssignK(const char* name)
+    PerformAssignK(String* name)
         : var_name(name) {}
 
     ~PerformAssignK() override {}
@@ -653,10 +653,10 @@ protected:
 // Evaluates operand, then applies monadic function
 class MonadicK : public Continuation {
 public:
-    const char* op_name;        // Operator name (interned pointer, e.g., "+", "-", "⍳")
+    String* op_name;            // Operator name (interned)
     Continuation* operand;      // Operand to evaluate
 
-    MonadicK(const char* name, Continuation* op)
+    MonadicK(String* name, Continuation* op)
         : op_name(name), operand(op) {}
 
     ~MonadicK() override {
@@ -674,11 +674,11 @@ protected:
 // Evaluates operands right-to-left, then applies dyadic function
 class DyadicK : public Continuation {
 public:
-    const char* op_name;        // Operator name (interned pointer, e.g., "+", "-", "×")
+    String* op_name;            // Operator name (interned)
     Continuation* left;         // Left operand
     Continuation* right;        // Right operand
 
-    DyadicK(const char* name, Continuation* l, Continuation* r)
+    DyadicK(String* name, Continuation* l, Continuation* r)
         : op_name(name), left(l), right(r) {}
 
     ~DyadicK() override {
@@ -695,11 +695,11 @@ protected:
 // Auxiliary continuation for DyadicK - evaluates left after right is done
 class EvalDyadicLeftK : public Continuation {
 public:
-    const char* op_name;        // Operator name (interned pointer)
+    String* op_name;            // Operator name (interned)
     Continuation* left;
     Value* right_val;           // Saved right value (set at runtime)
 
-    EvalDyadicLeftK(const char* name, Continuation* l, Value* r)
+    EvalDyadicLeftK(String* name, Continuation* l, Value* r)
         : op_name(name), left(l), right_val(r) {}
 
     ~EvalDyadicLeftK() override {}
@@ -714,9 +714,9 @@ protected:
 // Auxiliary continuation to apply monadic function after operand evaluated
 class ApplyMonadicK : public Continuation {
 public:
-    const char* op_name;        // Operator name (interned pointer)
+    String* op_name;            // Operator name (interned)
 
-    ApplyMonadicK(const char* name)
+    ApplyMonadicK(String* name)
         : op_name(name) {}
 
     ~ApplyMonadicK() override {}
@@ -731,10 +731,10 @@ protected:
 // Auxiliary continuation to apply dyadic function after both operands evaluated
 class ApplyDyadicK : public Continuation {
 public:
-    const char* op_name;        // Operator name (interned pointer)
+    String* op_name;            // Operator name (interned)
     Value* right_val;           // Saved right value
 
-    ApplyDyadicK(const char* name, Value* r)
+    ApplyDyadicK(String* name, Value* r)
         : op_name(name), right_val(r) {}
 
     ~ApplyDyadicK() override {}
@@ -772,10 +772,10 @@ protected:
 // Marks function boundaries and saves return continuation
 class FrameK : public Continuation {
 public:
-    const char* function_name;  // Name of function (for debugging)
+    String* function_name;      // Name of function (for debugging)
     Continuation* return_k;     // Where to return to
 
-    FrameK(const char* name, Continuation* ret)
+    FrameK(String* name, Continuation* ret)
         : function_name(name), return_k(ret) {}
 
     ~FrameK() override {
@@ -1051,11 +1051,11 @@ protected:
 // Marks loop boundary for :Leave support
 class ForK : public Continuation {
 public:
-    const char* var_name;        // Iterator variable name (interned pointer)
+    String* var_name;            // Iterator variable name (interned)
     Continuation* array_expr;    // Expression that produces the array
     Continuation* body;          // Loop body to execute
 
-    ForK(const char* var, Continuation* arr, Continuation* loop_body)
+    ForK(String* var, Continuation* arr, Continuation* loop_body)
         : var_name(var), array_expr(arr), body(loop_body) {}
 
     ~ForK() override {
@@ -1075,12 +1075,12 @@ protected:
 // Auxiliary continuation for ForK - iterates over array elements
 class ForIterateK : public Continuation {
 public:
-    const char* var_name;        // Iterator variable name (interned pointer)
+    String* var_name;            // Iterator variable name (interned)
     Value* array;                // Array to iterate over
     Continuation* body;          // Loop body
     size_t index;                // Current iteration index
 
-    ForIterateK(const char* var, Value* arr, Continuation* loop_body, size_t idx)
+    ForIterateK(String* var, Value* arr, Continuation* loop_body, size_t idx)
         : var_name(var), array(arr), body(loop_body), index(idx) {}
 
     ~ForIterateK() override {}
@@ -1254,9 +1254,9 @@ class DerivedOperatorK : public Continuation {
 public:
     Continuation* operand_cont;   // The fb-term to evaluate
     Continuation* axis_cont;      // Optional axis expression (for f/[k] syntax)
-    const char* op_name;          // The dyadic operator name
+    String* op_name;              // The dyadic operator name (interned)
 
-    DerivedOperatorK(Continuation* operand, const char* operator_name,
+    DerivedOperatorK(Continuation* operand, String* operator_name,
                      Continuation* axis = nullptr)
         : operand_cont(operand), axis_cont(axis), op_name(operator_name) {}
 
@@ -1273,10 +1273,10 @@ protected:
 // Creates a DERIVED_OPERATOR value (or OPERATOR_CURRY if axis is specified)
 class ApplyDerivedOperatorK : public Continuation {
 public:
-    const char* op_name;
+    String* op_name;              // Operator name (interned)
     Continuation* axis_cont;      // Optional axis (for f/[k] syntax)
 
-    ApplyDerivedOperatorK(const char* operator_name, Continuation* axis = nullptr)
+    ApplyDerivedOperatorK(String* operator_name, Continuation* axis = nullptr)
         : op_name(operator_name), axis_cont(axis) {}
 
     ~ApplyDerivedOperatorK() override {}
@@ -1619,11 +1619,11 @@ protected:
 // IndexedAssignK - Start indexed assignment: evaluate value first
 class IndexedAssignK : public Continuation {
 public:
-    const char* var_name;         // Variable name (interned string)
+    String* var_name;             // Variable name (interned)
     Continuation* index_cont;     // Index expression
     Continuation* value_cont;     // Value expression
 
-    IndexedAssignK(const char* var, Continuation* idx, Continuation* val)
+    IndexedAssignK(String* var, Continuation* idx, Continuation* val)
         : var_name(var), index_cont(idx), value_cont(val) {}
 
     ~IndexedAssignK() override {}
@@ -1638,11 +1638,11 @@ protected:
 // IndexedAssignIndexK - Value evaluated, now evaluate index
 class IndexedAssignIndexK : public Continuation {
 public:
-    const char* var_name;         // Variable name (interned string)
+    String* var_name;             // Variable name (interned)
     Value* value_val;             // Already-evaluated value
     Continuation* index_cont;     // Index expression to evaluate
 
-    IndexedAssignIndexK(const char* var, Value* val, Continuation* idx)
+    IndexedAssignIndexK(String* var, Value* val, Continuation* idx)
         : var_name(var), value_val(val), index_cont(idx) {}
 
     ~IndexedAssignIndexK() override {}
@@ -1657,11 +1657,11 @@ protected:
 // PerformIndexedAssignK - Value and index evaluated, perform the assignment
 class PerformIndexedAssignK : public Continuation {
 public:
-    const char* var_name;         // Variable name (interned string)
+    String* var_name;             // Variable name (interned)
     Value* value_val;             // Value to assign
     Value* index_val;             // Index value(s)
 
-    PerformIndexedAssignK(const char* var, Value* val, Value* idx)
+    PerformIndexedAssignK(String* var, Value* val, Value* idx)
         : var_name(var), value_val(val), index_val(idx) {}
 
     ~PerformIndexedAssignK() override {}

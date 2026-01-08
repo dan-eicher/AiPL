@@ -159,7 +159,7 @@ TEST_F(EvalTest, ParseBasicAssignment) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
 
     // Check that x is now in the environment
-    Value* x = machine->env->lookup("x");
+    Value* x = machine->env->lookup(machine->string_pool.intern("x"));
     ASSERT_NE(x, nullptr);
     EXPECT_TRUE(x->is_scalar());
     EXPECT_DOUBLE_EQ(x->as_scalar(), 5.0);
@@ -177,7 +177,7 @@ TEST_F(EvalTest, ParseAssignmentWithExpression) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 7.0);
 
     // Check environment
-    Value* y = machine->env->lookup("y");
+    Value* y = machine->env->lookup(machine->string_pool.intern("y"));
     ASSERT_NE(y, nullptr);
     EXPECT_DOUBLE_EQ(y->as_scalar(), 7.0);
 }
@@ -224,9 +224,9 @@ TEST_F(EvalTest, AssignmentThenUseInExpression) {
 TEST_F(EvalTest, FunctionAssignmentMonadic) {
     // First, manually add + to a variable for testing
     // (We can't parse "f ← +" yet because + is a token, not a name)
-    Value* plus_fn = machine->env->lookup("+");
+    Value* plus_fn = machine->env->lookup(machine->string_pool.intern("+"));
     ASSERT_NE(plus_fn, nullptr) << "+ should be in global environment";
-    machine->env->define("f", plus_fn);
+    machine->env->define(machine->string_pool.intern("f"), plus_fn);
 
     // Now parse "f 3" - should apply f (which is +) monadically to 3
     // Monadic + is identity, so result should be 3
@@ -243,9 +243,9 @@ TEST_F(EvalTest, FunctionAssignmentMonadic) {
 // Test function assignment and dyadic application: f ← +, then 2 f 3
 TEST_F(EvalTest, FunctionAssignmentDyadic) {
     // Manually add + to variable f
-    Value* plus_fn = machine->env->lookup("+");
+    Value* plus_fn = machine->env->lookup(machine->string_pool.intern("+"));
     ASSERT_NE(plus_fn, nullptr) << "+ should be in global environment";
-    machine->env->define("f", plus_fn);
+    machine->env->define(machine->string_pool.intern("f"), plus_fn);
 
     // Now parse "2 f 3" - should apply f (which is +) dyadically to 2 and 3
     // Dyadic + is addition, so result should be 5
@@ -565,10 +565,10 @@ TEST_F(EvalTest, FunctionNameAndLiteralStrand) {
 TEST_F(EvalTest, NameNameCreatesJuxtapose) {
     // "f g" where both are variables should create JuxtaposeK
     // This is two TOK_NAME tokens, so juxtaposition should occur
-    Value* plus_fn = machine->env->lookup("+");
-    Value* minus_fn = machine->env->lookup("-");
-    machine->env->define("f", plus_fn);
-    machine->env->define("g", minus_fn);
+    Value* plus_fn = machine->env->lookup(machine->string_pool.intern("+"));
+    Value* minus_fn = machine->env->lookup(machine->string_pool.intern("-"));
+    machine->env->define(machine->string_pool.intern("f"), plus_fn);
+    machine->env->define(machine->string_pool.intern("g"), minus_fn);
 
     Continuation* k = parser->parse("f g");
     ASSERT_NE(k, nullptr);
@@ -580,8 +580,8 @@ TEST_F(EvalTest, NameNameCreatesJuxtapose) {
 TEST_F(EvalTest, NameNumberCreatesJuxtapose) {
     // "f 3" where f is a variable and 3 is a number should create JuxtaposeK
     // This is two separate tokens: TOK_NAME and TOK_NUMBER
-    Value* plus_fn = machine->env->lookup("+");
-    machine->env->define("f", plus_fn);
+    Value* plus_fn = machine->env->lookup(machine->string_pool.intern("+"));
+    machine->env->define(machine->string_pool.intern("f"), plus_fn);
 
     Continuation* k = parser->parse("f 3");
     ASSERT_NE(k, nullptr);
@@ -592,8 +592,8 @@ TEST_F(EvalTest, NameNumberCreatesJuxtapose) {
 
 TEST_F(EvalTest, NumberNameCreatesJuxtapose) {
     // "2 f" should create JuxtaposeK (two separate tokens)
-    Value* plus_fn = machine->env->lookup("+");
-    machine->env->define("f", plus_fn);
+    Value* plus_fn = machine->env->lookup(machine->string_pool.intern("+"));
+    machine->env->define(machine->string_pool.intern("f"), plus_fn);
 
     Continuation* k = parser->parse("2 f");
     ASSERT_NE(k, nullptr);
@@ -604,8 +604,8 @@ TEST_F(EvalTest, NumberNameCreatesJuxtapose) {
 
 TEST_F(EvalTest, NumberNameNumberCreatesJuxtapose) {
     // "2 f 3" should create nested JuxtaposeK
-    Value* plus_fn = machine->env->lookup("+");
-    machine->env->define("f", plus_fn);
+    Value* plus_fn = machine->env->lookup(machine->string_pool.intern("+"));
+    machine->env->define(machine->string_pool.intern("f"), plus_fn);
 
     Continuation* k = parser->parse("2 f 3");
     ASSERT_NE(k, nullptr);
@@ -648,7 +648,7 @@ TEST_F(EvalTest, OuterProductLiteralStrandParseStructure) {
     // Right.Left should be DerivedOperatorK
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(right_jux->left);
     ASSERT_NE(derived, nullptr) << "Right.Left should be DerivedOperatorK";
-    EXPECT_STREQ(derived->op_name, "∘.");
+    EXPECT_STREQ(derived->op_name->c_str(), "∘.");
 }
 
 TEST_F(EvalTest, OuterProductEvaluatesToMatrix) {
@@ -3434,7 +3434,7 @@ TEST_F(EvalTest, IndexedAssignWithIota) {
     machine->eval("A←⍳5");
 
     // Debug: Check what type is stored
-    Value* stored = machine->env->lookup("A");
+    Value* stored = machine->env->lookup(machine->string_pool.intern("A"));
     ASSERT_NE(stored, nullptr) << "A should be defined after A←⍳5";
     EXPECT_TRUE(stored->is_array()) << "A should be array, got tag=" << static_cast<int>(stored->tag);
 
@@ -3482,7 +3482,7 @@ TEST_F(EvalTest, IndexedAssignMatrix) {
     // A←2 3⍴⍳6 ⋄ A[4]←99 ⋄ A[4] → 99 (linear index into matrix)
     machine->eval("A←2 3⍴⍳6");
 
-    Value* stored = machine->env->lookup("A");
+    Value* stored = machine->env->lookup(machine->string_pool.intern("A"));
     ASSERT_NE(stored, nullptr) << "A should be defined";
     EXPECT_TRUE(stored->is_matrix()) << "A should be matrix, got tag=" << static_cast<int>(stored->tag);
 

@@ -71,7 +71,7 @@ TEST_F(StatementTest, TwoStatementsNewline) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 10.0);
 
     // Verify x was assigned
-    Value* x = machine->env->lookup("x");
+    Value* x = machine->env->lookup(machine->string_pool.intern("x"));
     ASSERT_NE(x, nullptr);
     EXPECT_DOUBLE_EQ(x->as_scalar(), 10.0);
 }
@@ -132,9 +132,9 @@ TEST_F(StatementTest, MultipleAssignments) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 30.0);
 
     // Verify all variables were assigned
-    EXPECT_DOUBLE_EQ(machine->env->lookup("x")->as_scalar(), 10.0);
-    EXPECT_DOUBLE_EQ(machine->env->lookup("y")->as_scalar(), 20.0);
-    EXPECT_DOUBLE_EQ(machine->env->lookup("z")->as_scalar(), 30.0);
+    EXPECT_DOUBLE_EQ(machine->env->lookup(machine->string_pool.intern("x"))->as_scalar(), 10.0);
+    EXPECT_DOUBLE_EQ(machine->env->lookup(machine->string_pool.intern("y"))->as_scalar(), 20.0);
+    EXPECT_DOUBLE_EQ(machine->env->lookup(machine->string_pool.intern("z"))->as_scalar(), 30.0);
 }
 
 // Test expressions in sequence

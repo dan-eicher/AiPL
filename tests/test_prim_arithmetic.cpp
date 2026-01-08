@@ -1191,23 +1191,23 @@ TEST_F(ArithmeticTest, ComparisonPreservesVector) {
 
 // Environment binding tests for new comparisons
 TEST_F(ArithmeticTest, ComparisonPrimitivesRegistered) {
-    Value* neq = machine->env->lookup("≠");
+    Value* neq = machine->env->lookup(machine->string_pool.intern("≠"));
     ASSERT_NE(neq, nullptr);
     ASSERT_TRUE(neq->is_function());
 
-    Value* lt = machine->env->lookup("<");
+    Value* lt = machine->env->lookup(machine->string_pool.intern("<"));
     ASSERT_NE(lt, nullptr);
     ASSERT_TRUE(lt->is_function());
 
-    Value* gt = machine->env->lookup(">");
+    Value* gt = machine->env->lookup(machine->string_pool.intern(">"));
     ASSERT_NE(gt, nullptr);
     ASSERT_TRUE(gt->is_function());
 
-    Value* le = machine->env->lookup("≤");
+    Value* le = machine->env->lookup(machine->string_pool.intern("≤"));
     ASSERT_NE(le, nullptr);
     ASSERT_TRUE(le->is_function());
 
-    Value* ge = machine->env->lookup("≥");
+    Value* ge = machine->env->lookup(machine->string_pool.intern("≥"));
     ASSERT_NE(ge, nullptr);
     ASSERT_TRUE(ge->is_function());
 }
@@ -1513,13 +1513,13 @@ TEST_F(ArithmeticTest, NandNorNearBooleanAccepted) {
 }
 
 TEST_F(ArithmeticTest, LogicalPrimitivesRegistered) {
-    ASSERT_NE(machine->env->lookup("⌈"), nullptr);
-    ASSERT_NE(machine->env->lookup("⌊"), nullptr);
-    ASSERT_NE(machine->env->lookup("∧"), nullptr);
-    ASSERT_NE(machine->env->lookup("∨"), nullptr);
-    ASSERT_NE(machine->env->lookup("~"), nullptr);
-    ASSERT_NE(machine->env->lookup("⍲"), nullptr);
-    ASSERT_NE(machine->env->lookup("⍱"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⌈")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⌊")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("∧")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("∨")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("~")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⍲")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⍱")), nullptr);
 }
 
 // ============================================================================
@@ -1776,9 +1776,9 @@ TEST_F(ArithmeticTest, BinomialPascalsRow) {
 }
 
 TEST_F(ArithmeticTest, ArithmeticExtensionsRegistered) {
-    ASSERT_NE(machine->env->lookup("|"), nullptr);
-    ASSERT_NE(machine->env->lookup("⍟"), nullptr);
-    ASSERT_NE(machine->env->lookup("!"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("|")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⍟")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("!")), nullptr);
 }
 
 // Circular Functions (○) Tests
@@ -1978,7 +1978,7 @@ TEST_F(ArithmeticTest, CircularVector) {
 }
 
 TEST_F(ArithmeticTest, CircularRegistered) {
-    ASSERT_NE(machine->env->lookup("○"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("○")), nullptr);
 }
 
 // ========================================================================
@@ -2341,11 +2341,11 @@ TEST_F(ArithmeticTest, DecodeEncodeRoundtrip) {
 }
 
 TEST_F(ArithmeticTest, DecodeRegistered) {
-    ASSERT_NE(machine->env->lookup("⊥"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⊥")), nullptr);
 }
 
 TEST_F(ArithmeticTest, EncodeRegistered) {
-    ASSERT_NE(machine->env->lookup("⊤"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⊤")), nullptr);
 }
 
 // ISO 13751 10.2.8: Empty decode returns 0

@@ -12,13 +12,12 @@
 
 namespace apl {
 
-// UTF-8 encoding constants
-namespace utf8 {
-    // Byte length thresholds (codepoint ranges)
-    constexpr uint32_t MAX_1BYTE = 0x7F;      // ASCII range
-    constexpr uint32_t MAX_2BYTE = 0x7FF;     // 2-byte sequences
-    constexpr uint32_t MAX_3BYTE = 0xFFFF;    // 3-byte sequences (BMP)
+// ============================================================================
+// String implementation - UTF-8 utilities consolidated here
+// ============================================================================
 
+// Internal constants for UTF-8 encoding/decoding
+namespace {
     // Leading byte patterns (for encoding)
     constexpr uint8_t PREFIX_2BYTE = 0xC0;    // 110xxxxx
     constexpr uint8_t PREFIX_3BYTE = 0xE0;    // 1110xxxx
@@ -37,6 +36,126 @@ namespace utf8 {
     constexpr uint8_t DATA_3BYTE = 0x0F;      // 4 bits from 3-byte lead
     constexpr uint8_t DATA_4BYTE = 0x07;      // 3 bits from 4-byte lead
 }
+
+void String::mark(Heap* /*heap*/) {
+    // String is a leaf node - nothing to mark
+}
+
+// Get byte length of UTF-8 sequence starting with given byte
+int String::utf8_sequence_length(unsigned char lead_byte) {
+    if ((lead_byte & MASK_1BYTE) == 0) return 1;
+    if ((lead_byte & MASK_2BYTE) == PREFIX_2BYTE) return 2;
+    if ((lead_byte & MASK_3BYTE) == PREFIX_3BYTE) return 3;
+    if ((lead_byte & MASK_4BYTE) == PREFIX_4BYTE) return 4;
+    return 1;  // Invalid, treat as single byte
+}
+
+// Decode one codepoint from UTF-8, advancing the pointer
+uint32_t String::decode_one(const unsigned char*& p) {
+    unsigned char c = *p;
+    uint32_t cp;
+
+    if ((c & MASK_1BYTE) == 0) {
+        cp = c;
+        p += 1;
+    } else if ((c & MASK_2BYTE) == PREFIX_2BYTE) {
+        cp = (c & DATA_2BYTE) << 6;
+        cp |= (p[1] & MASK_CONT);
+        p += 2;
+    } else if ((c & MASK_3BYTE) == PREFIX_3BYTE) {
+        cp = (c & DATA_3BYTE) << 12;
+        cp |= (p[1] & MASK_CONT) << 6;
+        cp |= (p[2] & MASK_CONT);
+        p += 3;
+    } else if ((c & MASK_4BYTE) == PREFIX_4BYTE) {
+        cp = (c & DATA_4BYTE) << 18;
+        cp |= (p[1] & MASK_CONT) << 12;
+        cp |= (p[2] & MASK_CONT) << 6;
+        cp |= (p[3] & MASK_CONT);
+        p += 4;
+    } else {
+        // Invalid UTF-8, treat as single byte
+        cp = c;
+        p += 1;
+    }
+    return cp;
+}
+
+// Encode a single codepoint to UTF-8
+std::string String::encode_codepoint(uint32_t cp) {
+    std::string result;
+    if (cp <= MAX_1BYTE) {
+        result += static_cast<char>(cp);
+    } else if (cp <= MAX_2BYTE) {
+        result += static_cast<char>(PREFIX_2BYTE | (cp >> 6));
+        result += static_cast<char>(PREFIX_CONT | (cp & MASK_CONT));
+    } else if (cp <= MAX_3BYTE) {
+        result += static_cast<char>(PREFIX_3BYTE | (cp >> 12));
+        result += static_cast<char>(PREFIX_CONT | ((cp >> 6) & MASK_CONT));
+        result += static_cast<char>(PREFIX_CONT | (cp & MASK_CONT));
+    } else if (cp <= MAX_4BYTE) {
+        result += static_cast<char>(PREFIX_4BYTE | (cp >> 18));
+        result += static_cast<char>(PREFIX_CONT | ((cp >> 12) & MASK_CONT));
+        result += static_cast<char>(PREFIX_CONT | ((cp >> 6) & MASK_CONT));
+        result += static_cast<char>(PREFIX_CONT | (cp & MASK_CONT));
+    }
+    return result;
+}
+
+// Encode a vector of codepoints to UTF-8 string
+std::string String::encode_codepoints(const std::vector<uint32_t>& cps) {
+    std::string result;
+    for (uint32_t cp : cps) {
+        result += encode_codepoint(cp);
+    }
+    return result;
+}
+
+// Decode UTF-8 string to codepoints
+std::vector<uint32_t> String::decode_utf8(const char* s) {
+    std::vector<uint32_t> result;
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(s);
+    while (*p) {
+        result.push_back(decode_one(p));
+    }
+    return result;
+}
+
+std::vector<uint32_t> String::decode_utf8(const std::string& s) {
+    return decode_utf8(s.c_str());
+}
+
+// Instance methods using the static utilities
+
+size_t String::length() const {
+    size_t count = 0;
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(data_.c_str());
+    while (*p) {
+        decode_one(p);
+        ++count;
+    }
+    return count;
+}
+
+uint32_t String::at(size_t index) const {
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(data_.c_str());
+    size_t i = 0;
+    while (*p) {
+        uint32_t cp = decode_one(p);
+        if (i == index) return cp;
+        ++i;
+    }
+    // Index out of bounds - return replacement character
+    return 0xFFFD;
+}
+
+std::vector<uint32_t> String::to_codepoints() const {
+    return decode_utf8(data_);
+}
+
+// ============================================================================
+// Value implementation
+// ============================================================================
 
 // Destructor
 Value::~Value() {
@@ -220,6 +339,11 @@ double Value::ndarray_at(const std::vector<int>& indices) const {
 }
 
 void Value::mark(Heap* heap) {
+    // If this is a STRING, mark the interned String object
+    if (tag == ValueType::STRING && data.string) {
+        heap->mark(data.string);
+    }
+
     // If this is a STRAND, mark all elements
     if (tag == ValueType::STRAND && data.strand) {
         for (Value* elem : *data.strand) {
@@ -232,10 +356,16 @@ void Value::mark(Heap* heap) {
         heap->mark(data.closure->body);
     }
 
-    // DEFINED_OPERATOR: mark body and lexical environment
+    // DEFINED_OPERATOR: mark body, lexical environment, and interned names
     if (tag == ValueType::DEFINED_OPERATOR && data.defined_op_data) {
         heap->mark(data.defined_op_data->body);
         heap->mark(data.defined_op_data->lexical_env);
+        heap->mark(data.defined_op_data->name);
+        heap->mark(data.defined_op_data->left_operand_name);
+        heap->mark(data.defined_op_data->right_operand_name);
+        heap->mark(data.defined_op_data->left_arg_name);
+        heap->mark(data.defined_op_data->right_arg_name);
+        heap->mark(data.defined_op_data->result_name);
     }
 
     // Mark referenced Values in G2 grammar structures
@@ -267,47 +397,12 @@ Value* Value::to_char_vector(Heap* heap) {
         throw std::runtime_error("to_char_vector requires STRING or array");
     }
 
-    const char* s = data.string;
-    std::vector<double> codepoints;
-
-    // Decode UTF-8 to codepoints
-    while (*s) {
-        unsigned char c = static_cast<unsigned char>(*s);
-        uint32_t cp;
-
-        if ((c & utf8::MASK_1BYTE) == 0) {
-            // 1-byte (ASCII)
-            cp = c;
-            s += 1;
-        } else if ((c & utf8::MASK_2BYTE) == utf8::PREFIX_2BYTE) {
-            // 2-byte
-            cp = (c & utf8::DATA_2BYTE) << 6;
-            cp |= (static_cast<unsigned char>(s[1]) & utf8::MASK_CONT);
-            s += 2;
-        } else if ((c & utf8::MASK_3BYTE) == utf8::PREFIX_3BYTE) {
-            // 3-byte
-            cp = (c & utf8::DATA_3BYTE) << 12;
-            cp |= (static_cast<unsigned char>(s[1]) & utf8::MASK_CONT) << 6;
-            cp |= (static_cast<unsigned char>(s[2]) & utf8::MASK_CONT);
-            s += 3;
-        } else if ((c & utf8::MASK_4BYTE) == utf8::PREFIX_4BYTE) {
-            // 4-byte
-            cp = (c & utf8::DATA_4BYTE) << 18;
-            cp |= (static_cast<unsigned char>(s[1]) & utf8::MASK_CONT) << 12;
-            cp |= (static_cast<unsigned char>(s[2]) & utf8::MASK_CONT) << 6;
-            cp |= (static_cast<unsigned char>(s[3]) & utf8::MASK_CONT);
-            s += 4;
-        } else {
-            // Invalid UTF-8, treat as single byte
-            cp = c;
-            s += 1;
-        }
-        codepoints.push_back(static_cast<double>(cp));
-    }
+    // Use consolidated String UTF-8 decoding
+    std::vector<uint32_t> codepoints = String::decode_utf8(data.string->c_str());
 
     Eigen::VectorXd vec(codepoints.size());
     for (size_t i = 0; i < codepoints.size(); ++i) {
-        vec(i) = codepoints[i];
+        vec(i) = static_cast<double>(codepoints[i]);
     }
 
     return heap->allocate_vector(vec, true);  // is_char_data = true
@@ -328,25 +423,10 @@ Value* Value::to_string_value(Heap* heap) {
     const Eigen::MatrixXd* mat = as_matrix();
     std::string result;
 
-    // Encode codepoints to UTF-8
+    // Use consolidated String UTF-8 encoding
     for (int i = 0; i < mat->size(); ++i) {
         uint32_t cp = static_cast<uint32_t>((*mat)(i % mat->rows(), i / mat->rows()));
-
-        if (cp <= utf8::MAX_1BYTE) {
-            result += static_cast<char>(cp);
-        } else if (cp <= utf8::MAX_2BYTE) {
-            result += static_cast<char>(utf8::PREFIX_2BYTE | (cp >> 6));
-            result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
-        } else if (cp <= utf8::MAX_3BYTE) {
-            result += static_cast<char>(utf8::PREFIX_3BYTE | (cp >> 12));
-            result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
-            result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
-        } else {
-            result += static_cast<char>(utf8::PREFIX_4BYTE | (cp >> 18));
-            result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 12) & utf8::MASK_CONT));
-            result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
-            result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
-        }
+        result += String::encode_codepoint(cp);
     }
 
     return heap->allocate_string(result.c_str());
@@ -395,27 +475,6 @@ static std::string format_number(double d) {
     return s;
 }
 
-// Helper: format a codepoint as a character (UTF-8)
-static std::string codepoint_to_utf8(uint32_t cp) {
-    std::string result;
-    if (cp <= utf8::MAX_1BYTE) {
-        result += static_cast<char>(cp);
-    } else if (cp <= utf8::MAX_2BYTE) {
-        result += static_cast<char>(utf8::PREFIX_2BYTE | (cp >> 6));
-        result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
-    } else if (cp <= utf8::MAX_3BYTE) {
-        result += static_cast<char>(utf8::PREFIX_3BYTE | (cp >> 12));
-        result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
-        result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
-    } else {
-        result += static_cast<char>(utf8::PREFIX_4BYTE | (cp >> 18));
-        result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 12) & utf8::MASK_CONT));
-        result += static_cast<char>(utf8::PREFIX_CONT | ((cp >> 6) & utf8::MASK_CONT));
-        result += static_cast<char>(utf8::PREFIX_CONT | (cp & utf8::MASK_CONT));
-    }
-    return result;
-}
-
 // Format a Value for display
 std::string format_value(const Value* v) {
     if (!v) return "null";
@@ -426,7 +485,7 @@ std::string format_value(const Value* v) {
 
         case ValueType::STRING:
             // Return quoted string
-            return std::string("'") + v->data.string + "'";
+            return std::string("'") + v->data.string->c_str() + "'";
 
         case ValueType::VECTOR: {
             const Eigen::MatrixXd* mat = v->as_matrix();
@@ -440,7 +499,7 @@ std::string format_value(const Value* v) {
                 oss << "'";
                 for (int i = 0; i < n; i++) {
                     uint32_t cp = static_cast<uint32_t>((*mat)(i, 0));
-                    oss << codepoint_to_utf8(cp);
+                    oss << String::encode_codepoint(cp);
                 }
                 oss << "'";
             } else {
@@ -467,7 +526,7 @@ std::string format_value(const Value* v) {
                     if (j > 0) oss << " ";
                     if (v->is_char_data()) {
                         uint32_t cp = static_cast<uint32_t>((*mat)(i, j));
-                        oss << codepoint_to_utf8(cp);
+                        oss << String::encode_codepoint(cp);
                     } else {
                         oss << format_number((*mat)(i, j));
                     }
@@ -527,7 +586,7 @@ std::string format_value(const Value* v) {
                         int idx = base + i * cols + j;
                         if (v->is_char_data()) {
                             uint32_t cp = static_cast<uint32_t>((*data)(idx));
-                            oss << codepoint_to_utf8(cp);
+                            oss << String::encode_codepoint(cp);
                         } else {
                             oss << format_number((*data)(idx));
                         }
@@ -561,7 +620,7 @@ std::string format_value(const Value* v) {
 
         case ValueType::DEFINED_OPERATOR:
             return std::string("<defined-operator:") +
-                   (v->data.defined_op_data->name ? v->data.defined_op_data->name : "?") + ">";
+                   (v->data.defined_op_data->name ? v->data.defined_op_data->name->c_str() : "?") + ">";
 
         case ValueType::DERIVED_OPERATOR:
             return "<derived-operator>";
@@ -633,7 +692,7 @@ std::string Value::type_name() const {
                    (data.op && data.op->name ? data.op->name : "?") + ">";
         case ValueType::DEFINED_OPERATOR:
             return std::string("defined-operator<") +
-                   (data.defined_op_data && data.defined_op_data->name ? data.defined_op_data->name : "?") + ">";
+                   (data.defined_op_data && data.defined_op_data->name ? data.defined_op_data->name->c_str() : "?") + ">";
         case ValueType::DERIVED_OPERATOR: return "derived-operator";
         case ValueType::CURRIED_FN: {
             if (!data.curried_fn) return "curried-fn";

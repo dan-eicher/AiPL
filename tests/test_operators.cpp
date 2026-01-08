@@ -185,7 +185,7 @@ TEST_F(OperatorsTest, PostfixMonadicOperator) {
     // Create continuation that looks up "+" and applies "¨" operator to it
     // This should create a DERIVED_OPERATOR that captures ¨ and +
     LookupK* lookup = machine->heap->allocate<LookupK>(machine->string_pool.intern("+"));
-    const char* op_name = machine->string_pool.intern("¨");
+    String* op_name = machine->string_pool.intern("¨");
     DerivedOperatorK* derived_k = machine->heap->allocate<DerivedOperatorK>(lookup, op_name);
 
     machine->push_kont(derived_k);

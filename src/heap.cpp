@@ -139,11 +139,19 @@ Value* Heap::allocate_matrix(const Eigen::MatrixXd& m, bool is_char_data) {
     return allocate(val);
 }
 
-// Allocate a string value (re-intern to ensure stable pointer)
+// Allocate a string value (intern the string)
 Value* Heap::allocate_string(const char* s) {
     Value* val = new Value();
     val->tag = ValueType::STRING;
     val->data.string = machine->string_pool.intern(s);
+    return allocate(val);
+}
+
+// Allocate a string value (already interned String*)
+Value* Heap::allocate_string(String* s) {
+    Value* val = new Value();
+    val->tag = ValueType::STRING;
+    val->data.string = s;
     return allocate(val);
 }
 
@@ -381,14 +389,18 @@ void Heap::major_gc(Machine* machine) {
     major_gc_count++;
     minor_gc_count = 0;  // Reset minor GC counter
 
-    // Clear mark bits
+    // Clear mark bits (including strings in StringPool)
     clear_marks();
+    machine->string_pool.clear_marks();
 
     // Mark from roots
     mark_from_roots(machine);
 
     // Sweep both generations
     sweep();
+
+    // Sweep dead strings from StringPool (strings not marked during trace)
+    machine->string_pool.sweep_dead();
 
     // Update capacities if needed
     size_t total_live = total_size();
@@ -431,6 +443,10 @@ void Heap::mark_from_roots(Machine* machine) {
     for (auto& pair : machine->function_cache) {
         mark(pair.second);
     }
+
+    // Mark interned strings held by machine
+    mark(machine->lx);
+    mark(machine->event_message);
 
     // Mark environment (GC root)
     mark(machine->env);

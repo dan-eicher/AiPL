@@ -30,80 +30,85 @@ Machine::Machine() {
 
 // Initialize global environment with all built-in primitives and operators
 void Machine::init_globals() {
+    // Helper lambda to intern and define
+    auto def = [this](const char* name, Value* val) {
+        env->define(string_pool.intern(name), val);
+    };
+
     // Arithmetic primitives
-    env->define("+", heap->allocate_primitive(&prim_plus));
-    env->define("-", heap->allocate_primitive(&prim_minus));
-    env->define("×", heap->allocate_primitive(&prim_times));
-    env->define("÷", heap->allocate_primitive(&prim_divide));
-    env->define("*", heap->allocate_primitive(&prim_star));
-    env->define("=", heap->allocate_primitive(&prim_equal));
-    env->define("≠", heap->allocate_primitive(&prim_not_equal));
-    env->define("<", heap->allocate_primitive(&prim_less));
-    env->define(">", heap->allocate_primitive(&prim_greater));
-    env->define("≤", heap->allocate_primitive(&prim_less_eq));
-    env->define("≥", heap->allocate_primitive(&prim_greater_eq));
-    env->define("⌈", heap->allocate_primitive(&prim_ceiling));
-    env->define("⌊", heap->allocate_primitive(&prim_floor));
-    env->define("∧", heap->allocate_primitive(&prim_and));
-    env->define("∨", heap->allocate_primitive(&prim_or));
-    env->define("~", heap->allocate_primitive(&prim_not));
-    env->define("⍲", heap->allocate_primitive(&prim_nand));
-    env->define("⍱", heap->allocate_primitive(&prim_nor));
-    env->define("|", heap->allocate_primitive(&prim_stile));
-    env->define("⍟", heap->allocate_primitive(&prim_log));
-    env->define("!", heap->allocate_primitive(&prim_factorial));
+    def("+", heap->allocate_primitive(&prim_plus));
+    def("-", heap->allocate_primitive(&prim_minus));
+    def("×", heap->allocate_primitive(&prim_times));
+    def("÷", heap->allocate_primitive(&prim_divide));
+    def("*", heap->allocate_primitive(&prim_star));
+    def("=", heap->allocate_primitive(&prim_equal));
+    def("≠", heap->allocate_primitive(&prim_not_equal));
+    def("<", heap->allocate_primitive(&prim_less));
+    def(">", heap->allocate_primitive(&prim_greater));
+    def("≤", heap->allocate_primitive(&prim_less_eq));
+    def("≥", heap->allocate_primitive(&prim_greater_eq));
+    def("⌈", heap->allocate_primitive(&prim_ceiling));
+    def("⌊", heap->allocate_primitive(&prim_floor));
+    def("∧", heap->allocate_primitive(&prim_and));
+    def("∨", heap->allocate_primitive(&prim_or));
+    def("~", heap->allocate_primitive(&prim_not));
+    def("⍲", heap->allocate_primitive(&prim_nand));
+    def("⍱", heap->allocate_primitive(&prim_nor));
+    def("|", heap->allocate_primitive(&prim_stile));
+    def("⍟", heap->allocate_primitive(&prim_log));
+    def("!", heap->allocate_primitive(&prim_factorial));
 
     // Array operations
-    env->define("⍴", heap->allocate_primitive(&prim_rho));
-    env->define(",", heap->allocate_primitive(&prim_comma));
-    env->define("⍉", heap->allocate_primitive(&prim_transpose));
-    env->define("⍳", heap->allocate_primitive(&prim_iota));
-    env->define("↑", heap->allocate_primitive(&prim_uptack));
-    env->define("↓", heap->allocate_primitive(&prim_downtack));
-    env->define("⌽", heap->allocate_primitive(&prim_reverse));
-    env->define("⊖", heap->allocate_primitive(&prim_reverse_first));
-    env->define("≢", heap->allocate_primitive(&prim_tally));
-    env->define("≡", heap->allocate_primitive(&prim_depth));
-    env->define("∊", heap->allocate_primitive(&prim_member));
-    env->define("⍋", heap->allocate_primitive(&prim_grade_up));
-    env->define("⍒", heap->allocate_primitive(&prim_grade_down));
-    env->define("∪", heap->allocate_primitive(&prim_union));
-    env->define("○", heap->allocate_primitive(&prim_circle));
-    env->define("?", heap->allocate_primitive(&prim_question));
-    env->define("⊥", heap->allocate_primitive(&prim_decode));
-    env->define("⊤", heap->allocate_primitive(&prim_encode));
-    env->define("⌹", heap->allocate_primitive(&prim_domino));
-    env->define("⍎", heap->allocate_primitive(&prim_execute));
-    env->define("⍕", heap->allocate_primitive(&prim_format));
-    env->define("⌷", heap->allocate_primitive(&prim_squad));
-    env->define("⍪", heap->allocate_primitive(&prim_table));
-    env->define("⊣", heap->allocate_primitive(&prim_left));
-    env->define("⊢", heap->allocate_primitive(&prim_right));
-    env->define("⊂", heap->allocate_primitive(&prim_enclose));
-    env->define("⊃", heap->allocate_primitive(&prim_disclose));
+    def("⍴", heap->allocate_primitive(&prim_rho));
+    def(",", heap->allocate_primitive(&prim_comma));
+    def("⍉", heap->allocate_primitive(&prim_transpose));
+    def("⍳", heap->allocate_primitive(&prim_iota));
+    def("↑", heap->allocate_primitive(&prim_uptack));
+    def("↓", heap->allocate_primitive(&prim_downtack));
+    def("⌽", heap->allocate_primitive(&prim_reverse));
+    def("⊖", heap->allocate_primitive(&prim_reverse_first));
+    def("≢", heap->allocate_primitive(&prim_tally));
+    def("≡", heap->allocate_primitive(&prim_depth));
+    def("∊", heap->allocate_primitive(&prim_member));
+    def("⍋", heap->allocate_primitive(&prim_grade_up));
+    def("⍒", heap->allocate_primitive(&prim_grade_down));
+    def("∪", heap->allocate_primitive(&prim_union));
+    def("○", heap->allocate_primitive(&prim_circle));
+    def("?", heap->allocate_primitive(&prim_question));
+    def("⊥", heap->allocate_primitive(&prim_decode));
+    def("⊤", heap->allocate_primitive(&prim_encode));
+    def("⌹", heap->allocate_primitive(&prim_domino));
+    def("⍎", heap->allocate_primitive(&prim_execute));
+    def("⍕", heap->allocate_primitive(&prim_format));
+    def("⌷", heap->allocate_primitive(&prim_squad));
+    def("⍪", heap->allocate_primitive(&prim_table));
+    def("⊣", heap->allocate_primitive(&prim_left));
+    def("⊢", heap->allocate_primitive(&prim_right));
+    def("⊂", heap->allocate_primitive(&prim_enclose));
+    def("⊃", heap->allocate_primitive(&prim_disclose));
 
     // Error handling system functions (ISO 13751 §11.5.7-11.6.5)
     // Note: ⎕ET and ⎕EM are system variables (read-only), not primitives
-    env->define("⎕ES", heap->allocate_primitive(&prim_quad_es));
-    env->define("⎕EA", heap->allocate_primitive(&prim_quad_ea));
+    def("⎕ES", heap->allocate_primitive(&prim_quad_es));
+    def("⎕EA", heap->allocate_primitive(&prim_quad_ea));
 
     // Other system functions (ISO 13751 §11.5)
-    env->define("⎕DL", heap->allocate_primitive(&prim_quad_dl));
-    env->define("⎕NC", heap->allocate_primitive(&prim_quad_nc));
-    env->define("⎕EX", heap->allocate_primitive(&prim_quad_ex));
-    env->define("⎕NL", heap->allocate_primitive(&prim_quad_nl));
+    def("⎕DL", heap->allocate_primitive(&prim_quad_dl));
+    def("⎕NC", heap->allocate_primitive(&prim_quad_nc));
+    def("⎕EX", heap->allocate_primitive(&prim_quad_ex));
+    def("⎕NL", heap->allocate_primitive(&prim_quad_nl));
 
     // Operators (higher-order functions)
-    env->define(".", heap->allocate_operator(&op_dot));
-    env->define("∘.", heap->allocate_operator(&op_outer_dot));
-    env->define("¨", heap->allocate_operator(&op_diaeresis));
-    env->define("⍨", heap->allocate_operator(&op_tilde));
-    env->define("/", heap->allocate_operator(&op_reduce));
-    env->define("⌿", heap->allocate_operator(&op_reduce_first));
-    env->define("\\", heap->allocate_operator(&op_scan));
-    env->define("⍀", heap->allocate_operator(&op_scan_first));
-    env->define("⍤", heap->allocate_operator(&op_rank_op));
-    env->define(",⌷", heap->allocate_operator(&op_catenate_axis));
+    def(".", heap->allocate_operator(&op_dot));
+    def("∘.", heap->allocate_operator(&op_outer_dot));
+    def("¨", heap->allocate_operator(&op_diaeresis));
+    def("⍨", heap->allocate_operator(&op_tilde));
+    def("/", heap->allocate_operator(&op_reduce));
+    def("⌿", heap->allocate_operator(&op_reduce_first));
+    def("\\", heap->allocate_operator(&op_scan));
+    def("⍀", heap->allocate_operator(&op_scan_first));
+    def("⍤", heap->allocate_operator(&op_rank_op));
+    def(",⌷", heap->allocate_operator(&op_catenate_axis));
 }
 
 // Destructor

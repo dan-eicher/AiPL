@@ -32,7 +32,7 @@ TEST_F(CompletionTest, CompletionHandlingViaStatements) {
 // Phase 5.3: Test error propagation through THROW completions
 TEST_F(CompletionTest, ErrorPropagationUncaught) {
     machine->push_kont(machine->heap->allocate<HaltK>());
-    machine->push_kont(machine->heap->allocate<ThrowErrorK>("Test error"));
+    machine->push_kont(machine->heap->allocate<ThrowErrorK>(machine->string_pool.intern("Test error")));
 
     // Execute - should throw C++ exception since no CatchErrorK
     EXPECT_THROW(machine->execute(), APLError);
@@ -42,7 +42,7 @@ TEST_F(CompletionTest, ErrorPropagationUncaught) {
 TEST_F(CompletionTest, ErrorPropagationCaught) {
     machine->push_kont(machine->heap->allocate<HaltK>());
     machine->push_kont(machine->heap->allocate<CatchErrorK>());
-    machine->push_kont(machine->heap->allocate<ThrowErrorK>("Test error"));
+    machine->push_kont(machine->heap->allocate<ThrowErrorK>(machine->string_pool.intern("Test error")));
 
     // Execute - should NOT throw because CatchErrorK catches it
     EXPECT_NO_THROW(machine->execute());
@@ -55,7 +55,7 @@ TEST_F(CompletionTest, ErrorPropagationThroughFrames) {
     machine->push_kont(machine->heap->allocate<HaltK>());
     machine->push_kont(machine->heap->allocate<HaltK>());
     machine->push_kont(machine->heap->allocate<HaltK>());
-    machine->push_kont(machine->heap->allocate<ThrowErrorK>("Deep error"));
+    machine->push_kont(machine->heap->allocate<ThrowErrorK>(machine->string_pool.intern("Deep error")));
 
     // Execute - should unwind through all the HaltKs and catch at CatchErrorK
     EXPECT_NO_THROW(machine->execute());
@@ -64,7 +64,7 @@ TEST_F(CompletionTest, ErrorPropagationThroughFrames) {
 // Test error with message
 TEST_F(CompletionTest, ErrorMessagePreserved) {
     machine->push_kont(machine->heap->allocate<HaltK>());
-    machine->push_kont(machine->heap->allocate<ThrowErrorK>("Custom error message"));
+    machine->push_kont(machine->heap->allocate<ThrowErrorK>(machine->string_pool.intern("Custom error message")));
 
     try {
         machine->execute();
@@ -88,7 +88,7 @@ TEST_F(CompletionTest, NestedErrorBoundaries) {
     machine->push_kont(machine->heap->allocate<CatchErrorK>());
 
     // Error thrown here
-    machine->push_kont(machine->heap->allocate<ThrowErrorK>("Inner error"));
+    machine->push_kont(machine->heap->allocate<ThrowErrorK>(machine->string_pool.intern("Inner error")));
 
     // Should catch at inner boundary, not propagate to outer
     EXPECT_NO_THROW(machine->execute());
@@ -101,7 +101,7 @@ TEST_F(CompletionTest, ErrorRespectsLoopBoundaries) {
     // CatchBreakK should NOT catch THROW completions
     machine->push_kont(machine->heap->allocate<CatchBreakK>());
 
-    machine->push_kont(machine->heap->allocate<ThrowErrorK>("Error in loop"));
+    machine->push_kont(machine->heap->allocate<ThrowErrorK>(machine->string_pool.intern("Error in loop")));
 
     // Should throw because CatchBreakK doesn't catch THROW
     EXPECT_THROW(machine->execute(), APLError);
@@ -153,7 +153,7 @@ TEST_F(UnifiedErrorTest, ParseErrorCaughtByCatchErrorK) {
     EXPECT_EQ(k, nullptr);
 
     // But if we manually set up the error handling like eval() does:
-    const char* msg = machine->string_pool.intern(machine->parser->get_error().c_str());
+    String* msg = machine->string_pool.intern(machine->parser->get_error().c_str());
     k = machine->heap->allocate<ThrowErrorK>(msg);
 
     // Push CatchErrorK to catch the error

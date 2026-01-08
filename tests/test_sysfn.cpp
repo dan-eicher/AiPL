@@ -552,7 +552,7 @@ TEST_F(SysFnTest, QuadLXDefaultEmpty) {
     Value* result = machine->eval("⎕LX");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 // Test ⎕LX assignment with string
@@ -562,7 +562,7 @@ TEST_F(SysFnTest, QuadLXAssignString) {
     // Verify stored value
     Value* read = machine->eval("⎕LX");
     ASSERT_NE(read, nullptr);
-    EXPECT_STREQ(read->as_string(), "2+2");
+    EXPECT_STREQ(read->as_string()->c_str(), "2+2");
 }
 
 // Test ⎕LX assignment with character vector
@@ -570,7 +570,7 @@ TEST_F(SysFnTest, QuadLXAssignCharVector) {
     machine->eval("⎕LX←'hello'");
     Value* result = machine->eval("⎕LX");
     ASSERT_NE(result, nullptr);
-    EXPECT_STREQ(result->as_string(), "hello");
+    EXPECT_STREQ(result->as_string()->c_str(), "hello");
 }
 
 // Test ⎕LX can be cleared
@@ -579,7 +579,7 @@ TEST_F(SysFnTest, QuadLXClear) {
     machine->eval("⎕LX←''");
     Value* result = machine->eval("⎕LX");
     ASSERT_NE(result, nullptr);
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 // Test ⎕LX rejects non-character data

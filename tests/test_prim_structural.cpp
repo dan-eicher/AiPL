@@ -562,9 +562,9 @@ TEST_F(StructuralTest, TallyStrand) {
 }
 
 TEST_F(StructuralTest, ReverseRotateTallyRegistered) {
-    ASSERT_NE(machine->env->lookup("⌽"), nullptr);
-    ASSERT_NE(machine->env->lookup("⊖"), nullptr);
-    ASSERT_NE(machine->env->lookup("≢"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⌽")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⊖")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("≢")), nullptr);
 }
 
 // ============================================================================
@@ -950,8 +950,8 @@ TEST_F(StructuralTest, CatenateVectorScalar) {
 
 TEST_F(StructuralTest, SearchFunctionsRegistered) {
     // ⍳ should already be registered (monadic iota)
-    ASSERT_NE(machine->env->lookup("⍳"), nullptr);
-    ASSERT_NE(machine->env->lookup("∊"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⍳")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("∊")), nullptr);
 }
 
 // ============================================================================
@@ -1047,8 +1047,8 @@ TEST_F(StructuralTest, GradeDownReversed) {
 }
 
 TEST_F(StructuralTest, GradeFunctionsRegistered) {
-    ASSERT_NE(machine->env->lookup("⍋"), nullptr);
-    ASSERT_NE(machine->env->lookup("⍒"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⍋")), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⍒")), nullptr);
 }
 
 // --- ISO 10.1.2/10.1.3 Grade Stability Tests ---
@@ -1303,7 +1303,7 @@ TEST_F(StructuralTest, CharGradeUpScalarCollatingError) {
     ASSERT_EQ(machine->kont_stack.size(), 1);
     auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(err, nullptr);
-    EXPECT_TRUE(std::string(err->error_message).find("RANK") != std::string::npos);
+    EXPECT_TRUE(std::string(err->error_message->c_str()).find("RANK") != std::string::npos);
 }
 
 TEST_F(StructuralTest, CharGradeDownScalarCollatingError) {
@@ -1329,7 +1329,7 @@ TEST_F(StructuralTest, CharGradeUpNumericRightError) {
     ASSERT_EQ(machine->kont_stack.size(), 1);
     auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(err, nullptr);
-    EXPECT_TRUE(std::string(err->error_message).find("DOMAIN") != std::string::npos);
+    EXPECT_TRUE(std::string(err->error_message->c_str()).find("DOMAIN") != std::string::npos);
 }
 
 TEST_F(StructuralTest, CharGradeUpNumericLeftError) {
@@ -1343,7 +1343,7 @@ TEST_F(StructuralTest, CharGradeUpNumericLeftError) {
     ASSERT_EQ(machine->kont_stack.size(), 1);
     auto* err = dynamic_cast<ThrowErrorK*>(machine->kont_stack.back());
     ASSERT_NE(err, nullptr);
-    EXPECT_TRUE(std::string(err->error_message).find("DOMAIN") != std::string::npos);
+    EXPECT_TRUE(std::string(err->error_message->c_str()).find("DOMAIN") != std::string::npos);
 }
 
 // --- ISO 13751: First occurrence determines position for duplicates ---
@@ -1752,9 +1752,9 @@ TEST_F(StructuralTest, WithoutPreservesDuplicates) {
 }
 
 TEST_F(StructuralTest, SetFunctionsRegistered) {
-    ASSERT_NE(machine->env->lookup("∪"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("∪")), nullptr);
     // ~ should already be registered for logical not
-    ASSERT_NE(machine->env->lookup("~"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("~")), nullptr);
 }
 
 // ============================================================================
@@ -2269,7 +2269,7 @@ TEST_F(StructuralTest, ExpandStrandLeadingZeros) {
 }
 
 TEST_F(StructuralTest, QuestionRegistered) {
-    ASSERT_NE(machine->env->lookup("?"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("?")), nullptr);
 }
 
 // ========================================================================
@@ -2396,7 +2396,7 @@ TEST_F(StructuralTest, DyadicTransposeEmptyPermScalar) {
 }
 
 TEST_F(StructuralTest, DominoRegistered) {
-    ASSERT_NE(machine->env->lookup("⌹"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⌹")), nullptr);
 }
 
 // ============================================================================
@@ -2421,7 +2421,7 @@ TEST_F(StructuralTest, ExecutePushesContination) {
 }
 
 TEST_F(StructuralTest, ExecuteRegistered) {
-    ASSERT_NE(machine->env->lookup("⍎"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⍎")), nullptr);
 }
 
 TEST_F(StructuralTest, ExecuteEmptyString) {
@@ -2474,7 +2474,7 @@ TEST_F(StructuralTest, ExecuteUndefinedVariable) {
 
 TEST_F(StructuralTest, SquadRegistered) {
     // ⌷ should be registered in the environment
-    ASSERT_NE(machine->env->lookup("⌷"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⌷")), nullptr);
 }
 
 TEST_F(StructuralTest, SquadVectorScalarIndex) {
@@ -3121,11 +3121,11 @@ TEST_F(StructuralTest, RightTackMatrix) {
 }
 
 TEST_F(StructuralTest, LeftTackRegistered) {
-    ASSERT_NE(machine->env->lookup("⊣"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⊣")), nullptr);
 }
 
 TEST_F(StructuralTest, RightTackRegistered) {
-    ASSERT_NE(machine->env->lookup("⊢"), nullptr);
+    ASSERT_NE(machine->env->lookup(machine->string_pool.intern("⊢")), nullptr);
 }
 
 // ============================================================================

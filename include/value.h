@@ -3,6 +3,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <cstdint>
 #include <string>
 #include <ostream>
 #include <vector>
@@ -28,6 +29,61 @@ public:
 
     // Mark all objects referenced by this object for GC
     virtual void mark(Heap* heap) = 0;
+};
+
+// String - GC-managed interned string with UTF-8 support
+// Used for variable names, operator names, and string values
+class String : public GCObject {
+    std::string data_;
+
+public:
+    explicit String(const char* s) : GCObject(), data_(s) {}
+    explicit String(std::string s) : GCObject(), data_(std::move(s)) {}
+
+    // Raw access
+    const char* c_str() const { return data_.c_str(); }
+    const std::string& str() const { return data_; }
+    size_t byte_length() const { return data_.size(); }
+    bool empty() const { return data_.empty(); }
+
+    // UTF-8 aware instance operations
+    size_t length() const;                    // Codepoint count
+    uint32_t at(size_t index) const;          // Get codepoint at index (0-based)
+    std::vector<uint32_t> to_codepoints() const;  // All codepoints as vector
+
+    // Comparison (for identity, compare String* pointers; for content, use these)
+    bool operator==(const String& other) const { return data_ == other.data_; }
+    bool operator==(const char* s) const { return data_ == s; }
+    bool operator==(const std::string& s) const { return data_ == s; }
+
+    // GC support - String is a leaf node, nothing to mark
+    void mark(Heap* heap) override;
+
+    // =========================================================================
+    // Static UTF-8 utilities (consolidate all UTF-8 handling here)
+    // =========================================================================
+
+    // Get byte length of UTF-8 sequence starting with given byte
+    static int utf8_sequence_length(unsigned char lead_byte);
+
+    // Decode one codepoint from UTF-8, advancing the pointer
+    static uint32_t decode_one(const unsigned char*& p);
+
+    // Encode a single codepoint to UTF-8
+    static std::string encode_codepoint(uint32_t cp);
+
+    // Encode a vector of codepoints to UTF-8 string
+    static std::string encode_codepoints(const std::vector<uint32_t>& cps);
+
+    // Decode UTF-8 string to codepoints
+    static std::vector<uint32_t> decode_utf8(const char* s);
+    static std::vector<uint32_t> decode_utf8(const std::string& s);
+
+    // UTF-8 constants
+    static constexpr uint32_t MAX_1BYTE = 0x7F;
+    static constexpr uint32_t MAX_2BYTE = 0x7FF;
+    static constexpr uint32_t MAX_3BYTE = 0xFFFF;
+    static constexpr uint32_t MAX_4BYTE = 0x10FFFF;
 };
 
 // Primitive function - can have both monadic and dyadic forms
@@ -84,16 +140,16 @@ public:
     // User-defined operator data
     struct DefinedOperatorData {
         Continuation* body;              // The operator's body (continuation graph)
-        const char* name;                // Operator name
+        String* name;                    // Operator name (interned)
         bool is_dyadic_operator;         // Takes 1 or 2 operands?
         bool is_ambivalent;              // Can be called monadically or dyadically?
 
-        // Parameter names (for binding in environment)
-        const char* left_operand_name;   // e.g., "FF" - always present
-        const char* right_operand_name;  // e.g., "GG" - only for dyadic operators
-        const char* left_arg_name;       // e.g., "A" - for ambivalent operators (nullptr if monadic-only)
-        const char* right_arg_name;      // e.g., "B" - always present
-        const char* result_name;         // e.g., "Z"
+        // Parameter names (for binding in environment, interned)
+        String* left_operand_name;       // e.g., "FF" - always present
+        String* right_operand_name;      // e.g., "GG" - only for dyadic operators
+        String* left_arg_name;           // e.g., "A" - for ambivalent operators (nullptr if monadic-only)
+        String* right_arg_name;          // e.g., "B" - always present
+        String* result_name;             // e.g., "Z"
 
         Environment* lexical_env;        // Captured environment (like closures)
     };
@@ -139,7 +195,7 @@ public:
         double scalar;              // For SCALAR
         Eigen::MatrixXd* matrix;    // For VECTOR and MATRIX (vectors stored as n×1)
         NDArrayData* ndarray;       // For NDARRAY (N-dimensional, rank 3+)
-        const char* string;         // For STRING (interned pointer, not owned)
+        String* string;             // For STRING (GC-managed, interned)
         std::vector<Value*>* strand;  // For STRAND (nested array, can contain any values)
         PrimitiveFn* primitive_fn;  // For PRIMITIVE (built-in function)
         ClosureData* closure;       // For CLOSURE (user-defined function with niladic flag)
@@ -201,7 +257,7 @@ public:
     int ndarray_linear_index(const std::vector<int>& indices) const;
 
     // String access
-    const char* as_string() const { return data.string; }
+    String* as_string() const { return data.string; }
 
     // Character data queries and conversion
     bool is_char_data() const { return is_character_data_; }

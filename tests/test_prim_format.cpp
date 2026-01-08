@@ -33,7 +33,7 @@ TEST_F(FormatTest, FormatMonadicStringPassthrough) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "hello");
+    EXPECT_STREQ(result->as_string()->c_str(), "hello");
 }
 
 TEST_F(FormatTest, FormatMonadicEmptyString) {
@@ -42,7 +42,7 @@ TEST_F(FormatTest, FormatMonadicEmptyString) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 // Monadic Format - Scalar Formatting
@@ -52,7 +52,7 @@ TEST_F(FormatTest, FormatMonadicIntegerScalar) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "42");
+    EXPECT_STREQ(result->as_string()->c_str(), "42");
 }
 
 TEST_F(FormatTest, FormatMonadicNegativeInteger) {
@@ -61,7 +61,7 @@ TEST_F(FormatTest, FormatMonadicNegativeInteger) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "¯5");
+    EXPECT_STREQ(result->as_string()->c_str(), "¯5");
 }
 
 TEST_F(FormatTest, FormatMonadicZero) {
@@ -70,7 +70,7 @@ TEST_F(FormatTest, FormatMonadicZero) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "0");
+    EXPECT_STREQ(result->as_string()->c_str(), "0");
 }
 
 TEST_F(FormatTest, FormatMonadicFloat) {
@@ -79,7 +79,7 @@ TEST_F(FormatTest, FormatMonadicFloat) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("3.14") != std::string::npos);
 }
 
@@ -89,7 +89,7 @@ TEST_F(FormatTest, FormatMonadicNegativeFloat) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
 }
 
@@ -102,7 +102,7 @@ TEST_F(FormatTest, FormatMonadicIntegerVector) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "1 2 3");
+    EXPECT_STREQ(result->as_string()->c_str(), "1 2 3");
 }
 
 TEST_F(FormatTest, FormatMonadicVectorWithNegatives) {
@@ -113,7 +113,7 @@ TEST_F(FormatTest, FormatMonadicVectorWithNegatives) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "¯1 2 ¯3");
+    EXPECT_STREQ(result->as_string()->c_str(), "¯1 2 ¯3");
 }
 
 // Monadic Format - Empty Vector
@@ -124,7 +124,7 @@ TEST_F(FormatTest, FormatMonadicEmptyVector) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 // Monadic Format - Print Precision
@@ -135,7 +135,7 @@ TEST_F(FormatTest, FormatMonadicPrintPrecision3) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.length() <= 6);  // "3.14" or similar
 }
 
@@ -146,7 +146,7 @@ TEST_F(FormatTest, FormatMonadicPrintPrecision10) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("3.14159") != std::string::npos);
 }
 
@@ -157,7 +157,7 @@ TEST_F(FormatTest, FormatMonadicLargeNumber) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
 
@@ -167,7 +167,7 @@ TEST_F(FormatTest, FormatMonadicSmallNumber) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
 
@@ -178,7 +178,7 @@ TEST_F(FormatTest, FormatMonadicInfinity) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("∞") != std::string::npos);
 }
 
@@ -188,7 +188,7 @@ TEST_F(FormatTest, FormatMonadicNegativeInfinity) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("¯∞") != std::string::npos);
 }
 
@@ -202,7 +202,7 @@ TEST_F(FormatTest, FormatMonadicMatrix) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("\n") != std::string::npos);
 }
 
@@ -216,7 +216,7 @@ TEST_F(FormatTest, FormatDyadicFixedBasic) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 5);
     EXPECT_TRUE(s.find("3.14") != std::string::npos);
 }
@@ -230,7 +230,7 @@ TEST_F(FormatTest, FormatDyadicZeroDecimals) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 5);
     EXPECT_TRUE(s.find("43") != std::string::npos);  // Rounds
 }
@@ -244,7 +244,7 @@ TEST_F(FormatTest, FormatDyadicNegative) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 6);
     EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
 }
@@ -259,7 +259,7 @@ TEST_F(FormatTest, FormatDyadicExponential) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
 
@@ -275,7 +275,7 @@ TEST_F(FormatTest, FormatDyadicVector) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 18);  // 3 * 6
 }
 
@@ -293,7 +293,7 @@ TEST_F(FormatTest, FormatMonadicCharVector) {
     ASSERT_NE(result, nullptr);
     // Should return the character data (as string in our impl)
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "ABC");
+    EXPECT_STREQ(result->as_string()->c_str(), "ABC");
 }
 
 // Monadic format: empty matrix returns empty character array
@@ -304,7 +304,7 @@ TEST_F(FormatTest, FormatMonadicEmptyMatrix) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");  // Empty
+    EXPECT_STREQ(result->as_string()->c_str(), "");  // Empty
 }
 
 // Dyadic format: rank error if A is matrix
@@ -348,7 +348,7 @@ TEST_F(FormatTest, FormatDyadicEmptyB) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 // Dyadic format: matrix with single spec (applies to all columns)
@@ -364,7 +364,7 @@ TEST_F(FormatTest, FormatDyadicMatrixSingleSpec) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     // Should have 2 rows, each with 3 columns of width 5 = 15 chars per row
     EXPECT_TRUE(s.find("\n") != std::string::npos);  // Multi-row
 }
@@ -383,7 +383,7 @@ TEST_F(FormatTest, FormatDyadicMultipleSpecs) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 18);  // 4 + 6 + 8 = 18
 }
 
@@ -395,7 +395,7 @@ TEST_F(FormatTest, FormatDyadicScalarSpec) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 5);
     EXPECT_TRUE(s.find("43") != std::string::npos);  // Rounded to integer
 }
@@ -410,7 +410,7 @@ TEST_F(FormatTest, FormatDyadicExponentialHighPrecision) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
     EXPECT_TRUE(s.find("3.14159") != std::string::npos);  // At least 6 digits of pi
 }
@@ -425,7 +425,7 @@ TEST_F(FormatTest, FormatDyadicExponentialNegative) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
     EXPECT_TRUE(s.find("¯") != std::string::npos);  // High minus for negative
 }
@@ -525,7 +525,7 @@ TEST_F(FormatTest, FormatMonadicSwitchToExponentialManyDigits) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
 
@@ -536,7 +536,7 @@ TEST_F(FormatTest, FormatMonadicSwitchToExponentialLeadingZeros) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
 
@@ -547,7 +547,7 @@ TEST_F(FormatTest, FormatMonadicDecimalRationalNoSwitch) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     // Could be either form depending on PP, but verify it's valid
     EXPECT_TRUE(s.length() > 0);
 }
@@ -559,7 +559,7 @@ TEST_F(FormatTest, FormatMonadicNaN) {
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
     // NaN representation may vary, but should produce something
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.length() > 0);
 }
 
@@ -573,7 +573,7 @@ TEST_F(FormatTest, FormatMonadicMatrixAlignment) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     // Should have newline separating rows
     EXPECT_TRUE(s.find("\n") != std::string::npos);
     // Both rows should have same display width (aligned columns)
@@ -610,7 +610,7 @@ TEST_F(FormatTest, FormatMonadicVectorMixedSigns) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("¯2") != std::string::npos);
     EXPECT_TRUE(s.find("¯4") != std::string::npos);
 }
@@ -623,7 +623,7 @@ TEST_F(FormatTest, FormatMonadicSingleElementMatrix) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "42");
+    EXPECT_STREQ(result->as_string()->c_str(), "42");
 }
 
 // ============================================================================
@@ -640,7 +640,7 @@ TEST_F(FormatTest, FormatDyadicZeroInExponential) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
     EXPECT_TRUE(s.find("0") != std::string::npos);
 }
@@ -655,7 +655,7 @@ TEST_F(FormatTest, FormatDyadicLargeInFixed) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 20);
 }
 
@@ -688,8 +688,8 @@ TEST_F(FormatTest, FormatDyadicFieldWidthOne) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_EQ(strlen(result->as_string()), 1);
-    EXPECT_STREQ(result->as_string(), "5");
+    EXPECT_EQ(result->as_string()->length(), 1);
+    EXPECT_STREQ(result->as_string()->c_str(), "5");
 }
 
 TEST_F(FormatTest, FormatDyadicVerySmallExponent) {
@@ -702,7 +702,7 @@ TEST_F(FormatTest, FormatDyadicVerySmallExponent) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
     EXPECT_TRUE(s.find("¯") != std::string::npos);  // Negative exponent
 }
@@ -717,7 +717,7 @@ TEST_F(FormatTest, FormatDyadicVeryLargeExponent) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
     EXPECT_TRUE(s.find("100") != std::string::npos);
 }
@@ -728,7 +728,7 @@ TEST_F(FormatTest, FormatDyadicMatrixPerColumnSpecs) {
     Value* result = machine->eval("4 0 6 2 8 ¯2⍕2 3⍴42 3.14159 1234.5 0.001 99 7.77");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     // Total width per row: 4 + 6 + 8 = 18
     // Should have newline for second row
     EXPECT_TRUE(s.find("\n") != std::string::npos);
@@ -760,7 +760,7 @@ TEST_F(FormatTest, FormatDyadicExponentialZeroMantissa) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
 
@@ -774,7 +774,7 @@ TEST_F(FormatTest, FormatDyadicHighPrecisionFixed) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 25);
     EXPECT_TRUE(s.find("3.141592653589793") != std::string::npos);
 }
@@ -789,7 +789,7 @@ TEST_F(FormatTest, FormatDyadicRoundingUp) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     // Should be either "  2" or "  3" depending on rounding
     EXPECT_EQ(s.length(), 3);
 }
@@ -804,7 +804,7 @@ TEST_F(FormatTest, FormatDyadicRoundingDown) {
     Value* result = machine->result;
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("2") != std::string::npos);
 }
 
@@ -816,35 +816,35 @@ TEST_F(FormatTest, EvalMonadicFormatInteger) {
     Value* result = machine->eval("⍕42");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "42");
+    EXPECT_STREQ(result->as_string()->c_str(), "42");
 }
 
 TEST_F(FormatTest, EvalMonadicFormatNegative) {
     Value* result = machine->eval("⍕¯5");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "¯5");
+    EXPECT_STREQ(result->as_string()->c_str(), "¯5");
 }
 
 TEST_F(FormatTest, EvalMonadicFormatVector) {
     Value* result = machine->eval("⍕1 2 3");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "1 2 3");
+    EXPECT_STREQ(result->as_string()->c_str(), "1 2 3");
 }
 
 TEST_F(FormatTest, EvalMonadicFormatString) {
     Value* result = machine->eval("⍕'hello'");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "hello");
+    EXPECT_STREQ(result->as_string()->c_str(), "hello");
 }
 
 TEST_F(FormatTest, EvalDyadicFormatBasic) {
     Value* result = machine->eval("5 2⍕3.14159");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 5);
     EXPECT_TRUE(s.find("3.14") != std::string::npos);
 }
@@ -853,7 +853,7 @@ TEST_F(FormatTest, EvalDyadicFormatExponential) {
     Value* result = machine->eval("10 ¯3⍕12345.6789");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
 
@@ -861,7 +861,7 @@ TEST_F(FormatTest, EvalDyadicFormatVector) {
     Value* result = machine->eval("6 2⍕1 2 3");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_EQ(s.length(), 18);  // 3 * 6
 }
 
@@ -869,7 +869,7 @@ TEST_F(FormatTest, EvalDyadicFormatMatrix) {
     Value* result = machine->eval("5 1⍕2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->c_str();
     EXPECT_TRUE(s.find("\n") != std::string::npos);
 }
 

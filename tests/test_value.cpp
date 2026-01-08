@@ -545,7 +545,7 @@ TEST_F(ValueTest, StringBasic) {
     EXPECT_TRUE(str->is_string());
     EXPECT_FALSE(str->is_scalar());
     EXPECT_FALSE(str->is_array());
-    EXPECT_STREQ(str->as_string(), "hello");
+    EXPECT_STREQ(str->as_string()->c_str(), "hello");
 }
 
 TEST_F(ValueTest, StringIsBasicValue) {
@@ -564,7 +564,7 @@ TEST_F(ValueTest, StringInterning) {
 TEST_F(ValueTest, StringEmpty) {
     Value* str = machine->heap->allocate_string("");
     EXPECT_TRUE(str->is_string());
-    EXPECT_STREQ(str->as_string(), "");
+    EXPECT_STREQ(str->as_string()->c_str(), "");
 }
 
 // ============================================================================
@@ -596,7 +596,7 @@ TEST_F(ValueTest, CharVectorToStringASCII) {
 
     Value* str = charVec->to_string_value(machine->heap);
     EXPECT_TRUE(str->is_string());
-    EXPECT_STREQ(str->as_string(), "Hi!");
+    EXPECT_STREQ(str->as_string()->c_str(), "Hi!");
 }
 
 // Test round-trip conversion ASCII
@@ -605,7 +605,7 @@ TEST_F(ValueTest, StringRoundTripASCII) {
     Value* vec = original->to_char_vector(machine->heap);
     Value* back = vec->to_string_value(machine->heap);
 
-    EXPECT_STREQ(back->as_string(), "Hello, World!");
+    EXPECT_STREQ(back->as_string()->c_str(), "Hello, World!");
 }
 
 // Test to_char_vector returns self if already array
@@ -643,7 +643,7 @@ TEST_F(ValueTest, EmptyCharVectorToString) {
 
     Value* str = charVec->to_string_value(machine->heap);
     EXPECT_TRUE(str->is_string());
-    EXPECT_STREQ(str->as_string(), "");
+    EXPECT_STREQ(str->as_string()->c_str(), "");
 }
 
 // Test UTF-8 2-byte character (Greek letter alpha: α = U+03B1)
@@ -702,7 +702,7 @@ TEST_F(ValueTest, StringRoundTripUTF8) {
     Value* vec = original->to_char_vector(machine->heap);
     Value* back = vec->to_string_value(machine->heap);
 
-    EXPECT_STREQ(back->as_string(), "Hello α€😀 World!");
+    EXPECT_STREQ(back->as_string()->c_str(), "Hello α€😀 World!");
 }
 
 // Test codepoint to UTF-8 encoding
@@ -712,7 +712,7 @@ TEST_F(ValueTest, CharVectorToStringUTF8) {
     Value* charVec = machine->heap->allocate_vector(vec, true);
 
     Value* str = charVec->to_string_value(machine->heap);
-    EXPECT_STREQ(str->as_string(), "Aα€😀");
+    EXPECT_STREQ(str->as_string()->c_str(), "Aα€😀");
 }
 
 // Test is_char_data flag preserved

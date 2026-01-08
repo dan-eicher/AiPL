@@ -7331,7 +7331,7 @@ void fn_execute(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    const char* code = str_val->as_string();
+    const char* code = str_val->as_string()->c_str();
 
     // Empty string returns zilde (empty numeric vector)
     if (code[0] == '\0') {
@@ -7887,7 +7887,7 @@ void fn_disclose(Machine* m, Value* axis, Value* omega) {
     } else if (omega->is_scalar()) {
         disclosed = omega;
     } else if (omega->is_string()) {
-        const char* s = omega->as_string();
+        const char* s = omega->as_string()->c_str();
         if (*s) {
             // Convert to char vector (proper UTF-8 decoding) and get first codepoint
             Value* char_vec = omega->to_char_vector(m->heap);
@@ -8071,7 +8071,7 @@ void fn_quad_es(Machine* m, Value* axis, Value* omega) {
 
     // Empty argument = conditional no-op
     if (omega->is_string()) {
-        if (strlen(omega->as_string()) == 0) {
+        if (omega->as_string()->empty()) {
             m->result = omega;
             return;
         }
@@ -8105,12 +8105,12 @@ void fn_quad_es(Machine* m, Value* axis, Value* omega) {
         }
 
         // Signal with specified type, preserving existing message if any
-        const char* msg = m->event_message ? m->event_message : "";
+        const char* msg = m->event_message ? m->event_message->c_str() : "";
         m->throw_error(msg, nullptr, error_class, error_subclass);
 
     } else if (omega->is_string() || (omega->is_vector() && omega->is_char_data())) {
         // Character vector/string: signal unclassified error with this message
-        const char* msg = omega->as_string();
+        const char* msg = omega->as_string()->c_str();
         m->throw_error(msg, nullptr, 0, 1);  // 0 1 = unclassified
 
     } else {
@@ -8172,8 +8172,8 @@ void fn_quad_es_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     int error_subclass = static_cast<int>(std::round(subclass_val));
 
     // Get message from left argument
-    const char* msg = lhs->is_string() ? lhs->as_string()
-                      : lhs->to_string_value(m->heap)->as_string();
+    const char* msg = lhs->is_string() ? lhs->as_string()->c_str()
+                      : lhs->to_string_value(m->heap)->as_string()->c_str();
 
     // 0 0 = clear error state, no signal
     if (error_class == 0 && error_subclass == 0) {
@@ -8220,10 +8220,10 @@ void fn_quad_ea(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Get the strings to execute
-    const char* try_code = rhs->is_string() ? rhs->as_string()
-                           : rhs->to_string_value(m->heap)->as_string();
-    const char* alt_code = lhs->is_string() ? lhs->as_string()
-                           : lhs->to_string_value(m->heap)->as_string();
+    const char* try_code = rhs->is_string() ? rhs->as_string()->c_str()
+                           : rhs->to_string_value(m->heap)->as_string()->c_str();
+    const char* alt_code = lhs->is_string() ? lhs->as_string()->c_str()
+                           : lhs->to_string_value(m->heap)->as_string()->c_str();
 
     // Parse the alternate expression (handler) - parse now so errors are caught early
     Continuation* alt_k = m->parser->parse(alt_code);
@@ -8364,7 +8364,7 @@ void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
 
     // Handle string (simple name)
     if (omega->is_string()) {
-        const char* name = omega->as_string();
+        String* name = omega->as_string();
         Value* v = m->env->lookup(name);
         m->result = m->heap->allocate_scalar(static_cast<double>(classify_value(v)));
         return;
@@ -8372,8 +8372,8 @@ void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
 
     // Handle character vector (single name)
     if (omega->is_vector()) {
-        std::string name = extract_name_from_vector(omega->as_matrix());
-        Value* v = m->env->lookup(name.c_str());
+        std::string name_str = extract_name_from_vector(omega->as_matrix());
+        Value* v = m->env->lookup(m->string_pool.intern(name_str));
         m->result = m->heap->allocate_scalar(static_cast<double>(classify_value(v)));
         return;
     }
@@ -8386,8 +8386,8 @@ void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
 
         Eigen::VectorXd result(rows);
         for (int r = 0; r < rows; ++r) {
-            std::string name = extract_name_from_row(mat, r, cols);
-            Value* v = m->env->lookup(name.c_str());
+            std::string name_str = extract_name_from_row(mat, r, cols);
+            Value* v = m->env->lookup(m->string_pool.intern(name_str));
             result(r) = static_cast<double>(classify_value(v));
         }
         m->result = m->heap->allocate_vector(result);
@@ -8435,8 +8435,8 @@ void fn_quad_ex(Machine* m, Value* axis, Value* omega) {
 
     // Handle string (simple name)
     if (omega->is_string()) {
-        const char* name = omega->as_string();
-        if (is_protected_name(name)) {
+        String* name = omega->as_string();
+        if (is_protected_name(name->str())) {
             m->result = m->heap->allocate_scalar(0.0);  // Protected
             return;
         }
@@ -8452,8 +8452,8 @@ void fn_quad_ex(Machine* m, Value* axis, Value* omega) {
             m->result = m->heap->allocate_scalar(0.0);  // Protected
             return;
         }
-        std::string name = extract_name_from_vector(mat);
-        bool removed = m->env->erase(name.c_str());
+        std::string name_str = extract_name_from_vector(mat);
+        bool removed = m->env->erase(m->string_pool.intern(name_str));
         m->result = m->heap->allocate_scalar(removed ? 1.0 : 0.0);
         return;
     }
@@ -8469,8 +8469,8 @@ void fn_quad_ex(Machine* m, Value* axis, Value* omega) {
             if (starts_with_quad(mat, r, cols)) {
                 result(r) = 0.0;  // Protected
             } else {
-                std::string name = extract_name_from_row(mat, r, cols);
-                bool removed = m->env->erase(name.c_str());
+                std::string name_str = extract_name_from_row(mat, r, cols);
+                bool removed = m->env->erase(m->string_pool.intern(name_str));
                 result(r) = removed ? 1.0 : 0.0;
             }
         }
@@ -8544,7 +8544,7 @@ void fn_quad_nl(Machine* m, Value* axis, Value* omega) {
         int nc = classify_value(v);
         for (int c : classes) {
             if (nc == c) {
-                names.push_back(kv.first);
+                names.push_back(kv.first->str());
                 break;
             }
         }

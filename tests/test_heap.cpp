@@ -756,9 +756,9 @@ TEST_F(HeapTest, EnvironmentChainMarking) {
     Value* v2 = machine->heap->allocate_scalar(2.0);
     Value* v3 = machine->heap->allocate_scalar(3.0);
 
-    global_env->define("x", v1);
-    fn1_env->define("y", v2);
-    fn2_env->define("z", v3);
+    global_env->define(machine->string_pool.intern("x"), v1);
+    fn1_env->define(machine->string_pool.intern("y"), v2);
+    fn2_env->define(machine->string_pool.intern("z"), v3);
 
     // Clear marks and mark only fn2_env
     machine->heap->clear_marks();
@@ -785,14 +785,14 @@ TEST_F(HeapTest, DeepEnvironmentNesting) {
     // Create a deep chain
     env_chain[0] = machine->env;
     values[0] = machine->heap->allocate_scalar(0.0);
-    env_chain[0]->define("v0", values[0]);
+    env_chain[0]->define(machine->string_pool.intern("v0"), values[0]);
 
     for (int i = 1; i < DEPTH; i++) {
         env_chain[i] = machine->heap->allocate<Environment>(env_chain[i-1]);
         values[i] = machine->heap->allocate_scalar((double)i);
         char name[10];
         snprintf(name, sizeof(name), "v%d", i);
-        env_chain[i]->define(name, values[i]);
+        env_chain[i]->define(machine->string_pool.intern(name), values[i]);
     }
 
     // Mark from the deepest environment
@@ -814,7 +814,7 @@ TEST_F(HeapTest, EnvironmentPromotion) {
     // Create a child environment
     Environment* child_env = machine->heap->allocate<Environment>(machine->env);
     Value* val = machine->heap->allocate_scalar(42.0);
-    child_env->define("x", val);
+    child_env->define(machine->string_pool.intern("x"), val);
 
     // Initially in young generation
     EXPECT_FALSE(child_env->in_old_generation);
@@ -842,7 +842,7 @@ TEST_F(HeapTest, EnvironmentSurvivesGC) {
     Environment* initial_env = machine->env;
     Environment* child_env = machine->heap->allocate<Environment>(initial_env);
     Value* val = machine->heap->allocate_scalar(99.0);
-    child_env->define("test", val);
+    child_env->define(machine->string_pool.intern("test"), val);
 
     // Make child environment the current environment
     machine->env = child_env;
@@ -856,7 +856,7 @@ TEST_F(HeapTest, EnvironmentSurvivesGC) {
     EXPECT_EQ(machine->heap->environments.size(), env_count_before);
 
     // Value should still be accessible
-    Value* retrieved = machine->env->lookup("test");
+    Value* retrieved = machine->env->lookup(machine->string_pool.intern("test"));
     EXPECT_NE(retrieved, nullptr);
     EXPECT_DOUBLE_EQ(retrieved->as_scalar(), 99.0);
 
@@ -872,8 +872,8 @@ TEST_F(HeapTest, EnvironmentValueLifecycle) {
     Environment* child_env = machine->heap->allocate<Environment>(machine->env);
     Value* val1 = machine->heap->allocate_scalar(200.0);
     Value* val2 = machine->heap->allocate_scalar(300.0);
-    child_env->define("x", val1);
-    machine->env->define("reachable", val2);
+    child_env->define(machine->string_pool.intern("x"), val1);
+    machine->env->define(machine->string_pool.intern("reachable"), val2);
 
     // Mark from roots - machine->env is a root, child_env is not directly
     machine->heap->clear_marks();
@@ -901,7 +901,7 @@ TEST_F(HeapTest, UnreachableEnvironmentCollectedMajorGC) {
     // Create a detached environment (not reachable from machine->env)
     Environment* detached = machine->heap->allocate<Environment>();
     Value* v = machine->heap->allocate_scalar(42.0);
-    detached->define("x", v);
+    detached->define(machine->string_pool.intern("x"), v);
 
     size_t after_alloc = machine->heap->environments.size();
     EXPECT_EQ(after_alloc, initial_envs + 1);
@@ -928,7 +928,7 @@ TEST_F(HeapTest, UnreachableEnvironmentCollectedViaCollect) {
     // Create a detached environment
     Environment* detached = machine->heap->allocate<Environment>();
     Value* v = machine->heap->allocate_scalar(42.0);
-    detached->define("x", v);
+    detached->define(machine->string_pool.intern("x"), v);
 
     EXPECT_EQ(machine->heap->environments.size(), initial_envs + 1);
 
@@ -1033,8 +1033,8 @@ TEST_F(HeapTest, CachedScalarBoundaries) {
     EXPECT_NE(above, above2);
 
     // Keep both boundaries alive for GC via environment
-    machine->env->define("vmin", vmin);
-    machine->env->define("vmax", vmax);
+    machine->env->define(machine->string_pool.intern("vmin"), vmin);
+    machine->env->define(machine->string_pool.intern("vmax"), vmax);
     machine->heap->collect(machine);
 
     // Boundaries should still be cached after GC

@@ -111,7 +111,7 @@ TEST_F(ParserTest, TestDyadicKWithTrampoline) {
     LiteralK* right = machine->heap->allocate<LiteralK>(3.0);
 
     // Intern the operator name
-    const char* plus_name = machine->string_pool.intern("+");
+    String* plus_name = machine->string_pool.intern("+");
 
     DyadicK* dyadic = machine->heap->allocate<DyadicK>(plus_name, left, right);
 
@@ -470,7 +470,7 @@ TEST_F(ParserTest, ParseParenthesizedStrand) {
 TEST_F(ParserTest, ParseSimpleVariable) {
     // Define a variable in the environment
     Value* val = machine->heap->allocate_scalar(42.0);
-    machine->env->define("x", val);
+    machine->env->define(machine->string_pool.intern("x"), val);
 
     Continuation* k = parser->parse("x");
     ASSERT_NE(k, nullptr);
@@ -478,7 +478,7 @@ TEST_F(ParserTest, ParseSimpleVariable) {
     // Check that it parsed as LookupK
     LookupK* lookup = dynamic_cast<LookupK*>(k);
     ASSERT_NE(lookup, nullptr);
-    EXPECT_STREQ(lookup->var_name, "x");
+    EXPECT_STREQ(lookup->var_name->c_str(), "x");
 
     machine->push_kont(k);
     Value* result = machine->execute();
@@ -490,8 +490,8 @@ TEST_F(ParserTest, ParseSimpleVariable) {
 // Test variable in expression
 TEST_F(ParserTest, ParseVariableInExpression) {
     // Define variables
-    machine->env->define("a", machine->heap->allocate_scalar(10.0));
-    machine->env->define("b", machine->heap->allocate_scalar(5.0));
+    machine->env->define(machine->string_pool.intern("a"), machine->heap->allocate_scalar(10.0));
+    machine->env->define(machine->string_pool.intern("b"), machine->heap->allocate_scalar(5.0));
 
     Continuation* k = parser->parse("a + b");
     ASSERT_NE(k, nullptr);
@@ -528,7 +528,7 @@ TEST_F(ParserTest, PrimitiveFunctionWithOperator) {
     // Should be DerivedOperatorK (+ with /)
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
     ASSERT_NE(derived, nullptr) << "+/ should create DerivedOperatorK";
-    EXPECT_STREQ(derived->op_name, "/");
+    EXPECT_STREQ(derived->op_name->c_str(), "/");
 }
 
 // Test: Reduce without axis has nullptr axis_cont
@@ -548,7 +548,7 @@ TEST_F(ParserTest, ReduceWithAxisHasAxisCont) {
 
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
     ASSERT_NE(derived, nullptr) << "+/[1] should create DerivedOperatorK";
-    EXPECT_STREQ(derived->op_name, "/");
+    EXPECT_STREQ(derived->op_name->c_str(), "/");
     ASSERT_NE(derived->axis_cont, nullptr) << "+/[1] should have axis continuation";
 
     // The axis should be wrapped in FinalizeK to ensure full evaluation
@@ -566,7 +566,7 @@ TEST_F(ParserTest, ReduceWithAxisExpression) {
 
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
     ASSERT_NE(derived, nullptr);
-    EXPECT_STREQ(derived->op_name, "/");
+    EXPECT_STREQ(derived->op_name->c_str(), "/");
     ASSERT_NE(derived->axis_cont, nullptr) << "+/[1+1] should have axis continuation";
     // Axis is an expression, not just a literal
 }
@@ -578,7 +578,7 @@ TEST_F(ParserTest, ScanWithAxisHasAxisCont) {
 
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
     ASSERT_NE(derived, nullptr) << "+\\[2] should create DerivedOperatorK";
-    EXPECT_STREQ(derived->op_name, "\\");
+    EXPECT_STREQ(derived->op_name->c_str(), "\\");
     ASSERT_NE(derived->axis_cont, nullptr) << "+\\[2] should have axis continuation";
 }
 
@@ -589,7 +589,7 @@ TEST_F(ParserTest, ReduceFirstWithAxisHasAxisCont) {
 
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
     ASSERT_NE(derived, nullptr);
-    EXPECT_STREQ(derived->op_name, "⌿");
+    EXPECT_STREQ(derived->op_name->c_str(), "⌿");
     ASSERT_NE(derived->axis_cont, nullptr);
 }
 
@@ -616,7 +616,7 @@ TEST_F(ParserTest, NwiseReductionParsesSuccessfully) {
     // The inner left should be the derived operator +/
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(inner_jux->left);
     ASSERT_NE(derived, nullptr) << "Inner left should be DerivedOperatorK";
-    EXPECT_STREQ(derived->op_name, "/");
+    EXPECT_STREQ(derived->op_name->c_str(), "/");
 }
 
 // Test: N-wise reduction actually evaluates correctly
@@ -661,7 +661,7 @@ TEST_F(ParserTest, ChainedOperatorsWithJuxtaposition) {
     // Left side should be DerivedOperatorK (+/)
     DerivedOperatorK* left_derived = dynamic_cast<DerivedOperatorK*>(jux->left);
     ASSERT_NE(left_derived, nullptr) << "Left side should be +/";
-    EXPECT_STREQ(left_derived->op_name, "/");
+    EXPECT_STREQ(left_derived->op_name->c_str(), "/");
 }
 
 // Test: Primitive function with commute operator
@@ -673,7 +673,7 @@ TEST_F(ParserTest, PrimitiveFunctionWithCommute) {
     // Should be DerivedOperatorK (+ with ⍨)
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
     ASSERT_NE(derived, nullptr) << "+⍨ should create DerivedOperatorK";
-    EXPECT_STREQ(derived->op_name, "⍨");
+    EXPECT_STREQ(derived->op_name->c_str(), "⍨");
 }
 
 // Test: Number juxtaposed with function and commute "2 +⍨ 3"
@@ -755,7 +755,7 @@ TEST_F(ParserTest, StringLiteralParses) {
     Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "hello");
+    EXPECT_STREQ(result->as_string()->c_str(), "hello");
 }
 
 TEST_F(ParserTest, EmptyStringParses) {
@@ -766,7 +766,7 @@ TEST_F(ParserTest, EmptyStringParses) {
     Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 TEST_F(ParserTest, StringAsArgument) {
@@ -790,8 +790,8 @@ TEST_F(ParserTest, MonadicOperatorHeaderParses) {
     ASSERT_NE(def_op, nullptr) << "Expected DefinedOperatorLiteralK";
 
     // Check operator name and operand names
-    EXPECT_STREQ(def_op->operator_name, "TWICE");
-    EXPECT_STREQ(def_op->left_operand_name, "F");
+    EXPECT_STREQ(def_op->operator_name->c_str(), "TWICE");
+    EXPECT_STREQ(def_op->left_operand_name->c_str(), "F");
     EXPECT_EQ(def_op->right_operand_name, nullptr);  // Monadic operator
     EXPECT_FALSE(def_op->is_dyadic_operator());
 }
@@ -813,18 +813,18 @@ TEST_F(ParserTest, DyadicHeaderStructure) {
     // Right-associative: jux = JuxtaposeK(F, JuxtaposeK(COMPOSE, G))
     LookupK* ff = dynamic_cast<LookupK*>(jux->left);
     ASSERT_NE(ff, nullptr) << "Expected LookupK(F) as jux->left";
-    EXPECT_STREQ(ff->var_name, "F");
+    EXPECT_STREQ(ff->var_name->c_str(), "F");
 
     JuxtaposeK* right_jux = dynamic_cast<JuxtaposeK*>(jux->right);
     ASSERT_NE(right_jux, nullptr) << "Expected JuxtaposeK as jux->right";
 
     LookupK* op_name = dynamic_cast<LookupK*>(right_jux->left);
     ASSERT_NE(op_name, nullptr) << "Expected LookupK(COMPOSE) as right_jux->left";
-    EXPECT_STREQ(op_name->var_name, "COMPOSE");
+    EXPECT_STREQ(op_name->var_name->c_str(), "COMPOSE");
 
     LookupK* gg = dynamic_cast<LookupK*>(right_jux->right);
     ASSERT_NE(gg, nullptr) << "Expected LookupK(G) as right_jux->right";
-    EXPECT_STREQ(gg->var_name, "G");
+    EXPECT_STREQ(gg->var_name->c_str(), "G");
 }
 
 TEST_F(ParserTest, DyadicOperatorHeaderParses) {
@@ -837,9 +837,9 @@ TEST_F(ParserTest, DyadicOperatorHeaderParses) {
     ASSERT_NE(def_op, nullptr) << "Expected DefinedOperatorLiteralK";
 
     // Check operator name and operand names
-    EXPECT_STREQ(def_op->operator_name, "COMPOSE");
-    EXPECT_STREQ(def_op->left_operand_name, "F");
-    EXPECT_STREQ(def_op->right_operand_name, "G");
+    EXPECT_STREQ(def_op->operator_name->c_str(), "COMPOSE");
+    EXPECT_STREQ(def_op->left_operand_name->c_str(), "F");
+    EXPECT_STREQ(def_op->right_operand_name->c_str(), "G");
     EXPECT_TRUE(def_op->is_dyadic_operator());
 }
 
@@ -861,7 +861,7 @@ TEST_F(ParserTest, MonadicOperatorDefinitionExecutes) {
     EXPECT_TRUE(result->is_defined_operator());
 
     // The operator should be in the environment
-    Value* looked_up = machine->env->lookup("TWICE");
+    Value* looked_up = machine->env->lookup(machine->string_pool.intern("TWICE"));
     ASSERT_NE(looked_up, nullptr);
     EXPECT_TRUE(looked_up->is_defined_operator());
 }
@@ -877,7 +877,7 @@ TEST_F(ParserTest, DyadicOperatorDefinitionExecutes) {
     EXPECT_TRUE(result->is_defined_operator());
 
     // The operator should be in the environment
-    Value* looked_up = machine->env->lookup("COMP");
+    Value* looked_up = machine->env->lookup(machine->string_pool.intern("COMP"));
     ASSERT_NE(looked_up, nullptr);
     EXPECT_TRUE(looked_up->is_defined_operator());
 
@@ -921,12 +921,12 @@ TEST_F(ParserTest, DefinedOperatorCreatesCorrectContinuationStructure) {
     // G2 grammar: f OP creates derived operator - parser creates DerivedOperatorK
     DerivedOperatorK* derived = dynamic_cast<DerivedOperatorK*>(k);
     ASSERT_NE(derived, nullptr) << "-TWICE should create DerivedOperatorK";
-    EXPECT_STREQ(derived->op_name, "TWICE");
+    EXPECT_STREQ(derived->op_name->c_str(), "TWICE");
 
     // The operand should be a LookupK for "-"
     LookupK* operand = dynamic_cast<LookupK*>(derived->operand_cont);
     ASSERT_NE(operand, nullptr) << "Operand should be LookupK";
-    EXPECT_STREQ(operand->var_name, "-");
+    EXPECT_STREQ(operand->var_name->c_str(), "-");
 }
 
 TEST_F(ParserTest, DefinedOperatorWithFunctionOperandCreatesDerivedOperatorK) {
@@ -949,7 +949,7 @@ TEST_F(ParserTest, DefinedOperatorWithFunctionOperandCreatesDerivedOperatorK) {
         }
         // One of them should be DerivedOperatorK(TWICE)
         if (derived) {
-            EXPECT_STREQ(derived->op_name, "TWICE");
+            EXPECT_STREQ(derived->op_name->c_str(), "TWICE");
         }
     }
 }
@@ -1007,7 +1007,7 @@ TEST_F(ParserTest, AlphaAlphaTokenParsesToLookupK) {
 
     LookupK* lookup = dynamic_cast<LookupK*>(k);
     ASSERT_NE(lookup, nullptr) << "⍺⍺ should parse to LookupK";
-    EXPECT_STREQ(lookup->var_name, "⍺⍺");
+    EXPECT_STREQ(lookup->var_name->c_str(), "⍺⍺");
 }
 
 TEST_F(ParserTest, OmegaOmegaTokenParsesToLookupK) {
@@ -1017,7 +1017,7 @@ TEST_F(ParserTest, OmegaOmegaTokenParsesToLookupK) {
 
     LookupK* lookup = dynamic_cast<LookupK*>(k);
     ASSERT_NE(lookup, nullptr) << "⍵⍵ should parse to LookupK";
-    EXPECT_STREQ(lookup->var_name, "⍵⍵");
+    EXPECT_STREQ(lookup->var_name->c_str(), "⍵⍵");
 }
 
 TEST_F(ParserTest, OperatorBodyWithAlphaAlphaOmegaOmega) {
@@ -1216,7 +1216,7 @@ TEST_F(ParserTest, DfnArgumentsHaveSourceLocation) {
 
 TEST_F(ParserTest, BracketIndexingHasSourceLocation) {
     // A[1] creates nested JuxtaposeK structure with location tracking
-    machine->env->define("A", machine->heap->allocate_scalar(42.0));
+    machine->env->define(machine->string_pool.intern("A"), machine->heap->allocate_scalar(42.0));
     Continuation* k = parser->parse("A[1]");
     ASSERT_NE(k, nullptr);
 

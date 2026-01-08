@@ -37,21 +37,176 @@ TEST_F(StringTest, StringLiteral) {
     Value* result = eval("'hello'");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "hello");
+    EXPECT_STREQ(result->as_string()->c_str(), "hello");
 }
 
 TEST_F(StringTest, EmptyString) {
     Value* result = eval("''");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 TEST_F(StringTest, StringWithSpaces) {
     Value* result = eval("'hello world'");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "hello world");
+    EXPECT_STREQ(result->as_string()->c_str(), "hello world");
+}
+
+// ============================================================================
+// ISO 13751 Section 6.1.5: Literal-Conversion Edge Cases
+// ============================================================================
+
+TEST_F(StringTest, SingleCharacterIsScalar) {
+    // ISO 13751 6.1.5: "A single character between quotes is a scalar"
+    Value* result = eval("'A'");
+    ASSERT_NE(result, nullptr);
+    // In our implementation, single-char strings stay as STRING type
+    // but when converted to numeric (via ravel), they become scalar
+    Value* raveled = eval(",'A'");
+    ASSERT_NE(raveled, nullptr);
+    EXPECT_TRUE(raveled->is_vector());
+    EXPECT_EQ(raveled->size(), 1);
+}
+
+TEST_F(StringTest, EmbeddedQuotes) {
+    // ISO 13751 6.1.5: "A quote character is represented... by two adjacent quote characters"
+    // 'it''s' should become the string "it's"
+    Value* result = eval("'it''s'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string()->c_str(), "it's");
+}
+
+TEST_F(StringTest, QuoteCharacterScalar) {
+    // ISO 13751 6.1.5: "the character literal '''' is the character scalar 'quote'"
+    Value* result = eval("''''");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string()->c_str(), "'");
+}
+
+TEST_F(StringTest, MultipleEmbeddedQuotes) {
+    // Multiple embedded quotes: 'say ''hi'' to me'
+    Value* result = eval("'say ''hi'' to me'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string()->c_str(), "say 'hi' to me");
+}
+
+TEST_F(StringTest, ConsecutiveQuotes) {
+    // Three quotes in a row: ''''''' = two quote characters
+    Value* result = eval("''''''");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string()->c_str(), "''");
+}
+
+TEST_F(StringTest, QuoteAtStart) {
+    // Quote at start of string
+    Value* result = eval("'''hello'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string()->c_str(), "'hello");
+}
+
+TEST_F(StringTest, QuoteAtEnd) {
+    // Quote at end of string
+    Value* result = eval("'hello'''");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string()->c_str(), "hello'");
+}
+
+// ============================================================================
+// String Pool and GC Integration Tests
+// ============================================================================
+
+TEST_F(StringTest, StringPoolInterning) {
+    // Same string should return same String* pointer
+    String* s1 = machine->string_pool.intern("test");
+    String* s2 = machine->string_pool.intern("test");
+    EXPECT_EQ(s1, s2);  // Same pointer
+}
+
+TEST_F(StringTest, StringPoolDifferentStrings) {
+    // Different strings should return different pointers
+    String* s1 = machine->string_pool.intern("foo");
+    String* s2 = machine->string_pool.intern("bar");
+    EXPECT_NE(s1, s2);
+}
+
+TEST_F(StringTest, StringSurvivesGCWhenReachable) {
+    // Assign string to variable, run GC, verify it's still accessible
+    eval("x←'hello world'");
+
+    // Force a major GC
+    machine->heap->collect(machine);
+
+    // Variable should still be accessible
+    Value* result = eval("x");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_STREQ(result->as_string()->c_str(), "hello world");
+}
+
+TEST_F(StringTest, InternedNamesSurviveGC) {
+    // Variable names are interned strings - they should survive GC
+    size_t initial_size = machine->string_pool.size();
+
+    eval("myVar←42");
+    size_t after_define = machine->string_pool.size();
+    EXPECT_GE(after_define, initial_size);
+
+    // Force major GC
+    machine->heap->collect(machine);
+
+    // myVar should still be accessible
+    Value* result = eval("myVar");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
+}
+
+TEST_F(StringTest, EnvironmentKeysMarkedDuringGC) {
+    // Define several variables with interned names
+    eval("alpha←1");
+    eval("beta←2");
+    eval("gamma←3");
+
+    // Force GC
+    machine->heap->collect(machine);
+
+    // All should still be accessible
+    EXPECT_DOUBLE_EQ(eval("alpha")->as_scalar(), 1.0);
+    EXPECT_DOUBLE_EQ(eval("beta")->as_scalar(), 2.0);
+    EXPECT_DOUBLE_EQ(eval("gamma")->as_scalar(), 3.0);
+}
+
+TEST_F(StringTest, StringValueSurvivesMultipleGCs) {
+    // Assign string value and verify it survives multiple GC cycles
+    eval("s←'persistent string'");
+
+    for (int i = 0; i < 5; i++) {
+        machine->heap->collect(machine);
+    }
+
+    Value* result = eval("s");
+    ASSERT_NE(result, nullptr);
+    EXPECT_STREQ(result->as_string()->c_str(), "persistent string");
+}
+
+TEST_F(StringTest, FunctionNamesInCacheSurviveGC) {
+    // Define a function, which caches its name
+    eval("f←{⍵+1}");
+
+    // Force GC
+    machine->heap->collect(machine);
+
+    // Function should still work
+    Value* result = eval("f 5");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 6.0);
 }
 
 // ============================================================================
@@ -205,6 +360,99 @@ TEST_F(StringTest, UTF8MixedLength) {
     ASSERT_NE(result, nullptr);
     // Should be 3 characters, not 6 bytes
     EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 3.0);
+}
+
+TEST_F(StringTest, UTF8EmptyString) {
+    // Empty string has no codepoints
+    Value* result = eval("⍴''");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 0.0);
+}
+
+TEST_F(StringTest, UTF8AllASCII) {
+    // Pure ASCII string
+    Value* result = eval("⍴'ABCDE'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 5.0);
+}
+
+TEST_F(StringTest, UTF8CodepointValues) {
+    // Verify specific codepoint values
+    Value* result = eval(",'αβγ'");  // Greek lowercase letters
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 0x03B1);  // α = U+03B1
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 0x03B2);  // β = U+03B2
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 0x03B3);  // γ = U+03B3
+}
+
+TEST_F(StringTest, UTF8APLSymbolValues) {
+    // Verify APL symbol codepoints
+    Value* result = eval(",'⍳⍴⍪'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->size(), 3);
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 0x2373);  // ⍳ = U+2373
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(1, 0), 0x2374);  // ⍴ = U+2374
+    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(2, 0), 0x236A);  // ⍪ = U+236A
+}
+
+// ============================================================================
+// ISO 13751 Section 10.2.19-21: Dyadic Character Grade
+// ============================================================================
+
+TEST_F(StringTest, DyadicGradeUpWithCollating) {
+    // ISO 13751: Dyadic ⍋ uses left arg as collating sequence
+    // 'BAC' ⍋ 'ABC' → sort ABC using BAC order (B<A<C)
+    Value* result = eval("'BAC'⍋'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    // In BAC order: B is first, A is second, C is third
+    // 'ABC' sorted by BAC order: B(pos 2) < A(pos 1) < C(pos 3)
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);  // 'B' at index 2
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);  // 'A' at index 1
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);  // 'C' at index 3
+}
+
+TEST_F(StringTest, DyadicGradeDownWithCollating) {
+    // Dyadic ⍒ uses left arg as collating sequence (descending)
+    Value* result = eval("'BAC'⍒'ABC'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    // Descending BAC order: C > A > B
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);  // 'C' at index 3
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);  // 'A' at index 1
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 2.0);  // 'B' at index 2
+}
+
+TEST_F(StringTest, DyadicGradeWithDuplicates) {
+    // Collating sequence with duplicates uses first occurrence
+    Value* result = eval("'ABBA'⍋'AB'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 2);
+    // 'A' appears first in 'ABBA', 'B' appears second
+    // So A < B, meaning 'AB' is already sorted
+    auto* mat = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 2.0);
+}
+
+TEST_F(StringTest, DyadicGradeNotInCollating) {
+    // Character not in collating sequence - sorts after all others
+    Value* result = eval("'AB'⍋'AXB'");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
+    auto* mat = result->as_matrix();
+    // 'X' not in 'AB', so it sorts last
+    // A(1) < B(3) < X(2)
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 'A'
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);  // 'B'
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 2.0);  // 'X' (not in collating, sorts last)
 }
 
 // ============================================================================
@@ -458,14 +706,14 @@ TEST_F(StringTest, FormatCharacterStringPassthrough) {
     Value* result = eval("⍕'hello'");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "hello");
+    EXPECT_STREQ(result->as_string()->c_str(), "hello");
 }
 
 TEST_F(StringTest, FormatEmptyStringPassthrough) {
     Value* result = eval("⍕''");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 // Monadic Format - Scalar Formatting
@@ -473,28 +721,28 @@ TEST_F(StringTest, FormatIntegerScalar) {
     Value* result = eval("⍕42");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "42");
+    EXPECT_STREQ(result->as_string()->c_str(), "42");
 }
 
 TEST_F(StringTest, FormatNegativeInteger) {
     Value* result = eval("⍕¯5");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "¯5");
+    EXPECT_STREQ(result->as_string()->c_str(), "¯5");
 }
 
 TEST_F(StringTest, FormatZero) {
     Value* result = eval("⍕0");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "0");
+    EXPECT_STREQ(result->as_string()->c_str(), "0");
 }
 
 TEST_F(StringTest, FormatFloatScalar) {
     Value* result = eval("⍕3.14");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     EXPECT_TRUE(s.find("3.14") != std::string::npos);
 }
 
@@ -502,7 +750,7 @@ TEST_F(StringTest, FormatNegativeFloat) {
     Value* result = eval("⍕¯3.14");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
 }
 
@@ -511,14 +759,14 @@ TEST_F(StringTest, FormatIntegerVector) {
     Value* result = eval("⍕1 2 3");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "1 2 3");
+    EXPECT_STREQ(result->as_string()->c_str(), "1 2 3");
 }
 
 TEST_F(StringTest, FormatVectorWithNegatives) {
     Value* result = eval("⍕¯1 2 ¯3");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "¯1 2 ¯3");
+    EXPECT_STREQ(result->as_string()->c_str(), "¯1 2 ¯3");
 }
 
 // Monadic Format - Empty Arrays
@@ -526,7 +774,7 @@ TEST_F(StringTest, FormatEmptyVector) {
     Value* result = eval("⍕⍬");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    EXPECT_STREQ(result->as_string(), "");
+    EXPECT_STREQ(result->as_string()->c_str(), "");
 }
 
 // Monadic Format - Print Precision
@@ -535,7 +783,7 @@ TEST_F(StringTest, FormatPrintPrecision3) {
     Value* result = eval("⍕3.14159265");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // With pp=3, should have at most 3 significant digits
     EXPECT_TRUE(s.length() <= 6);  // "3.14" or similar
 }
@@ -545,7 +793,7 @@ TEST_F(StringTest, FormatPrintPrecision10) {
     Value* result = eval("⍕3.14159265");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // With pp=10, should preserve more digits
     EXPECT_TRUE(s.find("3.14159") != std::string::npos);
 }
@@ -555,7 +803,7 @@ TEST_F(StringTest, FormatLargeNumber) {
     Value* result = eval("⍕1e15");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // Should use exponential form for large numbers
     EXPECT_TRUE(s.find("E") != std::string::npos || s.find("e") != std::string::npos);
 }
@@ -564,7 +812,7 @@ TEST_F(StringTest, FormatSmallNumber) {
     Value* result = eval("⍕0.0000001");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // Should use exponential form for very small numbers
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
@@ -574,7 +822,7 @@ TEST_F(StringTest, FormatMatrix) {
     Value* result = eval("⍕2 3⍴⍳6");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // Should have newline between rows
     EXPECT_TRUE(s.find("\n") != std::string::npos);
 }
@@ -588,7 +836,7 @@ TEST_F(StringTest, DyadicFormatFixedBasic) {
     Value* result = eval("5 2⍕3.14159");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // Width 5, 2 decimal places: " 3.14"
     EXPECT_EQ(s.length(), 5);
     EXPECT_TRUE(s.find("3.14") != std::string::npos);
@@ -598,7 +846,7 @@ TEST_F(StringTest, DyadicFormatFixedZeroDecimals) {
     Value* result = eval("5 0⍕42.7");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // Width 5, 0 decimals, rounds: "   43"
     EXPECT_EQ(s.length(), 5);
     EXPECT_TRUE(s.find("43") != std::string::npos);
@@ -608,7 +856,7 @@ TEST_F(StringTest, DyadicFormatFixedNegative) {
     Value* result = eval("6 2⍕¯3.14");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     EXPECT_EQ(s.length(), 6);
     EXPECT_TRUE(s.find("¯3.14") != std::string::npos);
 }
@@ -618,7 +866,7 @@ TEST_F(StringTest, DyadicFormatExponentialBasic) {
     Value* result = eval("10 ¯3⍕3.14159");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // Negative precision means exponential form
     EXPECT_TRUE(s.find("E") != std::string::npos);
 }
@@ -627,7 +875,7 @@ TEST_F(StringTest, DyadicFormatExponentialLarge) {
     Value* result = eval("10 ¯3⍕31415.9");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
     EXPECT_TRUE(s.find("4") != std::string::npos);  // exponent should be 4
 }
@@ -636,7 +884,7 @@ TEST_F(StringTest, DyadicFormatExponentialSmall) {
     Value* result = eval("12 ¯3⍕0.00314159");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     EXPECT_TRUE(s.find("E") != std::string::npos);
     EXPECT_TRUE(s.find("¯") != std::string::npos);  // negative exponent
 }
@@ -646,7 +894,7 @@ TEST_F(StringTest, DyadicFormatVectorSingleSpec) {
     Value* result = eval("6 2⍕1 2 3");
     ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_string());
-    std::string s = result->as_string();
+    std::string s = result->as_string()->str();
     // Each element formatted with width 6
     EXPECT_EQ(s.length(), 18);  // 3 * 6
 }

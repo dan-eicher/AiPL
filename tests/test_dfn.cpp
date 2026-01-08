@@ -116,7 +116,7 @@ TEST_F(DfnTest, AssignDfn) {
     Value* result = machine->execute();
 
     // Check that the variable was assigned
-    Value* square = machine->env->lookup("square");
+    Value* square = machine->env->lookup(machine->string_pool.intern("square"));
     ASSERT_NE(square, nullptr);
     EXPECT_EQ(square->tag, ValueType::CLOSURE);
 }
