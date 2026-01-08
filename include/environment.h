@@ -71,6 +71,22 @@ public:
         return false;  // Not found
     }
 
+    // Erase a variable (searches parent chain)
+    // Returns true if found and removed, false if not found
+    bool erase(const char* name) {
+        auto it = bindings.find(name);
+        if (it != bindings.end()) {
+            bindings.erase(it);
+            return true;
+        }
+
+        if (parent) {
+            return parent->erase(name);
+        }
+
+        return false;  // Not found
+    }
+
     // Mark all values for GC (override from GCObject)
     void mark(Heap* heap) override;
 };

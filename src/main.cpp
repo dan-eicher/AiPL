@@ -209,6 +209,27 @@ static std::string format_number(double val) {
     return oss.str();
 }
 
+// Encode a Unicode codepoint to UTF-8
+static std::string codepoint_to_utf8(uint32_t cp) {
+    std::string result;
+    if (cp <= 0x7F) {
+        result += static_cast<char>(cp);
+    } else if (cp <= 0x7FF) {
+        result += static_cast<char>(0xC0 | (cp >> 6));
+        result += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp <= 0xFFFF) {
+        result += static_cast<char>(0xE0 | (cp >> 12));
+        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        result += static_cast<char>(0xF0 | (cp >> 18));
+        result += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        result += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        result += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+    return result;
+}
+
 // Format value for display
 std::string format_value(apl::Value* v, apl::Machine* m) {
     if (!v) return "nil";
@@ -277,17 +298,37 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
     if (v->is_array()) {
         std::ostringstream oss;
         const Eigen::MatrixXd* mat = v->as_matrix();
+        bool is_char = v->is_char_data();
         if (v->is_vector()) {
-            for (int i = 0; i < mat->rows(); ++i) {
-                if (i > 0) oss << " ";
-                oss << format_number((*mat)(i, 0));
+            if (is_char) {
+                // Character vector - display as characters (no quotes, no spaces)
+                for (int i = 0; i < mat->rows(); ++i) {
+                    uint32_t cp = static_cast<uint32_t>((*mat)(i, 0));
+                    oss << codepoint_to_utf8(cp);
+                }
+            } else {
+                // Numeric vector - space-separated
+                for (int i = 0; i < mat->rows(); ++i) {
+                    if (i > 0) oss << " ";
+                    oss << format_number((*mat)(i, 0));
+                }
             }
         } else {
+            // Matrix
             for (int i = 0; i < mat->rows(); ++i) {
                 if (i > 0) oss << "\n";
-                for (int j = 0; j < mat->cols(); ++j) {
-                    if (j > 0) oss << " ";
-                    oss << format_number((*mat)(i, j));
+                if (is_char) {
+                    // Character matrix - display characters (no spaces between)
+                    for (int j = 0; j < mat->cols(); ++j) {
+                        uint32_t cp = static_cast<uint32_t>((*mat)(i, j));
+                        oss << codepoint_to_utf8(cp);
+                    }
+                } else {
+                    // Numeric matrix - space-separated
+                    for (int j = 0; j < mat->cols(); ++j) {
+                        if (j > 0) oss << " ";
+                        oss << format_number((*mat)(i, j));
+                    }
                 }
             }
         }

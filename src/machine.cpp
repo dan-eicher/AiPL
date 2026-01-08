@@ -87,6 +87,12 @@ void Machine::init_globals() {
     env->define("⎕ES", heap->allocate_primitive(&prim_quad_es));
     env->define("⎕EA", heap->allocate_primitive(&prim_quad_ea));
 
+    // Other system functions (ISO 13751 §11.5)
+    env->define("⎕DL", heap->allocate_primitive(&prim_quad_dl));
+    env->define("⎕NC", heap->allocate_primitive(&prim_quad_nc));
+    env->define("⎕EX", heap->allocate_primitive(&prim_quad_ex));
+    env->define("⎕NL", heap->allocate_primitive(&prim_quad_nl));
+
     // Operators (higher-order functions)
     env->define(".", heap->allocate_operator(&op_dot));
     env->define("∘.", heap->allocate_operator(&op_outer_dot));

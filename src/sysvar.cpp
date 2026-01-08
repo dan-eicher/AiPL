@@ -20,6 +20,14 @@ SysVarId lookup_sysvar(const std::string& name, uint32_t enabled_mask) {
         id = SysVarId::ET;
     } else if (name == "EM") {
         id = SysVarId::EM;
+    } else if (name == "TS") {
+        id = SysVarId::TS;
+    } else if (name == "AV") {
+        id = SysVarId::AV;
+    } else if (name == "LC") {
+        id = SysVarId::LC;
+    } else if (name == "LX") {
+        id = SysVarId::LX;
     }
 
     // Check if disabled
@@ -41,6 +49,10 @@ const char* sysvar_name(SysVarId id) {
         case SysVarId::RL: return "RL";
         case SysVarId::ET: return "ET";
         case SysVarId::EM: return "EM";
+        case SysVarId::TS: return "TS";
+        case SysVarId::AV: return "AV";
+        case SysVarId::LC: return "LC";
+        case SysVarId::LX: return "LX";
         default: return "?";
     }
 }

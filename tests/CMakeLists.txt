@@ -90,3 +90,8 @@ add_test(NAME StringTest COMMAND test_strings)
 add_executable(test_error test_error.cpp)
 target_link_libraries(test_error apl_vm GTest::gtest)
 add_test(NAME ErrorTest COMMAND test_error)
+
+# System function tests (ISO 13751 §11.4-11.5 - ⎕TS, ⎕DL, ⎕AV, ⎕NC, ⎕EX, ⎕NL, ⎕LC)
+add_executable(test_sysfn test_sysfn.cpp)
+target_link_libraries(test_sysfn apl_vm GTest::gtest)
+add_test(NAME SysFnTest COMMAND test_sysfn)

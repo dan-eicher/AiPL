@@ -162,4 +162,15 @@ void fn_quad_ea(Machine* m, Value* axis, Value* lhs, Value* rhs); // ⎕EA dyadi
 extern PrimitiveFn prim_quad_es;   // ⎕ES (error signal)
 extern PrimitiveFn prim_quad_ea;   // ⎕EA (execute alternate)
 
+// Other system functions (ISO 13751 §11.5)
+void fn_quad_dl(Machine* m, Value* axis, Value* omega);           // ⎕DL monadic (delay)
+void fn_quad_nc(Machine* m, Value* axis, Value* omega);           // ⎕NC monadic (name class)
+void fn_quad_ex(Machine* m, Value* axis, Value* omega);           // ⎕EX monadic (expunge)
+void fn_quad_nl(Machine* m, Value* axis, Value* omega);           // ⎕NL monadic (name list)
+
+extern PrimitiveFn prim_quad_dl;   // ⎕DL (delay)
+extern PrimitiveFn prim_quad_nc;   // ⎕NC (name class)
+extern PrimitiveFn prim_quad_ex;   // ⎕EX (expunge)
+extern PrimitiveFn prim_quad_nl;   // ⎕NL (name list)
+
 } // namespace apl

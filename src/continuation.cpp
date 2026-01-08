@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <stdexcept>
 #include <typeinfo>
+#include <chrono>
+#include <ctime>
 
 namespace apl {
 
@@ -836,6 +838,74 @@ void SysVarReadK::invoke(Machine* machine) {
                 machine->result = machine->heap->allocate_string("");
             }
             break;
+        case SysVarId::TS: {
+            // Time stamp: 7-element vector {year, month, day, hour, minute, second, millisecond}
+            // ISO 13751 §11.4.1
+            auto now = std::chrono::system_clock::now();
+            auto now_time_t = std::chrono::system_clock::to_time_t(now);
+            auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now.time_since_epoch()) % 1000;
+            std::tm* tm = std::localtime(&now_time_t);
+
+            Eigen::VectorXd ts(7);
+            ts << static_cast<double>(tm->tm_year + 1900),  // Year
+                  static_cast<double>(tm->tm_mon + 1),       // Month (1-12)
+                  static_cast<double>(tm->tm_mday),          // Day (1-31)
+                  static_cast<double>(tm->tm_hour),          // Hour (0-23)
+                  static_cast<double>(tm->tm_min),           // Minute (0-59)
+                  static_cast<double>(tm->tm_sec),           // Second (0-59)
+                  static_cast<double>(now_ms.count());       // Millisecond (0-999)
+            machine->result = machine->heap->allocate_vector(ts);
+            break;
+        }
+        case SysVarId::AV: {
+            // Atomic vector: 256-element character vector (codepoints 0-255)
+            // ISO 13751 §11.4.2
+            Eigen::VectorXd av(256);
+            for (int i = 0; i < 256; ++i) {
+                av(i) = static_cast<double>(i);
+            }
+            machine->result = machine->heap->allocate_vector(av, true);  // true = character data
+            break;
+        }
+        case SysVarId::LC: {
+            // Line counter: vector of line numbers in call stack
+            // ISO 13751 §11.4.3 - innermost to outermost
+            std::vector<double> lines;
+            // Traverse continuation stack for line numbers
+            for (auto it = machine->kont_stack.rbegin(); it != machine->kont_stack.rend(); ++it) {
+                Continuation* k = *it;
+                if (k && k->has_location() && k->line() > 0) {
+                    lines.push_back(static_cast<double>(k->line()));
+                }
+            }
+            // Add current control if it has location
+            if (machine->control && machine->control->has_location() && machine->control->line() > 0) {
+                lines.insert(lines.begin(), static_cast<double>(machine->control->line()));
+            }
+
+            if (lines.empty()) {
+                // Empty vector if no line info
+                Eigen::VectorXd empty(0);
+                machine->result = machine->heap->allocate_vector(empty);
+            } else {
+                Eigen::VectorXd lc(lines.size());
+                for (size_t i = 0; i < lines.size(); ++i) {
+                    lc(i) = lines[i];
+                }
+                machine->result = machine->heap->allocate_vector(lc);
+            }
+            break;
+        }
+        case SysVarId::LX:
+            // Latent expression: character vector (ISO 13751 §12.2.5)
+            if (machine->lx && *machine->lx) {
+                machine->result = machine->heap->allocate_string(machine->lx);
+            } else {
+                // Empty string
+                machine->result = machine->heap->allocate_string("");
+            }
+            break;
         default:
             machine->throw_error("SYSTEM ERROR: unknown system variable", this, 0, 0);
             break;
@@ -862,7 +932,23 @@ void SysVarAssignK::mark(Heap* heap) {
 void PerformSysVarAssignK::invoke(Machine* machine) {
     Value* val = machine->result;
 
-    // System variables require scalar values
+    // Handle ⎕LX specially - it accepts character data, not scalars
+    if (var_id == SysVarId::LX) {
+        if (!val) {
+            machine->throw_error("VALUE ERROR: no value for ⎕LX assignment", this, 2, 0);
+            return;
+        }
+        if (!val->is_char_data() && !val->is_string()) {
+            machine->throw_error("DOMAIN ERROR: ⎕LX must be character data", this, 11, 0);
+            return;
+        }
+        // Convert to STRING if needed - as_string() returns interned pointer
+        machine->lx = val->to_string_value(machine->heap)->as_string();
+        machine->result = val;
+        return;
+    }
+
+    // Other system variables require scalar values
     if (!val || !val->is_scalar()) {
         machine->throw_error("DOMAIN ERROR: system variable requires scalar value", this, 11, 0);
         return;

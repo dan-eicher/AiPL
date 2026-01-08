@@ -10,6 +10,9 @@
 #include <random>
 #include <iomanip>
 #include <map>
+#include <chrono>
+#include <thread>
+#include <algorithm>
 
 namespace apl {
 
@@ -123,6 +126,12 @@ PrimitiveFn prim_disclose  = { "⊃", fn_disclose, fn_pick, false };
 // Note: ⎕ET and ⎕EM are system variables, accessed via SysVarReadK
 PrimitiveFn prim_quad_es   = { "⎕ES", fn_quad_es, fn_quad_es_dyadic, false };
 PrimitiveFn prim_quad_ea   = { "⎕EA", nullptr, fn_quad_ea, false };
+
+// Other system functions (ISO 13751 §11.5)
+PrimitiveFn prim_quad_dl   = { "⎕DL", fn_quad_dl, nullptr, false };
+PrimitiveFn prim_quad_nc   = { "⎕NC", fn_quad_nc, nullptr, false };
+PrimitiveFn prim_quad_ex   = { "⎕EX", fn_quad_ex, nullptr, false };
+PrimitiveFn prim_quad_nl   = { "⎕NL", fn_quad_nl, nullptr, false };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -8239,6 +8248,337 @@ void fn_quad_ea(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     // would not be caught.
     FinalizeK* finalize_k = m->heap->allocate<FinalizeK>(try_k, true);
     m->push_kont(finalize_k);
+}
+
+// ⎕DL - Delay (monadic) - ISO 13751 §11.5.1
+// Pause execution for B seconds, return actual delay time
+void fn_quad_dl(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
+
+    if (!omega->is_scalar()) {
+        m->throw_error("RANK ERROR: ⎕DL requires scalar argument", nullptr, 4, 0);
+        return;
+    }
+
+    double seconds = omega->as_scalar();
+    if (seconds < 0) {
+        m->throw_error("DOMAIN ERROR: ⎕DL requires non-negative argument", nullptr, 11, 0);
+        return;
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+    auto end = std::chrono::high_resolution_clock::now();
+
+    double actual = std::chrono::duration<double>(end - start).count();
+    m->result = m->heap->allocate_scalar(actual);
+}
+
+// Helper: classify a Value for ⎕NC
+// Returns: 0=undefined, 2=variable, 3=function, 4=operator
+static int classify_value(Value* v) {
+    if (!v) return 0;  // undefined
+
+    switch (v->tag) {
+        case ValueType::SCALAR:
+        case ValueType::VECTOR:
+        case ValueType::MATRIX:
+        case ValueType::NDARRAY:
+        case ValueType::STRING:
+        case ValueType::STRAND:
+            return 2;  // variable (data)
+
+        case ValueType::PRIMITIVE:
+        case ValueType::CLOSURE:
+        case ValueType::CURRIED_FN:
+            return 3;  // function
+
+        case ValueType::DERIVED_OPERATOR:
+            // Derived operators can act as functions when fully applied
+            return 3;
+
+        case ValueType::OPERATOR:
+        case ValueType::DEFINED_OPERATOR:
+            return 4;  // operator
+
+        default:
+            return 0;  // unknown
+    }
+}
+
+// Helper: encode a single Unicode codepoint to UTF-8
+static void append_codepoint_utf8(std::string& out, uint32_t cp) {
+    if (cp <= 0x7F) {
+        out += static_cast<char>(cp);
+    } else if (cp <= 0x7FF) {
+        out += static_cast<char>(0xC0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp <= 0xFFFF) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+}
+
+// Helper: extract a name string from a character matrix row (codepoints to UTF-8)
+static std::string extract_name_from_row(const Eigen::MatrixXd* mat, int row, int cols) {
+    std::string name;
+    for (int c = 0; c < cols; ++c) {
+        uint32_t cp = static_cast<uint32_t>((*mat)(row, c));
+        if (cp == ' ') continue;  // Skip spaces
+        append_codepoint_utf8(name, cp);
+    }
+    // Trim trailing spaces
+    while (!name.empty() && name.back() == ' ') {
+        name.pop_back();
+    }
+    return name;
+}
+
+// Helper: extract a name string from a character vector (codepoints to UTF-8)
+static std::string extract_name_from_vector(const Eigen::MatrixXd* mat) {
+    std::string name;
+    for (int i = 0; i < mat->rows(); ++i) {
+        uint32_t cp = static_cast<uint32_t>((*mat)(i, 0));
+        append_codepoint_utf8(name, cp);
+    }
+    return name;
+}
+
+// ⎕NC - Name Class (ISO 13751 §11.5.2)
+// Returns classification of names: 0=undefined, 1=label, 2=variable, 3=function, 4=operator
+void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
+
+    // Must be character data
+    bool is_char = omega->is_string() || (omega->is_array() && omega->is_char_data());
+    if (!is_char) {
+        m->throw_error("DOMAIN ERROR: ⎕NC requires character argument", nullptr, 11, 0);
+        return;
+    }
+
+    // Handle string (simple name)
+    if (omega->is_string()) {
+        const char* name = omega->as_string();
+        Value* v = m->env->lookup(name);
+        m->result = m->heap->allocate_scalar(static_cast<double>(classify_value(v)));
+        return;
+    }
+
+    // Handle character vector (single name)
+    if (omega->is_vector()) {
+        std::string name = extract_name_from_vector(omega->as_matrix());
+        Value* v = m->env->lookup(name.c_str());
+        m->result = m->heap->allocate_scalar(static_cast<double>(classify_value(v)));
+        return;
+    }
+
+    // Handle character matrix (each row is a name)
+    if (omega->is_matrix()) {
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+
+        Eigen::VectorXd result(rows);
+        for (int r = 0; r < rows; ++r) {
+            std::string name = extract_name_from_row(mat, r, cols);
+            Value* v = m->env->lookup(name.c_str());
+            result(r) = static_cast<double>(classify_value(v));
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    m->throw_error("RANK ERROR: ⎕NC requires vector or matrix argument", nullptr, 4, 0);
+}
+
+// Helper: check if a name is protected (system variable/function)
+// Protected names start with ⎕ (U+2395)
+static bool is_protected_name(const std::string& name) {
+    // ⎕ in UTF-8 is 0xE2 0x8E 0x95
+    return name.size() >= 3 &&
+           static_cast<unsigned char>(name[0]) == 0xE2 &&
+           static_cast<unsigned char>(name[1]) == 0x8E &&
+           static_cast<unsigned char>(name[2]) == 0x95;
+}
+
+// Helper: check if first codepoint is ⎕ (U+2395)
+static bool starts_with_quad(const Eigen::MatrixXd* mat, int row, int cols) {
+    if (cols == 0) return false;
+    uint32_t cp = static_cast<uint32_t>((*mat)(row, 0));
+    return cp == 0x2395;
+}
+
+static bool vector_starts_with_quad(const Eigen::MatrixXd* mat) {
+    if (mat->rows() == 0) return false;
+    uint32_t cp = static_cast<uint32_t>((*mat)(0, 0));
+    return cp == 0x2395;
+}
+
+// ⎕EX - Expunge (ISO 13751 §11.5.3)
+// Removes names from the workspace
+// Returns: 1=expunged, 0=not expunged (undefined or protected)
+void fn_quad_ex(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
+
+    // Must be character data
+    bool is_char = omega->is_string() || (omega->is_array() && omega->is_char_data());
+    if (!is_char) {
+        m->throw_error("DOMAIN ERROR: ⎕EX requires character argument", nullptr, 11, 0);
+        return;
+    }
+
+    // Handle string (simple name)
+    if (omega->is_string()) {
+        const char* name = omega->as_string();
+        if (is_protected_name(name)) {
+            m->result = m->heap->allocate_scalar(0.0);  // Protected
+            return;
+        }
+        bool removed = m->env->erase(name);
+        m->result = m->heap->allocate_scalar(removed ? 1.0 : 0.0);
+        return;
+    }
+
+    // Handle character vector (single name)
+    if (omega->is_vector()) {
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        if (vector_starts_with_quad(mat)) {
+            m->result = m->heap->allocate_scalar(0.0);  // Protected
+            return;
+        }
+        std::string name = extract_name_from_vector(mat);
+        bool removed = m->env->erase(name.c_str());
+        m->result = m->heap->allocate_scalar(removed ? 1.0 : 0.0);
+        return;
+    }
+
+    // Handle character matrix (each row is a name)
+    if (omega->is_matrix()) {
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+
+        Eigen::VectorXd result(rows);
+        for (int r = 0; r < rows; ++r) {
+            if (starts_with_quad(mat, r, cols)) {
+                result(r) = 0.0;  // Protected
+            } else {
+                std::string name = extract_name_from_row(mat, r, cols);
+                bool removed = m->env->erase(name.c_str());
+                result(r) = removed ? 1.0 : 0.0;
+            }
+        }
+        m->result = m->heap->allocate_vector(result);
+        return;
+    }
+
+    m->throw_error("RANK ERROR: ⎕EX requires vector or matrix argument", nullptr, 4, 0);
+}
+
+// Helper: decode UTF-8 string to vector of codepoints
+static std::vector<uint32_t> utf8_to_codepoints(const std::string& s) {
+    std::vector<uint32_t> result;
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(s.c_str());
+    while (*p) {
+        uint32_t cp;
+        if ((*p & 0x80) == 0) {
+            cp = *p++;
+        } else if ((*p & 0xE0) == 0xC0) {
+            cp = (*p++ & 0x1F) << 6;
+            cp |= (*p++ & 0x3F);
+        } else if ((*p & 0xF0) == 0xE0) {
+            cp = (*p++ & 0x0F) << 12;
+            cp |= (*p++ & 0x3F) << 6;
+            cp |= (*p++ & 0x3F);
+        } else if ((*p & 0xF8) == 0xF0) {
+            cp = (*p++ & 0x07) << 18;
+            cp |= (*p++ & 0x3F) << 12;
+            cp |= (*p++ & 0x3F) << 6;
+            cp |= (*p++ & 0x3F);
+        } else {
+            cp = *p++;  // Invalid, just use byte
+        }
+        result.push_back(cp);
+    }
+    return result;
+}
+
+// ⎕NL - Name List (ISO 13751 §11.5.4)
+// Returns character matrix of names matching specified classes
+// Classes: 1=label, 2=variable, 3=function, 4=operator
+void fn_quad_nl(Machine* m, Value* axis, Value* omega) {
+    REJECT_AXIS(m, axis);
+
+    // Collect requested classes
+    std::vector<int> classes;
+    if (omega->is_scalar()) {
+        classes.push_back(static_cast<int>(omega->as_scalar()));
+    } else if (omega->is_vector()) {
+        const Eigen::MatrixXd* mat = omega->as_matrix();
+        for (int i = 0; i < mat->rows(); ++i) {
+            classes.push_back(static_cast<int>((*mat)(i, 0)));
+        }
+    } else {
+        m->throw_error("RANK ERROR: ⎕NL requires scalar or vector argument", nullptr, 4, 0);
+        return;
+    }
+
+    // Validate class values
+    for (int c : classes) {
+        if (c < 1 || c > 4) {
+            m->throw_error("DOMAIN ERROR: ⎕NL class must be 1-4", nullptr, 11, 0);
+            return;
+        }
+    }
+
+    // Collect matching names from environment
+    std::vector<std::string> names;
+    for (const auto& kv : m->env->bindings) {
+        Value* v = kv.second;
+        int nc = classify_value(v);
+        for (int c : classes) {
+            if (nc == c) {
+                names.push_back(kv.first);
+                break;
+            }
+        }
+    }
+
+    // Sort alphabetically
+    std::sort(names.begin(), names.end());
+
+    // If no names match, return empty matrix
+    if (names.empty()) {
+        Eigen::MatrixXd empty(0, 0);
+        m->result = m->heap->allocate_matrix(empty, true);  // is_char_data = true
+        return;
+    }
+
+    // Convert names to codepoints and find max length
+    std::vector<std::vector<uint32_t>> codepoint_names;
+    size_t max_len = 0;
+    for (const auto& name : names) {
+        auto cps = utf8_to_codepoints(name);
+        max_len = std::max(max_len, cps.size());
+        codepoint_names.push_back(std::move(cps));
+    }
+
+    // Build character matrix (rows = names, cols = max_len, padded with spaces)
+    Eigen::MatrixXd mat(names.size(), max_len);
+    for (size_t r = 0; r < names.size(); ++r) {
+        const auto& cps = codepoint_names[r];
+        for (size_t c = 0; c < max_len; ++c) {
+            mat(r, c) = (c < cps.size()) ? static_cast<double>(cps[c]) : 32.0;  // pad with space
+        }
+    }
+
+    m->result = m->heap->allocate_matrix(mat, true);  // is_char_data = true
 }
 
 } // namespace apl
