@@ -192,6 +192,9 @@ private:
     // Private new operator enforces heap-only allocation
     void* operator new(size_t size) { return ::operator new(size); }
 
+    // Placement new for arena allocation (used by Heap::allocate_ephemeral)
+    void* operator new(size_t /*size*/, void* ptr) { return ptr; }
+
 protected:
     // Protected delete allows derived class destructors to work
     void operator delete(void* ptr) { ::operator delete(ptr); }

@@ -165,7 +165,7 @@ Value* Machine::execute() {
     while (result && result->tag == ValueType::CURRIED_FN) {
         Value* result_before = result;
 
-        push_kont(heap->allocate<PerformFinalizeK>());
+        push_kont(heap->allocate_ephemeral<PerformFinalizeK>());
 
         // Run the finalization
         while (!kont_stack.empty()) {
@@ -197,8 +197,8 @@ Value* Machine::execute() {
 
         // Invoke the niladic closure with no arguments
         // Also finalize any CURRIED_FN that results (e.g., {-5} returns G_PRIME curry)
-        push_kont(heap->allocate<PerformFinalizeK>());
-        push_kont(heap->allocate<FunctionCallK>(result, nullptr, nullptr));
+        push_kont(heap->allocate_ephemeral<PerformFinalizeK>());
+        push_kont(heap->allocate_ephemeral<FunctionCallK>(result, nullptr, nullptr));
 
         // Run the invocation
         while (!kont_stack.empty()) {
@@ -220,6 +220,10 @@ Value* Machine::execute() {
             break;
         }
     }
+
+    // Reset the ephemeral continuation arena after expression completes
+    // All scaffolding continuations are now dead - O(1) cleanup
+    heap->reset_arena();
 
     return result;
 }
@@ -260,7 +264,7 @@ void Machine::throw_error(const char* msg, Continuation* source,
     }
 
     // Create and push ThrowErrorK
-    ThrowErrorK* err = heap->allocate<ThrowErrorK>(event_message);
+    ThrowErrorK* err = heap->allocate_ephemeral<ThrowErrorK>(event_message);
 
     // Copy source location to ThrowErrorK if available
     if (error_source && error_source->has_location()) {

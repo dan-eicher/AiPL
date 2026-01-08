@@ -584,6 +584,18 @@ void Heap::clear_marks() {
     for (Environment* e : environments) {
         e->marked = false;
     }
+
+    // Clear marks on arena continuations via Machine's kont_stack
+    // Arena continuations are not in young/old_continuations lists,
+    // but they may have been marked in a previous GC cycle
+    if (machine) {
+        for (Continuation* k : machine->kont_stack) {
+            if (k) k->marked = false;
+        }
+        if (machine->control) {
+            machine->control->marked = false;
+        }
+    }
 }
 
 } // namespace apl

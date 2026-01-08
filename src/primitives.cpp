@@ -8240,13 +8240,13 @@ void fn_quad_ea(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 
     // Push the error catcher with handler (alt expression)
-    CatchErrorK* catcher = m->heap->allocate<CatchErrorK>(alt_k);
+    CatchErrorK* catcher = m->heap->allocate_ephemeral<CatchErrorK>(alt_k);
     m->push_kont(catcher);
 
     // Wrap the try expression in FinalizeK to ensure G_PRIME curries (e.g., from dfn calls)
     // are finalized BEFORE CatchErrorK is reached. Otherwise errors during finalization
     // would not be caught.
-    FinalizeK* finalize_k = m->heap->allocate<FinalizeK>(try_k, true);
+    FinalizeK* finalize_k = m->heap->allocate_ephemeral<FinalizeK>(try_k, true);
     m->push_kont(finalize_k);
 }
 

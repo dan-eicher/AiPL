@@ -90,7 +90,7 @@ static Value* try_finalize_sync(Machine* m, Value* val, bool finalize_gprime = t
 // After finalization completes, then_kont will be invoked with machine->result
 static void push_finalize_then(Machine* m, Continuation* then_kont, bool finalize_gprime = true) {
     m->push_kont(then_kont);
-    m->push_kont(m->heap->allocate<PerformFinalizeK>(finalize_gprime));
+    m->push_kont(m->heap->allocate_ephemeral<PerformFinalizeK>(finalize_gprime));
 }
 
 // Combined helper: check if finalization is needed, and if so, push it
@@ -118,7 +118,7 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
                               Value* right_val, Value* axis) {
     // Handle CLOSURE values (dfns)
     if (fn_val->tag == ValueType::CLOSURE) {
-        FunctionCallK* call_k = m->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
+        FunctionCallK* call_k = m->heap->allocate_ephemeral<FunctionCallK>(fn_val, left_val, right_val);
         m->push_kont(call_k);
         return false;  // Continuation pushed
     }
@@ -133,7 +133,7 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
 
         if (def_op) {
             // User-defined operator
-            m->push_kont(m->heap->allocate<InvokeDefinedOperatorK>(
+            m->push_kont(m->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
                 def_op, op_value, first_operand, nullptr, left_val, right_val));
             return false;  // Continuation pushed
         } else if (op) {
@@ -472,7 +472,7 @@ void PropagateCompletionK::invoke(Machine* machine) {
                 if (catch_err->handler) {
                     // Push ClearErrorStateK FIRST (runs AFTER handler completes)
                     // ISO 13751: ⎕ET/⎕EM reflect current state, not historical
-                    ClearErrorStateK* clear_k = machine->heap->allocate<ClearErrorStateK>();
+                    ClearErrorStateK* clear_k = machine->heap->allocate_ephemeral<ClearErrorStateK>();
                     machine->push_kont(clear_k);
 
                     // Push handler for execution
@@ -614,7 +614,7 @@ void ThrowErrorK::invoke(Machine* machine) {
     );
 
     // Push PropagateCompletionK to unwind the stack
-    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(throw_comp);
+    PropagateCompletionK* prop = machine->heap->allocate_ephemeral<PropagateCompletionK>(throw_comp);
     machine->push_kont(prop);
 }
 
@@ -717,10 +717,10 @@ void InvokeDefinedOperatorK::invoke(Machine* machine) {
     machine->env = env;
 
     // Push continuation to restore environment after body completes
-    machine->push_kont(machine->heap->allocate<RestoreEnvK>(saved_env));
+    machine->push_kont(machine->heap->allocate_ephemeral<RestoreEnvK>(saved_env));
 
     // Push continuation to catch RETURN completions
-    machine->push_kont(machine->heap->allocate<CatchReturnK>(op->name));
+    machine->push_kont(machine->heap->allocate_ephemeral<CatchReturnK>(op->name));
 
     // Push the operator body for execution
     machine->push_kont(op->body);
@@ -763,7 +763,7 @@ void AssignK::invoke(Machine* machine) {
     // Assignment: evaluate expression, then bind to variable
     // Use auxiliary continuation to capture the result
 
-    PerformAssignK* perform = machine->heap->allocate<PerformAssignK>(var_name);
+    PerformAssignK* perform = machine->heap->allocate_ephemeral<PerformAssignK>(var_name);
 
     machine->push_kont(perform);
     machine->push_kont(expr);
@@ -919,7 +919,7 @@ void SysVarReadK::mark(Heap* heap) {
 // SysVarAssignK implementation - evaluate expression then assign to system variable
 void SysVarAssignK::invoke(Machine* machine) {
     // Push continuation to perform the assignment after expression is evaluated
-    machine->push_kont(machine->heap->allocate<PerformSysVarAssignK>(var_id));
+    machine->push_kont(machine->heap->allocate_ephemeral<PerformSysVarAssignK>(var_id));
     // Push the expression to evaluate
     machine->push_kont(expr);
 }
@@ -1026,7 +1026,7 @@ void JuxtaposeK::invoke(Machine* machine) {
     // Evaluate right-to-left (APL evaluation order)
     // After right is evaluated, we'll evaluate left and then apply
 
-    EvalJuxtaposeLeftK* eval_left = machine->heap->allocate<EvalJuxtaposeLeftK>(left, nullptr);
+    EvalJuxtaposeLeftK* eval_left = machine->heap->allocate_ephemeral<EvalJuxtaposeLeftK>(left, nullptr);
 
     // Push in reverse order (stack is LIFO)
     machine->push_kont(eval_left);  // Will execute after right
@@ -1045,7 +1045,7 @@ void EvalJuxtaposeLeftK::invoke(Machine* machine) {
     right_val = machine->result;
 
     // Push continuation to perform juxtaposition after left is evaluated
-    PerformJuxtaposeK* perform = machine->heap->allocate<PerformJuxtaposeK>(right_val);
+    PerformJuxtaposeK* perform = machine->heap->allocate_ephemeral<PerformJuxtaposeK>(right_val);
 
     // Push in reverse order
     machine->push_kont(perform);  // Will execute after left
@@ -1082,7 +1082,7 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
         // DispatchFunctionK expects the function in result, so set it there
         machine->result = right_val;
         // Use DispatchFunctionK to apply right_val as function to left_val as argument
-        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, left_val));
+        machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(nullptr, nullptr, left_val));
     } else if (right_val->is_defined_operator() && left_val->is_function()) {
         // Operator application: left is function operand, right is DEFINED_OPERATOR
         // Create a DERIVED_OPERATOR that captures the operand
@@ -1132,7 +1132,7 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
             // Standard case: OPERATOR_CURRY(DERIVED_OPERATOR, second_operand) + function
             // Just pass through - this is handled elsewhere
             machine->result = left_val;
-            machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, right_val));
+            machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(nullptr, nullptr, right_val));
         } else {
             machine->throw_error("VALUE ERROR: Invalid OPERATOR_CURRY structure", this, 2, 0);
             return;
@@ -1144,7 +1144,7 @@ void PerformJuxtaposeK::invoke(Machine* machine) {
         // DispatchFunctionK expects the function in result, so set it there
         machine->result = left_val;
         // Use DispatchFunctionK to apply left_val as function to right_val as argument
-        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, right_val));
+        machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(nullptr, nullptr, right_val));
     }
 }
 
@@ -1157,7 +1157,7 @@ void PerformJuxtaposeK::mark(Heap* heap) {
 void FinalizeK::invoke(Machine* machine) {
     // Push auxiliary to check/finalize result after inner evaluates
     // Pass finalize_gprime flag to control whether G_PRIME gets finalized
-    machine->push_kont(machine->heap->allocate<PerformFinalizeK>(finalize_gprime));
+    machine->push_kont(machine->heap->allocate_ephemeral<PerformFinalizeK>(finalize_gprime));
     // Push inner expression to evaluate
     machine->push_kont(inner);
 }
@@ -1204,7 +1204,7 @@ void PerformFinalizeK::invoke(Machine* machine) {
                     Value* op_value = derived->data.derived_op->operator_value;
 
                     if (def_op) {
-                        machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                        machine->push_kont(machine->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
                             def_op, op_value, first_operand, second_operand, nullptr, arg));
                         return;
                     } else if (op && op->monadic) {
@@ -1247,7 +1247,7 @@ void MonadicK::invoke(Machine* machine) {
     // Strategy: push operand continuation, then push auxiliary to apply function
 
     // Create auxiliary continuation to apply function after operand evaluates
-    ApplyMonadicK* apply = machine->heap->allocate<ApplyMonadicK>(op_name);
+    ApplyMonadicK* apply = machine->heap->allocate_ephemeral<ApplyMonadicK>(op_name);
 
     // Push in reverse order (stack is LIFO)
     machine->push_kont(apply);    // Will execute after operand
@@ -1267,7 +1267,7 @@ void DyadicK::invoke(Machine* machine) {
     // Use auxiliary continuations to manage the multi-step process
 
     // Allocate auxiliary continuation to evaluate left after right completes
-    EvalDyadicLeftK* eval_left = machine->heap->allocate<EvalDyadicLeftK>(op_name, left, nullptr);
+    EvalDyadicLeftK* eval_left = machine->heap->allocate_ephemeral<EvalDyadicLeftK>(op_name, left, nullptr);
 
     // Push work in REVERSE order (stack is LIFO)
     machine->push_kont(eval_left);  // Will execute after right
@@ -1289,7 +1289,7 @@ void EvalDyadicLeftK::invoke(Machine* machine) {
     right_val = machine->result;
 
     // Allocate auxiliary continuation to apply function after left evaluates
-    ApplyDyadicK* apply = machine->heap->allocate<ApplyDyadicK>(op_name, right_val);
+    ApplyDyadicK* apply = machine->heap->allocate_ephemeral<ApplyDyadicK>(op_name, right_val);
 
     // Push work in reverse order
     machine->push_kont(apply);   // Will execute after left
@@ -1445,7 +1445,7 @@ void FrameK::invoke(Machine* machine) {
     // Phase 2.2: Also push CatchReturnK to establish function boundary
 
     // Push the catch handler first (it will be invoked after function body completes)
-    CatchReturnK* catch_k = machine->heap->allocate<CatchReturnK>(function_name);
+    CatchReturnK* catch_k = machine->heap->allocate_ephemeral<CatchReturnK>(function_name);
     machine->push_kont(catch_k);
 
     // Then push the function body
@@ -1475,13 +1475,13 @@ void ApplyFunctionK::invoke(Machine* machine) {
 
     if (left_arg) {
         // Dyadic case: evaluate right, then left, then function, then apply
-        EvalApplyFunctionLeftK* eval_left = machine->heap->allocate<EvalApplyFunctionLeftK>(fn_cont, left_arg, nullptr);
+        EvalApplyFunctionLeftK* eval_left = machine->heap->allocate_ephemeral<EvalApplyFunctionLeftK>(fn_cont, left_arg, nullptr);
 
         machine->push_kont(eval_left);
         machine->push_kont(right_arg);
     } else {
         // Monadic case: evaluate right, then function, then apply
-        EvalApplyFunctionMonadicK* eval_fn = machine->heap->allocate<EvalApplyFunctionMonadicK>(fn_cont, nullptr);
+        EvalApplyFunctionMonadicK* eval_fn = machine->heap->allocate_ephemeral<EvalApplyFunctionMonadicK>(fn_cont, nullptr);
 
         machine->push_kont(eval_fn);
         machine->push_kont(right_arg);
@@ -1503,7 +1503,7 @@ void EvalApplyFunctionLeftK::invoke(Machine* machine) {
 
     // Now evaluate left argument, then function, then dispatch
     // Create continuation that will evaluate function after left arg
-    EvalApplyFunctionDyadicK* eval_fn = machine->heap->allocate<EvalApplyFunctionDyadicK>(fn_cont, nullptr, right_val);
+    EvalApplyFunctionDyadicK* eval_fn = machine->heap->allocate_ephemeral<EvalApplyFunctionDyadicK>(fn_cont, nullptr, right_val);
 
     machine->push_kont(eval_fn);
     machine->push_kont(left_arg);
@@ -1523,7 +1523,7 @@ void EvalApplyFunctionMonadicK::invoke(Machine* machine) {
     arg_val = machine->result;
 
     // Now evaluate the function continuation, then dispatch (monadic case)
-    DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(nullptr, nullptr, arg_val);
+    DispatchFunctionK* dispatch = machine->heap->allocate_ephemeral<DispatchFunctionK>(nullptr, nullptr, arg_val);
 
     machine->push_kont(dispatch);
     machine->push_kont(fn_cont);
@@ -1542,7 +1542,7 @@ void EvalApplyFunctionDyadicK::invoke(Machine* machine) {
     left_val = machine->result;
 
     // Now evaluate the function continuation, then dispatch (dyadic case)
-    DispatchFunctionK* dispatch = machine->heap->allocate<DispatchFunctionK>(nullptr, left_val, right_val);
+    DispatchFunctionK* dispatch = machine->heap->allocate_ephemeral<DispatchFunctionK>(nullptr, left_val, right_val);
 
     machine->push_kont(dispatch);
     machine->push_kont(fn_cont);
@@ -1580,7 +1580,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             return;
         }
         // Both arguments (dyadic) - call immediately
-        FunctionCallK* call_k = machine->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
+        FunctionCallK* call_k = machine->heap->allocate_ephemeral<FunctionCallK>(fn_val, left_val, right_val);
         machine->push_kont(call_k);
         return;  // Early exit for closure case
     }
@@ -1610,7 +1610,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 // Fall through to dispatch
             } else {
                 // y is a function: first finalize g1(x), then apply y to result
-                machine->push_kont(machine->heap->allocate<PerformJuxtaposeK>(right_val));
+                machine->push_kont(machine->heap->allocate_ephemeral<PerformJuxtaposeK>(right_val));
                 apply_function_immediate(machine, inner_fn, nullptr, first_arg);
                 return;
             }
@@ -1642,7 +1642,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 }
 
                 if (def_op) {
-                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                    machine->push_kont(machine->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, second_operand, left_val, right_val));
                 } else {
                     op->dyadic(machine, axis, left_val, first_operand, second_operand, right_val);
@@ -1659,7 +1659,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
                 if (def_op) {
                     // User-defined dyadic operator with both operands, monadic application
-                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                    machine->push_kont(machine->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, second_operand, nullptr, right_val));
                 } else {
                     // Curry to wait for potential left array argument
@@ -1764,7 +1764,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     // For closures, need to evaluate g1(x) first then apply y
                     // Push DeferredDispatchK to apply y after g1(x) evaluates
                     // DeferredDispatchK will read machine->result as the new right_val
-                    machine->push_kont(machine->heap->allocate<DeferredDispatchK>(right_val, nullptr));
+                    machine->push_kont(machine->heap->allocate_ephemeral<DeferredDispatchK>(right_val, nullptr));
                     // Apply inner closure monadically
                     apply_function_immediate(machine, inner_fn, nullptr, first_arg);
                     return;
@@ -1778,7 +1778,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             return;
         }
         if (fn_val->tag == ValueType::CLOSURE) {
-            FunctionCallK* call_k = machine->heap->allocate<FunctionCallK>(fn_val, left_val, right_val);
+            FunctionCallK* call_k = machine->heap->allocate_ephemeral<FunctionCallK>(fn_val, left_val, right_val);
             machine->push_kont(call_k);
             return;
         }
@@ -1792,7 +1792,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
             // Handle user-defined operators (G_PRIME finalization path)
             if (def_op) {
                 // Invoke the defined operator with both arguments
-                machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                machine->push_kont(machine->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
                     def_op, op_value, first_operand, nullptr, left_val, right_val));
                 return;
             }
@@ -1856,7 +1856,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
     // it should be unwrapped. Use consolidated finalization via PerformFinalizeK.
     if (needs_finalization(right_val, true)) {
         machine->result = right_val;
-        DeferredDispatchK* then_k = machine->heap->allocate<DeferredDispatchK>(fn_val, left_val);
+        DeferredDispatchK* then_k = machine->heap->allocate_ephemeral<DeferredDispatchK>(fn_val, left_val);
         push_finalize_then(machine, then_k, true);
         return;
     }
@@ -1877,11 +1877,11 @@ void DispatchFunctionK::invoke(Machine* machine) {
                     machine->result = curried;
                 } else if (left_val) {
                     // Monadic operator with both arguments - invoke dyadically
-                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                    machine->push_kont(machine->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, nullptr, left_val, right_val));
                 } else if (!def_op->is_ambivalent) {
                     // Non-ambivalent - invoke immediately
-                    machine->push_kont(machine->heap->allocate<InvokeDefinedOperatorK>(
+                    machine->push_kont(machine->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
                         def_op, op_value, first_operand, nullptr, nullptr, right_val));
                 } else {
                     // Ambivalent operator with only right arg - curry to wait for potential left arg
@@ -2097,7 +2097,7 @@ void DeferredDispatchK::invoke(Machine* machine) {
     Value* right_val = machine->result;
 
     // Create and push DispatchFunctionK to continue the dispatch
-    machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn_val, left_val, right_val));
+    machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(fn_val, left_val, right_val));
 }
 
 void DeferredDispatchK::mark(Heap* heap) {
@@ -2125,7 +2125,7 @@ void SeqK::invoke(Machine* machine) {
 
     // Multiple statements - push auxiliary continuation and first statement
     // ExecNextStatementK will handle the remaining statements
-    auto* next_k = machine->heap->allocate<ExecNextStatementK>(statements, 1);
+    auto* next_k = machine->heap->allocate_ephemeral<ExecNextStatementK>(statements, 1);
     machine->push_kont(next_k);
     machine->push_kont(statements[0]);
 
@@ -2155,7 +2155,7 @@ void ExecNextStatementK::invoke(Machine* machine) {
     }
 
     // More statements to execute - push continuation for next iteration
-    auto* next_k = machine->heap->allocate<ExecNextStatementK>(statements, next_index + 1);
+    auto* next_k = machine->heap->allocate_ephemeral<ExecNextStatementK>(statements, next_index + 1);
     machine->push_kont(next_k);
     machine->push_kont(statements[next_index]);
 
@@ -2175,7 +2175,7 @@ void ExecNextStatementK::mark(Heap* heap) {
 // IfK implementation - evaluate condition, then select branch
 void IfK::invoke(Machine* machine) {
     // Push auxiliary continuation to select branch after condition is evaluated
-    auto* select_k = machine->heap->allocate<SelectBranchK>(then_branch, else_branch);
+    auto* select_k = machine->heap->allocate_ephemeral<SelectBranchK>(then_branch, else_branch);
     machine->push_kont(select_k);
 
     // Push condition to evaluate
@@ -2237,11 +2237,11 @@ void SelectBranchK::mark(Heap* heap) {
 // WhileK implementation - check condition and loop
 void WhileK::invoke(Machine* machine) {
     // Phase 2.2: Push CatchBreakK to establish loop boundary for :Leave
-    CatchBreakK* catch_k = machine->heap->allocate<CatchBreakK>();
+    CatchBreakK* catch_k = machine->heap->allocate_ephemeral<CatchBreakK>();
     machine->push_kont(catch_k);
 
     // Push auxiliary continuation to check condition
-    auto* check_k = machine->heap->allocate<CheckWhileCondK>(condition, body);
+    auto* check_k = machine->heap->allocate_ephemeral<CheckWhileCondK>(condition, body);
     machine->push_kont(check_k);
 
     // Push condition to evaluate first
@@ -2282,14 +2282,14 @@ void CheckWhileCondK::invoke(Machine* machine) {
     if (is_true) {
         // Condition is true - execute body then check again
         // Push ourselves back to check after body executes
-        auto* check_k = machine->heap->allocate<CheckWhileCondK>(condition, body);
+        auto* check_k = machine->heap->allocate_ephemeral<CheckWhileCondK>(condition, body);
         machine->push_kont(check_k);
 
         // Push condition to evaluate after body
         machine->push_kont(condition);
 
         // Push CatchContinueK to handle :Continue - it will restart the loop
-        auto* catch_continue = machine->heap->allocate<CatchContinueK>(check_k);
+        auto* catch_continue = machine->heap->allocate_ephemeral<CatchContinueK>(check_k);
         machine->push_kont(catch_continue);
 
         // Push body to execute now
@@ -2309,11 +2309,11 @@ void CheckWhileCondK::mark(Heap* heap) {
 // ForK implementation - evaluate array and start iteration
 void ForK::invoke(Machine* machine) {
     // Phase 2.2: Push CatchBreakK to establish loop boundary for :Leave
-    CatchBreakK* catch_k = machine->heap->allocate<CatchBreakK>();
+    CatchBreakK* catch_k = machine->heap->allocate_ephemeral<CatchBreakK>();
     machine->push_kont(catch_k);
 
     // Push auxiliary continuation to start iteration after array is evaluated
-    auto* iterate_k = machine->heap->allocate<ForIterateK>(var_name, nullptr, body, 0);
+    auto* iterate_k = machine->heap->allocate_ephemeral<ForIterateK>(var_name, nullptr, body, 0);
     machine->push_kont(iterate_k);
 
     // Push array expression to evaluate
@@ -2377,11 +2377,11 @@ void ForIterateK::invoke(Machine* machine) {
     machine->env->define(var_name, element);
 
     // Push continuation for next iteration
-    auto* next_k = machine->heap->allocate<ForIterateK>(var_name, array, body, index + 1);
+    auto* next_k = machine->heap->allocate_ephemeral<ForIterateK>(var_name, array, body, index + 1);
     machine->push_kont(next_k);
 
     // Push CatchContinueK to handle :Continue - it will skip to next iteration
-    auto* catch_continue = machine->heap->allocate<CatchContinueK>(next_k);
+    auto* catch_continue = machine->heap->allocate_ephemeral<CatchContinueK>(next_k);
     machine->push_kont(catch_continue);
 
     // Push body to execute
@@ -2409,7 +2409,7 @@ void LeaveK::invoke(Machine* machine) {
     );
 
     // Push PropagateCompletionK to unwind the stack
-    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(break_comp);
+    PropagateCompletionK* prop = machine->heap->allocate_ephemeral<PropagateCompletionK>(break_comp);
     machine->push_kont(prop);
 }
 
@@ -2430,7 +2430,7 @@ void ContinueK::invoke(Machine* machine) {
     );
 
     // Push PropagateCompletionK to unwind the stack
-    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(continue_comp);
+    PropagateCompletionK* prop = machine->heap->allocate_ephemeral<PropagateCompletionK>(continue_comp);
     machine->push_kont(prop);
 }
 
@@ -2446,7 +2446,7 @@ void ReturnK::invoke(Machine* machine) {
     if (value_expr) {
         // Need to evaluate the value expression first
         // Push CreateReturnK to handle the result
-        CreateReturnK* create_k = machine->heap->allocate<CreateReturnK>();
+        CreateReturnK* create_k = machine->heap->allocate_ephemeral<CreateReturnK>();
         machine->push_kont(create_k);
 
         // Evaluate the value expression
@@ -2464,7 +2464,7 @@ void ReturnK::invoke(Machine* machine) {
         );
 
         // Push PropagateCompletionK to unwind the stack
-        PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(return_comp);
+        PropagateCompletionK* prop = machine->heap->allocate_ephemeral<PropagateCompletionK>(return_comp);
         machine->push_kont(prop);
     }
 }
@@ -2485,7 +2485,7 @@ void CreateReturnK::invoke(Machine* machine) {
     );
 
     // Push PropagateCompletionK to unwind the stack
-    PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(return_comp);
+    PropagateCompletionK* prop = machine->heap->allocate_ephemeral<PropagateCompletionK>(return_comp);
     machine->push_kont(prop);
 }
 
@@ -2501,7 +2501,7 @@ void BranchK::invoke(Machine* machine) {
     Value* saved_result = machine->result;
 
     // Push CheckBranchK to process the result
-    CheckBranchK* check_k = machine->heap->allocate<CheckBranchK>(saved_result);
+    CheckBranchK* check_k = machine->heap->allocate_ephemeral<CheckBranchK>(saved_result);
     machine->push_kont(check_k);
 
     // Evaluate the target expression
@@ -2544,7 +2544,7 @@ void CheckBranchK::invoke(Machine* machine) {
             nullptr
         );
 
-        PropagateCompletionK* prop = machine->heap->allocate<PropagateCompletionK>(return_comp);
+        PropagateCompletionK* prop = machine->heap->allocate_ephemeral<PropagateCompletionK>(return_comp);
         machine->push_kont(prop);
     } else {
         // Non-zero, non-empty target - this would be a line number branch
@@ -2596,16 +2596,16 @@ void FunctionCallK::invoke(Machine* machine) {
     machine->env = call_env;
 
     // Push restore environment continuation (executes after function returns)
-    RestoreEnvK* restore_k = machine->heap->allocate<RestoreEnvK>(saved_env);
+    RestoreEnvK* restore_k = machine->heap->allocate_ephemeral<RestoreEnvK>(saved_env);
     machine->push_kont(restore_k);
 
     // Push finalization to resolve any G_PRIME curries BEFORE environment restoration
     // This ensures closures created inside the dfn execute while their environment is active
-    PerformFinalizeK* finalize_k = machine->heap->allocate<PerformFinalizeK>(true);
+    PerformFinalizeK* finalize_k = machine->heap->allocate_ephemeral<PerformFinalizeK>(true);
     machine->push_kont(finalize_k);
 
     // Push CatchReturnK to establish function boundary for →0 and :Return
-    CatchReturnK* catch_k = machine->heap->allocate<CatchReturnK>(machine->string_pool.intern("dfn"));
+    CatchReturnK* catch_k = machine->heap->allocate_ephemeral<CatchReturnK>(machine->string_pool.intern("dfn"));
     machine->push_kont(catch_k);
 
     // Execute function body
@@ -2640,7 +2640,7 @@ void RestoreEnvK::mark(Heap* heap) {
 void DerivedOperatorK::invoke(Machine* machine) {
     // Push continuation to apply operator after operand is evaluated
     // Pass axis_cont if present (for f/[k] syntax)
-    machine->push_kont(machine->heap->allocate<ApplyDerivedOperatorK>(op_name, axis_cont));
+    machine->push_kont(machine->heap->allocate_ephemeral<ApplyDerivedOperatorK>(op_name, axis_cont));
     machine->push_kont(operand_cont);
 }
 
@@ -2670,7 +2670,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
 
         // If axis is specified (f OP[k] syntax), evaluate it and create OPERATOR_CURRY
         if (axis_cont) {
-            machine->push_kont(machine->heap->allocate<ApplyAxisK>(derived));
+            machine->push_kont(machine->heap->allocate_ephemeral<ApplyAxisK>(derived));
             machine->push_kont(axis_cont);
         } else {
             machine->result = derived;
@@ -2698,7 +2698,7 @@ void ApplyDerivedOperatorK::invoke(Machine* machine) {
 
         // If axis is specified (f/[k] syntax), evaluate it and create OPERATOR_CURRY
         if (axis_cont) {
-            machine->push_kont(machine->heap->allocate<ApplyAxisK>(derived));
+            machine->push_kont(machine->heap->allocate_ephemeral<ApplyAxisK>(derived));
             machine->push_kont(axis_cont);
         } else {
             machine->result = derived;
@@ -2910,13 +2910,13 @@ void CellIterK::invoke(Machine* machine) {
         }
 
         // Push collector continuation, then dispatch function
-        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<CellCollectK>(this));
         if (left_cell == nullptr) {
             // Monadic - apply immediately without currying
             apply_function_immediate(machine, fn, nullptr, right_cell);
         } else {
             // Dyadic - use dispatch (may curry if needed)
-            machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, left_cell, right_cell));
+            machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(fn, left_cell, right_cell));
         }
 
     } else if (mode == CellIterMode::FOLD_RIGHT) {
@@ -2939,8 +2939,8 @@ void CellIterK::invoke(Machine* machine) {
         // Apply: element f accumulator
         Value* element = extract_cell(machine, rhs, right_rank, current_cell);
 
-        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
-        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, element, accumulator));
+        machine->push_kont(machine->heap->allocate_ephemeral<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(fn, element, accumulator));
 
     } else if (mode == CellIterMode::SCAN_RIGHT) {
         // Backward iteration for scan
@@ -2984,8 +2984,8 @@ void CellIterK::invoke(Machine* machine) {
         // Apply: element f accumulator
         Value* element = extract_cell(machine, rhs, right_rank, current_cell);
 
-        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
-        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, element, accumulator));
+        machine->push_kont(machine->heap->allocate_ephemeral<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(fn, element, accumulator));
 
     } else if (mode == CellIterMode::SCAN_LEFT) {
         // Forward iteration for left-to-right scan (strand scan)
@@ -3016,8 +3016,8 @@ void CellIterK::invoke(Machine* machine) {
         // Apply: accumulator f element (left-to-right)
         Value* element = extract_cell(machine, rhs, right_rank, current_cell);
 
-        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
-        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, accumulator, element));
+        machine->push_kont(machine->heap->allocate_ephemeral<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(fn, accumulator, element));
 
     } else if (mode == CellIterMode::OUTER) {
         // Cartesian product iteration for outer product (ISO 9.3.1)
@@ -3137,8 +3137,8 @@ void CellIterK::invoke(Machine* machine) {
         }
 
         // Push collector and dispatch function dyadically
-        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
-        machine->push_kont(machine->heap->allocate<DispatchFunctionK>(fn, left_cell, right_cell));
+        machine->push_kont(machine->heap->allocate_ephemeral<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<DispatchFunctionK>(fn, left_cell, right_cell));
     } else if (mode == CellIterMode::INNER) {
         // Inner product: extract fibers, apply g element-wise, reduce with f
         // Result shape is (¯1↓⍴A),1↓⍴B - stored in orig_rows/orig_cols or orig_ndarray_shape
@@ -3272,8 +3272,8 @@ void CellIterK::invoke(Machine* machine) {
         }
 
         // Push: collector -> ReduceResultK(f) -> CellIterK COLLECT(g, lhs_fiber, rhs_fiber)
-        machine->push_kont(machine->heap->allocate<CellCollectK>(this));
-        machine->push_kont(machine->heap->allocate<ReduceResultK>(fn));
+        machine->push_kont(machine->heap->allocate_ephemeral<CellCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<ReduceResultK>(fn));
         machine->push_kont(machine->heap->allocate<CellIterK>(
             g_fn, lhs_fiber, rhs_fiber, 0, 0, common_dim,
             CellIterMode::COLLECT, common_dim, 1, true));
@@ -3541,7 +3541,7 @@ void FiberReduceK::invoke(Machine* machine) {
         window_val = machine->heap->allocate_strand(std::move(elements));
 
         // Reduce this window
-        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<FiberReduceCollectK>(this));
         machine->push_kont(machine->heap->allocate<CellIterK>(
             fn, nullptr, window_val, 0, 0, win_len,
             CellIterMode::FOLD_RIGHT, win_len, 1, true, false, true));
@@ -3562,7 +3562,7 @@ void FiberReduceK::invoke(Machine* machine) {
         }
         window_val = machine->heap->allocate_vector(window);
 
-        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<FiberReduceCollectK>(this));
         machine->push_kont(machine->heap->allocate<CellIterK>(
             fn, nullptr, window_val, 0, 0, win_len,
             CellIterMode::FOLD_RIGHT, win_len, 1, true));
@@ -3595,7 +3595,7 @@ void FiberReduceK::invoke(Machine* machine) {
         }
         window_val = machine->heap->allocate_vector(window);
 
-        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<FiberReduceCollectK>(this));
         machine->push_kont(machine->heap->allocate<CellIterK>(
             fn, nullptr, window_val, 0, 0, win_len,
             CellIterMode::FOLD_RIGHT, win_len, 1, true));
@@ -3620,7 +3620,7 @@ void FiberReduceK::invoke(Machine* machine) {
         }
         window_val = machine->heap->allocate_vector(window);
 
-        machine->push_kont(machine->heap->allocate<FiberReduceCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<FiberReduceCollectK>(this));
         machine->push_kont(machine->heap->allocate<CellIterK>(
             fn, nullptr, window_val, 0, 0, win_len,
             CellIterMode::FOLD_RIGHT, win_len, 1, true));
@@ -3679,7 +3679,7 @@ void PrefixScanK::invoke(Machine* machine) {
     Value* prefix_vec = machine->heap->allocate_vector(prefix);
 
     // Push collector, then CellIterK FOLD_RIGHT to reduce this prefix
-    machine->push_kont(machine->heap->allocate<PrefixScanCollectK>(this));
+    machine->push_kont(machine->heap->allocate_ephemeral<PrefixScanCollectK>(this));
     machine->push_kont(machine->heap->allocate<CellIterK>(
         fn, nullptr, prefix_vec, 0, 0, current_prefix,
         CellIterMode::FOLD_RIGHT, current_prefix, 1, true));
@@ -3837,7 +3837,7 @@ void RowScanK::invoke(Machine* machine) {
         Value* fiber_vec = machine->heap->allocate_vector(fiber);
 
         // Push collector, then PrefixScanK for this fiber
-        machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<RowScanCollectK>(this));
         if (ax_len <= 1) {
             machine->result = fiber_vec;
             return;
@@ -3854,7 +3854,7 @@ void RowScanK::invoke(Machine* machine) {
         Eigen::VectorXd row = mat->row(current_pos).transpose();
         Value* row_vec = machine->heap->allocate_vector(row);
 
-        machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<RowScanCollectK>(this));
         int row_len = row.rows();
         if (row_len <= 1) {
             machine->result = row_vec;
@@ -3866,7 +3866,7 @@ void RowScanK::invoke(Machine* machine) {
         Eigen::VectorXd col = mat->col(current_pos);
         Value* col_vec = machine->heap->allocate_vector(col);
 
-        machine->push_kont(machine->heap->allocate<RowScanCollectK>(this));
+        machine->push_kont(machine->heap->allocate_ephemeral<RowScanCollectK>(this));
         int col_len = col.rows();
         if (col_len <= 1) {
             machine->result = col_vec;
@@ -3940,7 +3940,7 @@ void ReduceResultK::mark(Heap* heap) {
 
 void IndexedAssignK::invoke(Machine* machine) {
     // Evaluate value first (APL right-to-left), then index
-    machine->push_kont(machine->heap->allocate<IndexedAssignIndexK>(var_name, nullptr, index_cont));
+    machine->push_kont(machine->heap->allocate_ephemeral<IndexedAssignIndexK>(var_name, nullptr, index_cont));
     machine->push_kont(value_cont);
 }
 
@@ -3953,7 +3953,7 @@ void IndexedAssignK::mark(Heap* heap) {
 void IndexedAssignIndexK::invoke(Machine* machine) {
     // Value just evaluated, save it and evaluate index
     value_val = machine->result;
-    machine->push_kont(machine->heap->allocate<PerformIndexedAssignK>(var_name, value_val, nullptr));
+    machine->push_kont(machine->heap->allocate_ephemeral<PerformIndexedAssignK>(var_name, value_val, nullptr));
     machine->push_kont(index_cont);
 }
 

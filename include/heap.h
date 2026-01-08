@@ -21,12 +21,19 @@ class Heap {
 private:
     Machine* machine;  // Back-pointer to owning machine (for GC)
 
+    // Arena for ephemeral continuations (evaluation scaffolding)
+    // These are reset after each top-level expression completes
+    static constexpr size_t ARENA_SIZE = 65536;  // 64KB
+    alignas(64) char continuation_arena_[ARENA_SIZE];
+    char* arena_next_ = continuation_arena_;
+    size_t arena_allocations_ = 0;  // Count for statistics
+
 public:
     // Generational zones for Values
     std::vector<Value*> young_objects;      // Short-lived allocations
     std::vector<Value*> old_objects;        // Long-lived objects
 
-    // Generational zones for Continuations
+    // Generational zones for Continuations (persistent only - closures, parsed bodies)
     std::vector<Continuation*> young_continuations;  // Short-lived continuations
     std::vector<Continuation*> old_continuations;    // Long-lived continuations
 
@@ -109,6 +116,7 @@ public:
     Value* allocate_curried_fn(Value* fn, Value* first_arg, Value::CurryType curry_type, Value* axis = nullptr);
 
     // Template-based allocation interface (unified allocation)
+    // Use this for PERSISTENT objects (closures, parsed function bodies)
     template<typename T, typename... Args>
     T* allocate(Args&&... args) {
         T* obj = new T(std::forward<Args>(args)...);
@@ -127,6 +135,48 @@ public:
             return obj;
         }
     }
+
+    // Arena-based allocation for EPHEMERAL continuations (evaluation scaffolding)
+    // These are not GC-tracked and are reset wholesale after each expression
+    template<typename T, typename... Args>
+    T* allocate_ephemeral(Args&&... args) {
+        static_assert(std::is_base_of<Continuation, T>::value,
+                      "allocate_ephemeral is only for Continuation types");
+
+        // Align to 8 bytes for pointer safety
+        constexpr size_t alignment = alignof(T) > 8 ? alignof(T) : 8;
+        char* aligned = reinterpret_cast<char*>(
+            (reinterpret_cast<uintptr_t>(arena_next_) + alignment - 1) & ~(alignment - 1));
+
+        size_t space_needed = sizeof(T);
+        char* arena_end = continuation_arena_ + ARENA_SIZE;
+
+        if (aligned + space_needed > arena_end) {
+            // Arena full - fall back to regular GC-tracked allocation
+            // This shouldn't happen often with 64KB arena
+            return allocate<T>(std::forward<Args>(args)...);
+        }
+
+        // Bump allocation - O(1)
+        arena_next_ = aligned + space_needed;
+        arena_allocations_++;
+
+        // Placement new - construct in arena memory
+        return new (aligned) T(std::forward<Args>(args)...);
+    }
+
+    // Reset the ephemeral arena after expression completes
+    // O(1) operation - just resets the pointer
+    void reset_arena() {
+        arena_next_ = continuation_arena_;
+        arena_allocations_ = 0;
+    }
+
+    // Arena statistics
+    size_t arena_used() const {
+        return static_cast<size_t>(arena_next_ - continuation_arena_);
+    }
+    size_t arena_allocation_count() const { return arena_allocations_; }
 
     // Garbage collection
     void minor_gc(Machine* machine);    // Collect young generation

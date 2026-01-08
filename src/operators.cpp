@@ -140,7 +140,7 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
     // Special case: both scalars or one-element vectors
     if (lhs_is_scalar_like && rhs_is_scalar_like) {
         // Scalar inner product: just apply g then return (no reduction needed)
-        m->push_kont(m->heap->allocate<DispatchFunctionK>(g, lhs, rhs));
+        m->push_kont(m->heap->allocate_ephemeral<DispatchFunctionK>(g, lhs, rhs));
         return;
     }
 
@@ -192,7 +192,7 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
         }
 
         // Strand inner product: f/ (lhs g¨ rhs) - apply g element-wise, then reduce with f
-        m->push_kont(m->heap->allocate<ReduceResultK>(f));
+        m->push_kont(m->heap->allocate_ephemeral<ReduceResultK>(f));
         m->push_kont(m->heap->allocate<CellIterK>(
             g, lhs, rhs, 0, 0, n,
             CellIterMode::COLLECT, n, 1, true, false, true));  // to_strand=true for strand result
@@ -341,7 +341,7 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
 
         // Vector inner product: f/ (lhs g rhs)
         // Push ReduceResultK(f), then dyadic CellIterK(g) for element-wise
-        m->push_kont(m->heap->allocate<ReduceResultK>(f));
+        m->push_kont(m->heap->allocate_ephemeral<ReduceResultK>(f));
         m->push_kont(m->heap->allocate<CellIterK>(
             g, lhs, rhs, 0, 0, n,
             CellIterMode::COLLECT, n, 1, true));
@@ -469,7 +469,7 @@ void op_each_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, Val
 
     // Both scalars: just apply function
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->push_kont(m->heap->allocate<DispatchFunctionK>(f, lhs, rhs));
+        m->push_kont(m->heap->allocate_ephemeral<DispatchFunctionK>(f, lhs, rhs));
         return;
     }
 
@@ -647,7 +647,7 @@ void op_commute(Machine* m, Value* axis, Value* f, Value* omega) {
 
     // Use DispatchFunctionK for all function types to get proper pervasive dispatch
     // This handles primitives, curried functions, derived operators, and closures
-    m->push_kont(m->heap->allocate<DispatchFunctionK>(f, omega, omega));
+    m->push_kont(m->heap->allocate_ephemeral<DispatchFunctionK>(f, omega, omega));
 }
 
 // ========================================================================
@@ -672,7 +672,7 @@ void op_commute_dyadic(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, 
     // This handles primitives, curried functions, derived operators, closures,
     // and pervasive operations on strands and NDARRAYs
     // Commute swaps: A f⍨ B → B f A
-    m->push_kont(m->heap->allocate<DispatchFunctionK>(f, rhs, lhs));
+    m->push_kont(m->heap->allocate_ephemeral<DispatchFunctionK>(f, rhs, lhs));
 }
 
 // ========================================================================
@@ -2116,7 +2116,7 @@ void op_rank(Machine* m, Value* axis, Value* lhs, Value* f, Value* rank_spec, Va
 
         if (num_cells == 1) {
             // Single cell each: just apply f dyadically
-            m->push_kont(m->heap->allocate<DispatchFunctionK>(f, lhs, rhs));
+            m->push_kont(m->heap->allocate_ephemeral<DispatchFunctionK>(f, lhs, rhs));
             return;
         }
 
