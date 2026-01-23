@@ -27,3 +27,13 @@ Thumbs.db
 
 # Test outputs
 Testing/
+
+# Design/planning documents (keep README.md)
+*.md
+!README.md
+
+# PDF references
+*.pdf
+
+# REPL history
+.apl_history
