@@ -3496,3 +3496,155 @@ TEST_F(ArithmeticTest, LessEqualRejectsFunctionArgument) {
 TEST_F(ArithmeticTest, GreaterEqualRejectsFunctionArgument) {
     EXPECT_THROW(machine->eval("1≥+"), APLError);
 }
+
+// ========================================================================
+// Circular function codes 9-12 and -9 to -12 (real domain)
+// ISO 13751 §7.1.14
+// ========================================================================
+
+TEST_F(ArithmeticTest, Circular9RealPart) {
+    // 9○B = real part of B (identity for reals)
+    Value* r = machine->eval("9○3.5");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 3.5);
+}
+
+TEST_F(ArithmeticTest, Circular9Negative) {
+    Value* r = machine->eval("9○¯2.7");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), -2.7);
+}
+
+TEST_F(ArithmeticTest, Circular10Magnitude) {
+    // 10○B = |B| (magnitude for reals = absolute value)
+    Value* r = machine->eval("10○¯4.5");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 4.5);
+}
+
+TEST_F(ArithmeticTest, Circular10Positive) {
+    Value* r = machine->eval("10○7");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 7.0);
+}
+
+TEST_F(ArithmeticTest, Circular11ImaginaryPart) {
+    // 11○B = imaginary part of B (0 for reals)
+    Value* r = machine->eval("11○5.5");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);
+}
+
+TEST_F(ArithmeticTest, Circular12PhasePositive) {
+    // 12○B = phase angle: 0 for B≥0, π for B<0
+    Value* r = machine->eval("12○5");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);
+}
+
+TEST_F(ArithmeticTest, Circular12PhaseNegative) {
+    Value* r = machine->eval("12○¯3");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_NEAR(r->as_scalar(), M_PI, 1e-12);
+}
+
+TEST_F(ArithmeticTest, Circular12PhaseZero) {
+    Value* r = machine->eval("12○0");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);
+}
+
+TEST_F(ArithmeticTest, CircularNeg9Identity) {
+    // ¯9○B = B (identity for reals)
+    Value* r = machine->eval("¯9○3.5");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 3.5);
+}
+
+TEST_F(ArithmeticTest, CircularNeg10Conjugate) {
+    // ¯10○B = conjugate of B (identity for reals)
+    Value* r = machine->eval("¯10○4.2");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 4.2);
+}
+
+TEST_F(ArithmeticTest, CircularNeg11RequiresComplex) {
+    // ¯11○B = B×i (requires complex)
+    EXPECT_THROW(machine->eval("¯11○1"), APLError);
+}
+
+TEST_F(ArithmeticTest, CircularNeg12RequiresComplex) {
+    // ¯12○B = e^(iB) (requires complex)
+    EXPECT_THROW(machine->eval("¯12○1"), APLError);
+}
+
+TEST_F(ArithmeticTest, CircularCodesOnVector) {
+    // Verify circular codes work pervasively on vectors
+    Value* r = machine->eval("9○1 2 3");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(2, 0), 3.0);
+}
+
+// ========================================================================
+// Dyadic logarithm domain errors in arrays
+// ISO 13751 §7.1.11
+// ========================================================================
+
+TEST_F(ArithmeticTest, LogDomainErrorBaseOne) {
+    // Base 1 logarithm is undefined (division by zero in log)
+    EXPECT_THROW(machine->eval("1⍟5"), APLError);
+}
+
+TEST_F(ArithmeticTest, LogDomainErrorNegativeArg) {
+    // Log of negative number requires complex (DOMAIN ERROR)
+    EXPECT_THROW(machine->eval("10⍟¯5"), APLError);
+}
+
+TEST_F(ArithmeticTest, LogDomainErrorNegativeBase) {
+    // Negative base requires complex
+    EXPECT_THROW(machine->eval("¯2⍟5"), APLError);
+}
+
+TEST_F(ArithmeticTest, LogDomainErrorZeroBase) {
+    // 0⍟B - base 0 is invalid
+    EXPECT_THROW(machine->eval("0⍟5"), APLError);
+}
+
+TEST_F(ArithmeticTest, LogDomainErrorZeroArg) {
+    // A⍟0 - log of 0 is -∞, should signal DOMAIN ERROR
+    EXPECT_THROW(machine->eval("10⍟0"), APLError);
+}
+
+TEST_F(ArithmeticTest, LogDomainErrorArrayNegative) {
+    // Negative value in array should cause DOMAIN ERROR
+    EXPECT_THROW(machine->eval("10⍟1 2 ¯3"), APLError);
+}
+
+TEST_F(ArithmeticTest, LogDomainErrorScalarArrayBaseOne) {
+    // Base 1 with array right arg
+    EXPECT_THROW(machine->eval("1⍟1 2 3"), APLError);
+}
+
+TEST_F(ArithmeticTest, LogDomainErrorArrayBaseOne) {
+    // Array containing base 1
+    EXPECT_THROW(machine->eval("1 1 2⍟1 2 3"), APLError);
+}
+
+// ========================================================================
+// Maximum/Minimum - basic correctness
+// ISO 13751 §7.2.5-6: plain greater-than comparison (CT NOT referenced per §12.2.1)
+// ========================================================================
+
+TEST_F(ArithmeticTest, MaximumReturnsLarger) {
+    Value* r = machine->eval("1.5⌈1.0");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.5);
+}
+
+TEST_F(ArithmeticTest, MinimumReturnsSmaller) {
+    Value* r = machine->eval("1.5⌊1.0");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}

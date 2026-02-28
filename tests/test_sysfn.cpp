@@ -870,6 +870,105 @@ TEST_F(SysFnTest, TSChangesOverTime) {
     EXPECT_NE(ts2, nullptr);
 }
 
+// ============================================================================
+// ⎕PP Upper Bound Tests - ISO 13751 §12.2.3
+// ============================================================================
+
+TEST_F(SysFnTest, QuadPPUpperBoundValid) {
+    // ⎕PP←17 should succeed (our max)
+    machine->eval("⎕PP←17");
+    Value* r = machine->eval("⎕PP");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 17.0);
+}
+
+TEST_F(SysFnTest, QuadPPUpperBoundExceeded) {
+    // ⎕PP←18 should signal error
+    EXPECT_THROW(machine->eval("⎕PP←18"), APLError);
+}
+
+TEST_F(SysFnTest, QuadPPNegativeError) {
+    EXPECT_THROW(machine->eval("⎕PP←¯1"), APLError);
+}
+
+TEST_F(SysFnTest, QuadPPNonIntegerError) {
+    EXPECT_THROW(machine->eval("⎕PP←3.5"), APLError);
+}
+
+// ============================================================================
+// ⎕NC returning classes 5 and 6 - ISO 13751 §11.5.2
+// ============================================================================
+
+TEST_F(SysFnTest, QuadNCSystemVariable) {
+    // ⎕NC '⎕IO' should return 5 (system-variable)
+    Value* r = machine->eval("⎕NC '⎕IO'");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 5.0);
+}
+
+TEST_F(SysFnTest, QuadNCSystemVariablePP) {
+    Value* r = machine->eval("⎕NC '⎕PP'");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 5.0);
+}
+
+TEST_F(SysFnTest, QuadNCSystemVariableCT) {
+    Value* r = machine->eval("⎕NC '⎕CT'");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 5.0);
+}
+
+TEST_F(SysFnTest, QuadNCSystemFunction) {
+    // ⎕NC '⎕DL' should return 6 (system-function)
+    Value* r = machine->eval("⎕NC '⎕DL'");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 6.0);
+}
+
+TEST_F(SysFnTest, QuadNCSystemFunctionEA) {
+    Value* r = machine->eval("⎕NC '⎕EA'");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 6.0);
+}
+
+TEST_F(SysFnTest, QuadNCSystemFunctionNL) {
+    Value* r = machine->eval("⎕NC '⎕NL'");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 6.0);
+}
+
+TEST_F(SysFnTest, QuadNCUnknownSystemName) {
+    // ⎕NC '⎕BOGUS' should return 0 (undefined)
+    Value* r = machine->eval("⎕NC '⎕BOGUS'");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);
+}
+
+// ============================================================================
+// ⎕LC inside nested function calls - ISO 13751 §11.4.3
+// ============================================================================
+
+TEST_F(SysFnTest, QuadLCInsideDfn) {
+    // ⎕LC inside a dfn should report line info
+    Value* r = machine->eval("{⎕LC}0");
+    ASSERT_NE(r, nullptr);
+    // Result should be a vector (possibly empty if no line tracking in dfns)
+}
+
+TEST_F(SysFnTest, QuadLCInsideNestedDfn) {
+    // ⎕LC inside nested dfn calls
+    Value* r = machine->eval("{({⎕LC}⍵)}0");
+    ASSERT_NE(r, nullptr);
+}
+
+TEST_F(SysFnTest, QuadLCShapeAlwaysVector) {
+    // ⎕LC should always return a vector (shape of shape is 1-element)
+    Value* r = machine->eval("⍴⍴⎕LC");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 1);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(0, 0), 1.0);
+}
+
 // Main function for Google Test
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);

@@ -1039,18 +1039,12 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Maximum (⌈) - dyadic
-// ISO 13751 7.2.3: tolerant maximum — if tolerantly equal, return B
-static inline double tolerant_max(double a, double b, double ct) {
-    if (tolerant_eq(a, b, ct)) return b;
-    return (a > b) ? a : b;
-}
-
+// ISO 13751 §7.2.5: plain greater-than comparison (CT not referenced per §12.2.1)
 void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
-    double ct = m->ct;
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(tolerant_max(lhs->data.scalar, rhs->data.scalar, ct));
+        m->result = m->heap->allocate_scalar(std::max(lhs->data.scalar, rhs->data.scalar));
         return;
     }
 
@@ -1067,7 +1061,7 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = tolerant_max(a, rmat->data()[i], ct);
+            result(i) = std::max(a, rmat->data()[i]);
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1086,7 +1080,7 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = tolerant_max(lmat->data()[i], b, ct);
+            result(i) = std::max(lmat->data()[i], b);
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1110,7 +1104,7 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = tolerant_max(lmat->data()[i], rmat->data()[i], ct);
+        result(i) = std::max(lmat->data()[i], rmat->data()[i]);
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {
@@ -1120,19 +1114,13 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 }
 
-// ISO 13751 7.2.3: tolerant minimum — if tolerantly equal, return B
-static inline double tolerant_min(double a, double b, double ct) {
-    if (tolerant_eq(a, b, ct)) return b;
-    return (a < b) ? a : b;
-}
-
 // Minimum (⌊) - dyadic
+// ISO 13751 §7.2.6: plain greater-than comparison (CT not referenced per §12.2.1)
 void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
-    double ct = m->ct;
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(tolerant_min(lhs->data.scalar, rhs->data.scalar, ct));
+        m->result = m->heap->allocate_scalar(std::min(lhs->data.scalar, rhs->data.scalar));
         return;
     }
 
@@ -1149,7 +1137,7 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = tolerant_min(a, rmat->data()[i], ct);
+            result(i) = std::min(a, rmat->data()[i]);
         }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1168,7 +1156,7 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = tolerant_min(lmat->data()[i], b, ct);
+            result(i) = std::min(lmat->data()[i], b);
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1192,7 +1180,7 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = tolerant_min(lmat->data()[i], rmat->data()[i], ct);
+        result(i) = std::min(lmat->data()[i], rmat->data()[i]);
     }
 
     if (lhs->is_vector() && rhs->is_vector()) {

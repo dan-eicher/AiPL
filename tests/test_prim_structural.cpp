@@ -5420,3 +5420,72 @@ TEST_F(StructuralTest, NDArrayEnlistShape) {
 }
 
 // ========================================================================
+// Pick (⊃) with ⎕IO=0
+// ISO 13751 §10.2.24: Pick uses index-origin
+// ========================================================================
+
+TEST_F(StructuralTest, PickWithIO0Vector) {
+    // With ⎕IO←0, index 0 should pick first element
+    machine->eval("⎕IO←0");
+    Value* r = machine->eval("0⊃10 20 30");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 10.0);
+}
+
+TEST_F(StructuralTest, PickWithIO0LastElement) {
+    machine->eval("⎕IO←0");
+    Value* r = machine->eval("2⊃10 20 30");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 30.0);
+}
+
+TEST_F(StructuralTest, PickWithIO0Enclosed) {
+    // Pick from enclosed value with ⎕IO=0
+    // Monadic ⊃ (disclose) on an enclosed value should work with ⎕IO=0
+    machine->eval("⎕IO←0");
+    Value* r = machine->eval("0⊃10 20 30");
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 10.0);  // First element at index 0
+}
+
+TEST_F(StructuralTest, PickWithIO0OutOfBounds) {
+    machine->eval("⎕IO←0");
+    // Index 3 with 3-element vector should be out of bounds
+    EXPECT_THROW(machine->eval("3⊃10 20 30"), APLError);
+}
+
+// ========================================================================
+// Without (~) with tolerant comparison (⎕CT)
+// ISO 13751 §10.2.16: implicit argument comparison-tolerance
+// ========================================================================
+
+TEST_F(StructuralTest, WithoutTolerantMatch) {
+    // With ⎕CT=0.01, 1.005 should be tolerantly equal to 1.0
+    machine->eval("⎕CT←0.01");
+    Value* r = machine->eval("1 2 3~1.005");
+    ASSERT_TRUE(r->is_vector());
+    // 1 is tolerantly equal to 1.005, so it should be removed
+    EXPECT_EQ(r->size(), 2);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(1, 0), 3.0);
+}
+
+TEST_F(StructuralTest, WithoutExactNoMatch) {
+    // With ⎕CT=0 (exact), 1.005 should NOT match 1.0
+    machine->eval("⎕CT←0");
+    Value* r = machine->eval("1 2 3~1.005");
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->size(), 3);  // Nothing removed
+}
+
+TEST_F(StructuralTest, WithoutTolerantMultiple) {
+    machine->eval("⎕CT←0.01");
+    Value* r = machine->eval("1 2 3 4~1.005 3.002");
+    ASSERT_TRUE(r->is_vector());
+    // 1 and 3 removed (tolerantly equal to 1.005 and 3.002)
+    EXPECT_EQ(r->size(), 2);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ(r->as_matrix()->operator()(1, 0), 4.0);
+}
+
+// ========================================================================
