@@ -464,6 +464,7 @@ static double power_scalar(Machine* m, double base, double exp) {
     // ISO 13751 7.2.7: If A is zero and real-part of B is negative, signal domain-error
     if (base == 0.0 && exp < 0.0) {
         m->throw_error("DOMAIN ERROR: 0 raised to negative power", nullptr, 11, 0);
+        return 0.0;  // unreachable; throw_error longjmps
     }
     return std::pow(base, exp);
 }
@@ -1912,8 +1913,21 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument", nullptr, 11, 0);
             return;
         }
+        double base = lhs->data.scalar;
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        double ln_base = std::log(lhs->data.scalar);
+        // Check base domain once (scalar extension)
+        if (base <= 0.0 || base == 1.0) {
+            m->throw_error("DOMAIN ERROR: invalid logarithm base", nullptr, 11, 0);
+            return;
+        }
+        // Check all values are positive
+        for (int i = 0; i < rmat->size(); ++i) {
+            if (rmat->data()[i] <= 0.0) {
+                m->throw_error("DOMAIN ERROR: logarithm of non-positive number", nullptr, 11, 0);
+                return;
+            }
+        }
+        double ln_base = std::log(base);
         Eigen::MatrixXd result = rmat->array().log() / ln_base;
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -1928,8 +1942,20 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument", nullptr, 11, 0);
             return;
         }
+        double val = rhs->data.scalar;
+        if (val <= 0.0) {
+            m->throw_error("DOMAIN ERROR: logarithm of non-positive number", nullptr, 11, 0);
+            return;
+        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        double ln_val = std::log(rhs->data.scalar);
+        // Check all bases are valid
+        for (int i = 0; i < lmat->size(); ++i) {
+            if (lmat->data()[i] <= 0.0 || lmat->data()[i] == 1.0) {
+                m->throw_error("DOMAIN ERROR: invalid logarithm base", nullptr, 11, 0);
+                return;
+            }
+        }
+        double ln_val = std::log(val);
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = ln_val / std::log(lmat->data()[i]);
@@ -1952,6 +1978,11 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in logarithm", nullptr, 5, 0);
         return;
+    }
+
+    // Validate all element pairs before computing
+    for (int i = 0; i < lmat->size(); ++i) {
+        if (!check_domain(lmat->data()[i], rmat->data()[i])) return;
     }
 
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
@@ -5092,13 +5123,13 @@ void fn_grade_up(Machine* m, Value* axis, Value* omega) {
             indices[i] = i;
         }
 
-        // Sort row indices lexicographically
-        std::sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
+        // Sort row indices lexicographically (stable: equal rows preserve index order)
+        std::stable_sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
             for (int j = 0; j < cols; ++j) {
                 if ((*mat)(a, j) < (*mat)(b, j)) return true;
                 if ((*mat)(a, j) > (*mat)(b, j)) return false;
             }
-            return false;  // Equal rows maintain original order
+            return false;
         });
 
         // Convert to result vector (⎕IO)
@@ -5121,8 +5152,8 @@ void fn_grade_up(Machine* m, Value* axis, Value* omega) {
         indices[i] = i;
     }
 
-    // Sort indices by corresponding data values (ascending)
-    std::sort(indices.begin(), indices.end(), [&data](int a, int b) {
+    // Sort indices by corresponding data values (ascending, stable)
+    std::stable_sort(indices.begin(), indices.end(), [&data](int a, int b) {
         return data(a) < data(b);
     });
 
@@ -5162,13 +5193,13 @@ void fn_grade_down(Machine* m, Value* axis, Value* omega) {
             indices[i] = i;
         }
 
-        // Sort row indices lexicographically (descending)
-        std::sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
+        // Sort row indices lexicographically (descending, stable)
+        std::stable_sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
             for (int j = 0; j < cols; ++j) {
                 if ((*mat)(a, j) > (*mat)(b, j)) return true;
                 if ((*mat)(a, j) < (*mat)(b, j)) return false;
             }
-            return false;  // Equal rows maintain original order
+            return false;
         });
 
         // Convert to result vector (⎕IO)
@@ -5191,8 +5222,8 @@ void fn_grade_down(Machine* m, Value* axis, Value* omega) {
         indices[i] = i;
     }
 
-    // Sort indices by corresponding data values (descending)
-    std::sort(indices.begin(), indices.end(), [&data](int a, int b) {
+    // Sort indices by corresponding data values (descending, stable)
+    std::stable_sort(indices.begin(), indices.end(), [&data](int a, int b) {
         return data(a) > data(b);
     });
 
@@ -5511,15 +5542,11 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
 
-        // Calculate total size and validate counts
+        // Calculate total size: negative counts insert |c| fill elements
         int total = 0;
         for (int i = 0; i < n; ++i) {
             int c = static_cast<int>(counts(i));
-            if (c < 0) {
-                m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
-                return;
-            }
-            total += c;
+            total += std::abs(c);
         }
 
         if (total == 0) {
@@ -5527,12 +5554,20 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
 
+        Value* fill = m->heap->allocate_scalar(0.0);
         std::vector<Value*> result;
         result.reserve(total);
         for (int i = 0; i < n; ++i) {
-            int rep = static_cast<int>(counts(i));
-            for (int r = 0; r < rep; ++r) {
-                result.push_back((*strand)[i]);
+            int c = static_cast<int>(counts(i));
+            if (c >= 0) {
+                for (int r = 0; r < c; ++r) {
+                    result.push_back((*strand)[i]);
+                }
+            } else {
+                // Negative: insert |c| fill elements, drop the original
+                for (int r = 0; r < -c; ++r) {
+                    result.push_back(fill);
+                }
             }
         }
 
@@ -5574,15 +5609,11 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
 
-        // Calculate new axis length and validate counts
+        // Calculate new axis length: negative counts contribute |c| fill positions
         int new_axis_len = 0;
         for (int i = 0; i < counts.size(); ++i) {
             int c = static_cast<int>(counts(i));
-            if (c < 0) {
-                m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
-                return;
-            }
-            new_axis_len += c;
+            new_axis_len += std::abs(c);
         }
 
         // Build result shape
@@ -5597,6 +5628,21 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->result = m->heap->allocate_vector(empty, is_char);
             return;
         }
+
+        // Build mapping: for each position along result axis,
+        // store source index or -1 for fill
+        std::vector<int> axis_map(new_axis_len);
+        int pos = 0;
+        for (int i = 0; i < axis_len; ++i) {
+            int c = static_cast<int>(counts(i));
+            if (c >= 0) {
+                for (int r = 0; r < c; ++r) axis_map[pos++] = i;
+            } else {
+                for (int r = 0; r < -c; ++r) axis_map[pos++] = -1;  // fill
+            }
+        }
+
+        double fill = is_char ? 32.0 : 0.0;
 
         // Compute strides for source and result
         std::vector<int> src_strides(rank), res_strides(rank);
@@ -5619,27 +5665,18 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 tmp %= res_strides[d];
             }
 
-            // Map result axis index back to source axis index
-            int res_ax_idx = res_idx[ax];
-            int src_ax_idx = 0;
-            int cumsum = 0;
-            for (int i = 0; i < axis_len; ++i) {
-                int c = static_cast<int>(counts(i));
-                if (cumsum + c > res_ax_idx) {
-                    src_ax_idx = i;
-                    break;
+            int src_ax_idx = axis_map[res_idx[ax]];
+            if (src_ax_idx < 0) {
+                result(lin) = fill;
+            } else {
+                // Compute source linear index
+                int src_lin = 0;
+                for (int d = 0; d < rank; ++d) {
+                    int idx = (d == ax) ? src_ax_idx : res_idx[d];
+                    src_lin += idx * src_strides[d];
                 }
-                cumsum += c;
+                result(lin) = (*nd->data)(src_lin);
             }
-
-            // Compute source linear index
-            int src_lin = 0;
-            for (int d = 0; d < rank; ++d) {
-                int idx = (d == ax) ? src_ax_idx : res_idx[d];
-                src_lin += idx * src_strides[d];
-            }
-
-            result(lin) = (*nd->data)(src_lin);
         }
 
         // Allocate result based on rank
@@ -5695,15 +5732,10 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 return;
             }
 
-            // Calculate total output rows
+            // Calculate total output rows (negative counts contribute |c| fill rows)
             int total_rows = 0;
             for (int i = 0; i < counts.size(); ++i) {
-                int c = static_cast<int>(counts(i));
-                if (c < 0) {
-                    m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
-                    return;
-                }
-                total_rows += c;
+                total_rows += std::abs(static_cast<int>(counts(i)));
             }
 
             if (total_rows == 0) {
@@ -5712,12 +5744,19 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
                 return;
             }
 
+            double fill = is_char ? 32.0 : 0.0;
             Eigen::MatrixXd result(total_rows, cols);
             int out_row = 0;
             for (int i = 0; i < rows; ++i) {
-                int rep = static_cast<int>(counts(i));
-                for (int r = 0; r < rep; ++r) {
-                    result.row(out_row++) = mat->row(i);
+                int c = static_cast<int>(counts(i));
+                if (c >= 0) {
+                    for (int r = 0; r < c; ++r) {
+                        result.row(out_row++) = mat->row(i);
+                    }
+                } else {
+                    for (int r = 0; r < -c; ++r) {
+                        result.row(out_row++).setConstant(fill);
+                    }
                 }
             }
 
@@ -5731,15 +5770,10 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
 
-        // Calculate total output columns
+        // Calculate total output columns (negative counts contribute |c| fill columns)
         int total_cols = 0;
         for (int i = 0; i < counts.size(); ++i) {
-            int c = static_cast<int>(counts(i));
-            if (c < 0) {
-                m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
-                return;
-            }
-            total_cols += c;
+            total_cols += std::abs(static_cast<int>(counts(i)));
         }
 
         if (total_cols == 0) {
@@ -5748,12 +5782,19 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
 
+        double fill = is_char ? 32.0 : 0.0;
         Eigen::MatrixXd result(rows, total_cols);
         int out_col = 0;
         for (int j = 0; j < cols; ++j) {
-            int rep = static_cast<int>(counts(j));
-            for (int r = 0; r < rep; ++r) {
-                result.col(out_col++) = mat->col(j);
+            int c = static_cast<int>(counts(j));
+            if (c >= 0) {
+                for (int r = 0; r < c; ++r) {
+                    result.col(out_col++) = mat->col(j);
+                }
+            } else {
+                for (int r = 0; r < -c; ++r) {
+                    result.col(out_col++).setConstant(fill);
+                }
             }
         }
 
@@ -5776,15 +5817,10 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Calculate total output size
+    // Calculate total output size (negative counts contribute |c| fill positions)
     int total = 0;
     for (int i = 0; i < counts.size(); ++i) {
-        int c = static_cast<int>(counts(i));
-        if (c < 0) {
-            m->throw_error("DOMAIN ERROR: replicate count must be non-negative", nullptr, 11, 0);
-            return;
-        }
-        total += c;
+        total += std::abs(static_cast<int>(counts(i)));
     }
 
     if (total == 0) {
@@ -5794,13 +5830,20 @@ void fn_replicate(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Build result
+    // Build result: positive counts replicate, negative counts insert fill
+    double fill = is_char ? 32.0 : 0.0;
     Eigen::VectorXd result(total);
     int out_idx = 0;
     for (int i = 0; i < data.size(); ++i) {
-        int rep = static_cast<int>(counts(i));
-        for (int r = 0; r < rep; ++r) {
-            result(out_idx++) = data(i);
+        int c = static_cast<int>(counts(i));
+        if (c >= 0) {
+            for (int r = 0; r < c; ++r) {
+                result(out_idx++) = data(i);
+            }
+        } else {
+            for (int r = 0; r < -c; ++r) {
+                result(out_idx++) = fill;
+            }
         }
     }
 
@@ -5971,13 +6014,14 @@ void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     Eigen::VectorXd left = flatten_value(lhs);
     Eigen::VectorXd right = flatten_value(rhs);
+    double ct = m->ct;
 
-    // First pass: count elements not in right
+    // First pass: count elements not in right (tolerant comparison per ISO 10.2.16)
     int count = 0;
     for (int i = 0; i < left.size(); ++i) {
         bool in_right = false;
         for (int j = 0; j < right.size(); ++j) {
-            if (right(j) == left(i)) {
+            if (tolerant_eq(left(i), right(j), ct)) {
                 in_right = true;
                 break;
             }
@@ -5996,7 +6040,7 @@ void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     for (int i = 0; i < left.size(); ++i) {
         bool in_right = false;
         for (int j = 0; j < right.size(); ++j) {
-            if (right(j) == left(i)) {
+            if (tolerant_eq(left(i), right(j), ct)) {
                 in_right = true;
                 break;
             }
@@ -7977,8 +8021,7 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
         // Handle strand
         if (omega->is_strand()) {
             std::vector<Value*>* strand = omega->as_strand();
-            // APL uses 1-based indexing by default
-            int adjusted = idx - 1;  // Assuming ⎕IO=1
+            int adjusted = idx - m->io;
             if (adjusted < 0 || adjusted >= static_cast<int>(strand->size())) {
                 m->throw_error("INDEX ERROR: index out of range", nullptr, 3, 0);
                 return;
@@ -7990,7 +8033,7 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
         // Handle regular arrays
         if (omega->is_vector()) {
             const Eigen::MatrixXd* mat = omega->as_matrix();
-            int adjusted = idx - 1;
+            int adjusted = idx - m->io;
             if (adjusted < 0 || adjusted >= mat->rows()) {
                 m->throw_error("INDEX ERROR: index out of range", nullptr, 3, 0);
                 return;
@@ -8011,7 +8054,7 @@ void fn_pick(Machine* m, Value* axis, Value* alpha, Value* omega) {
         Value* current = omega;
 
         for (int i = 0; i < indices->rows(); i++) {
-            int idx = static_cast<int>((*indices)(i, 0)) - 1;  // 1-based to 0-based
+            int idx = static_cast<int>((*indices)(i, 0)) - m->io;
 
             if (current->is_strand()) {
                 std::vector<Value*>* strand = current->as_strand();
