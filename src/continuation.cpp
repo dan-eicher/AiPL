@@ -3049,16 +3049,23 @@ void CellIterK::invoke(Machine* machine) {
             }
 
             if (all_scalars) {
-                // Check if result should be NDARRAY (rank > 2)
-                if (!orig_ndarray_shape.empty()) {
-                    // NDARRAY result
+                if (!orig_ndarray_shape.empty() && orig_ndarray_shape.size() == 1) {
+                    // ISO §9.3.1: shape is (ρA),ρB — 1-D result (one arg was scalar)
+                    int n = orig_ndarray_shape[0];
+                    Eigen::VectorXd vec(n);
+                    for (int i = 0; i < n; i++) {
+                        vec(i) = results[i]->as_scalar();
+                    }
+                    machine->result = machine->heap->allocate_vector(vec);
+                } else if (!orig_ndarray_shape.empty()) {
+                    // NDARRAY result (rank > 2)
                     Eigen::VectorXd data(results.size());
                     for (size_t i = 0; i < results.size(); i++) {
                         data(i) = results[i]->as_scalar();
                     }
                     machine->result = machine->heap->allocate_ndarray(data, orig_ndarray_shape);
                 } else {
-                    // Matrix result (including N×1 and 1×N cases)
+                    // Matrix result (both sides have rank >= 1)
                     Eigen::MatrixXd mat(lhs_total, rhs_total);
                     for (int i = 0; i < lhs_total; i++) {
                         for (int j = 0; j < rhs_total; j++) {
@@ -4327,7 +4334,13 @@ void PerformIndexedAssignK::invoke(Machine* machine) {
         return;
     }
 
-    // Create modified copy for single-axis indexing
+    // ISO §6.3.8: single index on matrix requires rank error
+    if (!arr->is_vector()) {
+        machine->throw_error("RANK ERROR: index count does not match array rank", this, 4, 0);
+        return;
+    }
+
+    // Create modified copy for single-axis indexing (vectors only)
     Eigen::MatrixXd new_mat = *mat;
 
     if (index_val->is_scalar()) {

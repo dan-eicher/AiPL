@@ -1130,25 +1130,23 @@ TEST_F(OperatorsTest, OuterProductBothEmpty) {
 }
 
 TEST_F(OperatorsTest, OuterProductScalarLeft) {
-    // 5 ∘.× (1 2 3) → 1×3 matrix: [[5,10,15]]
+    // ISO §9.3.1: shape is (ρA),ρB = ⍬,3 = (3) → vector
     Value* result = eval(machine, "5 ∘.× (1 2 3)");
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_matrix());
-    EXPECT_EQ(result->rows(), 1);
-    EXPECT_EQ(result->cols(), 3);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 5.0);
-    EXPECT_DOUBLE_EQ((*m)(0, 1), 10.0);
-    EXPECT_DOUBLE_EQ((*m)(0, 2), 15.0);
+    EXPECT_DOUBLE_EQ((*m)(1, 0), 10.0);
+    EXPECT_DOUBLE_EQ((*m)(2, 0), 15.0);
 }
 
 TEST_F(OperatorsTest, OuterProductScalarRight) {
-    // (1 2 3) ∘.× 5 → 3×1 matrix: [[5],[10],[15]]
+    // ISO §9.3.1: shape is (ρA),ρB = (3),⍬ = (3) → vector
     Value* result = eval(machine, "(1 2 3) ∘.× 5");
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_matrix());
-    EXPECT_EQ(result->rows(), 3);
-    EXPECT_EQ(result->cols(), 1);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 3);
     const Eigen::MatrixXd* m = result->as_matrix();
     EXPECT_DOUBLE_EQ((*m)(0, 0), 5.0);
     EXPECT_DOUBLE_EQ((*m)(1, 0), 10.0);

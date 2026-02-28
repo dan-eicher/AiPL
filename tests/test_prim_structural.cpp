@@ -615,15 +615,16 @@ TEST_F(StructuralTest, IndexOfVector) {
     EXPECT_DOUBLE_EQ((*res)(2, 0), 5.0);  // 99 not found → 5 (1+length)
 }
 
-TEST_F(StructuralTest, IndexOfScalarHaystack) {
-    // 5 ⍳ 5 → 1 (found at index 1, 1-origin per ISO 13751)
+TEST_F(StructuralTest, IndexOfScalarHaystackRankError) {
+    // ISO §10.2.2: "If A is not a vector, signal rank-error"
+    // Scalar left arg (rank 0) is not a vector (rank 1)
     Value* lhs = machine->heap->allocate_scalar(5.0);
     Value* rhs = machine->heap->allocate_scalar(5.0);
 
     fn_index_of(machine, nullptr, lhs, rhs);
 
-    ASSERT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 1.0);
+    ASSERT_EQ(machine->kont_stack.size(), 1);
+    EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }
 
 TEST_F(StructuralTest, MemberOfFound) {
@@ -1560,13 +1561,14 @@ TEST_F(StructuralTest, UniqueVector) {
 }
 
 TEST_F(StructuralTest, UniqueScalar) {
-    // ∪ 5 → 5
+    // ∪ 5 → ,5 (always a vector per ISO §10.1.8)
     Value* val = machine->heap->allocate_scalar(5.0);
 
     fn_unique(machine, nullptr, val);
 
-    EXPECT_TRUE(machine->result->is_scalar());
-    EXPECT_DOUBLE_EQ(machine->result->as_scalar(), 5.0);
+    EXPECT_TRUE(machine->result->is_vector());
+    EXPECT_EQ(machine->result->size(), 1);
+    EXPECT_DOUBLE_EQ(machine->result->as_matrix()->operator()(0, 0), 5.0);
 }
 
 TEST_F(StructuralTest, UniqueAllSame) {
@@ -4334,22 +4336,22 @@ TEST_F(StructuralTest, NDArrayIndexMultiple) {
 }
 
 // Test linear indexing into ravel via eval
-TEST_F(StructuralTest, NDArrayLinearIndexEval) {
+TEST_F(StructuralTest, NDArrayLinearIndexEvalRankError) {
+    // ISO §6.3.8: index count must match rank — single index on rank-3 is RANK ERROR
     machine->eval("A←2 3 4⍴⍳24");
-    // Linear index 1 = first element
-    Value* r1 = machine->eval("A[1]");
+    EXPECT_THROW(machine->eval("A[1]"), APLError);
+}
+
+TEST_F(StructuralTest, NDArrayFullIndexEval) {
+    // ISO §6.3.8: proper multi-index on rank-3 array
+    machine->eval("A←2 3 4⍴⍳24");
+    Value* r1 = machine->eval("A[1;1;1]");
     ASSERT_TRUE(r1->is_scalar());
     EXPECT_DOUBLE_EQ(r1->as_scalar(), 1.0);
 
-    // Linear index 24 = last element
-    Value* r2 = machine->eval("A[24]");
+    Value* r2 = machine->eval("A[2;3;4]");
     ASSERT_TRUE(r2->is_scalar());
     EXPECT_DOUBLE_EQ(r2->as_scalar(), 24.0);
-
-    // Linear indices 1 2 3 = first three elements
-    Value* r3 = machine->eval("A[1 2 3]");
-    ASSERT_TRUE(r3->is_vector());
-    EXPECT_EQ(r3->size(), 3);
 }
 
 // Test 4D array indexing

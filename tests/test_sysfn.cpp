@@ -267,11 +267,9 @@ TEST_F(SysFnTest, QuadNCVariable) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 2.0);
 }
 
-// Test ⎕NC returns 3 for primitive function
-TEST_F(SysFnTest, QuadNCPrimitiveFunction) {
-    Value* result = machine->eval("⎕NC '+'");
-    ASSERT_NE(result, nullptr);
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
+// Test ⎕NC signals DOMAIN ERROR for non-identifier (ISO §11.5.2)
+TEST_F(SysFnTest, QuadNCPrimitiveFunctionDomainError) {
+    EXPECT_THROW(machine->eval("⎕NC '+'"), APLError);
 }
 
 // Test ⎕NC returns 3 for user-defined function
@@ -282,11 +280,9 @@ TEST_F(SysFnTest, QuadNCUserFunction) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
-// Test ⎕NC returns 4 for operator
-TEST_F(SysFnTest, QuadNCOperator) {
-    Value* result = machine->eval("⎕NC '/'");
-    ASSERT_NE(result, nullptr);
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+// Test ⎕NC signals DOMAIN ERROR for operator symbol (ISO §11.5.2)
+TEST_F(SysFnTest, QuadNCOperatorDomainError) {
+    EXPECT_THROW(machine->eval("⎕NC '/'"), APLError);
 }
 
 // Test ⎕NC with multiple names (matrix argument)
@@ -352,11 +348,11 @@ TEST_F(SysFnTest, QuadEXRemoves) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);  // Now undefined
 }
 
-// Test ⎕EX returns 0 for undefined name
+// Test ⎕EX returns 1 for undefined name (ISO §11.5.3: ~×⎕NC B, name is available)
 TEST_F(SysFnTest, QuadEXUndefined) {
     Value* result = machine->eval("⎕EX 'nonexistent_xyz'");
     ASSERT_NE(result, nullptr);
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1.0);
 }
 
 // Test ⎕EX returns 0 for protected system names
@@ -384,8 +380,8 @@ TEST_F(SysFnTest, QuadEXMixed) {
     Value* result = machine->eval("⎕EX 2 6⍴'existsnoexst'");
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->size(), 2);
-    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);  // exists removed
-    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 0.0);  // noexst didn't exist
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(0, 0), 1.0);  // exists removed, now available
+    EXPECT_DOUBLE_EQ((*result->as_matrix())(1, 0), 1.0);  // noexst never existed, also available
 }
 
 // Test ⎕EX rank error

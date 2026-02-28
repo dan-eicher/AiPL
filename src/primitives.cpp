@@ -4985,9 +4985,9 @@ void fn_index_of(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
     if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
 
-    // ISO 13751: left argument must be a vector
-    if (!lhs->is_scalar() && !lhs->is_vector()) {
-        m->throw_error("RANK ERROR: left argument of index-of must be a vector", nullptr, 4, 0);
+    // ISO 13751 §10.2.2: "If A is not a vector, signal rank-error"
+    if (!lhs->is_vector()) {
+        m->throw_error("RANK ERROR: left argument of ⍳ must be a vector", nullptr, 4, 0);
         return;
     }
 
@@ -5931,14 +5931,16 @@ static bool value_in_array(double val, const Eigen::VectorXd& arr, int n) {
 void fn_unique(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
 
-    // ISO 13751 10.1.8: Unique requires vector or scalar
+    // ISO 13751 §10.1.8: Unique requires vector or scalar, Z is always a vector
     if (omega->is_matrix()) {
         m->throw_error("RANK ERROR: unique requires vector or scalar argument", nullptr, 4, 0);
         return;
     }
 
     if (omega->is_scalar()) {
-        m->result = omega;
+        Eigen::VectorXd v(1);
+        v(0) = omega->data.scalar;
+        m->result = m->heap->allocate_vector(v);
         return;
     }
 
@@ -7072,99 +7074,43 @@ void fn_squad(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // NDARRAY single-axis indexing (linear indexing into ravel)
-    if (array->is_ndarray()) {
-        const Eigen::VectorXd* data = array->ndarray_data();
-        int arr_size = array->size();
-
-        if (indices->is_scalar()) {
-            double idx_val = indices->as_scalar();
-            if (!validate_index(idx_val)) return;
-            int idx = static_cast<int>(std::round(idx_val)) - m->io;
-            if (idx < 0 || idx >= arr_size) {
-                m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
-                return;
-            }
-            m->result = m->heap->allocate_scalar((*data)(idx));
-        } else if (indices->is_array()) {
-            const Eigen::MatrixXd* idx_mat = indices->as_matrix();
-            int n = idx_mat->rows();
-            Eigen::VectorXd result(n);
-            for (int i = 0; i < n; i++) {
-                double idx_val = (*idx_mat)(i, 0);
-                if (!validate_index(idx_val)) return;
-                int idx = static_cast<int>(std::round(idx_val)) - m->io;
-                if (idx < 0 || idx >= arr_size) {
-                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
-                    return;
-                }
-                result(i) = (*data)(idx);
-            }
-            m->result = m->heap->allocate_vector(result, is_char);
-        } else {
-            m->throw_error("DOMAIN ERROR: index must be numeric", nullptr, 11, 0);
-        }
+    // ISO §6.3.8: "If number-of-items in index-list K differs from rank of A, signal rank-error"
+    // Single index on NDARRAY (rank 3+) or matrix (rank 2) is a rank error
+    if (array->is_ndarray() || array->is_matrix()) {
+        m->throw_error("RANK ERROR: index count does not match array rank", nullptr, 4, 0);
         return;
     }
 
-    // Single-axis indexing for vector/matrix
+    // Single-axis indexing for vector (only vectors reach here; matrix/ndarray caught above)
     const Eigen::MatrixXd* arr = array->as_matrix();
     int rows = arr->rows();
-    int cols = arr->cols();
-    bool is_vec = (cols == 1);
 
     if (indices->is_scalar()) {
         double idx_val = indices->as_scalar();
         if (!validate_index(idx_val)) return;
         int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
-        if (is_vec) {
+        if (idx < 0 || idx >= rows) {
+            m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
+            return;
+        }
+        m->result = m->heap->allocate_scalar((*arr)(idx, 0));
+    } else if (indices->is_array()) {
+        // Vector indexing on vector: V[I] where I is a vector of indices
+        const Eigen::MatrixXd* idx_mat = indices->as_matrix();
+        int n = idx_mat->rows();
+
+        Eigen::VectorXd result(n);
+        for (int i = 0; i < n; i++) {
+            double idx_val = (*idx_mat)(i, 0);
+            if (!validate_index(idx_val)) return;
+            int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
             if (idx < 0 || idx >= rows) {
                 m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
                 return;
             }
-            m->result = m->heap->allocate_scalar((*arr)(idx, 0));
-        } else {
-            // Linear indexing into matrix (row-major order)
-            int size = rows * cols;
-            if (idx < 0 || idx >= size) {
-                m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
-                return;
-            }
-            int row = idx / cols;
-            int col = idx % cols;
-            m->result = m->heap->allocate_scalar((*arr)(row, col));
+            result(i) = (*arr)(idx, 0);
         }
-    } else if (indices->is_array()) {
-        const Eigen::MatrixXd* idx_mat = indices->as_matrix();
-        int n = idx_mat->rows();
-
-        if (is_vec) {
-            Eigen::VectorXd result(n);
-            for (int i = 0; i < n; i++) {
-                double idx_val = (*idx_mat)(i, 0);
-                if (!validate_index(idx_val)) return;
-                int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
-                if (idx < 0 || idx >= rows) {
-                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
-                    return;
-                }
-                result(i) = (*arr)(idx, 0);
-            }
-            m->result = m->heap->allocate_vector(result, is_char);
-        } else {
-            Eigen::MatrixXd result(n, cols);
-            for (int i = 0; i < n; i++) {
-                double idx_val = (*idx_mat)(i, 0);
-                if (!validate_index(idx_val)) return;
-                int idx = static_cast<int>(std::round(idx_val)) - m->io;  // ⎕IO
-                if (idx < 0 || idx >= rows) {
-                    m->throw_error("INDEX ERROR: index out of bounds", nullptr, 3, 0);
-                    return;
-                }
-                result.row(i) = arr->row(idx);
-            }
-            m->result = m->heap->allocate_matrix(result, is_char);
-        }
+        m->result = m->heap->allocate_vector(result, is_char);
     } else {
         m->throw_error("DOMAIN ERROR: index must be numeric", nullptr, 11, 0);
     }
@@ -8490,7 +8436,41 @@ static std::string extract_name_from_vector(const Eigen::MatrixXd* mat) {
 
 // Helper: classify a name string for ⎕NC, including system names (classes 5 and 6)
 // ISO 13751 §11.5.2: 5=system-variable, 6=system-function
+// ISO §11.5.2: validate that a name matches identifier-row
+// An identifier starts with a letter (or ⎕, ∆, ⍙) followed by letters, digits, ∆, ⍙
+// Returns -1 if not a valid identifier (caller should signal DOMAIN ERROR)
+static bool is_valid_identifier(const std::string& name_str) {
+    if (name_str.empty()) return false;
+
+    // ⎕-prefixed names are valid identifiers
+    if (name_str.size() >= 3 &&
+        static_cast<unsigned char>(name_str[0]) == 0xE2 &&
+        static_cast<unsigned char>(name_str[1]) == 0x8E &&
+        static_cast<unsigned char>(name_str[2]) == 0x95) {
+        return true;  // System name — always valid identifier form
+    }
+
+    // Check first character: must be a letter, ∆ (U+2206), or ⍙ (U+2359)
+    const unsigned char* p = reinterpret_cast<const unsigned char*>(name_str.c_str());
+    if (std::isalpha(*p) || *p == '_') {
+        // OK — ASCII letter or underscore
+    } else if (p[0] == 0xE2 && p[1] == 0x88 && p[2] == 0x86) {
+        // ∆ U+2206
+    } else if (p[0] == 0xE2 && p[1] == 0x8D && p[2] == 0x99) {
+        // ⍙ U+2359
+    } else {
+        return false;
+    }
+
+    return true;  // First char is valid; rest is not strictly checked
+}
+
 static int classify_name(Machine* m, const std::string& name_str) {
+    // ISO §11.5.2: "If any row of B1 does not match identifier-row, signal domain-error"
+    if (!is_valid_identifier(name_str)) {
+        return -1;  // Not a valid identifier
+    }
+
     // Check for system names (⎕-prefixed)
     // ⎕ is U+2395, encoded as E2 8E 95 in UTF-8
     if (name_str.size() >= 3 &&
@@ -8530,14 +8510,24 @@ void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
     // Handle string (simple name)
     if (omega->is_string()) {
         String* name = omega->as_string();
-        m->result = m->heap->allocate_scalar(static_cast<double>(classify_name(m, name->str())));
+        int nc = classify_name(m, name->str());
+        if (nc < 0) {
+            m->throw_error("DOMAIN ERROR: ⎕NC argument is not a valid identifier", nullptr, 11, 0);
+            return;
+        }
+        m->result = m->heap->allocate_scalar(static_cast<double>(nc));
         return;
     }
 
     // Handle character vector (single name)
     if (omega->is_vector()) {
         std::string name_str = extract_name_from_vector(omega->as_matrix());
-        m->result = m->heap->allocate_scalar(static_cast<double>(classify_name(m, name_str)));
+        int nc = classify_name(m, name_str);
+        if (nc < 0) {
+            m->throw_error("DOMAIN ERROR: ⎕NC argument is not a valid identifier", nullptr, 11, 0);
+            return;
+        }
+        m->result = m->heap->allocate_scalar(static_cast<double>(nc));
         return;
     }
 
@@ -8550,7 +8540,12 @@ void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
         Eigen::VectorXd result(rows);
         for (int r = 0; r < rows; ++r) {
             std::string name_str = extract_name_from_row(mat, r, cols);
-            result(r) = static_cast<double>(classify_name(m, name_str));
+            int nc = classify_name(m, name_str);
+            if (nc < 0) {
+                m->throw_error("DOMAIN ERROR: ⎕NC argument is not a valid identifier", nullptr, 11, 0);
+                return;
+            }
+            result(r) = static_cast<double>(nc);
         }
         m->result = m->heap->allocate_vector(result);
         return;
@@ -8596,14 +8591,17 @@ void fn_quad_ex(Machine* m, Value* axis, Value* omega) {
     }
 
     // Handle string (simple name)
+    // ISO 13751 §11.5.3: Return ~×⎕NC B (1 if name is now available, 0 if not)
     if (omega->is_string()) {
         String* name = omega->as_string();
         if (is_protected_name(name->str())) {
-            m->result = m->heap->allocate_scalar(0.0);  // Protected
+            m->result = m->heap->allocate_scalar(0.0);  // Protected, still defined
             return;
         }
-        bool removed = m->env->erase(name);
-        m->result = m->heap->allocate_scalar(removed ? 1.0 : 0.0);
+        m->env->erase(name);
+        // ~×⎕NC: if name is undefined (NC=0), ×0=0, ~0=1 → return 1
+        bool still_defined = m->env->lookup(name) != nullptr;
+        m->result = m->heap->allocate_scalar(still_defined ? 0.0 : 1.0);
         return;
     }
 
@@ -8611,12 +8609,14 @@ void fn_quad_ex(Machine* m, Value* axis, Value* omega) {
     if (omega->is_vector()) {
         const Eigen::MatrixXd* mat = omega->as_matrix();
         if (vector_starts_with_quad(mat)) {
-            m->result = m->heap->allocate_scalar(0.0);  // Protected
+            m->result = m->heap->allocate_scalar(0.0);  // Protected, still defined
             return;
         }
         std::string name_str = extract_name_from_vector(mat);
-        bool removed = m->env->erase(m->string_pool.intern(name_str));
-        m->result = m->heap->allocate_scalar(removed ? 1.0 : 0.0);
+        String* name = m->string_pool.intern(name_str);
+        m->env->erase(name);
+        bool still_defined = m->env->lookup(name) != nullptr;
+        m->result = m->heap->allocate_scalar(still_defined ? 0.0 : 1.0);
         return;
     }
 
@@ -8629,11 +8629,13 @@ void fn_quad_ex(Machine* m, Value* axis, Value* omega) {
         Eigen::VectorXd result(rows);
         for (int r = 0; r < rows; ++r) {
             if (starts_with_quad(mat, r, cols)) {
-                result(r) = 0.0;  // Protected
+                result(r) = 0.0;  // Protected, still defined
             } else {
                 std::string name_str = extract_name_from_row(mat, r, cols);
-                bool removed = m->env->erase(m->string_pool.intern(name_str));
-                result(r) = removed ? 1.0 : 0.0;
+                String* name = m->string_pool.intern(name_str);
+                m->env->erase(name);
+                bool still_defined = m->env->lookup(name) != nullptr;
+                result(r) = still_defined ? 0.0 : 1.0;
             }
         }
         m->result = m->heap->allocate_vector(result);

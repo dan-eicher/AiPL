@@ -2681,15 +2681,17 @@ TEST_F(EvalTest, UniqueVector) {
 }
 
 TEST_F(EvalTest, UniqueScalar) {
-    // ∪ 5 → 5
+    // ISO §10.1.8: ∪ 5 → ,5 (always returns vector)
     Continuation* k = parser->parse("∪ 5");
     ASSERT_NE(k, nullptr) << "Parse error: " << parser->get_error();
 
     machine->push_kont(k);
     Value* result = machine->execute();
     ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 5.0);
+    EXPECT_TRUE(result->is_vector());
+    EXPECT_EQ(result->size(), 1);
+    const Eigen::MatrixXd* vec = result->as_matrix();
+    EXPECT_DOUBLE_EQ((*vec)(0, 0), 5.0);
 }
 
 TEST_F(EvalTest, UniqueWithIota) {
@@ -3478,17 +3480,17 @@ TEST_F(EvalTest, IndexedAssignReturnsValue) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 42.0);
 }
 
-TEST_F(EvalTest, IndexedAssignMatrix) {
-    // A←2 3⍴⍳6 ⋄ A[4]←99 ⋄ A[4] → 99 (linear index into matrix)
+TEST_F(EvalTest, IndexedAssignMatrixRankError) {
+    // ISO §6.3.8: index count must match rank — single index on matrix is RANK ERROR
     machine->eval("A←2 3⍴⍳6");
+    EXPECT_THROW(machine->eval("A[4]←99"), APLError);
+}
 
-    Value* stored = machine->env->lookup(machine->string_pool.intern("A"));
-    ASSERT_NE(stored, nullptr) << "A should be defined";
-    EXPECT_TRUE(stored->is_matrix()) << "A should be matrix, got tag=" << static_cast<int>(stored->tag);
-
-    machine->eval("A[4]←99");
-
-    Value* result = machine->eval("A[4]");
+TEST_F(EvalTest, IndexedAssignMatrix) {
+    // ISO §6.3.8: A[row;col]←val on a matrix
+    machine->eval("A←2 3⍴⍳6");
+    machine->eval("A[2;1]←99");
+    Value* result = machine->eval("A[2;1]");
     ASSERT_NE(result, nullptr);
     EXPECT_DOUBLE_EQ(result->as_scalar(), 99.0);
 }
@@ -6075,12 +6077,10 @@ TEST_F(EvalTest, IndexedRefVectorSingleIndex) {
     EXPECT_DOUBLE_EQ(result->as_scalar(), 3.0);
 }
 
-// Single-axis indexing on matrix (linear/row-major)
-TEST_F(EvalTest, IndexedRefMatrixLinear) {
+// ISO §6.3.8: Single index on matrix is RANK ERROR (index count ≠ rank)
+TEST_F(EvalTest, IndexedRefMatrixSingleIndexRankError) {
     machine->eval("M←2 3⍴⍳6");
-    Value* result = machine->eval("M[4]");  // Linear index: row 2, col 1
-    ASSERT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 4.0);
+    EXPECT_THROW(machine->eval("M[4]"), APLError);
 }
 
 // ============================================================================

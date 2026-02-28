@@ -101,7 +101,9 @@ void op_outer_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
     // Use CellIterK with OUTER mode for Cartesian product iteration
     CellIterK* iter = m->heap->allocate<CellIterK>(
         f, lhs, rhs, lhs_size, rhs_size, lhs_cols, rhs_cols);
-    if (result_shape.size() > 2) {
+    if (result_shape.size() != 2) {
+        // Store shape for non-matrix results: 0-D (both scalar), 1-D (one scalar),
+        // or >2-D (higher-rank args). CellIterK uses this to produce correct output type.
         iter->orig_ndarray_shape = result_shape;
     }
     m->push_kont(iter);
