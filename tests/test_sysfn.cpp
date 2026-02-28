@@ -169,10 +169,13 @@ TEST_F(SysFnTest, QuadDLReturnsActualTime) {
     EXPECT_LE(actual, 0.5);  // Should not be way over
 }
 
-// Test ⎕DL with negative argument signals error (ISO 13751: B may be negative)
-// Note: ISO says B "may be" negative, but we reject it
-TEST_F(SysFnTest, QuadDLNegativeError) {
-    EXPECT_THROW(machine->eval("⎕DL ¯1"), APLError);
+// Test ⎕DL with negative argument returns immediately (ISO 13751 allows negative B)
+TEST_F(SysFnTest, QuadDLNegativeReturnsImmediately) {
+    Value* result = machine->eval("⎕DL ¯1");
+    ASSERT_NE(result, nullptr);
+    EXPECT_TRUE(result->is_scalar());
+    // Should return near-zero elapsed time (immediate return)
+    EXPECT_LT(result->as_scalar(), 0.1);
 }
 
 // Test ⎕DL requires scalar argument

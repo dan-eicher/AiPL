@@ -125,11 +125,13 @@ TEST_F(OperatorsTest, ReplicateViaReduce) {
 }
 
 TEST_F(OperatorsTest, ErrorScanNonFunction) {
+    // Use a string as "func" — not a function, scalar, or array, so scan should error
+    Value* str = machine->heap->allocate_string("hello");
     Eigen::VectorXd v(3);
     v << 1.0, 2.0, 3.0;
     Value* vec = machine->heap->allocate_vector(v);
 
-    fn_scan(machine, nullptr, vec, vec);
+    fn_scan(machine, nullptr, str, vec);
     EXPECT_EQ(machine->kont_stack.size(), 1);
     EXPECT_NE(dynamic_cast<ThrowErrorK*>(machine->kont_stack.back()), nullptr);
 }

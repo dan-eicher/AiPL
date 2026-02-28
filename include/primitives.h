@@ -167,6 +167,7 @@ void fn_quad_dl(Machine* m, Value* axis, Value* omega);           // ⎕DL monad
 void fn_quad_nc(Machine* m, Value* axis, Value* omega);           // ⎕NC monadic (name class)
 void fn_quad_ex(Machine* m, Value* axis, Value* omega);           // ⎕EX monadic (expunge)
 void fn_quad_nl(Machine* m, Value* axis, Value* omega);           // ⎕NL monadic (name list)
+void fn_quad_nl_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs); // ⎕NL dyadic (filtered name list)
 
 extern PrimitiveFn prim_quad_dl;   // ⎕DL (delay)
 extern PrimitiveFn prim_quad_nc;   // ⎕NC (name class)

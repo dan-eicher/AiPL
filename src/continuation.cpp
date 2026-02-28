@@ -4,6 +4,7 @@
 #include "machine.h"
 #include "completion.h"
 #include "operators.h"
+#include "primitives.h"
 #include <algorithm>
 #include <stdexcept>
 #include <typeinfo>
@@ -162,9 +163,10 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
             }
 
             // Pervasive strand handling: if either arg is a strand, apply element-wise
+            // Skip for Without (~) which is structural, not scalar (ISO 10.2.16)
             bool left_strand = left_val->is_strand();
             bool right_strand = right_val->is_strand();
-            if (prim_fn->is_pervasive && (left_strand || right_strand)) {
+            if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_strand || right_strand)) {
                 // Get sizes
                 int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
                                            : (left_val->is_scalar() ? 1 : left_val->size());
@@ -977,7 +979,7 @@ void PerformSysVarAssignK::invoke(Machine* machine) {
         }
         case SysVarId::CT:
             if (dbl_val < 0) {
-                machine->throw_error("DOMAIN ERROR: ⎕CT must be nonnegative", this, 11, 0);
+                machine->throw_error("DOMAIN ERROR: ⎕CT must be non-negative", this, 11, 0);
                 return;
             }
             machine->ct = dbl_val;
@@ -1396,9 +1398,10 @@ void ApplyDyadicK::invoke(Machine* machine) {
     }
 
     // Pervasive strand handling: if either arg is a strand, apply element-wise
+    // Skip for Without (~) which is structural, not scalar (ISO 10.2.16)
     bool left_strand = left_val->is_strand();
     bool right_strand = right_val->is_strand();
-    if (prim_fn->is_pervasive && (left_strand || right_strand)) {
+    if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_strand || right_strand)) {
         int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
                                    : (left_val->is_scalar() ? 1 : left_val->size());
         int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
@@ -1980,7 +1983,7 @@ void DispatchFunctionK::invoke(Machine* machine) {
     bool left_ndarray = left_val && left_val->is_ndarray();
     bool right_ndarray = right_val && right_val->is_ndarray();
 
-    if (prim_fn->is_pervasive && left_val && (left_strand || right_strand || left_ndarray || right_ndarray)) {
+    if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && left_val && (left_strand || right_strand || left_ndarray || right_ndarray)) {
         int left_cells = left_val ? count_cells_for_rank(left_val, 0) : 0;
         int right_cells = count_cells_for_rank(right_val, 0);
         int total = std::max(left_cells, right_cells);
@@ -2047,9 +2050,10 @@ void DispatchFunctionK::invoke(Machine* machine) {
         }
 
         // Pervasive strand handling: if either arg is a strand, apply element-wise
+        // Skip for Without (~) which is structural, not scalar (ISO 10.2.16)
         bool left_strand = left_val->is_strand();
         bool right_strand = right_val->is_strand();
-        if (prim_fn->is_pervasive && (left_strand || right_strand)) {
+        if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_strand || right_strand)) {
             // Get sizes
             int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
                                        : (left_val->is_scalar() ? 1 : left_val->size());

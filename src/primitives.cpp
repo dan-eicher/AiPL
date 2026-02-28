@@ -5,6 +5,7 @@
 #include "machine.h"
 #include "continuation.h"
 #include "parser.h"
+#include "sysvar.h"
 #include <cmath>
 #include <stdexcept>
 #include <random>
@@ -131,7 +132,7 @@ PrimitiveFn prim_quad_ea   = { "⎕EA", nullptr, fn_quad_ea, false };
 PrimitiveFn prim_quad_dl   = { "⎕DL", fn_quad_dl, nullptr, false };
 PrimitiveFn prim_quad_nc   = { "⎕NC", fn_quad_nc, nullptr, false };
 PrimitiveFn prim_quad_ex   = { "⎕EX", fn_quad_ex, nullptr, false };
-PrimitiveFn prim_quad_nl   = { "⎕NL", fn_quad_nl, nullptr, false };
+PrimitiveFn prim_quad_nl   = { "⎕NL", fn_quad_nl, fn_quad_nl_dyadic, false };
 
 // ============================================================================
 // Dyadic Arithmetic Functions
@@ -1038,10 +1039,18 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 // ============================================================================
 
 // Maximum (⌈) - dyadic
+// ISO 13751 7.2.3: tolerant maximum — if tolerantly equal, return B
+static inline double tolerant_max(double a, double b, double ct) {
+    if (tolerant_eq(a, b, ct)) return b;
+    return (a > b) ? a : b;
+}
+
 void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
+    double ct = m->ct;
+
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(std::max(lhs->data.scalar, rhs->data.scalar));
+        m->result = m->heap->allocate_scalar(tolerant_max(lhs->data.scalar, rhs->data.scalar, ct));
         return;
     }
 
@@ -1054,8 +1063,12 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
             return;
         }
+        double a = lhs->data.scalar;
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        Eigen::MatrixXd result = rmat->array().max(lhs->data.scalar);
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = tolerant_max(a, rmat->data()[i], ct);
+        }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1069,8 +1082,12 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
             return;
         }
+        double b = rhs->data.scalar;
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        Eigen::MatrixXd result = lmat->array().max(rhs->data.scalar);
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = tolerant_max(lmat->data()[i], b, ct);
+        }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1091,7 +1108,10 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    Eigen::MatrixXd result = lmat->array().max(rmat->array());
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = tolerant_max(lmat->data()[i], rmat->data()[i], ct);
+    }
 
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -1100,11 +1120,19 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     }
 }
 
+// ISO 13751 7.2.3: tolerant minimum — if tolerantly equal, return B
+static inline double tolerant_min(double a, double b, double ct) {
+    if (tolerant_eq(a, b, ct)) return b;
+    return (a < b) ? a : b;
+}
+
 // Minimum (⌊) - dyadic
 void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
+    double ct = m->ct;
+
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        m->result = m->heap->allocate_scalar(std::min(lhs->data.scalar, rhs->data.scalar));
+        m->result = m->heap->allocate_scalar(tolerant_min(lhs->data.scalar, rhs->data.scalar, ct));
         return;
     }
 
@@ -1117,8 +1145,12 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
             return;
         }
+        double a = lhs->data.scalar;
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        Eigen::MatrixXd result = rmat->array().min(lhs->data.scalar);
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
+        for (int i = 0; i < rmat->size(); ++i) {
+            result(i) = tolerant_min(a, rmat->data()[i], ct);
+        }
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1132,8 +1164,12 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
             return;
         }
+        double b = rhs->data.scalar;
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        Eigen::MatrixXd result = lmat->array().min(rhs->data.scalar);
+        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+        for (int i = 0; i < lmat->size(); ++i) {
+            result(i) = tolerant_min(lmat->data()[i], b, ct);
+        }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1154,7 +1190,10 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    Eigen::MatrixXd result = lmat->array().min(rmat->array());
+    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
+    for (int i = 0; i < lmat->size(); ++i) {
+        result(i) = tolerant_min(lmat->data()[i], rmat->data()[i], ct);
+    }
 
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -4732,17 +4771,6 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     // NDARRAY: rotate along specified axis (default: first)
     if (rhs->is_ndarray()) {
-        if (!lhs->is_scalar()) {
-            m->throw_error("RANK ERROR: NDARRAY rotate requires scalar count", nullptr, 4, 0);
-            return;
-        }
-        double val = lhs->as_scalar();
-        if (!is_near_integer(val, INTEGER_TOLERANCE)) {
-            m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
-            return;
-        }
-        int n = static_cast<int>(std::round(val));
-
         const Value::NDArrayData* nd = rhs->as_ndarray();
         const std::vector<int>& shape = nd->shape;
         int rank = static_cast<int>(shape.size());
@@ -4766,12 +4794,6 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
 
-        // Normalize rotation
-        n = ((n % ax_len) + ax_len) % ax_len;
-
-        int total = static_cast<int>(nd->data->size());
-        Eigen::VectorXd result_data(total);
-
         // Compute strides
         std::vector<int> strides(rank);
         strides[rank - 1] = 1;
@@ -4779,24 +4801,78 @@ void fn_rotate_first(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             strides[d] = strides[d + 1] * shape[d + 1];
         }
 
-        // For each element, compute rotated source index
-        std::vector<int> idx(rank);
-        for (int i = 0; i < total; ++i) {
-            // Convert linear index to multi-dimensional
-            int tmp = i;
-            for (int d = 0; d < rank; ++d) {
-                idx[d] = tmp / strides[d];
-                tmp %= strides[d];
+        int total = static_cast<int>(nd->data->size());
+        Eigen::VectorXd result_data(total);
+
+        if (lhs->is_scalar()) {
+            double val = lhs->as_scalar();
+            if (!is_near_integer(val, INTEGER_TOLERANCE)) {
+                m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
+                return;
+            }
+            int n = static_cast<int>(std::round(val));
+            n = ((n % ax_len) + ax_len) % ax_len;
+
+            std::vector<int> idx(rank);
+            for (int i = 0; i < total; ++i) {
+                int tmp = i;
+                for (int d = 0; d < rank; ++d) {
+                    idx[d] = tmp / strides[d];
+                    tmp %= strides[d];
+                }
+
+                int src_linear = 0;
+                for (int d = 0; d < rank; ++d) {
+                    int src_idx = (d == ax) ? ((idx[d] + n) % ax_len) : idx[d];
+                    src_linear += src_idx * strides[d];
+                }
+
+                result_data(i) = (*nd->data)(src_linear);
+            }
+        } else if (lhs->is_vector()) {
+            // Vector rotation: each slice along the dimension before the rotate axis
+            // gets a different rotation count
+            const Eigen::MatrixXd* rotations = lhs->as_matrix();
+            int num_rotations = rotations->rows();
+
+            // The rotation vector should match dimension before the rotate axis
+            int match_dim = (ax > 0) ? ax - 1 : 0;
+            if (num_rotations != shape[match_dim]) {
+                m->throw_error("LENGTH ERROR: rotation count length must match array dimension", nullptr, 5, 0);
+                return;
             }
 
-            // Rotate along specified axis
-            int src_linear = 0;
-            for (int d = 0; d < rank; ++d) {
-                int src_idx = (d == ax) ? ((idx[d] + n) % ax_len) : idx[d];
-                src_linear += src_idx * strides[d];
+            // Validate all rotation counts are integers
+            for (int i = 0; i < num_rotations; ++i) {
+                if (!is_near_integer((*rotations)(i, 0), INTEGER_TOLERANCE)) {
+                    m->throw_error("DOMAIN ERROR: rotate count must be integer", nullptr, 11, 0);
+                    return;
+                }
             }
 
-            result_data(i) = (*nd->data)(src_linear);
+            std::vector<int> idx(rank);
+            for (int i = 0; i < total; ++i) {
+                int tmp = i;
+                for (int d = 0; d < rank; ++d) {
+                    idx[d] = tmp / strides[d];
+                    tmp %= strides[d];
+                }
+
+                int rot_idx = idx[match_dim];
+                int n = static_cast<int>(std::round((*rotations)(rot_idx, 0)));
+                n = ((n % ax_len) + ax_len) % ax_len;
+
+                int src_linear = 0;
+                for (int d = 0; d < rank; ++d) {
+                    int src_idx = (d == ax) ? ((idx[d] + n) % ax_len) : idx[d];
+                    src_linear += src_idx * strides[d];
+                }
+
+                result_data(i) = (*nd->data)(src_linear);
+            }
+        } else {
+            m->throw_error("RANK ERROR: rotate count must be scalar or vector", nullptr, 4, 0);
+            return;
         }
 
         m->result = m->heap->allocate_ndarray(result_data, shape);
@@ -6181,18 +6257,19 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     bool is_char = rhs->is_char_data();
 
-    // Get boolean mask from lhs
+    // Get mask from lhs (non-negative integers per ISO 10.2.6)
     Eigen::VectorXd mask = flatten_value(lhs);
 
-    // Count number of 1s in mask - must equal length of rhs
+    // Count number of positive entries (each takes one element from B)
+    // Values > 1 replicate that element; 0 inserts a fill
     int ones_count = 0;
     for (int i = 0; i < mask.size(); ++i) {
         int val = static_cast<int>(mask(i));
-        if (val != 0 && val != 1) {
-            m->throw_error("DOMAIN ERROR: expand mask must be boolean", nullptr, 11, 0);
+        if (val < 0) {
+            m->throw_error("DOMAIN ERROR: expand mask must be non-negative integer", nullptr, 11, 0);
             return;
         }
-        if (val == 1) ones_count++;
+        if (val > 0) ones_count++;
     }
 
     // Typical element: blank for char, zero for numeric (ISO 13751 §5.3.2)
@@ -6205,17 +6282,25 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         int n = static_cast<int>(strand->size());
 
         if (ones_count != n) {
-            m->throw_error("LENGTH ERROR: expand mask ones must match strand length", nullptr, 5, 0);
+            m->throw_error("LENGTH ERROR: expand mask positive entries must match strand length", nullptr, 5, 0);
             return;
         }
 
+        // Compute total output size
+        int total = 0;
+        for (int i = 0; i < mask.size(); ++i) total += std::max(1, static_cast<int>(mask(i)));
+
         std::vector<Value*> result;
-        result.reserve(mask.size());
+        result.reserve(total);
         int src_idx = 0;
-        Value* strand_fill = m->heap->allocate_scalar(0.0);  // Numeric fill for strands
+        Value* strand_fill = m->heap->allocate_scalar(0.0);
         for (int i = 0; i < mask.size(); ++i) {
-            if (static_cast<int>(mask(i)) == 1) {
-                result.push_back((*strand)[src_idx++]);
+            int val = static_cast<int>(mask(i));
+            if (val > 0) {
+                for (int r = 0; r < val; ++r) {
+                    result.push_back((*strand)[src_idx]);
+                }
+                src_idx++;
             } else {
                 result.push_back(strand_fill);
             }
@@ -6247,15 +6332,35 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         int axis_len = shape[ax];
 
-        // Number of 1s in mask must equal axis length
+        // Number of positive entries in mask must equal axis length
         if (ones_count != axis_len) {
-            m->throw_error("LENGTH ERROR: expand mask ones must match axis length", nullptr, 5, 0);
+            m->throw_error("LENGTH ERROR: expand mask positive entries must match axis length", nullptr, 5, 0);
             return;
         }
 
-        // Build result shape - axis dimension becomes mask length
+        // Build expanded axis: total size along axis accounts for values > 1
+        int new_axis_len = 0;
+        for (int i = 0; i < mask.size(); ++i) {
+            new_axis_len += std::max(1, static_cast<int>(mask(i)));
+        }
+
+        // Build mapping: for each position along expanded axis,
+        // store source index or -1 for fill
+        std::vector<int> axis_map(new_axis_len);
+        int pos = 0, src = 0;
+        for (int i = 0; i < mask.size(); ++i) {
+            int val = static_cast<int>(mask(i));
+            if (val > 0) {
+                for (int r = 0; r < val; ++r) axis_map[pos++] = src;
+                src++;
+            } else {
+                axis_map[pos++] = -1;  // fill
+            }
+        }
+
+        // Build result shape
         std::vector<int> result_shape = shape;
-        result_shape[ax] = static_cast<int>(mask.size());
+        result_shape[ax] = new_axis_len;
 
         int result_size = 1;
         for (int d : result_shape) result_size *= d;
@@ -6274,38 +6379,21 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         // Iterate through result positions
         std::vector<int> res_idx(rank, 0);
         for (int lin = 0; lin < result_size; ++lin) {
-            // Decompose linear index to result indices
             int tmp = lin;
             for (int d = 0; d < rank; ++d) {
                 res_idx[d] = tmp / res_strides[d];
                 tmp %= res_strides[d];
             }
 
-            int res_ax_idx = res_idx[ax];
-            if (static_cast<int>(mask(res_ax_idx)) == 0) {
-                // Fill element
+            int src_ax_idx = axis_map[res_idx[ax]];
+            if (src_ax_idx < 0) {
                 result(lin) = fill;
             } else {
-                // Map result axis index to source axis index
-                int src_ax_idx = 0;
-                int ones_seen = 0;
-                for (int i = 0; i <= res_ax_idx; ++i) {
-                    if (static_cast<int>(mask(i)) == 1) {
-                        if (i == res_ax_idx) {
-                            src_ax_idx = ones_seen;
-                            break;
-                        }
-                        ones_seen++;
-                    }
-                }
-
-                // Compute source linear index
                 int src_lin = 0;
                 for (int d = 0; d < rank; ++d) {
                     int idx = (d == ax) ? src_ax_idx : res_idx[d];
                     src_lin += idx * src_strides[d];
                 }
-
                 result(lin) = (*nd->data)(src_lin);
             }
         }
@@ -6347,16 +6435,24 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         k += 1;  // Convert to 1-based internal representation
     }
 
+    // Compute total expanded size for vector/scalar/matrix paths
+    int expanded_size = 0;
+    for (int i = 0; i < mask.size(); ++i) {
+        expanded_size += std::max(1, static_cast<int>(mask(i)));
+    }
+
     // Handle scalar/vector rhs
-    // ISO 10.2.6: "If B is a scalar, set B1 to (+/A1)µB" - extend scalar to ones_count copies
+    // ISO 10.2.6: "If B is a scalar, set B1 to (+/A1)ρB" - extend scalar to ones_count copies
     if (rhs->is_scalar()) {
         double val = rhs->data.scalar;
-        Eigen::VectorXd result(mask.size());
+        Eigen::VectorXd result(expanded_size);
+        int out = 0;
         for (int i = 0; i < mask.size(); ++i) {
-            if (static_cast<int>(mask(i)) == 1) {
-                result(i) = val;  // Use scalar value for each 1
+            int v = static_cast<int>(mask(i));
+            if (v > 0) {
+                for (int r = 0; r < v; ++r) result(out++) = val;
             } else {
-                result(i) = fill;  // Fill element for each 0
+                result(out++) = fill;
             }
         }
         m->result = m->heap->allocate_vector(result, is_char);
@@ -6375,17 +6471,21 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         if (k == 1) {
             // Expand along first axis (rows)
             if (ones_count != rows) {
-                m->throw_error("LENGTH ERROR: expand mask ones must match array length", nullptr, 5, 0);
+                m->throw_error("LENGTH ERROR: expand mask positive entries must match array length", nullptr, 5, 0);
                 return;
             }
 
-            Eigen::MatrixXd result(mask.size(), cols);
-            int src_row = 0;
+            Eigen::MatrixXd result(expanded_size, cols);
+            int out_row = 0, src_row = 0;
             for (int i = 0; i < mask.size(); ++i) {
-                if (static_cast<int>(mask(i)) == 1) {
-                    result.row(i) = mat->row(src_row++);
+                int v = static_cast<int>(mask(i));
+                if (v > 0) {
+                    for (int r = 0; r < v; ++r) {
+                        result.row(out_row++) = mat->row(src_row);
+                    }
+                    src_row++;
                 } else {
-                    result.row(i).setConstant(fill);  // Fill row
+                    result.row(out_row++).setConstant(fill);
                 }
             }
 
@@ -6395,17 +6495,21 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
         // k == 2: Expand along last axis (columns)
         if (ones_count != cols) {
-            m->throw_error("LENGTH ERROR: expand mask ones must match array length", nullptr, 5, 0);
+            m->throw_error("LENGTH ERROR: expand mask positive entries must match array length", nullptr, 5, 0);
             return;
         }
 
-        Eigen::MatrixXd result(rows, mask.size());
-        int src_col = 0;
+        Eigen::MatrixXd result(rows, expanded_size);
+        int out_col = 0, src_col = 0;
         for (int j = 0; j < mask.size(); ++j) {
-            if (static_cast<int>(mask(j)) == 1) {
-                result.col(j) = mat->col(src_col++);
+            int v = static_cast<int>(mask(j));
+            if (v > 0) {
+                for (int r = 0; r < v; ++r) {
+                    result.col(out_col++) = mat->col(src_col);
+                }
+                src_col++;
             } else {
-                result.col(j).setConstant(fill);  // Fill column
+                result.col(out_col++).setConstant(fill);
             }
         }
 
@@ -6417,17 +6521,21 @@ void fn_expand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     Eigen::VectorXd data = flatten_value(rhs);
 
     if (ones_count != data.size()) {
-        m->throw_error("LENGTH ERROR: expand mask ones must match array length", nullptr, 5, 0);
+        m->throw_error("LENGTH ERROR: expand mask positive entries must match array length", nullptr, 5, 0);
         return;
     }
 
-    Eigen::VectorXd result(mask.size());
-    int src_idx = 0;
+    Eigen::VectorXd result(expanded_size);
+    int out_idx = 0, src_idx = 0;
     for (int i = 0; i < mask.size(); ++i) {
-        if (static_cast<int>(mask(i)) == 1) {
-            result(i) = data(src_idx++);
+        int v = static_cast<int>(mask(i));
+        if (v > 0) {
+            for (int r = 0; r < v; ++r) {
+                result(out_idx++) = data(src_idx);
+            }
+            src_idx++;
         } else {
-            result(i) = fill;  // Fill element
+            result(out_idx++) = fill;
         }
     }
 
@@ -8304,13 +8412,12 @@ void fn_quad_dl(Machine* m, Value* axis, Value* omega) {
     }
 
     double seconds = omega->as_scalar();
-    if (seconds < 0) {
-        m->throw_error("DOMAIN ERROR: ⎕DL requires non-negative argument", nullptr, 11, 0);
-        return;
-    }
 
     auto start = std::chrono::high_resolution_clock::now();
-    std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+    // ISO 13751 §11.5.1: negative B causes immediate return (no delay)
+    if (seconds > 0) {
+        std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
+    }
     auto end = std::chrono::high_resolution_clock::now();
 
     double actual = std::chrono::duration<double>(end - start).count();
@@ -8393,8 +8500,35 @@ static std::string extract_name_from_vector(const Eigen::MatrixXd* mat) {
     return name;
 }
 
+// Helper: classify a name string for ⎕NC, including system names (classes 5 and 6)
+// ISO 13751 §11.5.2: 5=system-variable, 6=system-function
+static int classify_name(Machine* m, const std::string& name_str) {
+    // Check for system names (⎕-prefixed)
+    // ⎕ is U+2395, encoded as E2 8E 95 in UTF-8
+    if (name_str.size() >= 3 &&
+        static_cast<unsigned char>(name_str[0]) == 0xE2 &&
+        static_cast<unsigned char>(name_str[1]) == 0x8E &&
+        static_cast<unsigned char>(name_str[2]) == 0x95) {
+        // Extract the part after ⎕
+        std::string suffix = name_str.substr(3);
+        // Check if it's a known system variable
+        if (lookup_sysvar(suffix) != SysVarId::INVALID) {
+            return 5;  // system-variable
+        }
+        // Check if it's a known system function (bound in environment)
+        Value* v = m->env->lookup(m->string_pool.intern(name_str));
+        if (v && (v->tag == ValueType::PRIMITIVE || v->tag == ValueType::CLOSURE)) {
+            return 6;  // system-function
+        }
+        return 0;  // unknown quad name
+    }
+    // Regular name: look up in environment
+    Value* v = m->env->lookup(m->string_pool.intern(name_str));
+    return classify_value(v);
+}
+
 // ⎕NC - Name Class (ISO 13751 §11.5.2)
-// Returns classification of names: 0=undefined, 1=label, 2=variable, 3=function, 4=operator
+// Returns classification of names: 0=undefined, 1=label, 2=variable, 3=function, 4=operator, 5=sysvar, 6=sysfn
 void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
     REJECT_AXIS(m, axis);
 
@@ -8408,16 +8542,14 @@ void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
     // Handle string (simple name)
     if (omega->is_string()) {
         String* name = omega->as_string();
-        Value* v = m->env->lookup(name);
-        m->result = m->heap->allocate_scalar(static_cast<double>(classify_value(v)));
+        m->result = m->heap->allocate_scalar(static_cast<double>(classify_name(m, name->str())));
         return;
     }
 
     // Handle character vector (single name)
     if (omega->is_vector()) {
         std::string name_str = extract_name_from_vector(omega->as_matrix());
-        Value* v = m->env->lookup(m->string_pool.intern(name_str));
-        m->result = m->heap->allocate_scalar(static_cast<double>(classify_value(v)));
+        m->result = m->heap->allocate_scalar(static_cast<double>(classify_name(m, name_str)));
         return;
     }
 
@@ -8430,8 +8562,7 @@ void fn_quad_nc(Machine* m, Value* axis, Value* omega) {
         Eigen::VectorXd result(rows);
         for (int r = 0; r < rows; ++r) {
             std::string name_str = extract_name_from_row(mat, r, cols);
-            Value* v = m->env->lookup(m->string_pool.intern(name_str));
-            result(r) = static_cast<double>(classify_value(v));
+            result(r) = static_cast<double>(classify_name(m, name_str));
         }
         m->result = m->heap->allocate_vector(result);
         return;
@@ -8572,24 +8703,59 @@ void fn_quad_nl(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // Validate class values
+    // Validate class values (1-6 per ISO 13751)
     for (int c : classes) {
-        if (c < 1 || c > 4) {
-            m->throw_error("DOMAIN ERROR: ⎕NL class must be 1-4", nullptr, 11, 0);
+        if (c < 1 || c > 6) {
+            m->throw_error("DOMAIN ERROR: ⎕NL class must be 1-6", nullptr, 11, 0);
             return;
         }
     }
 
-    // Collect matching names from environment
+    // Check if classes 5 or 6 are requested
+    bool want_sysvars = false, want_sysfns = false;
+    for (int c : classes) {
+        if (c == 5) want_sysvars = true;
+        if (c == 6) want_sysfns = true;
+    }
+
+    // Collect matching names from environment (classes 1-4)
     std::vector<std::string> names;
     for (const auto& kv : m->env->bindings) {
         Value* v = kv.second;
         int nc = classify_value(v);
+        // Skip system functions in env (they'll be added as class 6 below)
+        std::string name_s = kv.first->str();
+        if (name_s.size() >= 3 &&
+            static_cast<unsigned char>(name_s[0]) == 0xE2 &&
+            static_cast<unsigned char>(name_s[1]) == 0x8E &&
+            static_cast<unsigned char>(name_s[2]) == 0x95) {
+            continue;  // system names handled below
+        }
         for (int c : classes) {
             if (nc == c) {
-                names.push_back(kv.first->str());
+                names.push_back(name_s);
                 break;
             }
+        }
+    }
+
+    // Add system variables (class 5) if requested
+    if (want_sysvars) {
+        static const char* sysvar_names[] = {
+            "⎕IO", "⎕PP", "⎕CT", "⎕RL", "⎕ET", "⎕EM", "⎕TS", "⎕AV", "⎕LC", "⎕LX"
+        };
+        for (const char* name : sysvar_names) {
+            names.push_back(name);
+        }
+    }
+
+    // Add system functions (class 6) if requested
+    if (want_sysfns) {
+        static const char* sysfn_names[] = {
+            "⎕DL", "⎕EA", "⎕ES", "⎕EX", "⎕NC", "⎕NL"
+        };
+        for (const char* name : sysfn_names) {
+            names.push_back(name);
         }
     }
 
@@ -8622,6 +8788,73 @@ void fn_quad_nl(Machine* m, Value* axis, Value* omega) {
     }
 
     m->result = m->heap->allocate_matrix(mat, true);  // is_char_data = true
+}
+
+// Dyadic ⎕NL: A ⎕NL B — filter name list to names starting with prefix A
+// A is a character scalar, vector, or matrix of prefixes
+// B is the class(es) as in monadic ⎕NL
+void fn_quad_nl_dyadic(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
+
+    // First, get the full name list via monadic ⎕NL logic
+    // Save and restore result since we call fn_quad_nl
+    fn_quad_nl(m, nullptr, rhs);
+    if (!m->result) return;  // error was thrown
+
+    Value* full_list = m->result;
+
+    // Extract prefix(es) from lhs
+    std::vector<std::string> prefixes;
+    if (lhs->is_string()) {
+        prefixes.push_back(lhs->as_string()->str());
+    } else if (lhs->is_vector() && lhs->is_char_data()) {
+        prefixes.push_back(extract_name_from_vector(lhs->as_matrix()));
+    } else if (lhs->is_matrix() && lhs->is_char_data()) {
+        const Eigen::MatrixXd* mat = lhs->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+        for (int r = 0; r < rows; ++r) {
+            prefixes.push_back(extract_name_from_row(mat, r, cols));
+        }
+    } else {
+        m->throw_error("DOMAIN ERROR: ⎕NL left argument must be character", nullptr, 11, 0);
+        return;
+    }
+
+    // If full list is empty, return it as-is
+    if (full_list->is_matrix()) {
+        const Eigen::MatrixXd* mat = full_list->as_matrix();
+        if (mat->rows() == 0) {
+            m->result = full_list;
+            return;
+        }
+
+        int cols = mat->cols();
+
+        // Filter rows that match any prefix
+        std::vector<int> matching_rows;
+        for (int r = 0; r < mat->rows(); ++r) {
+            std::string name = extract_name_from_row(mat, r, cols);
+            for (const auto& prefix : prefixes) {
+                if (name.size() >= prefix.size() && name.substr(0, prefix.size()) == prefix) {
+                    matching_rows.push_back(r);
+                    break;
+                }
+            }
+        }
+
+        if (matching_rows.empty()) {
+            Eigen::MatrixXd empty(0, 0);
+            m->result = m->heap->allocate_matrix(empty, true);
+            return;
+        }
+
+        Eigen::MatrixXd result(matching_rows.size(), cols);
+        for (size_t i = 0; i < matching_rows.size(); ++i) {
+            result.row(i) = mat->row(matching_rows[i]);
+        }
+        m->result = m->heap->allocate_matrix(result, true);
+    }
 }
 
 } // namespace apl
