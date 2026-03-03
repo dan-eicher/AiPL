@@ -98,6 +98,36 @@ void op_outer_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
     result_shape.insert(result_shape.end(), lhs_shape.begin(), lhs_shape.end());
     result_shape.insert(result_shape.end(), rhs_shape.begin(), rhs_shape.end());
 
+    // Eigen fast path: outer product for numeric vectors
+    if (f->is_primitive() && lhs->is_vector() && rhs->is_vector() &&
+        !lhs->is_char_data() && !rhs->is_char_data()) {
+        PrimitiveFn* fp = f->data.primitive_fn;
+        const Eigen::VectorXd l = lhs->as_matrix()->col(0);
+        const Eigen::VectorXd r = rhs->as_matrix()->col(0);
+        if (fp == &prim_times) {
+            m->result = m->heap->allocate_matrix(l * r.transpose());
+            return;
+        }
+        if (fp == &prim_plus) {
+            Eigen::MatrixXd res(l.size(), r.size());
+            for (Eigen::Index i = 0; i < l.size(); ++i) res.row(i) = r.array() + l(i);
+            m->result = m->heap->allocate_matrix(res);
+            return;
+        }
+        if (fp == &prim_floor) {
+            Eigen::MatrixXd res(l.size(), r.size());
+            for (Eigen::Index i = 0; i < l.size(); ++i) res.row(i) = r.array().min(l(i));
+            m->result = m->heap->allocate_matrix(res);
+            return;
+        }
+        if (fp == &prim_ceiling) {
+            Eigen::MatrixXd res(l.size(), r.size());
+            for (Eigen::Index i = 0; i < l.size(); ++i) res.row(i) = r.array().max(l(i));
+            m->result = m->heap->allocate_matrix(res);
+            return;
+        }
+    }
+
     // Use CellIterK with OUTER mode for Cartesian product iteration
     CellIterK* iter = m->heap->allocate<CellIterK>(
         f, lhs, rhs, lhs_size, rhs_size, lhs_cols, rhs_cols);
@@ -341,6 +371,14 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
             return;
         }
 
+        // Eigen fast path: +.× for numeric vectors → dot product
+        if (f->is_primitive() && g->is_primitive() &&
+            !lhs->is_char_data() && !rhs->is_char_data() &&
+            f->data.primitive_fn == &prim_plus && g->data.primitive_fn == &prim_times) {
+            m->result = m->heap->allocate_scalar(lhs->as_matrix()->col(0).dot(rhs->as_matrix()->col(0)));
+            return;
+        }
+
         // Vector inner product: f/ (lhs g rhs)
         // Push ReduceResultK(f), then dyadic CellIterK(g) for element-wise
         m->push_kont(m->heap->allocate_ephemeral<ReduceResultK>(f));
@@ -355,6 +393,14 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
         // Vector length must match matrix rows
         if (lhs_rows != rhs_rows) {
             m->throw_error("LENGTH ERROR: inner product dimension mismatch", nullptr, 5, 0);
+            return;
+        }
+        // Eigen fast path: +.× vector × matrix
+        if (f->is_primitive() && g->is_primitive() &&
+            !lhs->is_char_data() && !rhs->is_char_data() &&
+            f->data.primitive_fn == &prim_plus && g->data.primitive_fn == &prim_times) {
+            Eigen::VectorXd r = rhs->as_matrix()->transpose() * lhs->as_matrix()->col(0);
+            m->result = m->heap->allocate_vector(r);
             return;
         }
         // Result is a vector of length rhs_cols
@@ -375,6 +421,14 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
             m->throw_error("LENGTH ERROR: inner product dimension mismatch", nullptr, 5, 0);
             return;
         }
+        // Eigen fast path: +.× matrix × vector
+        if (f->is_primitive() && g->is_primitive() &&
+            !lhs->is_char_data() && !rhs->is_char_data() &&
+            f->data.primitive_fn == &prim_plus && g->data.primitive_fn == &prim_times) {
+            Eigen::VectorXd r = (*lhs->as_matrix()) * rhs->as_matrix()->col(0);
+            m->result = m->heap->allocate_vector(r);
+            return;
+        }
         // Result is a vector of length lhs_rows
         // lhs_frame=lhs_rows, rhs_frame=1, common=lhs_cols
         CellIterK* iter = m->heap->allocate<CellIterK>(
@@ -390,6 +444,14 @@ void op_inner_product(Machine* m, Value* axis, Value* lhs, Value* f, Value* g, V
     // LENGTH constraint: last dimension of A must equal first dimension of B
     if (lhs_cols != rhs_rows) {
         m->throw_error("LENGTH ERROR: inner product dimension mismatch", nullptr, 5, 0);
+        return;
+    }
+
+    // Eigen fast path: +.× matrix × matrix → BLAS-backed matmul
+    if (f->is_primitive() && g->is_primitive() &&
+        !lhs->is_char_data() && !rhs->is_char_data() &&
+        f->data.primitive_fn == &prim_plus && g->data.primitive_fn == &prim_times) {
+        m->result = m->heap->allocate_matrix((*lhs->as_matrix()) * (*rhs->as_matrix()));
         return;
     }
 
@@ -934,6 +996,15 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
             return;
         }
 
+        // Eigen fast path: reduce numeric vector directly
+        if (func->is_primitive() && !omega->is_char_data()) {
+            PrimitiveFn* pfn = func->data.primitive_fn;
+            if (pfn == &prim_plus)    { m->result = m->heap->allocate_scalar(mat->sum());      return; }
+            if (pfn == &prim_times)   { m->result = m->heap->allocate_scalar(mat->prod());     return; }
+            if (pfn == &prim_floor)   { m->result = m->heap->allocate_scalar(mat->minCoeff()); return; }
+            if (pfn == &prim_ceiling) { m->result = m->heap->allocate_scalar(mat->maxCoeff()); return; }
+        }
+
         // Use CellIterK FOLD_RIGHT for right-to-left reduction
         m->push_kont(m->heap->allocate<CellIterK>(
             func, nullptr, omega, 0, 0, len,
@@ -961,6 +1032,16 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
             m->result = m->heap->allocate_vector(mat->row(0).transpose());
             return;
         }
+        // Eigen fast path: reduce matrix along first axis (colwise)
+        if (func->is_primitive() && !omega->is_char_data()) {
+            PrimitiveFn* pfn = func->data.primitive_fn;
+            Eigen::MatrixXd r;
+            if      (pfn == &prim_plus)    r = mat->colwise().sum();
+            else if (pfn == &prim_times)   r = mat->colwise().prod();
+            else if (pfn == &prim_floor)   r = mat->colwise().minCoeff();
+            else if (pfn == &prim_ceiling) r = mat->colwise().maxCoeff();
+            if (r.size() > 0) { m->result = m->heap->allocate_vector(r.row(0).transpose()); return; }
+        }
         m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 0, 0, false));
     } else {
         // k == 2: Reduce along last axis (columns)
@@ -977,6 +1058,16 @@ void fn_reduce(Machine* m, Value* axis, Value* func, Value* omega) {
         if (cols == 1) {
             m->result = m->heap->allocate_vector(mat->col(0));
             return;
+        }
+        // Eigen fast path: reduce matrix along last axis (rowwise)
+        if (func->is_primitive() && !omega->is_char_data()) {
+            PrimitiveFn* pfn = func->data.primitive_fn;
+            Eigen::VectorXd r;
+            if      (pfn == &prim_plus)    r = mat->rowwise().sum();
+            else if (pfn == &prim_times)   r = mat->rowwise().prod();
+            else if (pfn == &prim_floor)   r = mat->rowwise().minCoeff();
+            else if (pfn == &prim_ceiling) r = mat->rowwise().maxCoeff();
+            if (r.size() > 0) { m->result = m->heap->allocate_vector(r); return; }
         }
         m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 1, 0, false));
     }
@@ -1058,6 +1149,16 @@ void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega) {
             m->result = m->heap->allocate_vector(mat->row(0).transpose());
             return;
         }
+        // Eigen fast path: reduce matrix along first axis (colwise)
+        if (func->is_primitive() && !omega->is_char_data()) {
+            PrimitiveFn* pfn = func->data.primitive_fn;
+            Eigen::MatrixXd r;
+            if      (pfn == &prim_plus)    r = mat->colwise().sum();
+            else if (pfn == &prim_times)   r = mat->colwise().prod();
+            else if (pfn == &prim_floor)   r = mat->colwise().minCoeff();
+            else if (pfn == &prim_ceiling) r = mat->colwise().maxCoeff();
+            if (r.size() > 0) { m->result = m->heap->allocate_vector(r.row(0).transpose()); return; }
+        }
         m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 0, 0, false));
     } else {
         // k == 2: Reduce along last axis (columns)
@@ -1074,6 +1175,16 @@ void fn_reduce_first(Machine* m, Value* axis, Value* func, Value* omega) {
         if (cols == 1) {
             m->result = m->heap->allocate_vector(mat->col(0));
             return;
+        }
+        // Eigen fast path: reduce matrix along last axis (rowwise)
+        if (func->is_primitive() && !omega->is_char_data()) {
+            PrimitiveFn* pfn = func->data.primitive_fn;
+            Eigen::VectorXd r;
+            if      (pfn == &prim_plus)    r = mat->rowwise().sum();
+            else if (pfn == &prim_times)   r = mat->rowwise().prod();
+            else if (pfn == &prim_floor)   r = mat->rowwise().minCoeff();
+            else if (pfn == &prim_ceiling) r = mat->rowwise().maxCoeff();
+            if (r.size() > 0) { m->result = m->heap->allocate_vector(r); return; }
         }
         m->push_kont(m->heap->allocate<FiberReduceK>(func, omega, 1, 0, false));
     }
@@ -1190,6 +1301,27 @@ void fn_scan(Machine* m, Value* axis, Value* func, Value* omega) {
             result(0) = (*mat)(0, 0);
             m->result = m->heap->allocate_vector(result);
             return;
+        }
+
+        // Eigen fast path: scan numeric vector directly
+        if (func->is_primitive() && !omega->is_char_data()) {
+            PrimitiveFn* pfn = func->data.primitive_fn;
+            Eigen::VectorXd result(len);
+            bool handled = true;
+            if (pfn == &prim_plus) {
+                double acc = 0;
+                for (int i = 0; i < len; ++i) { acc += (*mat)(i,0); result(i) = acc; }
+            } else if (pfn == &prim_times) {
+                double acc = 1;
+                for (int i = 0; i < len; ++i) { acc *= (*mat)(i,0); result(i) = acc; }
+            } else if (pfn == &prim_floor) {
+                double acc = (*mat)(0,0); result(0) = acc;
+                for (int i = 1; i < len; ++i) { acc = std::min(acc, (*mat)(i,0)); result(i) = acc; }
+            } else if (pfn == &prim_ceiling) {
+                double acc = (*mat)(0,0); result(0) = acc;
+                for (int i = 1; i < len; ++i) { acc = std::max(acc, (*mat)(i,0)); result(i) = acc; }
+            } else { handled = false; }
+            if (handled) { m->result = m->heap->allocate_vector(result); return; }
         }
 
         // Use PrefixScanK for prefix reductions

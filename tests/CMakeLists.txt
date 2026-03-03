@@ -95,3 +95,8 @@ add_test(NAME ErrorTest COMMAND test_error)
 add_executable(test_sysfn test_sysfn.cpp)
 target_link_libraries(test_sysfn apl_vm GTest::gtest)
 add_test(NAME SysFnTest COMMAND test_sysfn)
+
+# Static optimizer tests (wBurg single-pass continuation graph rewriter)
+add_executable(test_optimizer test_optimizer.cpp)
+target_link_libraries(test_optimizer apl_vm GTest::gtest)
+add_test(NAME OptimizerTest COMMAND test_optimizer)

@@ -6,6 +6,7 @@
 #include "parser.h"
 #include "primitives.h"
 #include "operators.h"
+#include "optimizer.h"
 #include "kont_print.h"
 #include <stdexcept>
 #include <sstream>
@@ -133,6 +134,12 @@ Value* Machine::eval(const std::string& input) {
         // Parse error - route through the same error mechanism as runtime errors
         throw_error(parser->get_error().c_str(), nullptr, 1, 0);
     } else {
+        // Static optimisation pass (wBurg single-pass rewrite)
+        if (optimizer_enabled) {
+            StaticOptimizer opt;
+            AbsEnv abs_env = build_abs_env(env);
+            k = opt.run(k, heap, abs_env);
+        }
         push_kont(k);
     }
     return execute();

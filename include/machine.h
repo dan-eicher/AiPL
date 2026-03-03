@@ -53,6 +53,7 @@ public:
     std::mt19937_64 rng;                    // Random number generator (seeded by rl)
     String* lx = nullptr;                   // Latent expression (⎕LX): interned in string_pool
     uint32_t sysvar_mask = SYSVAR_ALL;      // Enabled system variables (for sandboxing)
+    bool optimizer_enabled = true;          // set false to disable static optimizer (for benchmarking)
 
     // Error state (ISO 13751 §11.4.4-11.4.5)
     int event_type[2] = {0, 0};             // {class, subclass} - 0 0 = no error

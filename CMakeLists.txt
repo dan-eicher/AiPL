@@ -49,6 +49,7 @@ set(APL_SOURCES
     src/operators.cpp
     src/parser.cpp
     src/sysvar.cpp
+    src/optimizer.cpp
 )
 
 # Build APL VM as a library (build once, link everywhere)
@@ -65,6 +66,10 @@ enable_testing()
 
 # Add test subdirectory
 add_subdirectory(tests)
+
+# Optimizer timing benchmark (not a ctest — run manually)
+add_executable(bench_optimizer src/bench_optimizer.cpp)
+target_link_libraries(bench_optimizer apl_vm)
 
 # Installation (optional)
 # install(TARGETS apl-repl DESTINATION bin)

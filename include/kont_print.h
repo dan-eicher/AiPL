@@ -588,6 +588,12 @@ public:
         print_value("right-arg", k->right_arg);
         print_location(k);
     }
+
+    void visit(ValueK* k) override {
+        out << "ValueK";
+        print_value("val", k->value);
+        print_location(k);
+    }
 };
 
 } // namespace apl

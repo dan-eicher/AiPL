@@ -4469,4 +4469,16 @@ void IndexListCollectK::mark(Heap* heap) {
     }
 }
 
+// ============================================================================
+// ValueK - Pre-computed value (optimizer result)
+// ============================================================================
+
+void ValueK::invoke(Machine* machine) {
+    machine->result = value;
+}
+
+void ValueK::mark(Heap* heap) {
+    heap->mark(value);
+}
+
 } // namespace apl

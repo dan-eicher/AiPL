@@ -382,6 +382,14 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        // Fast path: no zeros in denominator
+        if (!rhs->is_char_data() && (rmat->array() == 0.0).count() == 0) {
+            Eigen::MatrixXd result = Eigen::MatrixXd::Constant(
+                rmat->rows(), rmat->cols(), lhs->data.scalar).array() / rmat->array();
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double lval = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
@@ -407,6 +415,13 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
         double rval = rhs->data.scalar;
+        // Fast path: nonzero scalar denominator
+        if (!lhs->is_char_data() && rval != 0.0) {
+            Eigen::MatrixXd result = lmat->array() / rval;
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
             if (!safe_divide(lmat->data()[i], rval, result(i))) {
@@ -433,6 +448,16 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in division", nullptr, 5, 0);
+        return;
+    }
+
+    // Fast path: no zeros in denominator
+    if (!lhs->is_char_data() && !rhs->is_char_data() && (rmat->array() == 0.0).count() == 0) {
+        Eigen::MatrixXd result = lmat->array() / rmat->array();
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -490,6 +515,14 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
         // lhs is scalar base, rhs is array of exponents: lhs^rhs[i]
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        // Fast path: nonzero base — no edge cases
+        if (!rhs->is_char_data() && lhs->data.scalar != 0.0) {
+            Eigen::MatrixXd result = Eigen::MatrixXd::Constant(
+                rmat->rows(), rmat->cols(), lhs->data.scalar).array().pow(rmat->array());
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = power_scalar(m, lhs->data.scalar, rmat->data()[i]);
@@ -510,6 +543,13 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
         // lhs is array of bases, rhs is scalar exponent
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        // Fast path: no zero bases
+        if (!lhs->is_char_data() && (lmat->array() == 0.0).count() == 0) {
+            Eigen::MatrixXd result = lmat->array().pow(rhs->data.scalar);
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = power_scalar(m, lmat->data()[i], rhs->data.scalar);
@@ -533,6 +573,16 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in power", nullptr, 5, 0);
+        return;
+    }
+
+    // Fast path: no zero bases
+    if (!lhs->is_char_data() && !rhs->is_char_data() && (lmat->array() == 0.0).count() == 0) {
+        Eigen::MatrixXd result = lmat->array().pow(rmat->array());
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -570,6 +620,12 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (ct == 0.0 && !rhs->is_char_data()) {
+            Eigen::MatrixXd result = (rmat->array() == lhs->data.scalar).cast<double>();
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = tolerant_eq(lhs->data.scalar, rmat->data()[i], ct) ? 1.0 : 0.0;
@@ -588,6 +644,12 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (ct == 0.0 && !lhs->is_char_data()) {
+            Eigen::MatrixXd result = (lmat->array() == rhs->data.scalar).cast<double>();
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = tolerant_eq(lmat->data()[i], rhs->data.scalar, ct) ? 1.0 : 0.0;
@@ -610,6 +672,16 @@ void fn_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in equality", nullptr, 5, 0);
+        return;
+    }
+
+    // Eigen fast path: exact comparison
+    if (ct == 0.0 && !lhs->is_char_data() && !rhs->is_char_data()) {
+        Eigen::MatrixXd result = (lmat->array() == rmat->array()).cast<double>();
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -647,6 +719,12 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (ct == 0.0 && !rhs->is_char_data()) {
+            Eigen::MatrixXd result = (rmat->array() != lhs->data.scalar).cast<double>();
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
             result(i) = !tolerant_eq(lhs->data.scalar, rmat->data()[i], ct) ? 1.0 : 0.0;
@@ -665,6 +743,12 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (ct == 0.0 && !lhs->is_char_data()) {
+            Eigen::MatrixXd result = (lmat->array() != rhs->data.scalar).cast<double>();
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
             result(i) = !tolerant_eq(lmat->data()[i], rhs->data.scalar, ct) ? 1.0 : 0.0;
@@ -687,6 +771,16 @@ void fn_not_equal(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in not-equal", nullptr, 5, 0);
+        return;
+    }
+
+    // Eigen fast path: exact comparison
+    if (ct == 0.0 && !lhs->is_char_data() && !rhs->is_char_data()) {
+        Eigen::MatrixXd result = (lmat->array() != rmat->array()).cast<double>();
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -725,6 +819,12 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (ct == 0.0 && !rhs->is_char_data()) {
+            Eigen::MatrixXd result = (lhs->data.scalar < rmat->array()).cast<double>();
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
@@ -745,6 +845,12 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (ct == 0.0 && !lhs->is_char_data()) {
+            Eigen::MatrixXd result = (lmat->array() < rhs->data.scalar).cast<double>();
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
@@ -769,6 +875,16 @@ void fn_less(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in less-than", nullptr, 5, 0);
+        return;
+    }
+
+    // Eigen fast path: exact comparison
+    if (ct == 0.0 && !lhs->is_char_data() && !rhs->is_char_data()) {
+        Eigen::MatrixXd result = (lmat->array() < rmat->array()).cast<double>();
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -808,6 +924,12 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (ct == 0.0 && !rhs->is_char_data()) {
+            Eigen::MatrixXd result = (lhs->data.scalar > rmat->array()).cast<double>();
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
@@ -828,6 +950,12 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (ct == 0.0 && !lhs->is_char_data()) {
+            Eigen::MatrixXd result = (lmat->array() > rhs->data.scalar).cast<double>();
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
@@ -852,6 +980,16 @@ void fn_greater(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in greater-than", nullptr, 5, 0);
+        return;
+    }
+
+    // Eigen fast path: exact comparison
+    if (ct == 0.0 && !lhs->is_char_data() && !rhs->is_char_data()) {
+        Eigen::MatrixXd result = (lmat->array() > rmat->array()).cast<double>();
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -891,6 +1029,12 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (ct == 0.0 && !rhs->is_char_data()) {
+            Eigen::MatrixXd result = (lhs->data.scalar <= rmat->array()).cast<double>();
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
@@ -911,6 +1055,12 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (ct == 0.0 && !lhs->is_char_data()) {
+            Eigen::MatrixXd result = (lmat->array() <= rhs->data.scalar).cast<double>();
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
@@ -935,6 +1085,16 @@ void fn_less_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in less-or-equal", nullptr, 5, 0);
+        return;
+    }
+
+    // Eigen fast path: exact comparison
+    if (ct == 0.0 && !lhs->is_char_data() && !rhs->is_char_data()) {
+        Eigen::MatrixXd result = (lmat->array() <= rmat->array()).cast<double>();
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -974,6 +1134,12 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (ct == 0.0 && !rhs->is_char_data()) {
+            Eigen::MatrixXd result = (lhs->data.scalar >= rmat->array()).cast<double>();
+            m->result = rhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         double a = lhs->data.scalar;
         for (int i = 0; i < rmat->size(); ++i) {
@@ -994,6 +1160,12 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (ct == 0.0 && !lhs->is_char_data()) {
+            Eigen::MatrixXd result = (lmat->array() >= rhs->data.scalar).cast<double>();
+            m->result = lhs->is_vector() ? m->heap->allocate_vector(result.col(0))
+                                         : m->heap->allocate_matrix(result);
+            return;
+        }
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         double b = rhs->data.scalar;
         for (int i = 0; i < lmat->size(); ++i) {
@@ -1018,6 +1190,16 @@ void fn_greater_eq(Machine* m, Value* axis, Value* lhs, Value* rhs) {
 
     if (lmat->rows() != rmat->rows() || lmat->cols() != rmat->cols()) {
         m->throw_error("LENGTH ERROR: mismatched shapes in greater-or-equal", nullptr, 5, 0);
+        return;
+    }
+
+    // Eigen fast path: exact comparison
+    if (ct == 0.0 && !lhs->is_char_data() && !rhs->is_char_data()) {
+        Eigen::MatrixXd result = (lmat->array() >= rmat->array()).cast<double>();
+        if (lhs->is_vector() && rhs->is_vector())
+            m->result = m->heap->allocate_vector(result.col(0));
+        else
+            m->result = m->heap->allocate_matrix(result);
         return;
     }
 
@@ -3498,10 +3680,7 @@ void fn_iota(Machine* m, Value* axis, Value* omega) {
             m->throw_error("LIMIT ERROR: array size exceeds implementation limit", m->control, 10, 0);
             return;
         }
-        Eigen::VectorXd result(n);
-        for (int i = 0; i < n; ++i) {
-            result(i) = i + m->io;
-        }
+        Eigen::VectorXd result = Eigen::VectorXd::LinSpaced(n, (double)m->io, (double)(n + m->io - 1));
         m->result = m->heap->allocate_vector(result);
         return;
     }

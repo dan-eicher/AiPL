@@ -87,6 +87,7 @@ class PerformIndexedAssignK;
 class IndexListK;
 class IndexListCollectK;
 class InvokeDefinedOperatorK;
+class ValueK;
 
 // ============================================================================
 // Function Application Helper
@@ -180,6 +181,7 @@ public:
     virtual void visit(IndexListK*) = 0;
     virtual void visit(IndexListCollectK*) = 0;
     virtual void visit(InvokeDefinedOperatorK*) = 0;
+    virtual void visit(ValueK*) = 0;
 };
 
 // Abstract Continuation base class
@@ -1745,6 +1747,26 @@ public:
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }
     bool is_function_boundary() const override { return true; }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// ValueK - Pre-computed value node (optimizer result)
+// ============================================================================
+// Stores a Value* that was computed at optimization time (constant folding,
+// operator pre-building, etc.). When invoked, simply returns the stored value.
+// Created only by StaticOptimizer; never emitted by the parser.
+class ValueK : public Continuation {
+public:
+    Value* value;
+
+    explicit ValueK(Value* v) : value(v) {}
+    ~ValueK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
 
 protected:
     void invoke(Machine* machine) override;
