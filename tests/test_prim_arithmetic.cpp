@@ -2921,7 +2921,7 @@ TEST_F(ArithmeticTest, Circular8) {
 }
 
 // --- 7.1.5 Floor: Comparison tolerance edge cases ---
-// Note: Default ⎕CT=0 for performance. These tests set ⎕CT explicitly.
+// Note: Default ⎕CT=1E-13 (ISO 13751 spec). These tests set ⎕CT explicitly.
 
 TEST_F(ArithmeticTest, FloorNearInteger) {
     // ISO 13751 7.1.5: Floor uses comparison-tolerance
@@ -3647,4 +3647,212 @@ TEST_F(ArithmeticTest, MinimumReturnsSmaller) {
     Value* r = machine->eval("1.5⌊1.0");
     ASSERT_TRUE(r->is_scalar());
     EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+// ============================================================================
+// ISO 13751 Compliance Tests — Phase 5 (previously Unknown rows)
+// ============================================================================
+
+// --- S-04: 0÷0 = 1 (ISO 13751 §7.2.4 special case) ---
+// The spec defines: "if both A and B are zero, Z is one"
+TEST_F(ArithmeticTest, S04_ZeroDivideZeroIsOne) {
+    Value* r = machine->eval("0÷0");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+// --- S-11: 0*0 = 1 (ISO 13751 §7.2.7) ---
+// The spec defines: "if both A and B are zero, Z is one"
+TEST_F(ArithmeticTest, S11_ZeroPowerZeroIsOne) {
+    Value* r = machine->eval("0*0");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+// --- S-13/S-15: Negative base, fractional exponent → domain-error ---
+// ISO 13751 §7.2.7: if A<0 and B is not near-integer, signal domain-error
+// (complex-arithmetic facility not present)
+TEST_F(ArithmeticTest, S13_NegativeBaseFractionalExponentDomainError) {
+    EXPECT_THROW(machine->eval("¯2*0.5"), APLError);
+}
+
+TEST_F(ArithmeticTest, S15_NegativeBaseFractionalExponent2DomainError) {
+    EXPECT_THROW(machine->eval("¯8*÷3"), APLError);
+}
+
+// --- S-14: ¯8*3 = ¯512 (negative base, integer exponent — valid) ---
+// ISO 13751 §7.2.7: if B is near-integer and negative A, result is signed
+TEST_F(ArithmeticTest, S14_NegativeBaseIntegerExponent) {
+    Value* r = machine->eval("¯8*3");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), -512.0);
+}
+
+// --- M-12: ⍟0 → domain-error (ISO 13751 §7.1.8) ---
+TEST_F(ArithmeticTest, M12_MonadicLogZeroDomainError) {
+    EXPECT_THROW(machine->eval("⍟0"), APLError);
+}
+
+// --- M-13: ⍟¯5 → domain-error (ISO 13751 §7.1.8, no complex facility) ---
+TEST_F(ArithmeticTest, M13_MonadicLogNegativeDomainError) {
+    EXPECT_THROW(machine->eval("⍟¯5"), APLError);
+}
+
+// --- M-17: !1.5 → gamma(2.5) ≈ 1.3293 (ISO 13751 §7.1.10: non-integers valid via gamma) ---
+// Spec says: "Z is gamma-function of B+1; if B is negative-integer, signal domain-error"
+// Non-integer positive values use the gamma function and are NOT domain-errors.
+TEST_F(ArithmeticTest, M17_FactorialNonIntegerUsesGamma) {
+    Value* r = machine->eval("!1.5");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    // Γ(2.5) = 1.5 × Γ(1.5) = 1.5 × 0.5 × Γ(0.5) = 0.75√π ≈ 1.3293...
+    EXPECT_NEAR(r->as_scalar(), 1.3293403881791370, 1e-10);
+}
+
+// --- M-18: !¯1 → domain-error (ISO 13751 §7.1.10: negative integer) ---
+TEST_F(ArithmeticTest, M18_FactorialNegativeIntegerDomainError) {
+    EXPECT_THROW(machine->eval("!¯1"), APLError);
+}
+
+// --- S-24: binomial case table (ISO 13751 §7.2.10) ---
+// Case 0 0 0 (A not neg-int, B not neg-int, B-A not neg-int): returns gamma-based value
+TEST_F(ArithmeticTest, S24_BinomialIntegerCase) {
+    // 2!5 = C(5,2) = 10
+    Value* r = machine->eval("2!5");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 10.0);
+}
+
+// Case 0 1 0 (A not neg-int, B IS neg-int, B-A not neg-int): domain-error
+TEST_F(ArithmeticTest, S24_BinomialDomainErrorCase010) {
+    // 1.5!¯2: A=1.5 not neg-int, B=-2 is neg-int, B-A=-3.5 not neg-int → domain-error
+    EXPECT_THROW(machine->eval("1.5!¯2"), APLError);
+}
+
+// --- D-01: Tolerant-equality formula (ISO 13751 §5.2.1) ---
+// |A-B| ≤ CT × (|A| ⌈ |B|) → tolerantly equal
+// 1 and 1+5E-14 are tolerantly equal with default CT=1E-13
+TEST_F(ArithmeticTest, D01_TolerantEqualityFormulaWithinCT) {
+    Value* r = machine->eval("1=(1+5E-14)");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);  // tolerantly equal
+}
+
+// 1 and 1+2E-12 are NOT tolerantly equal with default CT=1E-13
+TEST_F(ArithmeticTest, D01_TolerantEqualityFormulaOutsideCT) {
+    Value* r = machine->eval("1=(1+2E-12)");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);  // not tolerantly equal
+}
+
+// --- SV-01: ⎕CT initial value is 1E-13 (ISO 13751 §10) ---
+TEST_F(ArithmeticTest, SV01_InitialCTis1E13) {
+    Value* r = machine->eval("⎕CT");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1E-13);
+}
+
+// --- O-18: ×\1 2 3 4 = 1 2 6 24 (ISO 13751 §9.2) ---
+// (in arithmetic file since it's a scan of multiplication)
+TEST_F(ArithmeticTest, O18_TimesScanVector) {
+    Value* r = machine->eval("×\\1 2 3 4");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    ASSERT_EQ(r->size(), 4u);
+    // Vectors stored as column vectors (N×1)
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(1, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(2, 0), 6.0);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(3, 0), 24.0);
+}
+
+// --- M-04: ×A direction (ISO 13751 §7.1.3) ---
+// Spec: "If B is zero, return zero; otherwise return B divided-by magnitude of B"
+// Direction uses EXACT zero, not tolerance. Non-zero values return ±1.
+TEST_F(ArithmeticTest, M04_DirectionExactZeroReturnsZero) {
+    Value* r = machine->eval("×0");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);
+}
+
+TEST_F(ArithmeticTest, M04_DirectionSmallPositiveReturnsOne) {
+    // Even a tiny positive number → direction = 1 (exact, not tolerance)
+    Value* r = machine->eval("×1E-200");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+// --- D-04: near-integer definition (ISO 13751 §5.2.3) ---
+// A is near-integer iff A tolerantly-equal ⌊A
+// Use a value within CT=1E-10 of an integer to verify tolerant floor rounds correctly.
+TEST_F(ArithmeticTest, D04_NearIntegerDefinition) {
+    // With CT=1E-10, (3-1E-11) is within tolerance of 3
+    // |diff| = 1E-11 ≤ CT × max(2.9...9, 3) = 1E-10 × 3 = 3E-10 ✓
+    machine->eval("⎕CT←1E-10");
+    Value* r = machine->eval("(3-1E-11)=⌊(3-1E-11)");
+    machine->eval("⎕CT←1E-13");  // restore
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);  // near-integer → ⌊ returns 3 → equal
+}
+
+// --- ST-05: ⍴⍳5 = 1-element vector containing 5 (ISO 13751 §8.2.2) ---
+TEST_F(ArithmeticTest, ST05_ShapeOfIotaIsOneElementVector) {
+    Value* r = machine->eval("⍴⍳5");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    ASSERT_EQ(r->size(), 1u);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(0, 0), 5.0);
+}
+
+// --- M-15: |B magnitude — exact |B|, CT not used (ISO 13751 §7.1.9) ---
+// Spec §7.1.9: "return the non-negative real-number determined by rotating A onto
+// the nonnegative real-axis." No comparison-tolerance is mentioned.
+// A near-zero value must return its exact magnitude, not zero.
+TEST_F(ArithmeticTest, M15_MagnitudeExactNoCT) {
+    // Even with CT=1E-13, |1E-14 must return 1E-14 (not 0)
+    Value* r = machine->eval("|1E¯14");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1E-14);  // exact, not rounded to 0
+}
+
+// --- S-33: A∧B and/LCM — non-number signals domain-error (ISO 13751 §7.2.12) ---
+// Spec §7.2.12: "If either A or B is not a number, signal domain-error."
+// Character data is not a number.
+TEST_F(ArithmeticTest, S33_AndDomainErrorCharacterArg) {
+    EXPECT_THROW(machine->eval("2∧'a'"), APLError);
+}
+
+// --- SV-02: ⎕CT negative → domain-error (ISO 13751 §10) ---
+TEST_F(ArithmeticTest, SV02_CTNegativeDomainError) {
+    EXPECT_THROW(machine->eval("⎕CT←¯1"), APLError);
+    EXPECT_THROW(machine->eval("⎕CT←¯1E¯14"), APLError);
+}
+
+// --- SV-03: ⎕IO must be 0 or 1 (ISO 13751 §10) ---
+TEST_F(ArithmeticTest, SV03_IOInvalidValueError) {
+    EXPECT_THROW(machine->eval("⎕IO←2"), APLError);
+    EXPECT_THROW(machine->eval("⎕IO←¯1"), APLError);
+}
+
+// --- SV-04: ⎕IO affects ⍳ (ISO 13751 §10) ---
+TEST_F(ArithmeticTest, SV04_IOAffectsIota) {
+    machine->eval("⎕IO←0");
+    Value* r = machine->eval("⍳3");
+    machine->eval("⎕IO←1");  // restore
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(0, 0), 0.0);  // starts at 0 when IO=0
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*r->as_matrix())(2, 0), 2.0);
 }

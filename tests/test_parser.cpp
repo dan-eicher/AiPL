@@ -1237,6 +1237,92 @@ TEST_F(ParserTest, NoSourceLocationReturnsZero) {
     EXPECT_EQ(lit->column(), 0);
 }
 
+// Parser-level tests for ∩ (intersection) and ⍷ (find) — new primitives
+
+TEST_F(ParserTest, ParseIntersectionNoError) {
+    // ∩ must parse without error and produce a non-null continuation
+    Continuation* k = parser->parse("1 2 3∩2 3 4");
+    ASSERT_NE(k, nullptr);
+    EXPECT_EQ(parser->get_error(), "");
+}
+
+TEST_F(ParserTest, ParseIntersectionExecutes) {
+    // Full parse-to-execute path: 1 2 3 ∩ 2 3 4 → 2 3
+    Continuation* k = parser->parse("1 2 3∩2 3 4");
+    ASSERT_NE(k, nullptr);
+    machine->push_kont(k);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const auto* mat = result->as_matrix();
+    ASSERT_EQ(mat->rows(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+}
+
+TEST_F(ParserTest, IntersectionViaDyadicK) {
+    // Manually construct DyadicK for ∩ to test continuation dispatch
+    Eigen::VectorXd lv(3); lv << 1.0, 2.0, 3.0;
+    Eigen::VectorXd rv(3); rv << 2.0, 3.0, 4.0;
+    ValueK* left  = machine->heap->allocate<ValueK>(machine->heap->allocate_vector(lv));
+    ValueK* right = machine->heap->allocate<ValueK>(machine->heap->allocate_vector(rv));
+    String* name = machine->string_pool.intern("∩");
+    DyadicK* dyadic = machine->heap->allocate<DyadicK>(name, left, right);
+    machine->push_kont(dyadic);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const auto* mat = result->as_matrix();
+    ASSERT_EQ(mat->rows(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+}
+
+TEST_F(ParserTest, ParseFindNoError) {
+    // ⍷ must parse without error and produce a non-null continuation
+    Continuation* k = parser->parse("(1 2)⍷1 2 3 1 2 4");
+    ASSERT_NE(k, nullptr);
+    EXPECT_EQ(parser->get_error(), "");
+}
+
+TEST_F(ParserTest, ParseFindExecutes) {
+    // Full parse-to-execute path: (1 2)⍷1 2 3 1 2 4 → 1 0 0 1 0 0
+    Continuation* k = parser->parse("(1 2)⍷1 2 3 1 2 4");
+    ASSERT_NE(k, nullptr);
+    machine->push_kont(k);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const auto* mat = result->as_matrix();
+    ASSERT_EQ(mat->rows(), 6);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(4, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(5, 0), 0.0);
+}
+
+TEST_F(ParserTest, FindViaDyadicK) {
+    // Manually construct DyadicK for ⍷ to test continuation dispatch
+    Eigen::VectorXd needle(2); needle << 1.0, 2.0;
+    Eigen::VectorXd hay(6); hay << 1.0, 2.0, 3.0, 1.0, 2.0, 4.0;
+    ValueK* left  = machine->heap->allocate<ValueK>(machine->heap->allocate_vector(needle));
+    ValueK* right = machine->heap->allocate<ValueK>(machine->heap->allocate_vector(hay));
+    String* name = machine->string_pool.intern("⍷");
+    DyadicK* dyadic = machine->heap->allocate<DyadicK>(name, left, right);
+    machine->push_kont(dyadic);
+    Value* result = machine->execute();
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const auto* mat = result->as_matrix();
+    ASSERT_EQ(mat->rows(), 6);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(5, 0), 0.0);
+}
+
 
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);

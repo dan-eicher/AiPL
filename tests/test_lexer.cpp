@@ -218,6 +218,14 @@ TEST_F(LexerTest, SetFunctionOperators) {
     EXPECT_EQ(tokens[1].type, TOK_NOT);
 }
 
+TEST_F(LexerTest, IntersectAndFindTokens) {
+    auto tokens = tokenize("∩ ⍷");
+
+    ASSERT_EQ(tokens.size(), 3);  // ∩, ⍷, EOF
+    EXPECT_EQ(tokens[0].type, TOK_INTERSECT);
+    EXPECT_EQ(tokens[1].type, TOK_FIND);
+}
+
 // Test rank operator
 TEST_F(LexerTest, RankOperator) {
     auto tokens = tokenize("+⍤2");

@@ -110,6 +110,8 @@ PrimitiveFn prim_member    = { "∊", fn_enlist, fn_member_of, false };
 PrimitiveFn prim_grade_up  = { "⍋", fn_grade_up, fn_grade_up_dyadic, false };
 PrimitiveFn prim_grade_down = { "⍒", fn_grade_down, fn_grade_down_dyadic, false };
 PrimitiveFn prim_union     = { "∪", fn_unique, fn_union, false };
+PrimitiveFn prim_intersect = { "∩", nullptr, fn_intersection, false };
+PrimitiveFn prim_find      = { "⍷", nullptr, fn_find, false };
 PrimitiveFn prim_circle    = { "○", fn_pi_times, fn_circular, true };  // Circular is pervasive
 PrimitiveFn prim_question  = { "?", fn_roll, fn_deal, true };  // Roll/deal is pervasive
 PrimitiveFn prim_decode    = { "⊥", nullptr, fn_decode, false };
@@ -491,6 +493,12 @@ static double power_scalar(Machine* m, double base, double exp) {
     if (base == 0.0 && exp < 0.0) {
         m->throw_error("DOMAIN ERROR: 0 raised to negative power", nullptr, 11, 0);
         return 0.0;  // unreachable; throw_error longjmps
+    }
+    // ISO 13751 7.2.7 additional requirement: negative base with non-integer exponent
+    // requires complex arithmetic; if not implemented, signal domain-error
+    if (base < 0.0 && !is_near_integer(exp, INTEGER_TOLERANCE)) {
+        m->throw_error("DOMAIN ERROR: negative base raised to non-integer power", nullptr, 11, 0);
+        return 0.0;
     }
     return std::pow(base, exp);
 }
@@ -1512,9 +1520,13 @@ void fn_and(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    // Character arguments are not numbers — reject before any allocation (ISO 13751 §7.2.12)
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: ∧ requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
@@ -6292,6 +6304,101 @@ void fn_without(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
         if (!in_right) {
             result(out_idx++) = left(i);
+        }
+    }
+
+    m->result = m->heap->allocate_vector(result);
+}
+
+// Intersection (∩ dyadic) - elements of left that appear in right, order from left
+// ISO 13751 §8.2.16: 1 2 3 ∩ 2 3 4 → 2 3
+void fn_intersection(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∩ requires array argument", nullptr, 11, 0);
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ∩ requires array argument", nullptr, 11, 0);
+        return;
+    }
+
+    Eigen::VectorXd left = flatten_value(lhs);
+    Eigen::VectorXd right = flatten_value(rhs);
+    double ct = m->ct;
+
+    // First pass: count elements from left that appear in right
+    int count = 0;
+    for (int i = 0; i < left.size(); ++i) {
+        for (int j = 0; j < right.size(); ++j) {
+            if (tolerant_eq(left(i), right(j), ct)) {
+                count++;
+                break;
+            }
+        }
+    }
+
+    if (count == 0) {
+        m->result = m->heap->allocate_vector(Eigen::VectorXd(0));
+        return;
+    }
+
+    // Second pass: collect elements
+    Eigen::VectorXd result(count);
+    int out_idx = 0;
+    for (int i = 0; i < left.size(); ++i) {
+        for (int j = 0; j < right.size(); ++j) {
+            if (tolerant_eq(left(i), right(j), ct)) {
+                result(out_idx++) = left(i);
+                break;
+            }
+        }
+    }
+
+    bool is_char = lhs->is_char_data();
+    m->result = m->heap->allocate_vector(result, is_char);
+}
+
+// Find (⍷ dyadic) - boolean array marking start positions of left in right
+// ISO 13751 §8.2.17: (1 2)⍷1 2 3 1 2 4 → 1 0 0 1 0 0
+void fn_find(Machine* m, Value* axis, Value* lhs, Value* rhs) {
+    REJECT_AXIS(m, axis);
+    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
+    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+
+    if (!lhs->is_scalar() && !lhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍷ requires array argument", nullptr, 11, 0);
+        return;
+    }
+    if (!rhs->is_scalar() && !rhs->is_array()) {
+        m->throw_error("DOMAIN ERROR: ⍷ requires array argument", nullptr, 11, 0);
+        return;
+    }
+
+    double ct = m->ct;
+    Eigen::VectorXd needle = flatten_value(lhs);
+    Eigen::VectorXd haystack = flatten_value(rhs);
+    int n = haystack.size();
+    int k = needle.size();
+
+    Eigen::VectorXd result = Eigen::VectorXd::Zero(n);
+
+    if (k == 0) {
+        // Empty needle: every position matches
+        result.setOnes();
+    } else {
+        for (int i = 0; i <= n - k; ++i) {
+            bool match = true;
+            for (int j = 0; j < k; ++j) {
+                if (!tolerant_eq(haystack(i + j), needle(j), ct)) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) result(i) = 1.0;
         }
     }
 

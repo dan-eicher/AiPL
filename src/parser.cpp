@@ -248,6 +248,8 @@ Continuation* Parser::parse_expression(int min_bp) {
                 case TOK_GRADE_UP:
                 case TOK_GRADE_DOWN:
                 case TOK_UNION:
+                case TOK_INTERSECT:
+                case TOK_FIND:
                 case TOK_CIRCLE:
                 case TOK_QUESTION:
                 case TOK_DECODE:
@@ -418,6 +420,8 @@ Continuation* Parser::nud(const Token& token) {
         case TOK_GRADE_UP:
         case TOK_GRADE_DOWN:
         case TOK_UNION:
+        case TOK_INTERSECT:
+        case TOK_FIND:
         case TOK_CIRCLE:
         case TOK_QUESTION:
         case TOK_DECODE:

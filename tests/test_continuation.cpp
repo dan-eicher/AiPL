@@ -2014,6 +2014,56 @@ TEST_F(ContinuationTest, FormatStackTraceIncludesContinuationDescriptions) {
         << "Stack trace should show LookupK for variable lookup. Trace:\n" << trace;
 }
 
+// Continuation-level tests for ∩ (intersection) and ⍷ (find)
+// Tests the ApplyDyadicK dispatch path directly, independent of the parser.
+
+TEST_F(ContinuationTest, IntersectionViaApplyDyadicK) {
+    // Build: ApplyDyadicK("∩", right_val) with left already resolved via machine->result
+    Eigen::VectorXd lv(3); lv << 1.0, 2.0, 3.0;
+    Eigen::VectorXd rv(3); rv << 2.0, 3.0, 4.0;
+    Value* left_val  = heap->allocate_vector(lv);
+    Value* right_val = heap->allocate_vector(rv);
+    String* name = machine->string_pool.intern("∩");
+
+    // ApplyDyadicK is the continuation that fires when left operand is ready:
+    // it holds the right value and the operator name; machine->result is the left
+    ApplyDyadicK* apply = heap->allocate<ApplyDyadicK>(name, right_val);
+    machine->result = left_val;
+    machine->push_kont(apply);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const auto* mat = result->as_matrix();
+    ASSERT_EQ(mat->rows(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+}
+
+TEST_F(ContinuationTest, FindViaApplyDyadicK) {
+    // Build: ApplyDyadicK("⍷", right_val) with left already resolved
+    // needle=[1,2], hay=[1,2,1,2] → matches at positions 0 and 2
+    Eigen::VectorXd needle(2); needle << 1.0, 2.0;
+    Eigen::VectorXd hay(4); hay << 1.0, 2.0, 1.0, 2.0;
+    Value* left_val  = heap->allocate_vector(needle);
+    Value* right_val = heap->allocate_vector(hay);
+    String* name = machine->string_pool.intern("⍷");
+
+    ApplyDyadicK* apply = heap->allocate<ApplyDyadicK>(name, right_val);
+    machine->result = left_val;
+    machine->push_kont(apply);
+    Value* result = machine->execute();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_vector());
+    const auto* mat = result->as_matrix();
+    ASSERT_EQ(mat->rows(), 4);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // match at position 0
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 1.0);  // match at position 2
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 0.0);
+}
+
 // Main function
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

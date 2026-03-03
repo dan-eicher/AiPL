@@ -74,6 +74,8 @@ void Machine::init_globals() {
     def("⍋", heap->allocate_primitive(&prim_grade_up));
     def("⍒", heap->allocate_primitive(&prim_grade_down));
     def("∪", heap->allocate_primitive(&prim_union));
+    def("∩", heap->allocate_primitive(&prim_intersect));
+    def("⍷", heap->allocate_primitive(&prim_find));
     def("○", heap->allocate_primitive(&prim_circle));
     def("?", heap->allocate_primitive(&prim_question));
     def("⊥", heap->allocate_primitive(&prim_decode));

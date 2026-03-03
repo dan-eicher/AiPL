@@ -667,12 +667,12 @@ TEST_F(SysFnTest, QuadPPInvalidValueError) {
 // ⎕CT (Comparison Tolerance) Tests - ISO 13751 §11.4.8
 // ============================================================================
 
-// Test ⎕CT default is 0 (exact comparisons)
+// Test ⎕CT default is 1E-13 (ISO 13751 §10 initial value)
 TEST_F(SysFnTest, QuadCTRead) {
     Value* result = machine->eval("⎕CT");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_DOUBLE_EQ(result->as_scalar(), 0.0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), 1E-13);
 }
 
 // Test ⎕CT←0 sets comparison tolerance to 0

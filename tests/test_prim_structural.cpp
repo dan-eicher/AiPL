@@ -490,11 +490,28 @@ TEST_F(StructuralTest, ReverseAxisZeroError) {
 }
 
 // ISO 13751 10.1.4: Reverse on higher rank array
-TEST_F(StructuralTest, DISABLED_ReverseHigherRank) {
-    // Reverse on 3D array
+TEST_F(StructuralTest, ReverseHigherRank) {
+    // ⌽ 2 2 3⍴⍳12 reverses along last axis of a 3D array
+    // ⍳12 (IO=1) = 1..12, reshaped 2×2×3:
+    //   [[[1,2,3],[4,5,6]],[[7,8,9],[10,11,12]]]
+    // reversed last axis:
+    //   [[[3,2,1],[6,5,4]],[[9,8,7],[12,11,10]]]
     Value* result = machine->eval("⌽ 2 2 3⍴⍳12");
-    ASSERT_TRUE(result->is_matrix());  // 3D stored as matrix
-    // Should reverse along last axis
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(result->is_ndarray());
+    const auto* nd = result->as_ndarray();
+    ASSERT_EQ(nd->shape.size(), 3u);
+    EXPECT_EQ(nd->shape[0], 2);
+    EXPECT_EQ(nd->shape[1], 2);
+    EXPECT_EQ(nd->shape[2], 3);
+    // First row reversed: 3 2 1
+    EXPECT_DOUBLE_EQ((*nd->data)(0), 3.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(1), 2.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(2), 1.0);
+    // Second row reversed: 6 5 4
+    EXPECT_DOUBLE_EQ((*nd->data)(3), 6.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(4), 5.0);
+    EXPECT_DOUBLE_EQ((*nd->data)(5), 4.0);
 }
 
 // ISO 13751 10.2.7: Rotate with invalid axis
@@ -1844,12 +1861,21 @@ TEST_F(StructuralTest, FirstShapeVerification) {
 }
 
 // ISO 13751 10.1.9: First of higher rank array returns major cell
-TEST_F(StructuralTest, DISABLED_FirstHigherRank) {
-    // ↑ 2 3 4⍴⍳24 → first 3×4 matrix
+TEST_F(StructuralTest, FirstHigherRank) {
+    // ↑ 2 3 4⍴⍳24 → first 3×4 matrix (first plane of 2×3×4 array)
+    // ⍳24 (IO=1) = 1..24; first plane is rows 1..12
     Value* result = machine->eval("↑ 2 3 4⍴⍳24");
+    ASSERT_NE(result, nullptr);
     ASSERT_TRUE(result->is_matrix());
-    EXPECT_EQ(result->rows(), 3);
-    EXPECT_EQ(result->cols(), 4);
+    const auto* mat = result->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 4);
+    // First row: 1 2 3 4
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 3), 4.0);
+    // Last row: 9 10 11 12
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 3), 12.0);
 }
 
 // ISO 13751 10.1.9: First of empty char array returns blank
@@ -5491,3 +5517,210 @@ TEST_F(StructuralTest, WithoutTolerantMultiple) {
 }
 
 // ========================================================================
+
+// ============================================================================
+// ISO 13751 Compliance Tests — Phase 5 (previously Unknown structural rows)
+// ============================================================================
+
+// --- ST-24: Incompatible axis lengths → length-error (ISO 13751 §8.2.8) ---
+// For ,(last-axis catenate) on matrices, all axes except last must match.
+// (2 3⍴0),(3 3⍴0) — row counts differ: 2≠3 → LENGTH ERROR
+TEST_F(StructuralTest, ST24_CatenateIncompatibleAxisLengthError) {
+    EXPECT_THROW(machine->eval("(2 3⍴0),(3 3⍴0)"), APLError);
+}
+
+// --- ST-25: A≡B match (ISO 13751 §8.3.1) ---
+TEST_F(StructuralTest, ST25_MatchEqualVectors) {
+    Value* r = machine->eval("(1 2 3)≡(1 2 3)");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+TEST_F(StructuralTest, ST25_MatchUnequalVectors) {
+    Value* r = machine->eval("(1 2 3)≡(1 2 4)");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);
+}
+
+// --- ST-26: 1≡1.0 = 1 (ISO 13751 §8.3.1 numeric equality) ---
+TEST_F(StructuralTest, ST26_MatchNumericEquality) {
+    Value* r = machine->eval("1≡1.0");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 1.0);
+}
+
+// --- ST-27: (1 2)≡(1 2 3) = 0 (ISO 13751 §8.3.1 different shape) ---
+TEST_F(StructuralTest, ST27_MatchDifferentShapeIsFalse) {
+    Value* r = machine->eval("(1 2)≡(1 2 3)");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_scalar());
+    EXPECT_DOUBLE_EQ(r->as_scalar(), 0.0);
+}
+
+// --- ST-62: A∩B intersection (ISO 13751 §8) ---
+
+TEST_F(StructuralTest, ST62_IntersectionBasic) {
+    // 1 2 3 ∩ 2 3 4 → 2 3 (elements of left that appear in right, order from left)
+    Value* r = machine->eval("1 2 3∩2 3 4");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    const auto* mat = r->as_matrix();
+    ASSERT_EQ(mat->rows(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 3.0);
+}
+
+TEST_F(StructuralTest, ST62_IntersectionEmptyResult) {
+    // 1 2 3 ∩ 4 5 6 → ⍬
+    Value* r = machine->eval("1 2 3∩4 5 6");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    EXPECT_EQ(r->as_matrix()->rows(), 0);
+}
+
+TEST_F(StructuralTest, ST62_IntersectionOrderFromLeft) {
+    // 3 1 2 ∩ 1 2 3 → 3 1 2 (order is from left argument)
+    Value* r = machine->eval("3 1 2∩1 2 3");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    const auto* mat = r->as_matrix();
+    ASSERT_EQ(mat->rows(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 2.0);
+}
+
+TEST_F(StructuralTest, ST62_IntersectionDuplicatesInLeft) {
+    // 1 1 2 3 ∩ 1 3 → 1 1 3 (each occurrence in left checked independently)
+    Value* r = machine->eval("1 1 2 3∩1 3");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    const auto* mat = r->as_matrix();
+    ASSERT_EQ(mat->rows(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 3.0);
+}
+
+// --- ST-63: A⍷B find (ISO 13751 §8) ---
+
+TEST_F(StructuralTest, ST63_FindBasic) {
+    // (1 2)⍷1 2 3 1 2 4 → 1 0 0 1 0 0
+    Value* r = machine->eval("(1 2)⍷1 2 3 1 2 4");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    const auto* mat = r->as_matrix();
+    ASSERT_EQ(mat->rows(), 6);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(3, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(4, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(5, 0), 0.0);
+}
+
+TEST_F(StructuralTest, ST63_FindNotPresent) {
+    // (5 6)⍷1 2 3 4 → 0 0 0 0
+    Value* r = machine->eval("(5 6)⍷1 2 3 4");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    const auto* mat = r->as_matrix();
+    ASSERT_EQ(mat->rows(), 4);
+    for (int i = 0; i < 4; ++i)
+        EXPECT_DOUBLE_EQ((*mat)(i, 0), 0.0);
+}
+
+TEST_F(StructuralTest, ST63_FindNeedleLongerThanHaystack) {
+    // (1 2 3 4 5)⍷1 2 → 0 0 (needle longer than haystack; no match possible)
+    Value* r = machine->eval("(1 2 3 4 5)⍷1 2");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    const auto* mat = r->as_matrix();
+    ASSERT_EQ(mat->rows(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);
+}
+
+TEST_F(StructuralTest, ST63_FindOverlapping) {
+    // (1 1)⍷1 1 1 → 1 1 0  (overlapping matches)
+    Value* r = machine->eval("(1 1)⍷1 1 1");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    const auto* mat = r->as_matrix();
+    ASSERT_EQ(mat->rows(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);
+}
+
+// --- ST-24: Catenate rank-error (ISO 13751 §8.2.8) ---
+// When ranks differ by more than 1, catenate signals rank-error.
+// (1 2 3) is rank 1; (2 2 2⍴⍳8) is rank 3; rank diff = 2 → error.
+TEST_F(StructuralTest, ST24_CatenateRankErrorHigherRank) {
+    EXPECT_THROW(machine->eval("(1 2 3),(2 2 2⍴⍳8)"), APLError);
+}
+
+// --- ST-49: Replicate length-error (ISO 13751 §8) ---
+// Length of left arg A must match length of right arg B, or A is scalar.
+// 1 0/1 2 3 → length-error (A has 2 elements, B has 3)
+TEST_F(StructuralTest, ST49_ReplicateLengthError) {
+    EXPECT_THROW(machine->eval("1 0/1 2 3"), APLError);
+}
+
+// --- ST-67: A⌹B matrix divide (ISO 13751 §8) ---
+// Dyadic ⌹: solve B×X=A for X (least-squares when B is not square).
+// With A=vector (lhs) and B=square matrix (rhs): result is a vector.
+TEST_F(StructuralTest, ST67_MatrixDivideLeastSquares) {
+    // Exact solution: (1 2)⌹(2 2⍴1 0 0 1) → 1 2
+    // Solves identity×X = [1 2] → X = [1 2]
+    Value* r = machine->eval("(1 2)⌹(2 2⍴1 0 0 1)");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    ASSERT_EQ(r->size(), 2u);
+    EXPECT_NEAR((*r->as_matrix())(0, 0), 1.0, 1e-10);
+    EXPECT_NEAR((*r->as_matrix())(1, 0), 2.0, 1e-10);
+}
+
+TEST_F(StructuralTest, ST67_MatrixDivideLengthError) {
+    // Row count of rhs (B) must match row count of lhs (A)
+    // (2 3⍴1) is 2×3 (A), 1 2 3 is 3×1 (B): 3 rows ≠ 2 rows → LENGTH ERROR
+    EXPECT_THROW(machine->eval("(2 3⍴1)⌹1 2 3"), APLError);
+}
+
+// --- ST-68: A?B deal (ISO 13751 §8) ---
+// Returns A distinct random integers from ⎕IO..⎕IO+B-1
+TEST_F(StructuralTest, ST68_DealBasicCount) {
+    // 3?5 → 3 distinct integers from 1..5 (with IO=1)
+    Value* r = machine->eval("3?5");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    ASSERT_EQ(r->size(), 3u);
+    // All values in 1..5
+    for (int i = 0; i < 3; ++i) {
+        double v = (*r->as_matrix())(i, 0);
+        EXPECT_GE(v, 1.0);
+        EXPECT_LE(v, 5.0);
+    }
+}
+
+TEST_F(StructuralTest, ST68_DealDistinct) {
+    // 5?5 → all 5 values, each exactly once
+    Value* r = machine->eval("5?5");
+    ASSERT_NE(r, nullptr);
+    ASSERT_TRUE(r->is_vector());
+    ASSERT_EQ(r->size(), 5u);
+    std::vector<int> seen(6, 0);
+    for (int i = 0; i < 5; ++i) {
+        int v = static_cast<int>((*r->as_matrix())(i, 0));
+        EXPECT_GE(v, 1);
+        EXPECT_LE(v, 5);
+        seen[v]++;
+    }
+    for (int v = 1; v <= 5; ++v)
+        EXPECT_EQ(seen[v], 1) << "Value " << v << " appeared " << seen[v] << " times";
+}
+
+// --- ST-62: ∩ and ST-63: ⍷ also tested above; verified by existing tests ---

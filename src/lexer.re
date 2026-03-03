@@ -152,6 +152,8 @@ Lexer::Lexer(const char* input)
     grade_up = "⍋";      // U+234B (grade up)
     grade_down = "⍒";    // U+2352 (grade down)
     union_sym = "∪";     // U+222A (union/unique)
+    intersect_sym = "∩"; // U+2229 (intersection)
+    find_sym = "⍷";      // U+2377 (find - epsilon underbar)
     circle = "○";        // U+25CB (pi times / circular)
     decode = "⊥";        // U+22A5 (decode / base value)
     encode = "⊤";        // U+22A4 (encode / representation)
@@ -370,6 +372,8 @@ Token Lexer::next_token() {
         grade_up { column_++; return Token(TOK_GRADE_UP, token_line, token_column); }
         grade_down { column_++; return Token(TOK_GRADE_DOWN, token_line, token_column); }
         union_sym { column_++; return Token(TOK_UNION, token_line, token_column); }
+        intersect_sym { column_++; return Token(TOK_INTERSECT, token_line, token_column); }
+        find_sym { column_++; return Token(TOK_FIND, token_line, token_column); }
         circle { column_++; return Token(TOK_CIRCLE, token_line, token_column); }
         "?" { column_++; return Token(TOK_QUESTION, token_line, token_column); }
         decode { column_++; return Token(TOK_DECODE, token_line, token_column); }

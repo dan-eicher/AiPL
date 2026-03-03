@@ -81,6 +81,8 @@ enum TokenType {
 
     // Set functions
     TOK_UNION,          // ∪ (unique/union)
+    TOK_INTERSECT,      // ∩ (intersection)
+    TOK_FIND,           // ⍷ (find - epsilon-underbar)
 
     // Circular/Random
     TOK_CIRCLE,         // ○ (pi times / circular functions)

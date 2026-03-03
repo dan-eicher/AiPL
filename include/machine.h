@@ -48,7 +48,7 @@ public:
     std::vector<Continuation*> error_stack; // Stack snapshot at last error (for traces)
     int io = 1;                             // Index origin (⎕IO): 0 or 1
     int pp = 10;                            // Print precision (⎕PP): 1-17, default 10
-    double ct = 0.0;                        // Comparison tolerance (⎕CT): 0 = exact (Eigen fast path)
+    double ct = 1E-13;                      // Comparison tolerance (⎕CT): ISO 13751 initial value; 0 enables Eigen fast path
     uint64_t rl;                            // Random link (⎕RL): seeded from system at startup
     std::mt19937_64 rng;                    // Random number generator (seeded by rl)
     String* lx = nullptr;                   // Latent expression (⎕LX): interned in string_pool
