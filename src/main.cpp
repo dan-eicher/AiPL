@@ -320,15 +320,90 @@ std::string format_value(apl::Value* v, apl::Machine* m) {
     return "[function]";
 }
 
+// Evaluate a single line, print result, return false on APL error
+static bool eval_line(apl::Machine& machine, const std::string& line) {
+    if (line.empty()) return true;
+    try {
+        apl::Value* result = machine.eval(line);
+        if (result) {
+            std::cout << format_value(result, &machine) << "\n";
+        }
+    } catch (const apl::APLError& e) {
+        std::cerr << e.what() << "\n";
+        if (!machine.error_stack.empty()) {
+            std::cerr << machine.format_stack_trace();
+        }
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "ERROR: " << e.what() << "\n";
+        return false;
+    }
+    return true;
+}
+
 int main(int argc, char** argv) {
-    // Create APL machine
+    bool quiet = false;
+    std::string eval_expr;
+    std::string script_file;
+
+    // Parse arguments
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "-q" || arg == "--quiet") {
+            quiet = true;
+        } else if (arg == "-e" && i + 1 < argc) {
+            eval_expr = argv[++i];
+        } else if (arg == "-e") {
+            std::cerr << "apl: -e requires an argument\n";
+            return 1;
+        } else if (arg == "--") {
+            if (i + 1 < argc) script_file = argv[++i];
+            break;
+        } else if (arg[0] != '-') {
+            script_file = arg;
+        } else {
+            std::cerr << "apl: unknown option: " << arg << "\n";
+            std::cerr << "usage: apl [-q] [-e expr] [script.apl]\n";
+            return 1;
+        }
+    }
+
     apl::Machine machine;
 
-    // Init replxx with stdin/stdout
+    // -e: evaluate expression and exit
+    if (!eval_expr.empty()) {
+        return eval_line(machine, eval_expr) ? 0 : 1;
+    }
+
+    // File argument: execute script and exit
+    if (!script_file.empty()) {
+        std::ifstream f(script_file);
+        if (!f) {
+            std::cerr << "apl: cannot open file: " << script_file << "\n";
+            return 1;
+        }
+        std::string line;
+        int rc = 0;
+        while (std::getline(f, line)) {
+            if (!eval_line(machine, line)) rc = 1;
+        }
+        return rc;
+    }
+
+    // Non-interactive stdin (pipe): read lines without replxx
+    if (!isatty(STDIN_FILENO)) {
+        std::string line;
+        int rc = 0;
+        while (std::getline(std::cin, line)) {
+            if (!eval_line(machine, line)) rc = 1;
+        }
+        return rc;
+    }
+
+    // Interactive REPL
     Replxx rx(std::cin, std::cout, STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO);
     rx.install_window_change_handler();
 
-    // History file
     std::string history_file = ".apl_history";
     {
         std::ifstream hf(history_file);
@@ -336,7 +411,6 @@ int main(int argc, char** argv) {
     }
     rx.set_max_history_size(1000);
 
-    // Set callbacks using lambdas
     rx.set_completion_callback([](const std::string& ctx, int& len) {
         return hook_completion(ctx, len, APL_PRIMITIVES);
     });
@@ -344,7 +418,6 @@ int main(int argc, char** argv) {
         hook_color(ctx, colors, APL_COLORS);
     });
 
-    // Configure
     rx.set_word_break_characters(" \t\n");
     rx.set_completion_count_cutoff(128);
     rx.set_double_tab_completion(false);
@@ -352,14 +425,13 @@ int main(int argc, char** argv) {
     rx.set_beep_on_ambiguous_completion(false);
     rx.set_no_color(false);
 
-    // Welcome message
-    std::cout << "APL Interpreter (ISO 13751)\n";
-    std::cout << "Type )help for help, )quit to exit\n\n";
+    if (!quiet) {
+        std::cout << "APL Interpreter (ISO 13751)\n";
+        std::cout << "Type )help for help, )quit to exit\n\n";
+    }
 
-    // Prompt
     std::string prompt = "      ";  // 6 spaces, traditional APL indent
 
-    // Main loop
     for (;;) {
         const char* input = nullptr;
 
@@ -367,18 +439,11 @@ int main(int argc, char** argv) {
             input = rx.input(prompt);
         } while (input == nullptr && errno == EAGAIN);
 
-        if (input == nullptr) {
-            // EOF (Ctrl-D)
-            break;
-        }
+        if (input == nullptr) break;  // EOF (Ctrl-D)
 
         std::string line(input);
+        if (line.empty()) continue;
 
-        if (line.empty()) {
-            continue;
-        }
-
-        // System commands
         if (line[0] == ')') {
             rx.history_add(line);
 
@@ -416,30 +481,15 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        // Evaluate APL expression
         rx.history_add(line);
-
-        try {
-            apl::Value* result = machine.eval(line);
-            if (result) {
-                std::cout << format_value(result, &machine) << "\n";
-            }
-        } catch (const apl::APLError& e) {
-            std::cout << e.what() << "\n";
-            if (!machine.error_stack.empty()) {
-                std::cout << machine.format_stack_trace();
-            }
-        } catch (const std::exception& e) {
-            std::cout << "ERROR: " << e.what() << "\n";
-        }
+        eval_line(machine, line);
     }
 
-    // Save history
     {
         std::ofstream hf(history_file);
         rx.history_save(hf);
     }
 
-    std::cout << "\n";
+    if (!quiet) std::cout << "\n";
     return 0;
 }
