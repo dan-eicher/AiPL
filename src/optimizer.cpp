@@ -12,6 +12,7 @@
 //   F1  – FinalizeK(inner) where inner ∉ TM_FN    →  inner  (eliminated)
 //   D1  – FinalizeK(JuxtaposeK(fn, arg))          →  MonadicCallK(fn, arg)
 //   D2  – JuxtaposeK(l:BASIC, JuxtaposeK(fn, r))  →  DyadicCallK(fn, l, r)
+//   D3  – recursive D1 through ensure_finalized    (chains -⌊x, ⍴⍴A, etc.)
 
 #include "optimizer.h"
 #include "continuation.h"
@@ -297,13 +298,15 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_finalize(FinalizeK* k) {
         // Helper: wrap a continuation in FinalizeK if it might produce a curry.
         // JuxtaposeK produces G_PRIME curries; apply_function_immediate cannot
         // handle those, so we must finalize first.
+        // D3: recursively apply rewrite() on the new FinalizeK so that D1 chains
+        // through nested function calls (e.g. -⌊x → MonadicCallK(-, MonadicCallK(⌊, x))).
         auto ensure_finalized = [&](Continuation* c, TypeMask m) -> Continuation* {
             bool known_basic = (m != TM_BOT && m != TM_TOP &&
                                 (m & TM_BASIC) && !(m & ~TM_BASIC));
             if (known_basic) return c;  // basic values are never curries
             auto* fin = heap_->allocate<FinalizeK>(c, true);
             if (c->has_location()) fin->set_location(c->line(), c->column());
-            return fin;
+            return rewrite(fin).kont;  // D3: recursive D1
         };
 
         // Case (a): left is function, right is argument → fn(arg)
@@ -389,7 +392,7 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
                 if (!arg_known_basic) {
                     auto* fin = heap_->allocate<FinalizeK>(right_arg, true);
                     if (right_arg->has_location()) fin->set_location(right_arg->line(), right_arg->column());
-                    right_arg = fin;
+                    right_arg = rewrite(fin).kont;  // D3: recursive D1
                 }
 
                 auto* dcall = heap_->allocate<DyadicCallK>(

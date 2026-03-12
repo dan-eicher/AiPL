@@ -868,6 +868,111 @@ TEST_F(OptimizerTest, D2_ChainedWithFold) {
     EXPECT_DOUBLE_EQ(scalar("10+(2×3)+1"), 17.0);
 }
 
+// ---- D3 – chained monadic calls (recursive D1) ----
+
+TEST_F(OptimizerTest, D3_ChainedFloorIota) {
+    // ⌊⍳5 → ⌊ applied to ⍳5 (no-op floor on integers)
+    // D1 fires, ensure_finalized wraps inner in FinalizeK,
+    // D3 recursively applies D1 on the inner FinalizeK
+    Value* v = eval("⌊⍳5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+}
+
+TEST_F(OptimizerTest, D3_TripleChain) {
+    // -⌊⍳3 → negate(floor(iota(3))) = -1 -2 -3
+    // Three chained monadic calls: all resolved via recursive D1
+    Value* v = eval("-⌊⍳3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), -1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), -2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), -3.0);
+}
+
+TEST_F(OptimizerTest, D3_ReverseReverseIota) {
+    // ⌽⌽⍳4 → double reverse of 1 2 3 4 = 1 2 3 4
+    Value* v = eval("⌽⌽⍳4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 4);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 4.0);
+}
+
+TEST_F(OptimizerTest, D3_ShapeShape) {
+    // ⍴⍴2 3⍴⍳6 → shape of shape of 2×3 matrix = 1-element vector (2)
+    Value* v = eval("⍴⍴2 3⍴⍳6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 1);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 2.0);
+}
+
+TEST_F(OptimizerTest, D3_ViaD2_DyadicWithMonadicChain) {
+    // 1+⌊⍳5 → D2 fires for 1+..., D3 recursively resolves ⌊⍳5
+    // Result: 1 + floor(1 2 3 4 5) = 2 3 4 5 6
+    Value* v = eval("1+⌊⍳5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 6.0);
+}
+
+TEST_F(OptimizerTest, D3_ViaD2_DeepChain) {
+    // 10+-⌊⍳3 → D2 for 10+..., D3 chains -⌊⍳3
+    // ⍳3 = 1 2 3, ⌊ is no-op, - gives -1 -2 -3, 10+ gives 9 8 7
+    Value* v = eval("10+-⌊⍳3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 9.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 8.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 7.0);
+}
+
+TEST_F(OptimizerTest, D3_ViaD2_WithReduce) {
+    // 10++/⍳5 → D2 for 10+..., D3 resolves +/⍳5
+    // +/⍳5 = 15, 10+15 = 25
+    EXPECT_DOUBLE_EQ(scalar("10++/⍳5"), 25.0);
+}
+
+TEST_F(OptimizerTest, D3_WithWorkspaceVar) {
+    // x←5 ◇ -⌊⍳x → chains through with x as known SCALAR
+    eval("x←5");
+    Value* v = eval("-⌊⍳x");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), -1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), -5.0);
+}
+
+TEST_F(OptimizerTest, D3_InsideDfn) {
+    // {-⌊⍳⍵} 4 → dfn body chains monadic calls
+    // ⍵ is TM_TOP so the chain still works (ensure_finalized wraps)
+    Value* v = eval("{-⌊⍳⍵}4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 4);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), -1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), -4.0);
+}
+
+TEST_F(OptimizerTest, D3_DfnDyadicWithChain) {
+    // {⍺+⌊⍳⍵} — dyadic dfn with chained monadics on right
+    Value* v = eval("10{⍺+⌊⍳⍵}3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 11.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 13.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
