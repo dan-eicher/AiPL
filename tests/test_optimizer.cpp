@@ -1069,7 +1069,37 @@ TEST_F(OptimizerTest, AAT_TableReturnsMatrix) {
 }
 
 // ---------------------------------------------------------------------------
-// 8. Category E3 – Eigen vector reductions
+// 8. Category C3 – Constant fold reductions
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, C3_SumKnownVector) {
+    // +/1 2 3 4 5 → 15 (folded at compile time)
+    EXPECT_DOUBLE_EQ(scalar("+/1 2 3 4 5"), 15.0);
+}
+
+TEST_F(OptimizerTest, C3_ProdKnownVector) {
+    // ×/2 3 4 → 24
+    EXPECT_DOUBLE_EQ(scalar("×/2 3 4"), 24.0);
+}
+
+TEST_F(OptimizerTest, C3_MaxKnownVector) {
+    // ⌈/3 1 4 1 5 → 5
+    EXPECT_DOUBLE_EQ(scalar("⌈/3 1 4 1 5"), 5.0);
+}
+
+TEST_F(OptimizerTest, C3_MinKnownVector) {
+    // ⌊/5 3 1 → 1
+    EXPECT_DOUBLE_EQ(scalar("⌊/5 3 1"), 1.0);
+}
+
+TEST_F(OptimizerTest, C3_UnknownVectorNotFolded) {
+    // +/⍳10 — arg is ⍳10, not a known singleton → C3 does NOT fire
+    // (but E3 or runtime still produces correct result)
+    EXPECT_DOUBLE_EQ(scalar("+/⍳10"), 55.0);
+}
+
+// ---------------------------------------------------------------------------
+// 9. Category E3 – Eigen vector reductions
 // ---------------------------------------------------------------------------
 
 TEST_F(OptimizerTest, E3_SumVector) {

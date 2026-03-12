@@ -676,6 +676,38 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic_call(MonadicCallK* k) 
     if (new_fn  != k->fn_cont)  k->fn_cont  = new_fn;
     if (new_arg != k->arg_cont) k->arg_cont = new_arg;
 
+    // C3 — Constant fold reductions over known vectors
+    // When fn is DERIVED_OPERATOR(op_reduce, prim_fn) and arg is a known vector singleton.
+    if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
+        arg_state.singleton && (arg_state.mask == TM_VECTOR)) {
+        Value* derived_val = fn_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op == &op_reduce && derived->first_operand &&
+            derived->first_operand->is_primitive()) {
+            Value* vec = arg_state.singleton;
+            if (vec->is_vector() && !vec->is_char_data()) {
+                auto* mat = vec->as_matrix();
+                int n = mat->rows();
+                if (n > 0 && n <= 10000) {
+                    PrimitiveFn* pfn = derived->first_operand->data.primitive_fn;
+                    Value* folded = nullptr;
+                    if (pfn == &prim_plus) {
+                        folded = heap_->allocate_scalar(mat->sum());
+                    } else if (pfn == &prim_times) {
+                        folded = heap_->allocate_scalar(mat->prod());
+                    } else if (pfn == &prim_ceiling) {
+                        folded = heap_->allocate_scalar(mat->maxCoeff());
+                    } else if (pfn == &prim_floor) {
+                        folded = heap_->allocate_scalar(mat->minCoeff());
+                    }
+                    if (folded) {
+                        return {heap_->allocate<ValueK>(folded), opt_state_from_value(folded)};
+                    }
+                }
+            }
+        }
+    }
+
     // E3 — Type-proven vector reduction → EigenReduceK
     // When fn is a known DERIVED_OPERATOR(op_reduce, prim_fn) and arg is TM_VECTOR.
     if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
