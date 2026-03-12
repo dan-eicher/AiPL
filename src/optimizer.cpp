@@ -569,6 +569,35 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
         }
     }
 
+    // D6 – Dyadic call from A∘.fB pattern
+    // JuxtaposeK(inner: JuxtaposeK(A: BASIC, fn: CALLABLE), B)
+    // → DyadicCallK(fn, left=A, right=finalize(B))
+    //
+    // At runtime: inner JuxtaposeK creates DYADIC_CURRY(fn, A), outer applies B
+    // yielding fn(A, B). DyadicCallK skips the curry chain.
+    if (auto* inner_jux = dynamic_cast<JuxtaposeK*>(new_left)) {
+        TypeMask inner_left_mask  = lookup_state(inner_jux->left).mask;
+        TypeMask inner_right_mask = lookup_state(inner_jux->right).mask;
+
+        bool inner_left_basic = (inner_left_mask != TM_BOT && inner_left_mask != TM_TOP &&
+                                 (inner_left_mask & TM_BASIC) && !(inner_left_mask & ~TM_BASIC));
+        bool inner_right_callable = (inner_right_mask != TM_BOT && inner_right_mask != TM_TOP &&
+                                     (inner_right_mask & TM_CALLABLE) && !(inner_right_mask & ~TM_CALLABLE));
+
+        if (inner_left_basic && inner_right_callable) {
+            Continuation* right_arg = finalize_if_needed(new_right, rm);
+
+            auto* dcall = heap_->allocate<DyadicCallK>(
+                inner_jux->right, inner_jux->left, right_arg);
+            if (k->has_location()) dcall->set_location(k->line(), k->column());
+            OptState fn_st = lookup_state(inner_jux->right);
+            TypeMask res = TM_TOP;
+            if (fn_st.singleton && fn_st.mask == TM_DERIVED)
+                res = TM_TOP;  // Derived operators have complex return types
+            return {dcall, {res, nullptr}};
+        }
+    }
+
     // D2 – Dyadic call from known-basic left
     // JuxtaposeK(left:BASIC, JuxtaposeK(fn:CALLABLE, right)) → DyadicCallK(fn, left, right)
     //
@@ -777,6 +806,28 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_dyadic_call(DyadicCallK* k) {
             auto* epk = heap_->allocate<EigenProductK>(new_left, new_right, derived_val);
             if (k->has_location()) epk->set_location(k->line(), k->column());
             return {epk, {TM_TOP, nullptr}};
+        }
+    }
+
+    // E2 — ∘.f outer product → EigenOuterK
+    if (fn_state.singleton && fn_state.mask == TM_DERIVED) {
+        Value* derived_val = fn_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op == &op_outer_dot &&
+            derived->first_operand && derived->first_operand->is_primitive()) {
+            PrimitiveFn* pfn = derived->first_operand->data.primitive_fn;
+            EigenOuterOp oop;
+            bool matched = true;
+            if      (pfn == &prim_times)   oop = EigenOuterOp::TIMES;
+            else if (pfn == &prim_plus)    oop = EigenOuterOp::PLUS;
+            else if (pfn == &prim_floor)   oop = EigenOuterOp::MIN;
+            else if (pfn == &prim_ceiling) oop = EigenOuterOp::MAX;
+            else matched = false;
+            if (matched) {
+                auto* eok = heap_->allocate<EigenOuterK>(oop, new_left, new_right, derived_val);
+                if (k->has_location()) eok->set_location(k->line(), k->column());
+                return {eok, {TM_MATRIX, nullptr}};
+            }
         }
     }
 

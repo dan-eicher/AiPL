@@ -1255,6 +1255,90 @@ TEST_F(OptimizerTest, E1_WorkspaceVars) {
     EXPECT_DOUBLE_EQ(scalar("X+.×Y"), 32.0);
 }
 
+// ---------------------------------------------------------------------------
+// E2 — ∘.f outer product → EigenOuterK (via D6 pattern)
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, E2_OuterProductTimes) {
+    // 1 2 3∘.×1 2 3 → 3×3 matrix
+    Value* v = eval("1 2 3∘.×1 2 3");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 2), 9.0);
+}
+
+TEST_F(OptimizerTest, E2_OuterProductPlus) {
+    // 1 2∘.+10 20 30 → 2×3 matrix
+    Value* v = eval("1 2∘.+10 20 30");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 31.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 2), 32.0);
+}
+
+TEST_F(OptimizerTest, E2_OuterProductMin) {
+    // 5 3 1∘.⌊2 4 6 → 3×3 matrix of element-wise min
+    Value* v = eval("5 3 1∘.⌊2 4 6");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 2.0);  // min(5,2)
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 4.0);  // min(5,4)
+    EXPECT_DOUBLE_EQ((*mat)(2, 2), 1.0);  // min(1,6)
+}
+
+TEST_F(OptimizerTest, E2_OuterProductMax) {
+    // 1 5∘.⌈3 2 → 2×2 matrix of element-wise max
+    Value* v = eval("1 5∘.⌈3 2");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 3.0);  // max(1,3)
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 2.0);  // max(1,2)
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 5.0);  // max(5,3)
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 5.0);  // max(5,2)
+}
+
+TEST_F(OptimizerTest, E2_WorkspaceVars) {
+    // Workspace variables with known types
+    eval("A←1 2 3");
+    eval("B←4 5 6");
+    Value* v = eval("A∘.×B");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_EQ(mat->rows(), 3);
+    EXPECT_EQ(mat->cols(), 3);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 2), 18.0);
+}
+
+TEST_F(OptimizerTest, E2_NonMatchedOpFallback) {
+    // ∘.- (subtract not in E2 fast list) → falls back to runtime, still correct
+    Value* v = eval("1 2∘.-10 20");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_EQ(mat->rows(), 2);
+    EXPECT_EQ(mat->cols(), 2);
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), -9.0);   // 1-10
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), -18.0);  // 2-20
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
