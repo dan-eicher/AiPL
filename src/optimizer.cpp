@@ -765,6 +765,21 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_dyadic_call(DyadicCallK* k) {
     if (new_left  != k->left_cont)  k->left_cont  = new_left;
     if (new_right != k->right_cont) k->right_cont = new_right;
 
+    // E1 — +.× inner product → EigenProductK
+    if (fn_state.singleton && fn_state.mask == TM_DERIVED) {
+        Value* derived_val = fn_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op == &op_dot &&
+            derived->first_operand && derived->first_operand->is_primitive() &&
+            derived->second_operand && derived->second_operand->is_primitive() &&
+            derived->first_operand->data.primitive_fn == &prim_plus &&
+            derived->second_operand->data.primitive_fn == &prim_times) {
+            auto* epk = heap_->allocate<EigenProductK>(new_left, new_right, derived_val);
+            if (k->has_location()) epk->set_location(k->line(), k->column());
+            return {epk, {TM_TOP, nullptr}};
+        }
+    }
+
     if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
         TypeMask r = abstract_apply_dyadic(
             fn_state.singleton->data.primitive_fn->name,

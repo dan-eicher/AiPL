@@ -1192,6 +1192,69 @@ TEST_F(OptimizerTest, E3_WorkspaceVar) {
     EXPECT_DOUBLE_EQ(scalar("+/data"), 5050.0);
 }
 
+// ---------------------------------------------------------------------------
+// E1 — +.× inner product → EigenProductK
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, E1_VecDotVec) {
+    // 1 2 3+.×4 5 6 → 32 (dot product)
+    EXPECT_DOUBLE_EQ(scalar("1 2 3+.×4 5 6"), 32.0);
+}
+
+TEST_F(OptimizerTest, E1_MatMulMat) {
+    // (2 2⍴1 2 3 4)+.×(2 2⍴5 6 7 8) → [[19,22],[43,50]]
+    eval("A←2 2⍴1 2 3 4");
+    eval("B←2 2⍴5 6 7 8");
+    Value* v = eval("A+.×B");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 19.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 22.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 43.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 50.0);
+}
+
+TEST_F(OptimizerTest, E1_VecTimesMatrix) {
+    // 1 2 +.× 2 3⍴⍳6 → vector (1×2 row vector × 2×3 matrix → 1×3)
+    eval("M←2 3⍴1 2 3 4 5 6");
+    Value* v = eval("1 2+.×M");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_vector());
+    auto* mat = v->as_matrix();
+    // [1,2] · [[1,2,3],[4,5,6]] = [9, 12, 15]
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 9.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 12.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 15.0);
+}
+
+TEST_F(OptimizerTest, E1_MatTimesVec) {
+    // (2 3⍴⍳6)+.×1 2 3 → vector
+    eval("M←2 3⍴1 2 3 4 5 6");
+    Value* v = eval("M+.×1 2 3");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_vector());
+    auto* mat = v->as_matrix();
+    // [[1,2,3],[4,5,6]] · [1,2,3] = [14, 32]
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 14.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 32.0);
+}
+
+TEST_F(OptimizerTest, E1_NonPlusTimesDoesNotFire) {
+    // ⌈.+ → NOT +.×, E1 should NOT fire, but result still correct
+    Value* v = eval("1 2 3⌈.+4 5 6");
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(v->data.scalar, 9.0);
+}
+
+TEST_F(OptimizerTest, E1_WorkspaceVars) {
+    // Workspace variables with known types
+    eval("X←1 2 3");
+    eval("Y←4 5 6");
+    EXPECT_DOUBLE_EQ(scalar("X+.×Y"), 32.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
