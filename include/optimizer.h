@@ -47,7 +47,9 @@ constexpr TypeMask TM_CURRIED    = 1u << 11;
 
 // Composite masks
 constexpr TypeMask TM_NUMERIC    = TM_SCALAR | TM_VECTOR | TM_MATRIX | TM_NDARRAY;
+constexpr TypeMask TM_BASIC      = TM_NUMERIC | TM_STRING | TM_STRAND;  // is_basic_value()
 constexpr TypeMask TM_FN         = TM_PRIMITIVE | TM_CLOSURE | TM_DERIVED | TM_CURRIED;
+constexpr TypeMask TM_CALLABLE   = TM_PRIMITIVE | TM_CLOSURE | TM_DERIVED;  // apply_function_immediate handles these
 constexpr TypeMask TM_OP         = TM_OPERATOR | TM_DEF_OP;
 constexpr TypeMask TM_TOP        = 0xFFFFFFFFu;  // ⊤  unknown
 

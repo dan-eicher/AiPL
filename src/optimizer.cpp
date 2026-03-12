@@ -10,6 +10,8 @@
 //   C2  – MonadicK(op, LiteralK(v))               →  ValueK(op v)
 //   O2  – DerivedOperatorK(op, primitive_fn, nil) →  ValueK(DERIVED_OPERATOR)
 //   F1  – FinalizeK(inner) where inner ∉ TM_FN    →  inner  (eliminated)
+//   D1  – FinalizeK(JuxtaposeK(fn, arg))          →  MonadicCallK(fn, arg)
+//   D2  – JuxtaposeK(l:BASIC, JuxtaposeK(fn, r))  →  DyadicCallK(fn, l, r)
 
 #include "optimizer.h"
 #include "continuation.h"
@@ -116,6 +118,11 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite(Continuation* k) {
     }
     if (auto* sk = dynamic_cast<SeqK*>(k)) {
         return rewrite_seq(sk);
+    }
+
+    // Optimizer-produced nodes — pass through with TM_TOP
+    if (dynamic_cast<MonadicCallK*>(k) || dynamic_cast<DyadicCallK*>(k)) {
+        return {k, {TM_TOP, nullptr}};
     }
 
     // Unknown node type – return unchanged with TM_TOP
@@ -249,11 +256,75 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_dyadic(DyadicK* k) {
 }
 
 // ---------------------------------------------------------------------------
-// FinalizeK  (F1)
+// FinalizeK  (D1, F1)
 // ---------------------------------------------------------------------------
 
 StaticOptimizer::Rewrite StaticOptimizer::rewrite_finalize(FinalizeK* k) {
     auto [new_inner, inner_state] = rewrite(k->inner);
+
+    // D1 – Monadic call at finalization boundary
+    // FinalizeK(JuxtaposeK(fn, arg)) → MonadicCallK(fn, arg)
+    // FinalizeK proves no left argument will arrive, so the G_PRIME curry
+    // can be replaced with a direct monadic call.
+    //
+    // Guard: only fire when gprime finalization would actually apply:
+    //   - finalize_gprime=true (top-level finalization), OR
+    //   - fn is TM_CLOSURE (closures always finalize regardless of gprime flag)
+    // With gprime=false (parenthesized context like (2×)), the G_PRIME curry
+    // is intentionally preserved for potential later dyadic application.
+    if (auto* jux = dynamic_cast<JuxtaposeK*>(new_inner)) {
+        // Recurse into the juxtapose children to get their states.
+        // (new_inner was already rewritten, but it may still be a JuxtaposeK
+        // whose children have been rewritten — their states weren't returned.)
+        auto left_r  = rewrite(jux->left);
+        auto right_r = rewrite(jux->right);
+        jux->left  = left_r.kont;
+        jux->right = right_r.kont;
+
+        TypeMask lm = left_r.state.mask;
+        TypeMask rm = right_r.state.mask;
+
+        auto is_callable = [](TypeMask m) -> bool {
+            return m != TM_BOT && m != TM_TOP && (m & TM_CALLABLE) && !(m & ~TM_CALLABLE);
+        };
+
+        auto can_finalize = [&](TypeMask fn_mask) -> bool {
+            if (k->finalize_gprime) return true;
+            // With gprime=false, only closures finalize (they don't use G_PRIME)
+            return fn_mask == TM_CLOSURE;
+        };
+
+        // Helper: wrap a continuation in FinalizeK if it might produce a curry.
+        // JuxtaposeK produces G_PRIME curries; apply_function_immediate cannot
+        // handle those, so we must finalize first.
+        auto ensure_finalized = [&](Continuation* c, TypeMask m) -> Continuation* {
+            bool known_basic = (m != TM_BOT && m != TM_TOP &&
+                                (m & TM_BASIC) && !(m & ~TM_BASIC));
+            if (known_basic) return c;  // basic values are never curries
+            auto* fin = heap_->allocate<FinalizeK>(c, true);
+            if (c->has_location()) fin->set_location(c->line(), c->column());
+            return fin;
+        };
+
+        // Case (a): left is function, right is argument → fn(arg)
+        if (is_callable(lm) && can_finalize(lm)) {
+            auto* mcall = heap_->allocate<MonadicCallK>(
+                jux->left, ensure_finalized(jux->right, rm));
+            if (k->has_location()) mcall->set_location(k->line(), k->column());
+            return {mcall, {TM_TOP, nullptr}};
+        }
+        // Case (b): left is basic, right is function → fn(left)
+        if (is_callable(rm) && can_finalize(rm)) {
+            bool left_is_basic = (lm != TM_BOT && lm != TM_TOP &&
+                                  (lm & TM_BASIC) && !(lm & ~TM_BASIC));
+            if (left_is_basic) {
+                // left is proven basic — no finalization needed
+                auto* mcall = heap_->allocate<MonadicCallK>(jux->right, jux->left);
+                if (k->has_location()) mcall->set_location(k->line(), k->column());
+                return {mcall, {TM_TOP, nullptr}};
+            }
+        }
+    }
 
     // F1 – eliminate FinalizeK when the inner expression is provably non-function
     // (can never produce a CURRIED_FN that needs finalization).
@@ -272,7 +343,7 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_finalize(FinalizeK* k) {
 }
 
 // ---------------------------------------------------------------------------
-// JuxtaposeK – G2 grammar function application
+// JuxtaposeK – G2 grammar function application  (D2)
 // ---------------------------------------------------------------------------
 
 StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
@@ -282,8 +353,53 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
     if (new_left  != k->left)  k->left  = new_left;
     if (new_right != k->right) k->right = new_right;
 
-    // We don't attempt to inline the call here (D-patterns); just propagate.
-    // Result type: if left is a known operator/function, result is TM_TOP for now.
+    TypeMask lm = left_state.mask;
+    TypeMask rm = right_state.mask;
+
+    auto is_basic = [](TypeMask m) -> bool {
+        return m != TM_BOT && m != TM_TOP && (m & TM_BASIC) && !(m & ~TM_BASIC);
+    };
+
+    // D2 – Dyadic call from known-basic left
+    // JuxtaposeK(left:BASIC, JuxtaposeK(fn:CALLABLE, right)) → DyadicCallK(fn, left, right)
+    //
+    // At runtime: inner JuxtaposeK creates G_PRIME(fn, right), outer sees
+    // left is basic → dispatches G_PRIME dyadically as fn(left, right).
+    // DyadicCallK skips the curry entirely.
+    if (is_basic(lm)) {
+        if (auto* inner_jux = dynamic_cast<JuxtaposeK*>(new_right)) {
+            // Get the inner juxtapose's children states
+            auto fn_r  = rewrite(inner_jux->left);
+            auto arg_r = rewrite(inner_jux->right);
+            inner_jux->left  = fn_r.kont;
+            inner_jux->right = arg_r.kont;
+
+            TypeMask fn_mask = fn_r.state.mask;
+            bool fn_callable = (fn_mask != TM_BOT && fn_mask != TM_TOP &&
+                                (fn_mask & TM_CALLABLE) && !(fn_mask & ~TM_CALLABLE));
+
+            if (fn_callable) {
+                // Right arg may be a JuxtaposeK that produces a G_PRIME curry;
+                // wrap in FinalizeK to resolve it before apply_function_immediate.
+                // Left arg is proven BASIC — no finalization needed.
+                TypeMask arg_mask = arg_r.state.mask;
+                Continuation* right_arg = inner_jux->right;
+                bool arg_known_basic = (arg_mask != TM_BOT && arg_mask != TM_TOP &&
+                                        (arg_mask & TM_BASIC) && !(arg_mask & ~TM_BASIC));
+                if (!arg_known_basic) {
+                    auto* fin = heap_->allocate<FinalizeK>(right_arg, true);
+                    if (right_arg->has_location()) fin->set_location(right_arg->line(), right_arg->column());
+                    right_arg = fin;
+                }
+
+                auto* dcall = heap_->allocate<DyadicCallK>(
+                    inner_jux->left, new_left, right_arg);
+                if (k->has_location()) dcall->set_location(k->line(), k->column());
+                return {dcall, {TM_TOP, nullptr}};
+            }
+        }
+    }
+
     return {k, {TM_TOP, nullptr}};
 }
 
@@ -311,6 +427,10 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_derived_op(DerivedOperatorK* k
     }
 
     if (new_operand != k->operand_cont) k->operand_cont = new_operand;
+
+    // With axis_cont, DerivedOperatorK produces CURRIED_FN(OPERATOR_CURRY), not DERIVED_OPERATOR.
+    if (k->axis_cont)
+        return {k, {TM_CURRIED, nullptr}};
     return {k, {TM_DERIVED, nullptr}};
 }
 

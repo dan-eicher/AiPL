@@ -403,6 +403,471 @@ TEST_F(OptimizerTest, Regression_ComplexExpression) {
     EXPECT_DOUBLE_EQ(scalar("((2*3)+(4×5))-1"), 27.0);
 }
 
+// ---------------------------------------------------------------------------
+// 6. Category D – Decurrying (D1 monadic, D2 dyadic)
+// ---------------------------------------------------------------------------
+
+// ---- D1 happy path: cases where D1 SHOULD fire ----
+
+TEST_F(OptimizerTest, D1_MonadicPrimitive) {
+    // ⍳5 → 1 2 3 4 5 (monadic iota via D1)
+    Value* v = eval("⍳5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+}
+
+TEST_F(OptimizerTest, D1_MonadicNegate) {
+    EXPECT_DOUBLE_EQ(scalar("-3"), -3.0);
+}
+
+TEST_F(OptimizerTest, D1_MonadicOnVector) {
+    Value* v = eval("-1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), -1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), -3.0);
+}
+
+TEST_F(OptimizerTest, D1_MonadicClosure) {
+    EXPECT_DOUBLE_EQ(scalar("{⍵+1}5"), 6.0);
+}
+
+TEST_F(OptimizerTest, D1_Reduce) {
+    // +/1 2 3 → 6 (derived operator, monadic reduce via D1)
+    EXPECT_DOUBLE_EQ(scalar("+/1 2 3"), 6.0);
+}
+
+TEST_F(OptimizerTest, D1_ReduceMatrix) {
+    // +/2 3⍴⍳6 → 6 15 (row sums)
+    Value* v = eval("+/2 3⍴⍳6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 2);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 6.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 15.0);
+}
+
+TEST_F(OptimizerTest, D1_Scan) {
+    // +\1 2 3 4 → 1 3 6 10 (running sum via D1)
+    Value* v = eval("+\\1 2 3 4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 4);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 10.0);
+}
+
+TEST_F(OptimizerTest, D1_Each) {
+    // ⍳¨1 2 3 → (,1)(1 2)(1 2 3)
+    Value* v = eval("⍳¨1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_strand());
+    EXPECT_EQ(v->as_strand()->size(), 3u);
+}
+
+TEST_F(OptimizerTest, D1_MonadicOnNDArray) {
+    // -2 3 4⍴⍳24 → negated NDArray
+    Value* v = eval("-2 3 4⍴⍳24");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_ndarray());
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(0), -1.0);
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(23), -24.0);
+}
+
+TEST_F(OptimizerTest, D1_MonadicStructural) {
+    // ⍴2 3⍴⍳6 → 2 3 (shape is non-pervasive structural fn)
+    Value* v = eval("⍴2 3⍴⍳6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 2);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 3.0);
+}
+
+TEST_F(OptimizerTest, D1_MonadicReverse) {
+    // ⌽1 2 3 → 3 2 1
+    Value* v = eval("⌽1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 1.0);
+}
+
+TEST_F(OptimizerTest, D1_MonadicReciprocal) {
+    // ÷4 → 0.25 (monadic reciprocal)
+    EXPECT_DOUBLE_EQ(scalar("÷4"), 0.25);
+}
+
+// ---- D1 finalize_gprime guard: parenthesized contexts ----
+
+TEST_F(OptimizerTest, D1_ParenPrimitivePreservesCurry) {
+    // (2×) applied later dyadically: (2×)3 → 6
+    // Parens create FinalizeK(gprime=false) around JuxtaposeK(×,2).
+    // D1 must NOT fire (gprime=false, fn=PRIMITIVE), preserving G_PRIME curry.
+    // Then at top-level finalization, 3 arrives as left arg → 2×3=6... wait
+    // Actually (2×) produces a partial application: (×2) with right=2
+    // Then (2×)3 means 3 is applied to the curry → 3×2=6
+    EXPECT_DOUBLE_EQ(scalar("(2×)3"), 6.0);
+}
+
+TEST_F(OptimizerTest, D1_ParenClosureStillFires) {
+    // ({⍵+1}) in parens: gprime=false but closure → D1 still fires
+    // ({⍵+1})5 → 6
+    EXPECT_DOUBLE_EQ(scalar("({⍵+1})5"), 6.0);
+}
+
+TEST_F(OptimizerTest, D1_ParenReducePreservesCurry) {
+    // (+/)1 2 3 → 6; parens wrap +/ in FinalizeK(gprime=false)
+    // +/ is DERIVED_OPERATOR (not CLOSURE), gprime=false → D1 should NOT fire
+    // But it still works because the runtime finalizes it
+    EXPECT_DOUBLE_EQ(scalar("(+/)1 2 3"), 6.0);
+}
+
+TEST_F(OptimizerTest, D1_TrainPartialApp) {
+    // (1+) applied to 5 → 6: partial application preserved by paren
+    EXPECT_DOUBLE_EQ(scalar("(1+)5"), 6.0);
+}
+
+// ---- D1 with FinalizeK wrapping on arguments ----
+
+TEST_F(OptimizerTest, D1_ArgNeedsFinalizeWrap) {
+    // ⍳+/1 2 3 → ⍳6 → 1..6
+    // D1 fires for ⍳ applied to (+/1 2 3); the arg is a JuxtaposeK
+    // producing TM_TOP, so ensure_finalized wraps it
+    Value* v = eval("⍳+/1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 6);
+}
+
+TEST_F(OptimizerTest, D1_NestedMonadic) {
+    // ⌽⍳5 → 5 4 3 2 1 (two D1 firings: ⍳5, then ⌽ on result)
+    Value* v = eval("⌽⍳5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 5.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 1.0);
+}
+
+// ---- D1 error propagation ----
+
+TEST_F(OptimizerTest, D1_DomainError) {
+    // ○'abc' should still signal DOMAIN ERROR through D1 path
+    EXPECT_THROW(eval("○'abc'"), APLError);
+}
+
+// ---- D2 happy path ----
+
+TEST_F(OptimizerTest, D2_ScalarPlusScalar) {
+    EXPECT_DOUBLE_EQ(scalar("3+4"), 7.0);
+}
+
+TEST_F(OptimizerTest, D2_ScalarPlusVector) {
+    Value* v = eval("10+1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 11.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 13.0);
+}
+
+TEST_F(OptimizerTest, D2_VectorTimesScalar) {
+    Value* v = eval("1 2 3×10");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 10.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 30.0);
+}
+
+TEST_F(OptimizerTest, D2_ScalarPlusMatrix) {
+    Value* v = eval("10+2 3⍴⍳6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0, 0), 11.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1, 2), 16.0);
+}
+
+TEST_F(OptimizerTest, D2_ScalarPlusNDArray) {
+    // Regression: NDArray pervasive dispatch was missing from apply_function_immediate
+    Value* v = eval("10+2 3 4⍴⍳24");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_ndarray());
+    const auto& shape = v->ndarray_shape();
+    ASSERT_EQ(shape.size(), 3u);
+    EXPECT_EQ(shape[0], 2);
+    EXPECT_EQ(shape[1], 3);
+    EXPECT_EQ(shape[2], 4);
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(0), 11.0);
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(23), 34.0);
+}
+
+TEST_F(OptimizerTest, D2_NDArrayPlusNDArraySameShape) {
+    // Both sides NDArray, same shape → element-wise
+    Value* v = eval("(2 3 4⍴⍳24)+2 3 4⍴⍳24");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_ndarray());
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(0), 2.0);   // 1+1
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(23), 48.0);  // 24+24
+}
+
+TEST_F(OptimizerTest, D2_DyadicClosure) {
+    EXPECT_DOUBLE_EQ(scalar("3{⍺+⍵}4"), 7.0);
+}
+
+TEST_F(OptimizerTest, D2_DyadicClosureVectorArgs) {
+    // 1 2 3{⍺+⍵}4 5 6 → 5 7 9
+    Value* v = eval("1 2 3{⍺+⍵}4 5 6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 5.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 9.0);
+}
+
+// ---- D2 with various operators ----
+
+TEST_F(OptimizerTest, D2_NwiseReduce) {
+    // 2+/1 2 3 4 → 3 5 7
+    Value* v = eval("2+/1 2 3 4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 7.0);
+}
+
+TEST_F(OptimizerTest, D2_NwiseReduceWithAxis) {
+    // Regression: DerivedOperatorK with axis → TM_CURRIED, D2 must NOT fire
+    Value* v = eval("2 +/[1] 3 2⍴⍳6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0, 0), 4.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0, 1), 6.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1, 0), 8.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1, 1), 10.0);
+}
+
+TEST_F(OptimizerTest, D2_NwiseReduceNDArrayWithAxis) {
+    // N-wise reduce on NDArray with axis — must NOT fire D2
+    Value* v = eval("2+/[1]2 3 4⍴⍳24");
+    ASSERT_NE(v, nullptr);
+    // Result should be 1×3×4 (collapsed to 3×4 matrix)
+    ASSERT_TRUE(v->is_matrix() || v->is_ndarray());
+}
+
+TEST_F(OptimizerTest, D2_DyadicReshape) {
+    // 2 3⍴⍳6 → reshape (structural, non-pervasive fn)
+    Value* v = eval("2 3⍴⍳6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    ASSERT_EQ(v->as_matrix()->rows(), 2);
+    ASSERT_EQ(v->as_matrix()->cols(), 3);
+}
+
+TEST_F(OptimizerTest, D2_DyadicTake) {
+    // 3↑1 2 3 4 5 → 1 2 3
+    Value* v = eval("3↑1 2 3 4 5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 3.0);
+}
+
+TEST_F(OptimizerTest, D2_DyadicRotate) {
+    // 2⌽1 2 3 4 5 → 3 4 5 1 2
+    Value* v = eval("2⌽1 2 3 4 5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 2.0);
+}
+
+TEST_F(OptimizerTest, D2_DyadicIndexOf) {
+    // 1 2 3 4 5⍳3 → 3
+    EXPECT_DOUBLE_EQ(scalar("1 2 3 4 5⍳3"), 3.0);
+}
+
+TEST_F(OptimizerTest, D2_Commute) {
+    // 3+⍨4 → 4+3=7 (commute swaps args)
+    EXPECT_DOUBLE_EQ(scalar("3+⍨4"), 7.0);
+}
+
+TEST_F(OptimizerTest, D2_CommuteSelfDuplicate) {
+    // +⍨5 → 5+5=10 (monadic commute duplicates arg)
+    EXPECT_DOUBLE_EQ(scalar("+⍨5"), 10.0);
+}
+
+TEST_F(OptimizerTest, D2_DyadicEach) {
+    // 10 20 30+¨1 2 3 → 11 22 33
+    Value* v = eval("10 20 30+¨1 2 3");
+    ASSERT_NE(v, nullptr);
+    // Result is strand of scalars
+    if (v->is_strand()) {
+        EXPECT_EQ(v->as_strand()->size(), 3u);
+    } else {
+        ASSERT_TRUE(v->is_vector());
+        EXPECT_EQ(v->size(), 3);
+    }
+}
+
+// ---- D2 with string arguments (TM_STRING is in TM_BASIC) ----
+
+TEST_F(OptimizerTest, D2_StringCatenate) {
+    // 'abc','def' → 'abcdef'
+    Value* v = eval("'abc','def'");
+    ASSERT_NE(v, nullptr);
+    // Catenation of two strings
+    EXPECT_EQ(v->size(), 6);
+}
+
+// ---- D2 blocking: cases where D2 should NOT fire ----
+
+TEST_F(OptimizerTest, D2_BlocksOnUnboundVariable) {
+    // x+4: x is a workspace variable, Lookup returns TM_TOP → D2 blocks
+    // Still works via normal G_PRIME path
+    eval("x←10");
+    EXPECT_DOUBLE_EQ(scalar("x+4"), 14.0);
+}
+
+TEST_F(OptimizerTest, D2_BlocksOnFunctionLeftArg) {
+    // A function on the left doesn't trigger D2 (not BASIC)
+    // {⍵+1} applied to 5 → 6 (this is actually D1, not D2)
+    EXPECT_DOUBLE_EQ(scalar("{⍵+1}5"), 6.0);
+}
+
+// ---- D2 FinalizeK wrapping on right arg ----
+
+TEST_F(OptimizerTest, D2_RightArgNeedsFinalizeWrap) {
+    // 10++/1 2 3 → 10+6=16
+    // Inner right is JuxtaposeK(+/, ...) producing TM_TOP → gets wrapped in FinalizeK
+    EXPECT_DOUBLE_EQ(scalar("10++/1 2 3"), 16.0);
+}
+
+TEST_F(OptimizerTest, D2_RightArgIsMonadicResult) {
+    // 10+⍳3 → 11 12 13
+    // Right arg ⍳3 is JuxtaposeK(⍳, 3) producing TM_TOP → FinalizeK wrapping
+    Value* v = eval("10+⍳3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 11.0);
+}
+
+// ---- D2 error propagation ----
+
+TEST_F(OptimizerTest, D2_LengthError) {
+    // 1 2 3+1 2 → LENGTH ERROR (mismatched shapes)
+    EXPECT_THROW(eval("1 2 3+1 2"), APLError);
+}
+
+TEST_F(OptimizerTest, D2_DomainError) {
+    // 1÷0 → DOMAIN ERROR
+    EXPECT_THROW(eval("1÷0"), APLError);
+}
+
+TEST_F(OptimizerTest, D2_NDArrayLengthError) {
+    // NDArray shape mismatch → LENGTH ERROR
+    EXPECT_THROW(eval("(2 3 4⍴⍳24)+2 3 5⍴⍳30"), APLError);
+}
+
+// ---- D1/D2 combined and chained ----
+
+TEST_F(OptimizerTest, D2_ChainedDyadic) {
+    // 1+2+3 → 6 (two D2 rewrites)
+    EXPECT_DOUBLE_EQ(scalar("1+2+3"), 6.0);
+}
+
+TEST_F(OptimizerTest, D2_MixedWithD1) {
+    // ⍳3+4 → ⍳7 → 1..7 (D2 for +, D1 for ⍳)
+    Value* v = eval("⍳3+4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 7);
+}
+
+TEST_F(OptimizerTest, D2_NDArrayPervasiveChained) {
+    // 1+2×2 3 4⍴⍳24 — chained D2 on NDArray
+    Value* v = eval("1+2×2 3 4⍴⍳24");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_ndarray());
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(0), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_ndarray()->data)(23), 49.0);
+}
+
+TEST_F(OptimizerTest, D2_DeeplyNested) {
+    // ((2+3)×(4+5)) → 5×9=45 — C1 folds inner, D2 handles outer
+    EXPECT_DOUBLE_EQ(scalar("((2+3)×(4+5))"), 45.0);
+}
+
+TEST_F(OptimizerTest, D1D2_ReduceThenDyadic) {
+    // 100++/⍳10 → 100+55=155 (D1 for ⍳10, D1 for +/..., D2 for 100+...)
+    EXPECT_DOUBLE_EQ(scalar("100++/⍳10"), 155.0);
+}
+
+// ---- D1/D2 inside dfn bodies ----
+
+TEST_F(OptimizerTest, D1_InsideDfn) {
+    // ⍵/⍺ start as TM_TOP in dfn; D1 fires for known-fn monadic calls
+    Value* v = eval("{⍳⍵}5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+}
+
+TEST_F(OptimizerTest, D2_InsideDfn) {
+    // Inside dfn, ⍵ is TM_TOP so it's not BASIC → D2 won't fire for ⍵+1.
+    // But the expression still works via normal runtime path.
+    EXPECT_DOUBLE_EQ(scalar("{⍵+1}5"), 6.0);
+}
+
+TEST_F(OptimizerTest, D2_InsideDfnWithLiteralLeft) {
+    // 10+⍵: literal 10 is BASIC, ⍵ is TM_TOP → D2 fires for outer,
+    // inner JuxtaposeK(+, ⍵) has fn=PRIMITIVE → D2 fires
+    EXPECT_DOUBLE_EQ(scalar("{10+⍵}5"), 15.0);
+}
+
+TEST_F(OptimizerTest, D2_InsideDfnBothArgs) {
+    // ⍺+⍵: both TM_TOP → D2 blocks, falls back to G_PRIME path
+    EXPECT_DOUBLE_EQ(scalar("3{⍺+⍵}4"), 7.0);
+}
+
+// ---- D1/D2 interaction with O2 (pre-built derived operators) ----
+
+TEST_F(OptimizerTest, D2_WithO2PrebuiltDerived) {
+    // 2+/1 2 3 4: O2 pre-builds +/ as ValueK(DERIVED_OPERATOR),
+    // then D2 fires with fn=DERIVED → DyadicCallK
+    Value* v = eval("2+/1 2 3 4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+}
+
+TEST_F(OptimizerTest, D1_WithO2PrebuiltDerived) {
+    // +/⍳10: O2 pre-builds +/, D1 fires for monadic application
+    EXPECT_DOUBLE_EQ(scalar("+/⍳10"), 55.0);
+}
+
+// ---- D1/D2 interaction with C1/C2 (constant folding) ----
+
+TEST_F(OptimizerTest, D2_AfterC1Fold) {
+    // ⍳(2+3) → ⍳5: C1 folds 2+3, then D1 fires for ⍳ on the ValueK
+    Value* v = eval("⍳(2+3)");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+}
+
+TEST_F(OptimizerTest, D2_ChainedWithFold) {
+    // 10+(2×3)+1 → 10+7=17: C1 folds 2×3→6, D2 for 6+1→7, D2 for 10+7
+    EXPECT_DOUBLE_EQ(scalar("10+(2×3)+1"), 17.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

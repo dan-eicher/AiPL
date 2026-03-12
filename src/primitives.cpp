@@ -149,9 +149,12 @@ void fn_add(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: + requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     // Scalar extension using Eigen broadcasting
     if (lhs->is_scalar()) {
@@ -218,9 +221,12 @@ void fn_subtract(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u2212 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -286,9 +292,12 @@ void fn_multiply(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u00d7 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -373,9 +382,12 @@ void fn_divide(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u00f7 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     // Scalar extension: scalar ÷ array
     if (lhs->is_scalar()) {
@@ -511,9 +523,12 @@ void fn_power(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u22c6 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     // Scalar extension
     if (lhs->is_scalar()) {
@@ -1390,8 +1405,10 @@ void fn_ceiling(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u2308 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
@@ -1432,8 +1449,10 @@ void fn_floor(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u230a requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
@@ -1612,9 +1631,12 @@ void fn_or(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u2228 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
@@ -1694,8 +1716,10 @@ void fn_not(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: ~ requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ~ requires numeric argument", nullptr, 11, 0);
@@ -1754,9 +1778,12 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u2372 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
@@ -1858,9 +1885,12 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u2371 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
@@ -1946,8 +1976,10 @@ void fn_magnitude(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: | requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: | requires numeric argument", nullptr, 11, 0);
@@ -1999,9 +2031,12 @@ void fn_residue(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: | requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
@@ -2076,8 +2111,10 @@ void fn_natural_log(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u235f requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ⍟ requires numeric argument", nullptr, 11, 0);
@@ -2125,9 +2162,12 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u235f requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
@@ -2235,8 +2275,10 @@ void fn_factorial(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: ! requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ! requires numeric argument", nullptr, 11, 0);
@@ -2331,9 +2373,12 @@ void fn_binomial(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (lhs->is_string()) lhs = lhs->to_char_vector(m->heap);
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (lhs->is_string() || rhs->is_string() ||
+        (lhs->is_array() && lhs->is_char_data()) ||
+        (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: ! requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
@@ -2407,8 +2452,10 @@ void fn_pi_times(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u25cb requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ○ requires numeric argument", nullptr, 11, 0);
@@ -2509,8 +2556,10 @@ void fn_circular(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (rhs->is_string()) rhs = rhs->to_char_vector(m->heap);
+    if (rhs->is_string() || (rhs->is_array() && rhs->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u25cb requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!rhs->is_array()) {
         m->throw_error("DOMAIN ERROR: ○ requires numeric argument", nullptr, 11, 0);
@@ -2568,8 +2617,10 @@ void fn_negate(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u2212 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: - requires numeric argument", nullptr, 11, 0);
@@ -2594,8 +2645,10 @@ void fn_signum(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u00d7 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: × requires numeric argument", nullptr, 11, 0);
@@ -2632,8 +2685,10 @@ void fn_reciprocal(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u00f7 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: ÷ requires numeric argument", nullptr, 11, 0);
@@ -2663,8 +2718,10 @@ void fn_exponential(Machine* m, Value* axis, Value* omega) {
         return;
     }
 
-    // String → char vector conversion for array operations
-    if (omega->is_string()) omega = omega->to_char_vector(m->heap);
+    if (omega->is_string() || (omega->is_array() && omega->is_char_data())) {
+        m->throw_error("DOMAIN ERROR: \u22c6 requires numeric argument", nullptr, 11, 0);
+        return;
+    }
 
     if (!omega->is_array()) {
         m->throw_error("DOMAIN ERROR: * requires numeric argument", nullptr, 11, 0);

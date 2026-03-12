@@ -88,6 +88,13 @@ class IndexListK;
 class IndexListCollectK;
 class InvokeDefinedOperatorK;
 class ValueK;
+class MonadicCallK;
+class EvalMonadicCallFnK;
+class PerformMonadicCallK;
+class DyadicCallK;
+class EvalDyadicCallLeftK;
+class EvalDyadicCallFnK;
+class PerformDyadicCallK;
 
 // ============================================================================
 // Function Application Helper
@@ -182,6 +189,13 @@ public:
     virtual void visit(IndexListCollectK*) = 0;
     virtual void visit(InvokeDefinedOperatorK*) = 0;
     virtual void visit(ValueK*) = 0;
+    virtual void visit(MonadicCallK*) = 0;
+    virtual void visit(EvalMonadicCallFnK*) = 0;
+    virtual void visit(PerformMonadicCallK*) = 0;
+    virtual void visit(DyadicCallK*) = 0;
+    virtual void visit(EvalDyadicCallLeftK*) = 0;
+    virtual void visit(EvalDyadicCallFnK*) = 0;
+    virtual void visit(PerformDyadicCallK*) = 0;
 };
 
 // Abstract Continuation base class
@@ -1764,6 +1778,134 @@ public:
 
     explicit ValueK(Value* v) : value(v) {}
     ~ValueK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// MonadicCallK - Direct monadic function call (optimizer D1 pattern)
+// Evaluates fn_cont and arg_cont, then calls apply_function_immediate(fn, nullptr, arg).
+// Bypasses the G_PRIME curry mechanism entirely.
+// Created only by StaticOptimizer; never emitted by the parser.
+class MonadicCallK : public Continuation {
+public:
+    Continuation* fn_cont;   // Continuation that produces the function value
+    Continuation* arg_cont;  // Continuation that produces the argument value
+
+    MonadicCallK(Continuation* fn, Continuation* arg)
+        : fn_cont(fn), arg_cont(arg) {}
+    ~MonadicCallK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// Auxiliary: evaluates fn after arg is ready
+class EvalMonadicCallFnK : public Continuation {
+public:
+    Continuation* fn_cont;
+    Value* arg_val;
+
+    EvalMonadicCallFnK(Continuation* fn, Value* arg)
+        : fn_cont(fn), arg_val(arg) {}
+    ~EvalMonadicCallFnK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// Auxiliary: dispatches the monadic call after both fn and arg are ready
+class PerformMonadicCallK : public Continuation {
+public:
+    Value* arg_val;
+
+    explicit PerformMonadicCallK(Value* arg) : arg_val(arg) {}
+    ~PerformMonadicCallK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// DyadicCallK - Direct dyadic function call (optimizer D2 pattern)
+// Evaluates fn_cont, left_cont, right_cont, then calls
+// apply_function_immediate(fn, left, right).
+// Bypasses the G_PRIME curry mechanism entirely.
+// Created only by StaticOptimizer; never emitted by the parser.
+class DyadicCallK : public Continuation {
+public:
+    Continuation* fn_cont;    // Continuation that produces the function value
+    Continuation* left_cont;  // Continuation that produces the left argument
+    Continuation* right_cont; // Continuation that produces the right argument
+
+    DyadicCallK(Continuation* fn, Continuation* left, Continuation* right)
+        : fn_cont(fn), left_cont(left), right_cont(right) {}
+    ~DyadicCallK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// Auxiliary: evaluates left after right is ready
+class EvalDyadicCallLeftK : public Continuation {
+public:
+    Continuation* fn_cont;
+    Continuation* left_cont;
+    Value* right_val;
+
+    EvalDyadicCallLeftK(Continuation* fn, Continuation* left, Value* right)
+        : fn_cont(fn), left_cont(left), right_val(right) {}
+    ~EvalDyadicCallLeftK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// Auxiliary: evaluates fn after left and right are ready
+class EvalDyadicCallFnK : public Continuation {
+public:
+    Continuation* fn_cont;
+    Value* left_val;
+    Value* right_val;
+
+    EvalDyadicCallFnK(Continuation* fn, Value* left, Value* right)
+        : fn_cont(fn), left_val(left), right_val(right) {}
+    ~EvalDyadicCallFnK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// Auxiliary: dispatches the dyadic call after fn, left, and right are ready
+class PerformDyadicCallK : public Continuation {
+public:
+    Value* left_val;
+    Value* right_val;
+
+    PerformDyadicCallK(Value* left, Value* right) : left_val(left), right_val(right) {}
+    ~PerformDyadicCallK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }

@@ -594,6 +594,57 @@ public:
         print_value("val", k->value);
         print_location(k);
     }
+
+    void visit(MonadicCallK* k) override {
+        out << "MonadicCallK";
+        print_location(k);
+        print_child("fn", k->fn_cont);
+        print_child("arg", k->arg_cont);
+    }
+
+    void visit(EvalMonadicCallFnK* k) override {
+        out << "EvalMonadicCallFnK";
+        print_value("arg", k->arg_val);
+        print_location(k);
+        print_child("fn", k->fn_cont);
+    }
+
+    void visit(PerformMonadicCallK* k) override {
+        out << "PerformMonadicCallK";
+        print_value("arg", k->arg_val);
+        print_location(k);
+    }
+
+    void visit(DyadicCallK* k) override {
+        out << "DyadicCallK";
+        print_location(k);
+        print_child("fn", k->fn_cont);
+        print_child("left", k->left_cont);
+        print_child("right", k->right_cont);
+    }
+
+    void visit(EvalDyadicCallLeftK* k) override {
+        out << "EvalDyadicCallLeftK";
+        print_value("right", k->right_val);
+        print_location(k);
+        print_child("fn", k->fn_cont);
+        print_child("left", k->left_cont);
+    }
+
+    void visit(EvalDyadicCallFnK* k) override {
+        out << "EvalDyadicCallFnK";
+        print_value("left", k->left_val);
+        print_value("right", k->right_val);
+        print_location(k);
+        print_child("fn", k->fn_cont);
+    }
+
+    void visit(PerformDyadicCallK* k) override {
+        out << "PerformDyadicCallK";
+        print_value("left", k->left_val);
+        print_value("right", k->right_val);
+        print_location(k);
+    }
 };
 
 } // namespace apl

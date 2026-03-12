@@ -460,21 +460,15 @@ TEST_F(StringTest, DyadicGradeNotInCollating) {
 // ============================================================================
 
 TEST_F(StringTest, AddToString) {
-    // Adding to string codepoints
-    Value* result = eval("1+'A'");
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector());
-    EXPECT_EQ(result->size(), 1);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 66.0);  // 'A' + 1 = 'B'
+    // Arithmetic on character data is a DOMAIN ERROR per ISO 13751
+    EXPECT_THROW(eval("1+'A'"), APLError);
+    EXPECT_THROW(eval("1+'ABC'"), APLError);
 }
 
 TEST_F(StringTest, SubtractStrings) {
-    // Subtracting strings gives codepoint differences
-    Value* result = eval("'B'-'A'");
-    ASSERT_NE(result, nullptr);
-    EXPECT_TRUE(result->is_vector());
-    EXPECT_EQ(result->size(), 1);
-    EXPECT_DOUBLE_EQ(result->as_matrix()->coeff(0, 0), 1.0);  // 66 - 65 = 1
+    // Arithmetic on character data is a DOMAIN ERROR per ISO 13751
+    EXPECT_THROW(eval("'B'-'A'"), APLError);
+    EXPECT_THROW(eval("'ABC'-1"), APLError);
 }
 
 // ============================================================================

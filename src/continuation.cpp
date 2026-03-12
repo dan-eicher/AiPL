@@ -199,6 +199,37 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
                 return false;  // Continuation pushed
             }
 
+            // Pervasive NDArray handling: iterate 0-cells element-wise
+            // Mirrors DispatchFunctionK logic for NDArray pervasive ops
+            bool left_ndarray = left_val->is_ndarray();
+            bool right_ndarray = right_val->is_ndarray();
+            if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_ndarray || right_ndarray)) {
+                int left_cells = count_cells_for_rank(left_val, 0);
+                int right_cells = count_cells_for_rank(right_val, 0);
+                int total = std::max(left_cells, right_cells);
+
+                if (left_cells > 1 && right_cells > 1 && left_cells != right_cells) {
+                    m->throw_error("LENGTH ERROR: mismatched array lengths", nullptr, 5, 0);
+                    return false;
+                }
+
+                const std::vector<int>* shape = nullptr;
+                if (right_ndarray && right_cells > 1) {
+                    shape = &right_val->ndarray_shape();
+                } else if (left_ndarray && left_cells > 1) {
+                    shape = &left_val->ndarray_shape();
+                }
+
+                CellIterK* iter = m->heap->allocate<CellIterK>(
+                    fn_val, left_val, right_val, 0, 0, total,
+                    CellIterMode::COLLECT, total, 1, false, false, false);
+                if (shape) {
+                    iter->orig_ndarray_shape = *shape;
+                }
+                m->push_kont(iter);
+                return false;  // Continuation pushed
+            }
+
             prim_fn->dyadic(m, axis, left_val, right_val);
         } else if (right_val) {
             // Monadic application
@@ -4479,6 +4510,118 @@ void ValueK::invoke(Machine* machine) {
 
 void ValueK::mark(Heap* heap) {
     heap->mark(value);
+}
+
+// ============================================================================
+// MonadicCallK - Direct monadic call (optimizer D1)
+// ============================================================================
+
+void MonadicCallK::invoke(Machine* machine) {
+    // Evaluate arg first (APL right-to-left), then fn, then dispatch.
+    // Push EvalMonadicCallFnK (will capture arg result and schedule fn eval),
+    // then push arg_cont to evaluate first.
+    auto* eval_fn = machine->heap->allocate_ephemeral<EvalMonadicCallFnK>(fn_cont, nullptr);
+    eval_fn->set_location(src_line, src_column);
+
+    machine->push_kont(eval_fn);   // runs after arg_cont completes
+    machine->push_kont(arg_cont);  // evaluate argument now
+}
+
+void MonadicCallK::mark(Heap* heap) {
+    heap->mark(fn_cont);
+    heap->mark(arg_cont);
+}
+
+void EvalMonadicCallFnK::invoke(Machine* machine) {
+    // arg_cont has completed; capture its result, then schedule fn evaluation
+    arg_val = machine->result;
+
+    auto* perform = machine->heap->allocate_ephemeral<PerformMonadicCallK>(arg_val);
+    perform->set_location(src_line, src_column);
+
+    machine->push_kont(perform);   // runs after fn_cont completes
+    machine->push_kont(fn_cont);   // evaluate function now
+}
+
+void EvalMonadicCallFnK::mark(Heap* heap) {
+    heap->mark(fn_cont);
+    heap->mark(arg_val);
+}
+
+void PerformMonadicCallK::invoke(Machine* machine) {
+    // fn_cont has completed; machine->result is the function value
+    Value* fn_val = machine->result;
+    apply_function_immediate(machine, fn_val, nullptr, arg_val);
+}
+
+void PerformMonadicCallK::mark(Heap* heap) {
+    heap->mark(arg_val);
+}
+
+// ============================================================================
+// DyadicCallK - Direct dyadic call (optimizer D2)
+// ============================================================================
+
+void DyadicCallK::invoke(Machine* machine) {
+    // Evaluate right first, then left, then fn, then dispatch (APL right-to-left).
+    // Push EvalDyadicCallLeftK (will capture right result and schedule left eval),
+    // then push right_cont to evaluate first.
+    auto* eval_left = machine->heap->allocate_ephemeral<EvalDyadicCallLeftK>(fn_cont, left_cont, nullptr);
+    eval_left->set_location(src_line, src_column);
+
+    machine->push_kont(eval_left);   // runs after right_cont completes
+    machine->push_kont(right_cont);  // evaluate right argument now
+}
+
+void DyadicCallK::mark(Heap* heap) {
+    heap->mark(fn_cont);
+    heap->mark(left_cont);
+    heap->mark(right_cont);
+}
+
+void EvalDyadicCallLeftK::invoke(Machine* machine) {
+    // right_cont has completed; capture its result, then schedule left evaluation
+    right_val = machine->result;
+
+    auto* eval_fn = machine->heap->allocate_ephemeral<EvalDyadicCallFnK>(fn_cont, nullptr, right_val);
+    eval_fn->set_location(src_line, src_column);
+
+    machine->push_kont(eval_fn);    // runs after left_cont completes
+    machine->push_kont(left_cont);  // evaluate left argument now
+}
+
+void EvalDyadicCallLeftK::mark(Heap* heap) {
+    heap->mark(fn_cont);
+    heap->mark(left_cont);
+    heap->mark(right_val);
+}
+
+void EvalDyadicCallFnK::invoke(Machine* machine) {
+    // left_cont has completed; capture its result, then schedule fn evaluation
+    left_val = machine->result;
+
+    auto* perform = machine->heap->allocate_ephemeral<PerformDyadicCallK>(left_val, right_val);
+    perform->set_location(src_line, src_column);
+
+    machine->push_kont(perform);   // runs after fn_cont completes
+    machine->push_kont(fn_cont);   // evaluate function now
+}
+
+void EvalDyadicCallFnK::mark(Heap* heap) {
+    heap->mark(fn_cont);
+    heap->mark(left_val);
+    heap->mark(right_val);
+}
+
+void PerformDyadicCallK::invoke(Machine* machine) {
+    // fn_cont has completed; machine->result is the function value
+    Value* fn_val = machine->result;
+    apply_function_immediate(machine, fn_val, left_val, right_val);
+}
+
+void PerformDyadicCallK::mark(Heap* heap) {
+    heap->mark(left_val);
+    heap->mark(right_val);
 }
 
 } // namespace apl
