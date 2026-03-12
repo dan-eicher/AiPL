@@ -34,8 +34,9 @@ public:
     const char* what() const noexcept override { return message.c_str(); }
 };
 
-// Forward declaration
+// Forward declarations
 class Parser;
+class SpecializationBackend;
 
 // Machine - The CEK machine execution engine
 class Machine {
@@ -54,6 +55,7 @@ public:
     String* lx = nullptr;                   // Latent expression (⎕LX): interned in string_pool
     uint32_t sysvar_mask = SYSVAR_ALL;      // Enabled system variables (for sandboxing)
     bool optimizer_enabled = true;          // set false to disable static optimizer (for benchmarking)
+    SpecializationBackend* dir_backend = nullptr;  // DIR specialization (CloningBackend)
 
     // Error state (ISO 13751 §11.4.4-11.4.5)
     int event_type[2] = {0, 0};             // {class, subclass} - 0 0 = no error

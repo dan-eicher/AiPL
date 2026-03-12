@@ -4,6 +4,7 @@
 #include "heap.h"
 #include "continuation.h"
 #include "environment.h"
+#include "dir.h"
 #include <cassert>
 #include <stdexcept>
 #include <sstream>
@@ -185,6 +186,11 @@ void Value::cleanup() {
     // Note: PRIMITIVE and OPERATOR values point to static globals (prim_plus, op_reduce, etc.)
     // CLOSURE body points to GC-managed Continuation (marked via mark(), not deleted here)
     if (tag == ValueType::CLOSURE) {
+        if (data.closure && data.closure->specialized_bodies) {
+            // Continuations inside are GC-managed; just delete the map itself.
+            delete static_cast<SpecCache*>(data.closure->specialized_bodies);
+            data.closure->specialized_bodies = nullptr;
+        }
         delete data.closure;  // ClosureData struct, not the Continuation inside
         data.closure = nullptr;
     }
@@ -351,9 +357,15 @@ void Value::mark(Heap* heap) {
         }
     }
 
-    // If this is a CLOSURE, mark the continuation graph body
+    // If this is a CLOSURE, mark the continuation graph body and specialized cache
     if (tag == ValueType::CLOSURE && data.closure) {
         heap->mark(data.closure->body);
+        if (data.closure->specialized_bodies) {
+            auto* cache = static_cast<SpecCache*>(data.closure->specialized_bodies);
+            for (auto& [sig, kont] : *cache) {
+                heap->mark(kont);
+            }
+        }
     }
 
     // DEFINED_OPERATOR: mark body, lexical environment, and interned names

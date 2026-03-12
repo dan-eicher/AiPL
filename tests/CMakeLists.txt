@@ -100,3 +100,8 @@ add_test(NAME SysFnTest COMMAND test_sysfn)
 add_executable(test_optimizer test_optimizer.cpp)
 target_link_libraries(test_optimizer apl_vm GTest::gtest)
 add_test(NAME OptimizerTest COMMAND test_optimizer)
+
+# DIR tests (Definition-site Instantiation with Re-optimization)
+add_executable(test_dir test_dir.cpp)
+target_link_libraries(test_dir apl_vm GTest::gtest)
+add_test(NAME DIRTest COMMAND test_dir)

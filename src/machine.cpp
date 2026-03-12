@@ -7,6 +7,7 @@
 #include "primitives.h"
 #include "operators.h"
 #include "optimizer.h"
+#include "dir.h"
 #include "kont_print.h"
 #include <stdexcept>
 #include <sstream>
@@ -26,6 +27,7 @@ Machine::Machine() {
     rl = rd();
     if (rl == 0) rl = 1;  // Ensure positive
     rng.seed(rl);
+    dir_backend = new CloningBackend();
     init_globals();  // Populate with APL primitives and operators
 }
 
@@ -116,6 +118,10 @@ void Machine::init_globals() {
 
 // Destructor
 Machine::~Machine() {
+    // Delete DIR backend
+    delete dir_backend;
+    dir_backend = nullptr;
+
     // Delete parser first (it doesn't own anything, just references machine)
     delete parser;
 

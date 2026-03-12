@@ -182,6 +182,9 @@ public:
     struct ClosureData {
         Continuation* body;        // The function body (continuation graph)
         bool is_niladic;           // True if function doesn't reference ⍵ or ⍺
+        // DIR specialization cache (opaque pointer to SpecCache in dir.h)
+        // nullptr until first specialization; allocated on first cache miss
+        void* specialized_bodies = nullptr;
     };
 
     // NDARRAY metadata - shape and precomputed strides for fast indexing

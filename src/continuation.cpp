@@ -5,6 +5,7 @@
 #include "completion.h"
 #include "operators.h"
 #include "primitives.h"
+#include "dir.h"
 #include <algorithm>
 #include <stdexcept>
 #include <typeinfo>
@@ -2523,6 +2524,17 @@ void FunctionCallK::invoke(Machine* machine) {
     if (!body) {
         machine->throw_error("VALUE ERROR: Function has no body", this, 2, 0);
         return;
+    }
+
+    // DIR: specialize body for concrete argument types
+    if (machine->dir_backend && machine->optimizer_enabled && right_arg) {
+        TypeSig sig;
+        sig.omega_type = right_arg->tag;
+        sig.has_alpha = (left_arg != nullptr);
+        sig.alpha_type = left_arg ? left_arg->tag : ValueType::SCALAR;
+        Continuation* specialized = dir_lookup_or_specialize(
+            fn_value, sig, machine->heap, machine->dir_backend);
+        if (specialized) body = specialized;
     }
 
     // Create new environment for function scope (GC-managed)

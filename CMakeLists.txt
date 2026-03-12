@@ -50,6 +50,7 @@ set(APL_SOURCES
     src/parser.cpp
     src/sysvar.cpp
     src/optimizer.cpp
+    src/dir.cpp
 )
 
 # Build APL VM as a library (build once, link everywhere)
