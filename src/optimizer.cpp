@@ -8,7 +8,7 @@
 // Pattern categories:
 //   C1  – DyadicK(op, LiteralK(a), LiteralK(b))  →  ValueK(a op b)
 //   C2  – MonadicK(op, LiteralK(v))               →  ValueK(op v)
-//   O2  – DerivedOperatorK(op, primitive_fn, nil) →  ValueK(DERIVED_OPERATOR)
+//   O1  – DerivedOperatorK(op, primitive_fn, nil) →  ValueK(DERIVED_OPERATOR)
 //   F1  – FinalizeK(inner) where inner ∉ TM_FN    →  inner  (eliminated)
 //   D1  – FinalizeK(JuxtaposeK(fn, arg))          →  MonadicCallK(fn, arg)
 //   D2  – JuxtaposeK(l:BASIC, JuxtaposeK(fn, r))  →  DyadicCallK(fn, l, r)
@@ -23,6 +23,95 @@
 #include <cassert>
 
 namespace apl {
+
+// ---------------------------------------------------------------------------
+// Abstract apply tables
+// ---------------------------------------------------------------------------
+
+static TypeMask abstract_apply_monadic(const std::string& name, TypeMask arg) {
+    // Pervasive: preserve numeric type
+    if (name == "+" || name == "-" || name == "×" || name == "÷" ||
+        name == "*" || name == "|" || name == "⌈" || name == "⌊" ||
+        name == "⍟" || name == "!" || name == "○" || name == "?" ||
+        name == "~") {
+        if ((arg & TM_NUMERIC) && !(arg & ~TM_NUMERIC)) return arg;
+        return TM_TOP;
+    }
+    // Shape-preserving structural
+    if (name == "⌽" || name == "⊖" || name == "⍉") {
+        if ((arg & TM_NUMERIC) && !(arg & ~TM_NUMERIC)) return arg;
+        return TM_TOP;
+    }
+    // Always VECTOR
+    if (name == "⍴" || name == "," || name == "∊" || name == "⍋" || name == "⍒")
+        return TM_VECTOR;
+    // Always SCALAR
+    if (name == "≢" || name == "≡")
+        return TM_SCALAR;
+    // Always STRING
+    if (name == "⍕")
+        return TM_STRING;
+    // Always MATRIX
+    if (name == "⍪")
+        return TM_MATRIX;
+    // Iota
+    if (name == "⍳") {
+        if (arg == TM_SCALAR) return TM_VECTOR;
+        return TM_TOP;
+    }
+    // Identity
+    if (name == "⊣" || name == "⊢")
+        return arg;
+    // Enclose
+    if (name == "⊂")
+        return TM_STRAND;
+    // Default
+    return TM_TOP;
+}
+
+static TypeMask abstract_apply_dyadic(const std::string& name, TypeMask left, TypeMask right) {
+    // Broadcast rule for pervasive dyadic
+    auto broadcast = [](TypeMask l, TypeMask r) -> TypeMask {
+        if (!(l & TM_NUMERIC) || (l & ~TM_NUMERIC) ||
+            !(r & TM_NUMERIC) || (r & ~TM_NUMERIC))
+            return TM_TOP;
+        if (l == r) return l;            // vec + vec = vec
+        if (l == TM_SCALAR) return r;    // scalar extends
+        if (r == TM_SCALAR) return l;    // scalar extends
+        return l | r;                    // conservative union
+    };
+
+    // Pervasive
+    if (name == "+" || name == "-" || name == "×" || name == "÷" ||
+        name == "*" || name == "|" || name == "⌈" || name == "⌊" ||
+        name == "⍟" || name == "!" || name == "○" || name == "?" ||
+        name == "=" || name == "≠" || name == "<" || name == ">" ||
+        name == "≤" || name == "≥" || name == "∧" || name == "∨" ||
+        name == "⍲" || name == "⍱")
+        return broadcast(left, right);
+    // Rotate
+    if (name == "⌽" || name == "⊖") {
+        if ((right & TM_NUMERIC) && !(right & ~TM_NUMERIC)) return right;
+        return TM_TOP;
+    }
+    // Match
+    if (name == "≡")
+        return TM_SCALAR;
+    // Format
+    if (name == "⍕")
+        return TM_STRING;
+    // Identity
+    if (name == "⊣") return left;
+    if (name == "⊢") return right;
+    // Without
+    if (name == "~")
+        return TM_VECTOR;
+    // Union / Intersect
+    if (name == "∪" || name == "∩")
+        return TM_VECTOR;
+    // Default
+    return TM_TOP;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,9 +218,12 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite(Continuation* k) {
     else if (auto* sk = dynamic_cast<SeqK*>(k)) {
         result = rewrite_seq(sk);
     }
-    // Optimizer-produced nodes — pass through with TM_TOP
-    else if (dynamic_cast<MonadicCallK*>(k) || dynamic_cast<DyadicCallK*>(k)) {
-        result = {k, {TM_TOP, nullptr}};
+    // Optimizer-produced nodes — recurse into children and infer types
+    else if (auto* mck = dynamic_cast<MonadicCallK*>(k)) {
+        result = rewrite_monadic_call(mck);
+    }
+    else if (auto* dck = dynamic_cast<DyadicCallK*>(k)) {
+        result = rewrite_dyadic_call(dck);
     }
     else {
         // Unknown node type – return unchanged with TM_TOP
@@ -177,9 +269,16 @@ Continuation* StaticOptimizer::finalize_if_needed(Continuation* c, TypeMask m) {
 
         // Case (a): left is function, right is argument → fn(arg)
         if (is_callable(lm)) {
-            auto* mcall = heap_->allocate<MonadicCallK>(
-                jux->left, finalize_if_needed(jux->right, rm));
+            Continuation* fin_arg = finalize_if_needed(jux->right, rm);
+            auto* mcall = heap_->allocate<MonadicCallK>(jux->left, fin_arg);
             if (c->has_location()) mcall->set_location(c->line(), c->column());
+            // Cache state for the newly created MonadicCallK
+            OptState fn_st = lookup_state(jux->left);
+            TypeMask arg_mask = lookup_state(fin_arg).mask;
+            TypeMask res = TM_TOP;
+            if (fn_st.singleton && fn_st.mask == TM_PRIMITIVE)
+                res = abstract_apply_monadic(fn_st.singleton->data.primitive_fn->name, arg_mask);
+            state_cache_[mcall] = {res, nullptr};
             return mcall;
         }
         // Case (b): left is basic, right is function → fn(left)
@@ -189,6 +288,11 @@ Continuation* StaticOptimizer::finalize_if_needed(Continuation* c, TypeMask m) {
             if (left_basic) {
                 auto* mcall = heap_->allocate<MonadicCallK>(jux->right, jux->left);
                 if (c->has_location()) mcall->set_location(c->line(), c->column());
+                OptState fn_st = lookup_state(jux->right);
+                TypeMask res = TM_TOP;
+                if (fn_st.singleton && fn_st.mask == TM_PRIMITIVE)
+                    res = abstract_apply_monadic(fn_st.singleton->data.primitive_fn->name, lm);
+                state_cache_[mcall] = {res, nullptr};
                 return mcall;
             }
         }
@@ -295,9 +399,9 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic(MonadicK* k) {
 
     if (new_operand != k->operand) k->operand = new_operand;
 
-    // Infer result state conservatively
-    OptState state = {TM_TOP, nullptr};
-    return {k, state};
+    // Abstract apply: infer result type from primitive name + argument type
+    TypeMask result_mask = abstract_apply_monadic(k->op_name->str(), op_state.mask);
+    return {k, {result_mask, nullptr}};
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +427,9 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_dyadic(DyadicK* k) {
     if (new_left  != k->left)  k->left  = new_left;
     if (new_right != k->right) k->right = new_right;
 
-    return {k, {TM_TOP, nullptr}};
+    // Abstract apply: infer result type from primitive name + argument types
+    TypeMask result_mask = abstract_apply_dyadic(k->op_name->str(), left_state.mask, right_state.mask);
+    return {k, {result_mask, nullptr}};
 }
 
 // ---------------------------------------------------------------------------
@@ -362,10 +468,16 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_finalize(FinalizeK* k) {
         if (is_callable(lm) && can_finalize(lm)) {
             // D3: finalize_if_needed uses cached states to chain MonadicCallK
             // through nested function applications without re-walking
-            auto* mcall = heap_->allocate<MonadicCallK>(
-                jux->left, finalize_if_needed(jux->right, rm));
+            Continuation* fin_arg = finalize_if_needed(jux->right, rm);
+            auto* mcall = heap_->allocate<MonadicCallK>(jux->left, fin_arg);
             if (k->has_location()) mcall->set_location(k->line(), k->column());
-            return {mcall, {TM_TOP, nullptr}};
+            // Infer result type via apply table if fn is a known primitive
+            OptState fn_st = lookup_state(jux->left);
+            TypeMask arg_mask = lookup_state(fin_arg).mask;
+            TypeMask res = TM_TOP;
+            if (fn_st.singleton && fn_st.mask == TM_PRIMITIVE)
+                res = abstract_apply_monadic(fn_st.singleton->data.primitive_fn->name, arg_mask);
+            return {mcall, {res, nullptr}};
         }
         // Case (b): left is basic, right is function → fn(left)
         if (is_callable(rm) && can_finalize(rm)) {
@@ -375,7 +487,11 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_finalize(FinalizeK* k) {
                 // left is proven basic — no finalization needed
                 auto* mcall = heap_->allocate<MonadicCallK>(jux->right, jux->left);
                 if (k->has_location()) mcall->set_location(k->line(), k->column());
-                return {mcall, {TM_TOP, nullptr}};
+                OptState fn_st = lookup_state(jux->right);
+                TypeMask res = TM_TOP;
+                if (fn_st.singleton && fn_st.mask == TM_PRIMITIVE)
+                    res = abstract_apply_monadic(fn_st.singleton->data.primitive_fn->name, lm);
+                return {mcall, {res, nullptr}};
             }
         }
     }
@@ -437,7 +553,13 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
                 auto* dcall = heap_->allocate<DyadicCallK>(
                     inner_jux->left, new_left, right_arg);
                 if (k->has_location()) dcall->set_location(k->line(), k->column());
-                return {dcall, {TM_TOP, nullptr}};
+                // Infer result type via apply table if fn is a known primitive
+                OptState fn_st = lookup_state(inner_jux->left);
+                TypeMask right_mask = lookup_state(right_arg).mask;
+                TypeMask res = TM_TOP;
+                if (fn_st.singleton && fn_st.mask == TM_PRIMITIVE)
+                    res = abstract_apply_dyadic(fn_st.singleton->data.primitive_fn->name, lm, right_mask);
+                return {dcall, {res, nullptr}};
             }
         }
     }
@@ -446,13 +568,13 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
 }
 
 // ---------------------------------------------------------------------------
-// DerivedOperatorK  (O2 – operator resolution)
+// DerivedOperatorK  (O1 – operator resolution)
 // ---------------------------------------------------------------------------
 
 StaticOptimizer::Rewrite StaticOptimizer::rewrite_derived_op(DerivedOperatorK* k) {
     auto [new_operand, op_state] = rewrite(k->operand_cont);
 
-    // O2 – if operand is a known primitive and there's no axis, pre-build the
+    // O1 – if operand is a known primitive and there's no axis, pre-build the
     // DERIVED_OPERATOR value so that the runtime dispatch is avoided.
     if (k->axis_cont == nullptr &&
         (op_state.mask & TM_PRIMITIVE) && op_state.singleton) {
@@ -520,6 +642,41 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_seq(SeqK* k) {
     }
     // Result of a sequence is the result of its last statement.
     return {k, last_state};
+}
+
+// ---------------------------------------------------------------------------
+// MonadicCallK / DyadicCallK – recurse into children, apply table
+// ---------------------------------------------------------------------------
+
+StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic_call(MonadicCallK* k) {
+    auto [new_fn,  fn_state]  = rewrite(k->fn_cont);
+    auto [new_arg, arg_state] = rewrite(k->arg_cont);
+    if (new_fn  != k->fn_cont)  k->fn_cont  = new_fn;
+    if (new_arg != k->arg_cont) k->arg_cont = new_arg;
+
+    if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
+        TypeMask r = abstract_apply_monadic(
+            fn_state.singleton->data.primitive_fn->name, arg_state.mask);
+        return {k, {r, nullptr}};
+    }
+    return {k, {TM_TOP, nullptr}};
+}
+
+StaticOptimizer::Rewrite StaticOptimizer::rewrite_dyadic_call(DyadicCallK* k) {
+    auto [new_fn,    fn_state]    = rewrite(k->fn_cont);
+    auto [new_left,  left_state]  = rewrite(k->left_cont);
+    auto [new_right, right_state] = rewrite(k->right_cont);
+    if (new_fn    != k->fn_cont)    k->fn_cont    = new_fn;
+    if (new_left  != k->left_cont)  k->left_cont  = new_left;
+    if (new_right != k->right_cont) k->right_cont = new_right;
+
+    if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
+        TypeMask r = abstract_apply_dyadic(
+            fn_state.singleton->data.primitive_fn->name,
+            left_state.mask, right_state.mask);
+        return {k, {r, nullptr}};
+    }
+    return {k, {TM_TOP, nullptr}};
 }
 
 } // namespace apl

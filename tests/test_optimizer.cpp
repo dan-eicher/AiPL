@@ -973,6 +973,101 @@ TEST_F(OptimizerTest, D3_DfnDyadicWithChain) {
     EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 13.0);
 }
 
+// ---------------------------------------------------------------------------
+// 7. Abstract Apply Table – type propagation through primitive calls
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, AAT_ShapeReturnsVector) {
+    // (⍴1 2 3) — shape returns VECTOR, F1 should fire (eliminate FinalizeK)
+    Value* v = eval("(⍴1 2 3)");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 1);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 3.0);
+}
+
+TEST_F(OptimizerTest, AAT_RavelReturnsVector) {
+    // (,2 3⍴⍳6) — ravel returns VECTOR, F1 should fire
+    Value* v = eval("(,2 3⍴⍳6)");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 6);
+}
+
+TEST_F(OptimizerTest, AAT_TallyReturnsScalar) {
+    // (≢1 2 3) — tally returns SCALAR, F1 should fire
+    EXPECT_DOUBLE_EQ(scalar("(≢1 2 3)"), 3.0);
+}
+
+TEST_F(OptimizerTest, AAT_IotaReturnsVector) {
+    // (⍳5) — iota with scalar arg returns VECTOR, F1 should fire
+    Value* v = eval("(⍳5)");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+}
+
+TEST_F(OptimizerTest, AAT_FormatReturnsString) {
+    // (⍕42) — format returns STRING, F1 should fire
+    Value* v = eval("(⍕42)");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_string());
+}
+
+TEST_F(OptimizerTest, AAT_PervasivePreservesVector) {
+    // (-1 2 3) — pervasive negate preserves VECTOR, F1 should fire
+    Value* v = eval("(-1 2 3)");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), -1.0);
+}
+
+TEST_F(OptimizerTest, AAT_BroadcastScalarPlusVector) {
+    // 1+⍳5 — SCALAR + VECTOR = VECTOR (broadcast rule)
+    Value* v = eval("1+⍳5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 6.0);
+}
+
+TEST_F(OptimizerTest, AAT_ChainedTallyIota) {
+    // ≢⍳5 — nested calls: ⍳5 returns VECTOR, ≢ returns SCALAR
+    EXPECT_DOUBLE_EQ(scalar("≢⍳5"), 5.0);
+}
+
+TEST_F(OptimizerTest, AAT_DyadicMatch) {
+    // (1 2 3≡1 2 3) — match returns SCALAR
+    EXPECT_DOUBLE_EQ(scalar("(1 2 3≡1 2 3)"), 1.0);
+}
+
+TEST_F(OptimizerTest, AAT_IdentityPassThrough) {
+    // (⊢5) — identity returns same type as arg (SCALAR)
+    EXPECT_DOUBLE_EQ(scalar("(⊢5)"), 5.0);
+}
+
+TEST_F(OptimizerTest, AAT_ClosureNotEliminated) {
+    // ({⍵}5) — closure result is TM_TOP, FinalizeK must NOT be eliminated
+    // (closures could theoretically return anything)
+    EXPECT_DOUBLE_EQ(scalar("({⍵}5)"), 5.0);
+}
+
+TEST_F(OptimizerTest, AAT_DivByZeroStillErrors) {
+    // ÷0 — monadic reciprocal of 0 must still error at runtime
+    EXPECT_THROW(eval("÷0"), APLError);
+}
+
+TEST_F(OptimizerTest, AAT_TableReturnsMatrix) {
+    // (⍪1 2 3) — table returns MATRIX
+    Value* v = eval("(⍪1 2 3)");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    EXPECT_EQ(v->as_matrix()->rows(), 3);
+    EXPECT_EQ(v->as_matrix()->cols(), 1);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

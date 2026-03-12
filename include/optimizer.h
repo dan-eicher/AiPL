@@ -121,6 +121,8 @@ private:
     Rewrite rewrite_derived_op(DerivedOperatorK* k);
     Rewrite rewrite_assign(AssignK* k);
     Rewrite rewrite_seq(SeqK* k);
+    Rewrite rewrite_monadic_call(MonadicCallK* k);
+    Rewrite rewrite_dyadic_call(DyadicCallK* k);
 
     // ---------------------------------------------------------------------------
     // Category C – constant folding helpers
