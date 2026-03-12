@@ -72,6 +72,7 @@ Continuation* StaticOptimizer::run(Continuation* root, Heap* heap,
                                     const AbsEnv& abs_env) {
     heap_ = heap;
     env_  = abs_env;
+    state_cache_.clear();
     if (!root) return root;
     return rewrite(root).kont;
 }
@@ -83,51 +84,120 @@ Continuation* StaticOptimizer::run(Continuation* root, Heap* heap,
 StaticOptimizer::Rewrite StaticOptimizer::rewrite(Continuation* k) {
     if (!k) return {nullptr, {TM_BOT, nullptr}};
 
+    // Check state cache — if already processed, return immediately
+    auto cached = state_cache_.find(k);
+    if (cached != state_cache_.end()) {
+        return {k, cached->second};
+    }
+
+    Rewrite result;
+
     // Already optimised (e.g. a ValueK created during this same pass)
     if (auto* vk = dynamic_cast<ValueK*>(k)) {
-        return {vk, opt_state_from_value(vk->value)};
+        result = {vk, opt_state_from_value(vk->value)};
     }
-    if (auto* lit = dynamic_cast<LiteralK*>(k)) {
-        return rewrite_literal(lit);
+    else if (auto* lit = dynamic_cast<LiteralK*>(k)) {
+        result = rewrite_literal(lit);
     }
-    if (auto* ls = dynamic_cast<LiteralStrandK*>(k)) {
-        return rewrite_literal_strand(ls);
+    else if (auto* ls = dynamic_cast<LiteralStrandK*>(k)) {
+        result = rewrite_literal_strand(ls);
     }
-    if (auto* lk = dynamic_cast<LookupK*>(k)) {
-        return rewrite_lookup(lk);
+    else if (auto* lk = dynamic_cast<LookupK*>(k)) {
+        result = rewrite_lookup(lk);
     }
-    if (auto* jk = dynamic_cast<JuxtaposeK*>(k)) {
-        return rewrite_juxtapose(jk);
+    else if (auto* jk = dynamic_cast<JuxtaposeK*>(k)) {
+        result = rewrite_juxtapose(jk);
     }
-    if (auto* mk = dynamic_cast<MonadicK*>(k)) {
-        return rewrite_monadic(mk);
+    else if (auto* mk = dynamic_cast<MonadicK*>(k)) {
+        result = rewrite_monadic(mk);
     }
-    if (auto* dk = dynamic_cast<DyadicK*>(k)) {
-        return rewrite_dyadic(dk);
+    else if (auto* dk = dynamic_cast<DyadicK*>(k)) {
+        result = rewrite_dyadic(dk);
     }
-    if (auto* fk = dynamic_cast<FinalizeK*>(k)) {
-        return rewrite_finalize(fk);
+    else if (auto* fk = dynamic_cast<FinalizeK*>(k)) {
+        result = rewrite_finalize(fk);
     }
-    if (auto* ck = dynamic_cast<ClosureLiteralK*>(k)) {
-        return rewrite_closure_literal(ck);
+    else if (auto* ck = dynamic_cast<ClosureLiteralK*>(k)) {
+        result = rewrite_closure_literal(ck);
     }
-    if (auto* dok = dynamic_cast<DerivedOperatorK*>(k)) {
-        return rewrite_derived_op(dok);
+    else if (auto* dok = dynamic_cast<DerivedOperatorK*>(k)) {
+        result = rewrite_derived_op(dok);
     }
-    if (auto* ak = dynamic_cast<AssignK*>(k)) {
-        return rewrite_assign(ak);
+    else if (auto* ak = dynamic_cast<AssignK*>(k)) {
+        result = rewrite_assign(ak);
     }
-    if (auto* sk = dynamic_cast<SeqK*>(k)) {
-        return rewrite_seq(sk);
+    else if (auto* sk = dynamic_cast<SeqK*>(k)) {
+        result = rewrite_seq(sk);
     }
-
     // Optimizer-produced nodes — pass through with TM_TOP
-    if (dynamic_cast<MonadicCallK*>(k) || dynamic_cast<DyadicCallK*>(k)) {
-        return {k, {TM_TOP, nullptr}};
+    else if (dynamic_cast<MonadicCallK*>(k) || dynamic_cast<DyadicCallK*>(k)) {
+        result = {k, {TM_TOP, nullptr}};
+    }
+    else {
+        // Unknown node type – return unchanged with TM_TOP
+        result = {k, {TM_TOP, nullptr}};
     }
 
-    // Unknown node type – return unchanged with TM_TOP
-    return {k, {TM_TOP, nullptr}};
+    // Cache state for both original and replacement nodes
+    state_cache_[k] = result.state;
+    if (result.kont != k) {
+        state_cache_[result.kont] = result.state;
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// State lookup and D3 finalization helper
+// ---------------------------------------------------------------------------
+
+OptState StaticOptimizer::lookup_state(Continuation* k) {
+    if (!k) return {TM_BOT, nullptr};
+    auto it = state_cache_.find(k);
+    if (it != state_cache_.end()) return it->second;
+    // Not cached — should only happen for newly created nodes
+    return {TM_TOP, nullptr};
+}
+
+Continuation* StaticOptimizer::finalize_if_needed(Continuation* c, TypeMask m) {
+    // Known basic — no curry possible, no wrapping needed
+    bool known_basic = (m != TM_BOT && m != TM_TOP &&
+                        (m & TM_BASIC) && !(m & ~TM_BASIC));
+    if (known_basic) return c;
+
+    // D3: if c is a JuxtaposeK with a CALLABLE function child,
+    // directly emit MonadicCallK using cached states — no re-walking.
+    if (auto* jux = dynamic_cast<JuxtaposeK*>(c)) {
+        TypeMask lm = lookup_state(jux->left).mask;
+        TypeMask rm = lookup_state(jux->right).mask;
+
+        auto is_callable = [](TypeMask mask) -> bool {
+            return mask != TM_BOT && mask != TM_TOP &&
+                   (mask & TM_CALLABLE) && !(mask & ~TM_CALLABLE);
+        };
+
+        // Case (a): left is function, right is argument → fn(arg)
+        if (is_callable(lm)) {
+            auto* mcall = heap_->allocate<MonadicCallK>(
+                jux->left, finalize_if_needed(jux->right, rm));
+            if (c->has_location()) mcall->set_location(c->line(), c->column());
+            return mcall;
+        }
+        // Case (b): left is basic, right is function → fn(left)
+        if (is_callable(rm)) {
+            bool left_basic = (lm != TM_BOT && lm != TM_TOP &&
+                               (lm & TM_BASIC) && !(lm & ~TM_BASIC));
+            if (left_basic) {
+                auto* mcall = heap_->allocate<MonadicCallK>(jux->right, jux->left);
+                if (c->has_location()) mcall->set_location(c->line(), c->column());
+                return mcall;
+            }
+        }
+    }
+
+    // Fallback: wrap in FinalizeK
+    auto* fin = heap_->allocate<FinalizeK>(c, true);
+    if (c->has_location()) fin->set_location(c->line(), c->column());
+    return fin;
 }
 
 // ---------------------------------------------------------------------------
@@ -274,16 +344,9 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_finalize(FinalizeK* k) {
     // With gprime=false (parenthesized context like (2×)), the G_PRIME curry
     // is intentionally preserved for potential later dyadic application.
     if (auto* jux = dynamic_cast<JuxtaposeK*>(new_inner)) {
-        // Recurse into the juxtapose children to get their states.
-        // (new_inner was already rewritten, but it may still be a JuxtaposeK
-        // whose children have been rewritten — their states weren't returned.)
-        auto left_r  = rewrite(jux->left);
-        auto right_r = rewrite(jux->right);
-        jux->left  = left_r.kont;
-        jux->right = right_r.kont;
-
-        TypeMask lm = left_r.state.mask;
-        TypeMask rm = right_r.state.mask;
+        // Read child states from cache — no re-walking needed
+        TypeMask lm = lookup_state(jux->left).mask;
+        TypeMask rm = lookup_state(jux->right).mask;
 
         auto is_callable = [](TypeMask m) -> bool {
             return m != TM_BOT && m != TM_TOP && (m & TM_CALLABLE) && !(m & ~TM_CALLABLE);
@@ -295,24 +358,12 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_finalize(FinalizeK* k) {
             return fn_mask == TM_CLOSURE;
         };
 
-        // Helper: wrap a continuation in FinalizeK if it might produce a curry.
-        // JuxtaposeK produces G_PRIME curries; apply_function_immediate cannot
-        // handle those, so we must finalize first.
-        // D3: recursively apply rewrite() on the new FinalizeK so that D1 chains
-        // through nested function calls (e.g. -⌊x → MonadicCallK(-, MonadicCallK(⌊, x))).
-        auto ensure_finalized = [&](Continuation* c, TypeMask m) -> Continuation* {
-            bool known_basic = (m != TM_BOT && m != TM_TOP &&
-                                (m & TM_BASIC) && !(m & ~TM_BASIC));
-            if (known_basic) return c;  // basic values are never curries
-            auto* fin = heap_->allocate<FinalizeK>(c, true);
-            if (c->has_location()) fin->set_location(c->line(), c->column());
-            return rewrite(fin).kont;  // D3: recursive D1
-        };
-
         // Case (a): left is function, right is argument → fn(arg)
         if (is_callable(lm) && can_finalize(lm)) {
+            // D3: finalize_if_needed uses cached states to chain MonadicCallK
+            // through nested function applications without re-walking
             auto* mcall = heap_->allocate<MonadicCallK>(
-                jux->left, ensure_finalized(jux->right, rm));
+                jux->left, finalize_if_needed(jux->right, rm));
             if (k->has_location()) mcall->set_location(k->line(), k->column());
             return {mcall, {TM_TOP, nullptr}};
         }
@@ -371,29 +422,17 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
     // DyadicCallK skips the curry entirely.
     if (is_basic(lm)) {
         if (auto* inner_jux = dynamic_cast<JuxtaposeK*>(new_right)) {
-            // Get the inner juxtapose's children states
-            auto fn_r  = rewrite(inner_jux->left);
-            auto arg_r = rewrite(inner_jux->right);
-            inner_jux->left  = fn_r.kont;
-            inner_jux->right = arg_r.kont;
+            // Read inner juxtapose child states from cache — no re-walking
+            TypeMask fn_mask  = lookup_state(inner_jux->left).mask;
+            TypeMask arg_mask = lookup_state(inner_jux->right).mask;
 
-            TypeMask fn_mask = fn_r.state.mask;
             bool fn_callable = (fn_mask != TM_BOT && fn_mask != TM_TOP &&
                                 (fn_mask & TM_CALLABLE) && !(fn_mask & ~TM_CALLABLE));
 
             if (fn_callable) {
-                // Right arg may be a JuxtaposeK that produces a G_PRIME curry;
-                // wrap in FinalizeK to resolve it before apply_function_immediate.
-                // Left arg is proven BASIC — no finalization needed.
-                TypeMask arg_mask = arg_r.state.mask;
-                Continuation* right_arg = inner_jux->right;
-                bool arg_known_basic = (arg_mask != TM_BOT && arg_mask != TM_TOP &&
-                                        (arg_mask & TM_BASIC) && !(arg_mask & ~TM_BASIC));
-                if (!arg_known_basic) {
-                    auto* fin = heap_->allocate<FinalizeK>(right_arg, true);
-                    if (right_arg->has_location()) fin->set_location(right_arg->line(), right_arg->column());
-                    right_arg = rewrite(fin).kont;  // D3: recursive D1
-                }
+                // D3: finalize_if_needed chains MonadicCallK for the right arg
+                // using cached states, without re-walking
+                Continuation* right_arg = finalize_if_needed(inner_jux->right, arg_mask);
 
                 auto* dcall = heap_->allocate<DyadicCallK>(
                     inner_jux->left, new_left, right_arg);

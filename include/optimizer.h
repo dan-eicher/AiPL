@@ -87,14 +87,27 @@ private:
     Heap*  heap_ = nullptr;
     AbsEnv env_;
 
+    // wBurg state cache: maps each processed node to its abstract state.
+    // Populated during the bottom-up pass; used by parent nodes to read
+    // child states without re-walking the subtree.
+    std::unordered_map<Continuation*, OptState> state_cache_;
+
     // Internal result type: rewritten continuation + its abstract state
     struct Rewrite {
         Continuation* kont;
         OptState      state;
     };
 
-    // Main dispatch – handles all continuation types
+    // Main dispatch – handles all continuation types (memoised via state_cache_)
     Rewrite rewrite(Continuation* k);
+
+    // Look up cached state for an already-rewritten node.
+    OptState lookup_state(Continuation* k);
+
+    // D3: if c is a JuxtaposeK(fn:CALLABLE, arg), directly emit
+    // MonadicCallK using cached child states; otherwise wrap in FinalizeK.
+    // Recurses for chained monadic calls (-⌊⍳x → nested MonadicCallK).
+    Continuation* finalize_if_needed(Continuation* c, TypeMask m);
 
     // Per-type rewrite handlers
     Rewrite rewrite_literal(LiteralK* k);
