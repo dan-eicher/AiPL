@@ -645,6 +645,87 @@ public:
         print_value("right", k->right_val);
         print_location(k);
     }
+
+    void visit(EigenReduceK* k) override {
+        out << "EigenReduceK(";
+        switch (k->reduce_op) {
+            case EigenReduceOp::SUM:  out << "SUM"; break;
+            case EigenReduceOp::PROD: out << "PROD"; break;
+            case EigenReduceOp::MAX:  out << "MAX"; break;
+            case EigenReduceOp::MIN:  out << "MIN"; break;
+        }
+        out << ")";
+        print_location(k);
+        print_child("arg", k->arg_cont);
+    }
+
+    void visit(PerformEigenReduceK* k) override {
+        out << "PerformEigenReduceK(";
+        switch (k->reduce_op) {
+            case EigenReduceOp::SUM:  out << "SUM"; break;
+            case EigenReduceOp::PROD: out << "PROD"; break;
+            case EigenReduceOp::MAX:  out << "MAX"; break;
+            case EigenReduceOp::MIN:  out << "MIN"; break;
+        }
+        out << ")";
+        print_location(k);
+    }
+
+    void visit(EigenProductK* k) override {
+        out << "EigenProductK";
+        print_location(k);
+        print_child("left", k->left_cont);
+        print_child("right", k->right_cont);
+    }
+
+    void visit(EvalEigenProductLeftK* k) override {
+        out << "EvalEigenProductLeftK";
+        print_value("right", k->right_val);
+        print_location(k);
+        print_child("left", k->left_cont);
+    }
+
+    void visit(PerformEigenProductK* k) override {
+        out << "PerformEigenProductK";
+        print_value("left", k->left_val);
+        print_value("right", k->right_val);
+        print_location(k);
+    }
+
+    void visit(EigenOuterK* k) override {
+        out << "EigenOuterK(";
+        switch (k->outer_op) {
+            case EigenOuterOp::TIMES: out << "TIMES"; break;
+            case EigenOuterOp::PLUS:  out << "PLUS"; break;
+            case EigenOuterOp::MIN:   out << "MIN"; break;
+            case EigenOuterOp::MAX:   out << "MAX"; break;
+        }
+        out << ")";
+        print_location(k);
+        print_child("left", k->left_cont);
+        print_child("right", k->right_cont);
+    }
+
+    void visit(EvalEigenOuterLeftK* k) override {
+        out << "EvalEigenOuterLeftK";
+        print_value("right", k->right_val);
+        print_location(k);
+        print_child("left", k->left_cont);
+    }
+
+    void visit(PerformEigenOuterK* k) override {
+        out << "PerformEigenOuterK(";
+        switch (k->outer_op) {
+            case EigenOuterOp::TIMES: out << "TIMES"; break;
+            case EigenOuterOp::PLUS:  out << "PLUS"; break;
+            case EigenOuterOp::MIN:   out << "MIN"; break;
+            case EigenOuterOp::MAX:   out << "MAX"; break;
+        }
+        out << ")";
+        print_value("left", k->left_val);
+        print_value("right", k->right_val);
+        print_location(k);
+    }
 };
 
 } // namespace apl

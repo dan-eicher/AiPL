@@ -19,6 +19,8 @@
 #include "environment.h"
 #include "heap.h"
 #include "value.h"
+#include "operators.h"
+#include "primitives.h"
 #include <cmath>
 #include <cassert>
 
@@ -224,6 +226,26 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite(Continuation* k) {
     }
     else if (auto* dck = dynamic_cast<DyadicCallK*>(k)) {
         result = rewrite_dyadic_call(dck);
+    }
+    // Optimizer-produced Eigen nodes — recurse into children, return known type
+    else if (auto* erk = dynamic_cast<EigenReduceK*>(k)) {
+        auto [new_arg, arg_state] = rewrite(erk->arg_cont);
+        if (new_arg != erk->arg_cont) erk->arg_cont = new_arg;
+        result = {erk, {TM_SCALAR, nullptr}};
+    }
+    else if (auto* epk = dynamic_cast<EigenProductK*>(k)) {
+        auto [new_left, left_state] = rewrite(epk->left_cont);
+        auto [new_right, right_state] = rewrite(epk->right_cont);
+        if (new_left != epk->left_cont) epk->left_cont = new_left;
+        if (new_right != epk->right_cont) epk->right_cont = new_right;
+        result = {epk, {TM_TOP, nullptr}};  // result type depends on arg shapes
+    }
+    else if (auto* eok = dynamic_cast<EigenOuterK*>(k)) {
+        auto [new_left, left_state] = rewrite(eok->left_cont);
+        auto [new_right, right_state] = rewrite(eok->right_cont);
+        if (new_left != eok->left_cont) eok->left_cont = new_left;
+        if (new_right != eok->right_cont) eok->right_cont = new_right;
+        result = {eok, {TM_MATRIX, nullptr}};
     }
     else {
         // Unknown node type – return unchanged with TM_TOP
@@ -653,6 +675,30 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic_call(MonadicCallK* k) 
     auto [new_arg, arg_state] = rewrite(k->arg_cont);
     if (new_fn  != k->fn_cont)  k->fn_cont  = new_fn;
     if (new_arg != k->arg_cont) k->arg_cont = new_arg;
+
+    // E3 — Type-proven vector reduction → EigenReduceK
+    // When fn is a known DERIVED_OPERATOR(op_reduce, prim_fn) and arg is TM_VECTOR.
+    if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
+        arg_state.mask == TM_VECTOR) {
+        Value* derived_val = fn_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op == &op_reduce && derived->first_operand &&
+            derived->first_operand->is_primitive()) {
+            PrimitiveFn* pfn = derived->first_operand->data.primitive_fn;
+            EigenReduceOp rop;
+            bool matched = true;
+            if      (pfn == &prim_plus)    rop = EigenReduceOp::SUM;
+            else if (pfn == &prim_times)   rop = EigenReduceOp::PROD;
+            else if (pfn == &prim_ceiling) rop = EigenReduceOp::MAX;
+            else if (pfn == &prim_floor)   rop = EigenReduceOp::MIN;
+            else matched = false;
+            if (matched) {
+                auto* erk = heap_->allocate<EigenReduceK>(rop, new_arg, derived_val);
+                if (k->has_location()) erk->set_location(k->line(), k->column());
+                return {erk, {TM_SCALAR, nullptr}};
+            }
+        }
+    }
 
     if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
         TypeMask r = abstract_apply_monadic(

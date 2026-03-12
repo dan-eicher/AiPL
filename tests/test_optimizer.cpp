@@ -1068,6 +1068,56 @@ TEST_F(OptimizerTest, AAT_TableReturnsMatrix) {
     EXPECT_EQ(v->as_matrix()->cols(), 1);
 }
 
+// ---------------------------------------------------------------------------
+// 8. Category E3 – Eigen vector reductions
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, E3_SumVector) {
+    // +/⍳1000 → sum via EigenReduceK
+    EXPECT_DOUBLE_EQ(scalar("+/⍳1000"), 500500.0);
+}
+
+TEST_F(OptimizerTest, E3_ProdVector) {
+    // ×/1 2 3 4 → 24
+    Value* v = eval("×/1 2 3 4");
+    ASSERT_NE(v, nullptr);
+    EXPECT_DOUBLE_EQ(v->data.scalar, 24.0);
+}
+
+TEST_F(OptimizerTest, E3_MaxVector) {
+    // ⌈/3 1 4 1 5 → 5
+    EXPECT_DOUBLE_EQ(scalar("⌈/3 1 4 1 5"), 5.0);
+}
+
+TEST_F(OptimizerTest, E3_MinVector) {
+    // ⌊/5 3 1 2 → 1
+    EXPECT_DOUBLE_EQ(scalar("⌊/5 3 1 2"), 1.0);
+}
+
+TEST_F(OptimizerTest, E3_ChainedWithIota) {
+    // +/⍳(2+3) → +/⍳5 → 15
+    EXPECT_DOUBLE_EQ(scalar("+/⍳(2+3)"), 15.0);
+}
+
+TEST_F(OptimizerTest, E3_DfnArgTmTop_DoesNotFire) {
+    // {+/⍵}1 2 3 → ⍵ is TM_TOP, E3 should NOT fire but still correct
+    EXPECT_DOUBLE_EQ(scalar("{+/⍵}1 2 3"), 6.0);
+}
+
+TEST_F(OptimizerTest, E3_MatrixArg_DoesNotFire) {
+    // +/2 3⍴⍳6 → matrix, E3 should NOT fire (arg not TM_VECTOR)
+    Value* v = eval("+/2 3⍴⍳6");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 2);
+}
+
+TEST_F(OptimizerTest, E3_WorkspaceVar) {
+    // data←⍳100 ◇ +/data → TM_VECTOR from env, E3 fires
+    eval("data←⍳100");
+    EXPECT_DOUBLE_EQ(scalar("+/data"), 5050.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

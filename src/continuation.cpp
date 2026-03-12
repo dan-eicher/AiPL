@@ -4505,4 +4505,198 @@ void PerformDyadicCallK::mark(Heap* heap) {
     heap->mark(right_val);
 }
 
+// ============================================================================
+// EigenReduceK - Direct Eigen reduction (optimizer E3)
+// ============================================================================
+
+void EigenReduceK::invoke(Machine* machine) {
+    auto* perform = machine->heap->allocate_ephemeral<PerformEigenReduceK>(reduce_op, derived_op);
+    perform->set_location(src_line, src_column);
+    machine->push_kont(perform);
+    machine->push_kont(arg_cont);
+}
+
+void EigenReduceK::mark(Heap* heap) {
+    heap->mark(arg_cont);
+    heap->mark(derived_op);
+}
+
+void PerformEigenReduceK::invoke(Machine* machine) {
+    Value* arg = machine->result;
+    if (arg->is_vector() && !arg->is_char_data()) {
+        auto* mat = arg->as_matrix();
+        double r;
+        switch (reduce_op) {
+            case EigenReduceOp::SUM:  r = mat->sum();       break;
+            case EigenReduceOp::PROD: r = mat->prod();      break;
+            case EigenReduceOp::MAX:  r = mat->maxCoeff();  break;
+            case EigenReduceOp::MIN:  r = mat->minCoeff();  break;
+        }
+        machine->result = machine->heap->allocate_scalar(r);
+    } else {
+        // Fallback: delegate to normal operator dispatch
+        apply_function_immediate(machine, derived_op, nullptr, arg);
+    }
+}
+
+void PerformEigenReduceK::mark(Heap* heap) {
+    heap->mark(derived_op);
+}
+
+// ============================================================================
+// EigenProductK - Direct Eigen matrix product (optimizer E1)
+// ============================================================================
+
+void EigenProductK::invoke(Machine* machine) {
+    // Eval right first (APL right-to-left), then left, then perform.
+    auto* eval_left = machine->heap->allocate_ephemeral<EvalEigenProductLeftK>(
+        left_cont, nullptr, derived_op);
+    eval_left->set_location(src_line, src_column);
+    machine->push_kont(eval_left);
+    machine->push_kont(right_cont);
+}
+
+void EigenProductK::mark(Heap* heap) {
+    heap->mark(left_cont);
+    heap->mark(right_cont);
+    heap->mark(derived_op);
+}
+
+void EvalEigenProductLeftK::invoke(Machine* machine) {
+    right_val = machine->result;
+    auto* perform = machine->heap->allocate_ephemeral<PerformEigenProductK>(
+        nullptr, right_val, derived_op);
+    perform->set_location(src_line, src_column);
+    machine->push_kont(perform);
+    machine->push_kont(left_cont);
+}
+
+void EvalEigenProductLeftK::mark(Heap* heap) {
+    heap->mark(left_cont);
+    heap->mark(right_val);
+    heap->mark(derived_op);
+}
+
+void PerformEigenProductK::invoke(Machine* machine) {
+    left_val = machine->result;
+    // Fast path: both numeric, not char data
+    bool can_eigen = left_val && right_val &&
+                     !left_val->is_char_data() && !right_val->is_char_data() &&
+                     (left_val->is_vector() || left_val->is_matrix()) &&
+                     (right_val->is_vector() || right_val->is_matrix());
+    if (can_eigen) {
+        // vec · vec → scalar (dot product)
+        if (left_val->is_vector() && right_val->is_vector()) {
+            machine->result = machine->heap->allocate_scalar(
+                left_val->as_matrix()->col(0).dot(right_val->as_matrix()->col(0)));
+            return;
+        }
+        // vec × mat → vec
+        if (left_val->is_vector() && right_val->is_matrix()) {
+            Eigen::VectorXd r = right_val->as_matrix()->transpose() * left_val->as_matrix()->col(0);
+            machine->result = machine->heap->allocate_vector(r);
+            return;
+        }
+        // mat × vec → vec
+        if (left_val->is_matrix() && right_val->is_vector()) {
+            Eigen::VectorXd r = (*left_val->as_matrix()) * right_val->as_matrix()->col(0);
+            machine->result = machine->heap->allocate_vector(r);
+            return;
+        }
+        // mat × mat → mat
+        if (left_val->is_matrix() && right_val->is_matrix()) {
+            machine->result = machine->heap->allocate_matrix(
+                (*left_val->as_matrix()) * (*right_val->as_matrix()));
+            return;
+        }
+    }
+    // Fallback: delegate to normal operator dispatch
+    apply_function_immediate(machine, derived_op, left_val, right_val);
+}
+
+void PerformEigenProductK::mark(Heap* heap) {
+    heap->mark(left_val);
+    heap->mark(right_val);
+    heap->mark(derived_op);
+}
+
+// ============================================================================
+// EigenOuterK - Direct Eigen outer product (optimizer E2)
+// ============================================================================
+
+void EigenOuterK::invoke(Machine* machine) {
+    // Eval right first, then left, then perform.
+    auto* eval_left = machine->heap->allocate_ephemeral<EvalEigenOuterLeftK>(
+        outer_op, left_cont, nullptr, derived_op);
+    eval_left->set_location(src_line, src_column);
+    machine->push_kont(eval_left);
+    machine->push_kont(right_cont);
+}
+
+void EigenOuterK::mark(Heap* heap) {
+    heap->mark(left_cont);
+    heap->mark(right_cont);
+    heap->mark(derived_op);
+}
+
+void EvalEigenOuterLeftK::invoke(Machine* machine) {
+    right_val = machine->result;
+    auto* perform = machine->heap->allocate_ephemeral<PerformEigenOuterK>(
+        outer_op, nullptr, right_val, derived_op);
+    perform->set_location(src_line, src_column);
+    machine->push_kont(perform);
+    machine->push_kont(left_cont);
+}
+
+void EvalEigenOuterLeftK::mark(Heap* heap) {
+    heap->mark(left_cont);
+    heap->mark(right_val);
+    heap->mark(derived_op);
+}
+
+void PerformEigenOuterK::invoke(Machine* machine) {
+    left_val = machine->result;
+    bool can_eigen = left_val && right_val &&
+                     left_val->is_vector() && right_val->is_vector() &&
+                     !left_val->is_char_data() && !right_val->is_char_data();
+    if (can_eigen) {
+        const Eigen::VectorXd l = left_val->as_matrix()->col(0);
+        const Eigen::VectorXd r = right_val->as_matrix()->col(0);
+        switch (outer_op) {
+            case EigenOuterOp::TIMES:
+                machine->result = machine->heap->allocate_matrix(l * r.transpose());
+                return;
+            case EigenOuterOp::PLUS: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = r.array() + l(i);
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+            case EigenOuterOp::MIN: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = r.array().min(l(i));
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+            case EigenOuterOp::MAX: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = r.array().max(l(i));
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+        }
+    }
+    // Fallback: delegate to normal operator dispatch
+    apply_function_immediate(machine, derived_op, left_val, right_val);
+}
+
+void PerformEigenOuterK::mark(Heap* heap) {
+    heap->mark(left_val);
+    heap->mark(right_val);
+    heap->mark(derived_op);
+}
+
 } // namespace apl

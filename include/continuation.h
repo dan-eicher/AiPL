@@ -95,6 +95,14 @@ class DyadicCallK;
 class EvalDyadicCallLeftK;
 class EvalDyadicCallFnK;
 class PerformDyadicCallK;
+class EigenReduceK;
+class PerformEigenReduceK;
+class EigenProductK;
+class EvalEigenProductLeftK;
+class PerformEigenProductK;
+class EigenOuterK;
+class EvalEigenOuterLeftK;
+class PerformEigenOuterK;
 
 // ============================================================================
 // Function Application Helper
@@ -196,6 +204,14 @@ public:
     virtual void visit(EvalDyadicCallLeftK*) = 0;
     virtual void visit(EvalDyadicCallFnK*) = 0;
     virtual void visit(PerformDyadicCallK*) = 0;
+    virtual void visit(EigenReduceK*) = 0;
+    virtual void visit(PerformEigenReduceK*) = 0;
+    virtual void visit(EigenProductK*) = 0;
+    virtual void visit(EvalEigenProductLeftK*) = 0;
+    virtual void visit(PerformEigenProductK*) = 0;
+    virtual void visit(EigenOuterK*) = 0;
+    virtual void visit(EvalEigenOuterLeftK*) = 0;
+    virtual void visit(PerformEigenOuterK*) = 0;
 };
 
 // Abstract Continuation base class
@@ -1906,6 +1922,167 @@ public:
 
     PerformDyadicCallK(Value* left, Value* right) : left_val(left), right_val(right) {}
     ~PerformDyadicCallK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// EigenReduceK - Direct Eigen reduction (optimizer E3 pattern)
+// For type-proven vector reductions: +/vec → sum(), ×/vec → prod(), etc.
+// Bypasses the entire operator dispatch chain.
+// Created only by StaticOptimizer; never emitted by the parser.
+// ============================================================================
+
+enum class EigenReduceOp { SUM, PROD, MAX, MIN };
+
+class EigenReduceK : public Continuation {
+public:
+    EigenReduceOp reduce_op;
+    Continuation* arg_cont;
+    Value* derived_op;  // for fallback if runtime type doesn't match
+
+    EigenReduceK(EigenReduceOp op, Continuation* arg, Value* derived)
+        : reduce_op(op), arg_cont(arg), derived_op(derived) {}
+    ~EigenReduceK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class PerformEigenReduceK : public Continuation {
+public:
+    EigenReduceOp reduce_op;
+    Value* derived_op;
+
+    PerformEigenReduceK(EigenReduceOp op, Value* derived)
+        : reduce_op(op), derived_op(derived) {}
+    ~PerformEigenReduceK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// EigenProductK - Direct Eigen matrix product (optimizer E1 pattern)
+// For +.× inner product: vec·vec, mat×mat, vec×mat, mat×vec.
+// Created only by StaticOptimizer; never emitted by the parser.
+// ============================================================================
+
+class EigenProductK : public Continuation {
+public:
+    Continuation* left_cont;
+    Continuation* right_cont;
+    Value* derived_op;  // for fallback
+
+    EigenProductK(Continuation* left, Continuation* right, Value* derived)
+        : left_cont(left), right_cont(right), derived_op(derived) {}
+    ~EigenProductK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class EvalEigenProductLeftK : public Continuation {
+public:
+    Continuation* left_cont;
+    Value* right_val;
+    Value* derived_op;
+
+    EvalEigenProductLeftK(Continuation* left, Value* right, Value* derived)
+        : left_cont(left), right_val(right), derived_op(derived) {}
+    ~EvalEigenProductLeftK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class PerformEigenProductK : public Continuation {
+public:
+    Value* left_val;
+    Value* right_val;
+    Value* derived_op;
+
+    PerformEigenProductK(Value* left, Value* right, Value* derived)
+        : left_val(left), right_val(right), derived_op(derived) {}
+    ~PerformEigenProductK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// EigenOuterK - Direct Eigen outer product (optimizer E2 pattern)
+// For ∘.f outer product on numeric vectors: ×, +, ⌊, ⌈.
+// Created only by StaticOptimizer; never emitted by the parser.
+// ============================================================================
+
+enum class EigenOuterOp { TIMES, PLUS, MIN, MAX };
+
+class EigenOuterK : public Continuation {
+public:
+    EigenOuterOp outer_op;
+    Continuation* left_cont;
+    Continuation* right_cont;
+    Value* derived_op;  // for fallback
+
+    EigenOuterK(EigenOuterOp op, Continuation* left, Continuation* right, Value* derived)
+        : outer_op(op), left_cont(left), right_cont(right), derived_op(derived) {}
+    ~EigenOuterK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class EvalEigenOuterLeftK : public Continuation {
+public:
+    EigenOuterOp outer_op;
+    Continuation* left_cont;
+    Value* right_val;
+    Value* derived_op;
+
+    EvalEigenOuterLeftK(EigenOuterOp op, Continuation* left, Value* right, Value* derived)
+        : outer_op(op), left_cont(left), right_val(right), derived_op(derived) {}
+    ~EvalEigenOuterLeftK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class PerformEigenOuterK : public Continuation {
+public:
+    EigenOuterOp outer_op;
+    Value* left_val;
+    Value* right_val;
+    Value* derived_op;
+
+    PerformEigenOuterK(EigenOuterOp op, Value* left, Value* right, Value* derived)
+        : outer_op(op), left_val(left), right_val(right), derived_op(derived) {}
+    ~PerformEigenOuterK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }
