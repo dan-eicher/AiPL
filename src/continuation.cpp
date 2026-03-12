@@ -17,8 +17,131 @@ namespace apl {
 // Will be implemented in Phase 1.6
 class Heap;
 
-// Forward declarations for helper functions used by apply_function_immediate
+// Forward declarations for helper functions
 static int count_cells_for_rank(Value* arr, int k);
+
+// ---------------------------------------------------------------------------
+// dispatch_primitive – unified primitive function dispatch
+// ---------------------------------------------------------------------------
+// Handles monadic/dyadic application of a PrimitiveFn, including pervasive
+// strand and NDArray dispatch via CellIterK.  Called from:
+//   - apply_function_immediate  (D1/D2 optimizer path + operator dispatch)
+//   - DispatchFunctionK::invoke (post-curry primitive dispatch)
+//   - ApplyDyadicK::invoke      (dyadic explicit operator path)
+//
+// Returns true if result was set synchronously, false if a continuation was
+// pushed (caller should return / not set result).
+static bool dispatch_primitive(Machine* m, Value* fn_val, PrimitiveFn* prim_fn,
+                               Value* left_val, Value* right_val, Value* axis,
+                               Continuation* error_ctx) {
+    if (left_val && right_val) {
+        // ---- Dyadic ----
+        if (!prim_fn->dyadic) {
+            m->throw_error("SYNTAX ERROR: Function has no dyadic form", error_ctx, 1, 0);
+            return false;
+        }
+
+        // Pervasive strand handling (element-wise on heterogeneous arrays)
+        // Skip for Without (~) which is structural, not scalar (ISO §10.2.16)
+        bool left_strand  = left_val->is_strand();
+        bool right_strand = right_val->is_strand();
+        if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without &&
+            (left_strand || right_strand)) {
+            int left_size  = left_strand  ? static_cast<int>(left_val->as_strand()->size())
+                                          : (left_val->is_scalar() ? 1 : left_val->size());
+            int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
+                                          : (right_val->is_scalar() ? 1 : right_val->size());
+
+            // Scalar extension for strands
+            if (left_val->is_scalar() && right_strand) {
+                std::vector<Value*> extended(right_size, left_val);
+                left_val  = m->heap->allocate_strand(std::move(extended));
+                left_size = right_size;
+            } else if (left_strand && right_val->is_scalar()) {
+                std::vector<Value*> extended(left_size, right_val);
+                right_val  = m->heap->allocate_strand(std::move(extended));
+                right_size = left_size;
+            }
+
+            if (left_size != right_size) {
+                m->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation",
+                               error_ctx, 5, 0);
+                return false;
+            }
+
+            m->push_kont(m->heap->allocate<CellIterK>(
+                fn_val, left_val, right_val, 0, 0, left_size,
+                CellIterMode::COLLECT, left_size, 1, true, false, true));
+            return false;
+        }
+
+        // Pervasive NDArray handling (iterate 0-cells element-wise)
+        bool left_ndarray  = left_val->is_ndarray();
+        bool right_ndarray = right_val->is_ndarray();
+        if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without &&
+            (left_ndarray || right_ndarray)) {
+            int left_cells  = count_cells_for_rank(left_val, 0);
+            int right_cells = count_cells_for_rank(right_val, 0);
+            int total = std::max(left_cells, right_cells);
+
+            if (left_cells > 1 && right_cells > 1 && left_cells != right_cells) {
+                m->throw_error("LENGTH ERROR: mismatched array lengths",
+                               error_ctx, 5, 0);
+                return false;
+            }
+
+            const std::vector<int>* shape = nullptr;
+            if (right_ndarray && right_cells > 1)
+                shape = &right_val->ndarray_shape();
+            else if (left_ndarray && left_cells > 1)
+                shape = &left_val->ndarray_shape();
+
+            CellIterK* iter = m->heap->allocate<CellIterK>(
+                fn_val, left_val, right_val, 0, 0, total,
+                CellIterMode::COLLECT, total, 1, false, false, false);
+            if (shape) iter->orig_ndarray_shape = *shape;
+            m->push_kont(iter);
+            return false;
+        }
+
+        prim_fn->dyadic(m, axis, left_val, right_val);
+        return true;
+    }
+
+    if (right_val) {
+        // ---- Monadic ----
+        if (!prim_fn->monadic) {
+            m->throw_error("SYNTAX ERROR: Function has no monadic form", error_ctx, 1, 0);
+            return false;
+        }
+
+        // Pervasive handling for monadic on strand/NDArray
+        bool right_strand  = right_val->is_strand();
+        bool right_ndarray = right_val->is_ndarray();
+        if (prim_fn->is_pervasive && (right_strand || right_ndarray)) {
+            int total = count_cells_for_rank(right_val, 0);
+
+            if (right_ndarray) {
+                CellIterK* iter = m->heap->allocate<CellIterK>(
+                    fn_val, nullptr, right_val, 0, 0, total,
+                    CellIterMode::COLLECT, total, 1, false, false, false);
+                iter->orig_ndarray_shape = right_val->ndarray_shape();
+                m->push_kont(iter);
+            } else {
+                m->push_kont(m->heap->allocate<CellIterK>(
+                    fn_val, nullptr, right_val, 0, 0, total,
+                    CellIterMode::COLLECT, total, 1, true, false, true));
+            }
+            return false;
+        }
+
+        prim_fn->monadic(m, axis, right_val);
+        return true;
+    }
+
+    m->throw_error("VALUE ERROR: function requires argument", error_ctx, 2, 0);
+    return false;
+}
 
 // ============================================================================
 // Finalization Helpers
@@ -153,119 +276,8 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
 
     // Handle PRIMITIVE functions
     if (fn_val->tag == ValueType::PRIMITIVE) {
-        PrimitiveFn* prim_fn = fn_val->data.primitive_fn;
-
-        if (left_val && right_val) {
-            // Dyadic application
-            if (!prim_fn->dyadic) {
-                m->throw_error("SYNTAX ERROR: Function has no dyadic form", nullptr, 1, 0);
-                return false;
-            }
-
-            // Pervasive strand handling: if either arg is a strand, apply element-wise
-            // Skip for Without (~) which is structural, not scalar (ISO 10.2.16)
-            bool left_strand = left_val->is_strand();
-            bool right_strand = right_val->is_strand();
-            if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_strand || right_strand)) {
-                // Get sizes
-                int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
-                                           : (left_val->is_scalar() ? 1 : left_val->size());
-                int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
-                                             : (right_val->is_scalar() ? 1 : right_val->size());
-
-                // Scalar extension for strands
-                if (left_val->is_scalar() && right_strand) {
-                    // Scalar op strand: extend scalar to match strand
-                    std::vector<Value*> extended(right_size, left_val);
-                    left_val = m->heap->allocate_strand(std::move(extended));
-                    left_size = right_size;
-                } else if (left_strand && right_val->is_scalar()) {
-                    // Strand op scalar: extend scalar to match strand
-                    std::vector<Value*> extended(left_size, right_val);
-                    right_val = m->heap->allocate_strand(std::move(extended));
-                    right_size = left_size;
-                }
-
-                // Check lengths match
-                if (left_size != right_size) {
-                    m->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation", nullptr, 5, 0);
-                    return false;
-                }
-
-                // Use CellIterK with COLLECT mode to apply element-wise
-                m->push_kont(m->heap->allocate<CellIterK>(
-                    fn_val, left_val, right_val, 0, 0, left_size,
-                    CellIterMode::COLLECT, left_size, 1, true, false, true));
-                return false;  // Continuation pushed
-            }
-
-            // Pervasive NDArray handling: iterate 0-cells element-wise
-            // Mirrors DispatchFunctionK logic for NDArray pervasive ops
-            bool left_ndarray = left_val->is_ndarray();
-            bool right_ndarray = right_val->is_ndarray();
-            if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_ndarray || right_ndarray)) {
-                int left_cells = count_cells_for_rank(left_val, 0);
-                int right_cells = count_cells_for_rank(right_val, 0);
-                int total = std::max(left_cells, right_cells);
-
-                if (left_cells > 1 && right_cells > 1 && left_cells != right_cells) {
-                    m->throw_error("LENGTH ERROR: mismatched array lengths", nullptr, 5, 0);
-                    return false;
-                }
-
-                const std::vector<int>* shape = nullptr;
-                if (right_ndarray && right_cells > 1) {
-                    shape = &right_val->ndarray_shape();
-                } else if (left_ndarray && left_cells > 1) {
-                    shape = &left_val->ndarray_shape();
-                }
-
-                CellIterK* iter = m->heap->allocate<CellIterK>(
-                    fn_val, left_val, right_val, 0, 0, total,
-                    CellIterMode::COLLECT, total, 1, false, false, false);
-                if (shape) {
-                    iter->orig_ndarray_shape = *shape;
-                }
-                m->push_kont(iter);
-                return false;  // Continuation pushed
-            }
-
-            prim_fn->dyadic(m, axis, left_val, right_val);
-        } else if (right_val) {
-            // Monadic application
-            if (!prim_fn->monadic) {
-                m->throw_error("SYNTAX ERROR: Function has no monadic form", nullptr, 1, 0);
-                return false;
-            }
-
-            // Pervasive handling for monadic on strand/NDARRAY
-            bool right_strand = right_val->is_strand();
-            bool right_ndarray = right_val->is_ndarray();
-            if (prim_fn->is_pervasive && (right_strand || right_ndarray)) {
-                int total = count_cells_for_rank(right_val, 0);
-
-                if (right_ndarray) {
-                    // NDARRAY: preserve shape
-                    CellIterK* iter = m->heap->allocate<CellIterK>(
-                        fn_val, nullptr, right_val, 0, 0, total,
-                        CellIterMode::COLLECT, total, 1, false, false, false);
-                    iter->orig_ndarray_shape = right_val->ndarray_shape();
-                    m->push_kont(iter);
-                } else {
-                    // Strand: preserve strand structure
-                    m->push_kont(m->heap->allocate<CellIterK>(
-                        fn_val, nullptr, right_val, 0, 0, total,
-                        CellIterMode::COLLECT, total, 1, true, false, true));
-                }
-                return false;  // Continuation pushed
-            }
-
-            prim_fn->monadic(m, axis, right_val);
-        } else {
-            m->throw_error("VALUE ERROR: function requires argument", nullptr, 2, 0);
-            return false;
-        }
-        return true;  // Result set synchronously
+        return dispatch_primitive(m, fn_val, fn_val->data.primitive_fn,
+                                  left_val, right_val, axis, nullptr);
     }
 
     m->throw_error("VALUE ERROR: expected function value", nullptr, 2, 0);
@@ -1420,49 +1432,9 @@ void ApplyDyadicK::invoke(Machine* machine) {
         return;
     }
 
-    PrimitiveFn* prim_fn = op_val->data.primitive_fn;
-
-    if (!prim_fn->dyadic) {
-        std::string msg = std::string("SYNTAX ERROR: Operator has no dyadic form: ") + op_name->c_str();
-        machine->throw_error(msg.c_str(), this, 2, 0);
-        return;
-    }
-
-    // Pervasive strand handling: if either arg is a strand, apply element-wise
-    // Skip for Without (~) which is structural, not scalar (ISO 10.2.16)
-    bool left_strand = left_val->is_strand();
-    bool right_strand = right_val->is_strand();
-    if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_strand || right_strand)) {
-        int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
-                                   : (left_val->is_scalar() ? 1 : left_val->size());
-        int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
-                                     : (right_val->is_scalar() ? 1 : right_val->size());
-
-        if (left_val->is_scalar() && right_strand) {
-            std::vector<Value*> extended(right_size, left_val);
-            left_val = machine->heap->allocate_strand(std::move(extended));
-            left_size = right_size;
-        } else if (left_strand && right_val->is_scalar()) {
-            std::vector<Value*> extended(left_size, right_val);
-            right_val = machine->heap->allocate_strand(std::move(extended));
-            right_size = left_size;
-        }
-
-        if (left_size != right_size) {
-            machine->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation", this, 5, 0);
-            return;
-        }
-
-        machine->push_kont(machine->heap->allocate<CellIterK>(
-            op_val, left_val, right_val, 0, 0, left_size,
-            CellIterMode::COLLECT, left_size, 1, true, false, true));
-        return;
-    }
-
-    // Apply the dyadic function (no axis from this path)
-    prim_fn->dyadic(machine, nullptr, left_val, right_val);
-
-    // Phase 3.1: No return needed, trampoline continues
+    // Dispatch through unified helper (handles strand/NDArray pervasive + raw dyadic)
+    dispatch_primitive(machine, op_val, op_val->data.primitive_fn,
+                       left_val, right_val, nullptr, this);
 }
 
 void ApplyDyadicK::mark(Heap* heap) {
@@ -2006,53 +1978,6 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
     PrimitiveFn* prim_fn = fn_val->data.primitive_fn;
 
-    // Pervasive dispatch for strands and NDARRAYs: use CellIterK to iterate elements
-    // Only applies to scalar (pervasive) functions, not structural ones
-    // Note: monadic case goes through G_PRIME curry first, so only handle dyadic here
-    bool left_strand = left_val && left_val->is_strand();
-    bool right_strand = right_val && right_val->is_strand();
-    bool left_ndarray = left_val && left_val->is_ndarray();
-    bool right_ndarray = right_val && right_val->is_ndarray();
-
-    if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && left_val && (left_strand || right_strand || left_ndarray || right_ndarray)) {
-        int left_cells = left_val ? count_cells_for_rank(left_val, 0) : 0;
-        int right_cells = count_cells_for_rank(right_val, 0);
-        int total = std::max(left_cells, right_cells);
-
-        // Scalar extension check: mismatched lengths are an error (unless one is scalar)
-        if (left_cells > 1 && right_cells > 1 && left_cells != right_cells) {
-            machine->throw_error("LENGTH ERROR: mismatched array lengths", this, 5, 0);
-            return;
-        }
-
-        // Use CellIterK with rank 0 (iterate 0-cells = elements)
-        // For NDARRAY: preserve shape in result
-        if (left_ndarray || right_ndarray) {
-            // Get shape from the NDARRAY argument (prefer non-scalar)
-            const std::vector<int>* shape = nullptr;
-            if (right_ndarray && right_cells > 1) {
-                shape = &right_val->ndarray_shape();
-            } else if (left_ndarray && left_cells > 1) {
-                shape = &left_val->ndarray_shape();
-            }
-
-            CellIterK* iter = machine->heap->allocate<CellIterK>(
-                fn_val, left_val, right_val, 0, 0, total,
-                CellIterMode::COLLECT, total, 1, false, false, false);
-            if (shape) {
-                iter->orig_ndarray_shape = *shape;
-            }
-            machine->push_kont(iter);
-        } else {
-            // Strand case: preserve strand structure
-            machine->push_kont(machine->heap->allocate<CellIterK>(
-                fn_val, left_val, right_val, 0, 0, total,
-                CellIterMode::COLLECT, total, 1, true, false, true));
-        }
-        return;
-    }
-
-    // Determine monadic vs dyadic based on what arguments we have
     if (left_val == nullptr) {
         // Monadic case: only right argument
         if (prim_fn->monadic && prim_fn->dyadic) {
@@ -2061,62 +1986,18 @@ void DispatchFunctionK::invoke(Machine* machine) {
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::G_PRIME);
             machine->result = curried;
         } else if (prim_fn->monadic) {
-            // Monadic-only function: apply immediately
-            // This ensures errors are thrown in the correct context for ⎕EA to catch
-            prim_fn->monadic(machine, nullptr, right_val);
+            // Monadic-only function: dispatch immediately (handles strand/NDArray pervasive)
+            dispatch_primitive(machine, fn_val, prim_fn, nullptr, right_val, nullptr, this);
         } else if (prim_fn->dyadic) {
             // Pure dyadic function: simple currying (right arg captured, waiting for left)
             Value* curried = machine->heap->allocate_curried_fn(fn_val, right_val, Value::CurryType::DYADIC_CURRY);
             machine->result = curried;
         } else {
-            // No forms available
             machine->throw_error("SYNTAX ERROR: Function has no forms", this, 1, 0);
-            return;
         }
     } else {
-        // Dyadic case: both arguments
-        if (!prim_fn->dyadic) {
-            machine->throw_error("SYNTAX ERROR: Function has no dyadic form", this, 1, 0);
-            return;
-        }
-
-        // Pervasive strand handling: if either arg is a strand, apply element-wise
-        // Skip for Without (~) which is structural, not scalar (ISO 10.2.16)
-        bool left_strand = left_val->is_strand();
-        bool right_strand = right_val->is_strand();
-        if (prim_fn->is_pervasive && prim_fn->dyadic != fn_without && (left_strand || right_strand)) {
-            // Get sizes
-            int left_size = left_strand ? static_cast<int>(left_val->as_strand()->size())
-                                       : (left_val->is_scalar() ? 1 : left_val->size());
-            int right_size = right_strand ? static_cast<int>(right_val->as_strand()->size())
-                                         : (right_val->is_scalar() ? 1 : right_val->size());
-
-            // Scalar extension for strands
-            if (left_val->is_scalar() && right_strand) {
-                std::vector<Value*> extended(right_size, left_val);
-                left_val = machine->heap->allocate_strand(std::move(extended));
-                left_size = right_size;
-            } else if (left_strand && right_val->is_scalar()) {
-                std::vector<Value*> extended(left_size, right_val);
-                right_val = machine->heap->allocate_strand(std::move(extended));
-                right_size = left_size;
-            }
-
-            // Check lengths match
-            if (left_size != right_size) {
-                machine->throw_error("LENGTH ERROR: mismatched shapes in pervasive operation", this, 5, 0);
-                return;
-            }
-
-            // Use CellIterK with COLLECT mode to apply element-wise
-            machine->push_kont(machine->heap->allocate<CellIterK>(
-                fn_val, left_val, right_val, 0, 0, left_size,
-                CellIterMode::COLLECT, left_size, 1, true, false, true));
-            return;
-        }
-
-        // Apply dyadic function (sets machine->result directly or pushes ThrowErrorK)
-        prim_fn->dyadic(machine, nullptr, left_val, right_val);
+        // Dyadic case: dispatch through unified helper (strand/NDArray pervasive + raw)
+        dispatch_primitive(machine, fn_val, prim_fn, left_val, right_val, nullptr, this);
     }
 }
 
