@@ -256,6 +256,7 @@ Value* Heap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand) {
     val->data.derived_op->primitive_op = op;
     val->data.derived_op->defined_op = nullptr;
     val->data.derived_op->first_operand = first_operand;
+    val->data.derived_op->second_operand = nullptr;
     val->data.derived_op->operator_value = nullptr;
     return allocate(val);
 }
@@ -268,7 +269,21 @@ Value* Heap::allocate_derived_operator(Value::DefinedOperatorData* op, Value* fi
     val->data.derived_op->primitive_op = nullptr;
     val->data.derived_op->defined_op = op;
     val->data.derived_op->first_operand = first_operand;
+    val->data.derived_op->second_operand = nullptr;
     val->data.derived_op->operator_value = operator_value;
+    return allocate(val);
+}
+
+// G2 grammar: Allocate a derived operator with both operands (for dyadic operators like +.×)
+Value* Heap::allocate_derived_operator(PrimitiveOp* op, Value* first_operand, Value* second_operand) {
+    Value* val = new Value();
+    val->tag = ValueType::DERIVED_OPERATOR;
+    val->data.derived_op = new Value::DerivedOperatorData();
+    val->data.derived_op->primitive_op = op;
+    val->data.derived_op->defined_op = nullptr;
+    val->data.derived_op->first_operand = first_operand;
+    val->data.derived_op->second_operand = second_operand;
+    val->data.derived_op->operator_value = nullptr;
     return allocate(val);
 }
 

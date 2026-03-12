@@ -1069,7 +1069,51 @@ TEST_F(OptimizerTest, AAT_TableReturnsMatrix) {
 }
 
 // ---------------------------------------------------------------------------
-// 8. Category C3 – Constant fold reductions
+// 8. Category O2 – Dyadic operator pre-building
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, O2_InnerProductMatMul) {
+    // (2 2⍴1 2 3 4)+.×(2 2⍴5 6 7 8) → [[19,22],[43,50]]
+    eval("A←2 2⍴1 2 3 4");
+    eval("B←2 2⍴5 6 7 8");
+    Value* v = eval("A+.×B");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 19.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 22.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 43.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 50.0);
+}
+
+TEST_F(OptimizerTest, O2_DotProductVectors) {
+    // 1 2 3+.×4 5 6 → 32
+    EXPECT_DOUBLE_EQ(scalar("1 2 3+.×4 5 6"), 32.0);
+}
+
+TEST_F(OptimizerTest, O2_MonadicOperatorStillWorks) {
+    // +/1 2 3 → 6 (monadic-only operator, O2 should NOT fire)
+    EXPECT_DOUBLE_EQ(scalar("+/1 2 3"), 6.0);
+}
+
+TEST_F(OptimizerTest, O2_OuterProductStillWorks) {
+    // 1 2 3∘.×1 2 3 → outer product still works
+    Value* v = eval("1 2 3∘.×1 2 3");
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->is_matrix());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2, 2), 9.0);
+}
+
+TEST_F(OptimizerTest, O2_MaxDotProduct) {
+    // ⌈.+  (a non +.× inner product)
+    Value* v = eval("1 2 3⌈.+4 5 6");
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->tag, ValueType::SCALAR);
+    EXPECT_DOUBLE_EQ(v->data.scalar, 9.0);
+}
+
+// ---------------------------------------------------------------------------
+// 9. Category C3 – Constant fold reductions
 // ---------------------------------------------------------------------------
 
 TEST_F(OptimizerTest, C3_SumKnownVector) {

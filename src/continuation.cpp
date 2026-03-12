@@ -253,17 +253,18 @@ bool apply_function_immediate(Machine* m, Value* fn_val, Value* left_val,
         PrimitiveOp* op = derived->primitive_op;
         Value::DefinedOperatorData* def_op = derived->defined_op;
         Value* first_operand = derived->first_operand;
+        Value* second_operand = derived->second_operand;
         Value* op_value = derived->operator_value;
 
         if (def_op) {
             // User-defined operator
             m->push_kont(m->heap->allocate_ephemeral<InvokeDefinedOperatorK>(
-                def_op, op_value, first_operand, nullptr, left_val, right_val));
+                def_op, op_value, first_operand, second_operand, left_val, right_val));
             return false;  // Continuation pushed
         } else if (op) {
             // Primitive operator
             if (left_val && right_val && op->dyadic) {
-                op->dyadic(m, axis, left_val, first_operand, nullptr, right_val);
+                op->dyadic(m, axis, left_val, first_operand, second_operand, right_val);
             } else if (right_val && op->monadic) {
                 op->monadic(m, axis, first_operand, right_val);
             } else {
@@ -1803,6 +1804,19 @@ void DispatchFunctionK::invoke(Machine* machine) {
                 return;
             }
 
+            // O2-completed: second_operand already set → use it directly
+            if (derived_data->second_operand) {
+                if (left_val && right_val && op && op->dyadic) {
+                    op->dyadic(machine, nullptr, left_val, first_operand,
+                               derived_data->second_operand, right_val);
+                } else if (!left_val && right_val && op && op->monadic) {
+                    op->monadic(machine, nullptr, first_operand, right_val);
+                } else {
+                    machine->throw_error("VALUE ERROR: operator requires operands", this, 2, 0);
+                }
+                return;
+            }
+
             // For DERIVED_OPERATOR from dyadic operator (like inner product f.g):
             // first_arg contains the second function operand (g)
             // But if first_arg is a CURRIED_FN(g, array), we need to unwrap it:
@@ -1900,6 +1914,24 @@ void DispatchFunctionK::invoke(Machine* machine) {
             return;
         }
 
+        // O2-completed derived operator: second_operand is already set.
+        // Treat as a complete callable function rather than an operator waiting for its
+        // second function operand.
+        if (derived_data->second_operand) {
+            if (left_val && right_val && op->dyadic) {
+                op->dyadic(machine, nullptr, left_val, first_operand,
+                           derived_data->second_operand, right_val);
+                return;
+            }
+            if (!left_val && right_val) {
+                // Complete derived op + one data arg → G_PRIME curry
+                Value* curried = machine->heap->allocate_curried_fn(
+                    fn_val, right_val, Value::CurryType::G_PRIME);
+                machine->result = curried;
+                return;
+            }
+        }
+
         // For operators with BOTH monadic and dyadic forms (like commute ⍨),
         // curry with G_PRIME when given one argument. This allows `2 +⍨ 3` to work correctly
         // by deferring until we know if there's a left argument.
@@ -1932,7 +1964,8 @@ void DispatchFunctionK::invoke(Machine* machine) {
 
         // Dyadic operators with both arguments
         if (op->dyadic && left_val && right_val) {
-            op->dyadic(machine, nullptr, left_val, first_operand, nullptr, right_val);
+            op->dyadic(machine, nullptr, left_val, first_operand,
+                       derived_data->second_operand, right_val);
             return;
         }
 

@@ -552,6 +552,23 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
         return m != TM_BOT && m != TM_TOP && (m & TM_BASIC) && !(m & ~TM_BASIC);
     };
 
+    // O2 – Dyadic operator pre-building
+    // JuxtaposeK(left: TM_DERIVED singleton, right: TM_PRIMITIVE singleton)
+    // where left's operator is dyadic-only (has dyadic, no monadic)
+    // → ValueK(DERIVED_OP(op, first_operand, second_operand=right))
+    if (left_state.mask == TM_DERIVED && left_state.singleton &&
+        right_state.mask == TM_PRIMITIVE && right_state.singleton) {
+        Value* derived_val = left_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op &&
+            derived->primitive_op->dyadic && !derived->primitive_op->monadic) {
+            Value* complete = heap_->allocate_derived_operator(
+                derived->primitive_op, derived->first_operand, right_state.singleton);
+            auto* vk = heap_->allocate<ValueK>(complete);
+            return {vk, {TM_DERIVED, complete}};
+        }
+    }
+
     // D2 – Dyadic call from known-basic left
     // JuxtaposeK(left:BASIC, JuxtaposeK(fn:CALLABLE, right)) → DyadicCallK(fn, left, right)
     //

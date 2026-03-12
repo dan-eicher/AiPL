@@ -371,6 +371,7 @@ void Value::mark(Heap* heap) {
     // Mark referenced Values in G2 grammar structures
     if (tag == ValueType::DERIVED_OPERATOR && data.derived_op) {
         heap->mark(data.derived_op->first_operand);
+        heap->mark(data.derived_op->second_operand);
         heap->mark(data.derived_op->operator_value);
         // Note: defined_op points to DefinedOperatorData inside a DEFINED_OPERATOR Value
         // which is marked separately; primitive_op is a static global

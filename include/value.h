@@ -160,6 +160,7 @@ public:
         PrimitiveOp* primitive_op;       // For primitive operators (or nullptr)
         DefinedOperatorData* defined_op; // For defined operators (or nullptr)
         Value* first_operand;            // The first operand (always present)
+        Value* second_operand;           // For dyadic operators: second operand (× in +.×), or nullptr
         Value* operator_value;           // For defined ops: the DEFINED_OPERATOR Value (for ∇ binding)
     };
 
