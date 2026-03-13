@@ -754,9 +754,9 @@ double get_identity_element(PrimitiveFn* fn) {
     if (fn == &prim_divide) return 1.0;     // ÷/⍬ → 1
     if (fn == &prim_star) return 1.0;       // */⍬ → 1
 
-    // Min/Max - ISO 13751 §5.4: positive/negative-number-limit
-    if (fn == &prim_floor) return std::numeric_limits<double>::infinity();   // ⌊/⍬ → +∞
-    if (fn == &prim_ceiling) return -std::numeric_limits<double>::infinity(); // ⌈/⍬ → -∞
+    // Min/Max - ISO 13751 Table 5: positive/negative-number-limit (finite)
+    if (fn == &prim_floor) return std::numeric_limits<double>::max();   // ⌊/⍬ → positive-number-limit
+    if (fn == &prim_ceiling) return -std::numeric_limits<double>::max(); // ⌈/⍬ → negative-number-limit
 
     // Logical
     if (fn == &prim_and) return 1.0;        // ∧/⍬ → 1

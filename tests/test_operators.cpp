@@ -8,6 +8,7 @@
 #include "continuation.h"
 #include <Eigen/Dense>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 using namespace apl;
@@ -508,14 +509,14 @@ TEST_F(OperatorsTest, NwiseZeroTimes) {
 }
 
 TEST_F(OperatorsTest, NwiseZeroMax) {
-    // 0⌈/1 2 3 → -∞ -∞ -∞ -∞ (identity for ⌈)
+    // 0⌈/1 2 3 → negative-number-limit ×4 (identity for ⌈, ISO Table 5)
     Value* result = eval(machine, "0⌈/1 2 3");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_vector());
     EXPECT_EQ(result->size(), 4);
     auto* mat = result->as_matrix();
     for (int i = 0; i < 4; i++) {
-        EXPECT_TRUE(std::isinf((*mat)(i, 0)) && (*mat)(i, 0) < 0);
+        EXPECT_DOUBLE_EQ((*mat)(i, 0), -std::numeric_limits<double>::max());
     }
 }
 
@@ -804,19 +805,19 @@ TEST_F(OperatorsTest, ReduceEmptyDivide) {
 }
 
 TEST_F(OperatorsTest, ReduceEmptyMinimum) {
-    // ⌊/⍳0 → +∞ (positive-number-limit per ISO 13751)
+    // ⌊/⍳0 → positive-number-limit (DBL_MAX) per ISO 13751 Table 5
     Value* result = eval(machine, "⌊/⍳0");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_TRUE(std::isinf(result->as_scalar()) && result->as_scalar() > 0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), std::numeric_limits<double>::max());
 }
 
 TEST_F(OperatorsTest, ReduceEmptyMaximum) {
-    // ⌈/⍳0 → -∞ (negative-number-limit per ISO 13751)
+    // ⌈/⍳0 → negative-number-limit (-DBL_MAX) per ISO 13751 Table 5
     Value* result = eval(machine, "⌈/⍳0");
     ASSERT_NE(result, nullptr);
     EXPECT_TRUE(result->is_scalar());
-    EXPECT_TRUE(std::isinf(result->as_scalar()) && result->as_scalar() < 0);
+    EXPECT_DOUBLE_EQ(result->as_scalar(), -std::numeric_limits<double>::max());
 }
 
 TEST_F(OperatorsTest, ReduceEmptyAnd) {

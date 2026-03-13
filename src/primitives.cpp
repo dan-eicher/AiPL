@@ -2138,18 +2138,30 @@ void fn_natural_log(Machine* m, Value* axis, Value* omega) {
 // Logarithm (⍟) - dyadic (lhs ⍟ rhs = log base lhs of rhs)
 void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     REJECT_AXIS(m, axis);
-    // log_a(b) = ln(b) / ln(a)
-    // Domain errors: base <= 0, base == 1, value <= 0
-    auto check_domain = [m](double base, double val) -> bool {
-        if (base <= 0.0 || base == 1.0) {
+    // ISO 13751 §7.2.8 Logarithm: A⍟B
+    // Evaluation sequence:
+    //   1. If either A or B not number → domain-error
+    //   2. If A and B are equal → return 1
+    //   3. If A is 1 → domain-error
+    //   4. Return (ln B) ÷ (ln A)
+    auto check_domain = [m](double base, double val) -> int {
+        // Step 2: If A=B, return 1
+        if (base == val) return 1;  // caller returns 1.0
+        // Step 3: If A is 1, domain-error
+        if (base == 1.0) {
             m->throw_error("DOMAIN ERROR: invalid logarithm base", nullptr, 11, 0);
-            return false;
+            return -1;
+        }
+        // Remaining domain checks (base<=0 or val<=0 make ln undefined)
+        if (base <= 0.0) {
+            m->throw_error("DOMAIN ERROR: invalid logarithm base", nullptr, 11, 0);
+            return -1;
         }
         if (val <= 0.0) {
             m->throw_error("DOMAIN ERROR: logarithm of non-positive number", nullptr, 11, 0);
-            return false;
+            return -1;
         }
-        return true;
+        return 0;  // proceed with computation
     };
 
     auto log_base = [](double base, double val) -> double {
@@ -2157,7 +2169,9 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
     };
 
     if (lhs->is_scalar() && rhs->is_scalar()) {
-        if (!check_domain(lhs->data.scalar, rhs->data.scalar)) return;
+        int r = check_domain(lhs->data.scalar, rhs->data.scalar);
+        if (r < 0) return;
+        if (r == 1) { m->result = m->heap->allocate_scalar(1.0); return; }
         m->result = m->heap->allocate_scalar(log_base(lhs->data.scalar, rhs->data.scalar));
         return;
     }
@@ -2176,20 +2190,14 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         }
         double base = lhs->data.scalar;
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        // Check base domain once (scalar extension)
-        if (base <= 0.0 || base == 1.0) {
-            m->throw_error("DOMAIN ERROR: invalid logarithm base", nullptr, 11, 0);
-            return;
-        }
-        // Check all values are positive
+        // ISO §7.2.8: element-wise, check A=B first, then base/val domain
+        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
         for (int i = 0; i < rmat->size(); ++i) {
-            if (rmat->data()[i] <= 0.0) {
-                m->throw_error("DOMAIN ERROR: logarithm of non-positive number", nullptr, 11, 0);
-                return;
-            }
+            int r = check_domain(base, rmat->data()[i]);
+            if (r < 0) return;
+            if (r == 1) { result.data()[i] = 1.0; continue; }
+            result.data()[i] = log_base(base, rmat->data()[i]);
         }
-        double ln_base = std::log(base);
-        Eigen::MatrixXd result = rmat->array().log() / ln_base;
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -2204,22 +2212,14 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             return;
         }
         double val = rhs->data.scalar;
-        if (val <= 0.0) {
-            m->throw_error("DOMAIN ERROR: logarithm of non-positive number", nullptr, 11, 0);
-            return;
-        }
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        // Check all bases are valid
-        for (int i = 0; i < lmat->size(); ++i) {
-            if (lmat->data()[i] <= 0.0 || lmat->data()[i] == 1.0) {
-                m->throw_error("DOMAIN ERROR: invalid logarithm base", nullptr, 11, 0);
-                return;
-            }
-        }
-        double ln_val = std::log(val);
+        // ISO §7.2.8: element-wise, check A=B first, then base/val domain
         Eigen::MatrixXd result(lmat->rows(), lmat->cols());
         for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = ln_val / std::log(lmat->data()[i]);
+            int r = check_domain(lmat->data()[i], val);
+            if (r < 0) return;
+            if (r == 1) { result(i) = 1.0; continue; }
+            result(i) = log_base(lmat->data()[i], val);
         }
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
@@ -2241,13 +2241,12 @@ void fn_logarithm(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    // Validate all element pairs before computing
-    for (int i = 0; i < lmat->size(); ++i) {
-        if (!check_domain(lmat->data()[i], rmat->data()[i])) return;
-    }
-
+    // ISO §7.2.8: element-wise, check A=B first, then base/val domain
     Eigen::MatrixXd result(lmat->rows(), lmat->cols());
     for (int i = 0; i < lmat->size(); ++i) {
+        int r = check_domain(lmat->data()[i], rmat->data()[i]);
+        if (r < 0) return;
+        if (r == 1) { result(i) = 1.0; continue; }
         result(i) = log_base(lmat->data()[i], rmat->data()[i]);
     }
 
