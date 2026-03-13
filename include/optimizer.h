@@ -44,14 +44,20 @@ constexpr TypeMask TM_OPERATOR   = 1u <<  8;
 constexpr TypeMask TM_DEF_OP     = 1u <<  9;
 constexpr TypeMask TM_DERIVED    = 1u << 10;
 constexpr TypeMask TM_CURRIED    = 1u << 11;
+constexpr TypeMask TM_BOOLEAN    = 1u << 12;    // value-range annotation: all elements 0 or 1
 
 // Composite masks
-constexpr TypeMask TM_NUMERIC    = TM_SCALAR | TM_VECTOR | TM_MATRIX | TM_NDARRAY;
+constexpr TypeMask TM_NUMERIC    = TM_SCALAR | TM_VECTOR | TM_MATRIX | TM_NDARRAY | TM_BOOLEAN;
 constexpr TypeMask TM_BASIC      = TM_NUMERIC | TM_STRING | TM_STRAND;  // is_basic_value()
 constexpr TypeMask TM_FN         = TM_PRIMITIVE | TM_CLOSURE | TM_DERIVED | TM_CURRIED;
 constexpr TypeMask TM_CALLABLE   = TM_PRIMITIVE | TM_CLOSURE | TM_DERIVED;  // apply_function_immediate handles these
 constexpr TypeMask TM_OP         = TM_OPERATOR | TM_DEF_OP;
 constexpr TypeMask TM_TOP        = 0xFFFFFFFFu;  // ⊤  unknown
+
+// Strip the boolean annotation to get the underlying shape type.
+// TM_BOOLEAN is orthogonal: TM_VECTOR|TM_BOOLEAN means "boolean vector".
+// Use shape_mask() when matching on shape (SCALAR, VECTOR, etc.).
+inline TypeMask shape_mask(TypeMask m) { return m & ~TM_BOOLEAN; }
 
 // ---------------------------------------------------------------------------
 // OptState – abstract value for a node

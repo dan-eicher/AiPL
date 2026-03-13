@@ -1339,6 +1339,92 @@ TEST_F(OptimizerTest, E2_NonMatchedOpFallback) {
     EXPECT_DOUBLE_EQ((*mat)(1, 1), -18.0);  // 2-20
 }
 
+// ---------------------------------------------------------------------------
+// 10. TM_BOOLEAN type propagation
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, Bool_ComparisonScalarsCorrect) {
+    // 3=3 → 1, 3=4 → 0 — comparisons produce correct values
+    EXPECT_DOUBLE_EQ(scalar("3=3"), 1.0);
+    EXPECT_DOUBLE_EQ(scalar("3=4"), 0.0);
+}
+
+TEST_F(OptimizerTest, Bool_ComparisonVectorsCorrect) {
+    // 1 2 3=1 2 4 → 1 1 0
+    Value* v = eval("1 2 3=1 2 4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 0.0);
+}
+
+TEST_F(OptimizerTest, Bool_SumOfComparison) {
+    // +/1 2 3=1 2 4 → 2 (boolean vector fed to +/)
+    // Verifies E3 fires through TM_BOOLEAN annotation
+    EXPECT_DOUBLE_EQ(scalar("+/1 2 3=1 2 4"), 2.0);
+}
+
+TEST_F(OptimizerTest, Bool_SumOfComparisonWorkspaceVars) {
+    // With workspace variables, comparison → boolean vector → E3 reduce
+    eval("A←1 2 3 4 5");
+    eval("B←1 0 3 0 5");
+    EXPECT_DOUBLE_EQ(scalar("+/A=B"), 3.0);
+}
+
+TEST_F(OptimizerTest, Bool_ArithOnBooleanStripsAnnotation) {
+    // (1 2 3=1 2 3)+10 → 11 11 11 — arithmetic on boolean vector works
+    Value* v = eval("(1 2 3=1 2 3)+10");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 11.0);
+}
+
+TEST_F(OptimizerTest, Bool_NotPreservesBoolean) {
+    // ~1 0 1 → 0 1 0
+    Value* v = eval("~1 0 1");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 0.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 0.0);
+}
+
+TEST_F(OptimizerTest, Bool_BooleanDyadicOps) {
+    // 1 0 1∧0 1 1 → 0 0 1
+    Value* v = eval("1 0 1∧0 1 1");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 0.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 0.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 1.0);
+}
+
+TEST_F(OptimizerTest, Bool_ComparisonBroadcast) {
+    // 3>1 2 3 4 5 → 1 1 0 0 0 (scalar vs vector comparison)
+    Value* v = eval("3>1 2 3 4 5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 0.0);
+}
+
+TEST_F(OptimizerTest, Bool_ReduceComparisonInDfn) {
+    // {+/⍵=0}1 0 0 1 0 → 3 (DIR specializes, E3 fires on boolean vector)
+    EXPECT_DOUBLE_EQ(scalar("{+/⍵=0}1 0 0 1 0"), 3.0);
+}
+
+TEST_F(OptimizerTest, Bool_ReversePreservesBoolean) {
+    // ⌽1 0 1=1 1 1 → ⌽(1 0 1) → 1 0 1
+    Value* v = eval("⌽1 0 1=1 1 1");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 0.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 1.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

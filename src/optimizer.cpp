@@ -31,17 +31,26 @@ namespace apl {
 // ---------------------------------------------------------------------------
 
 static TypeMask abstract_apply_monadic(const std::string& name, TypeMask arg) {
-    // Pervasive: preserve numeric type
-    if (name == "+" || name == "-" || name == "×" || name == "÷" ||
-        name == "*" || name == "|" || name == "⌈" || name == "⌊" ||
-        name == "⍟" || name == "!" || name == "○" || name == "?" ||
-        name == "~") {
-        if ((arg & TM_NUMERIC) && !(arg & ~TM_NUMERIC)) return arg;
+    TypeMask arg_shape = arg & ~TM_BOOLEAN;
+    bool arg_bool = (arg & TM_BOOLEAN) != 0;
+
+    // Boolean NOT — preserves boolean annotation
+    if (name == "~") {
+        if ((arg_shape & TM_NUMERIC) && !(arg_shape & ~TM_NUMERIC))
+            return arg_bool ? arg : arg_shape;
         return TM_TOP;
     }
-    // Shape-preserving structural
+    // Pervasive arithmetic: preserve numeric shape, strip boolean
+    if (name == "+" || name == "-" || name == "×" || name == "÷" ||
+        name == "*" || name == "|" || name == "⌈" || name == "⌊" ||
+        name == "⍟" || name == "!" || name == "○" || name == "?") {
+        if ((arg_shape & TM_NUMERIC) && !(arg_shape & ~TM_NUMERIC)) return arg_shape;
+        return TM_TOP;
+    }
+    // Shape-preserving structural — preserves boolean
     if (name == "⌽" || name == "⊖" || name == "⍉") {
-        if ((arg & TM_NUMERIC) && !(arg & ~TM_NUMERIC)) return arg;
+        if ((arg_shape & TM_NUMERIC) && !(arg_shape & ~TM_NUMERIC))
+            return arg_bool ? arg : arg_shape;
         return TM_TOP;
     }
     // Always VECTOR
@@ -58,7 +67,7 @@ static TypeMask abstract_apply_monadic(const std::string& name, TypeMask arg) {
         return TM_MATRIX;
     // Iota
     if (name == "⍳") {
-        if (arg == TM_SCALAR) return TM_VECTOR;
+        if (shape_mask(arg) == TM_SCALAR) return TM_VECTOR;
         return TM_TOP;
     }
     // Identity
@@ -72,24 +81,35 @@ static TypeMask abstract_apply_monadic(const std::string& name, TypeMask arg) {
 }
 
 static TypeMask abstract_apply_dyadic(const std::string& name, TypeMask left, TypeMask right) {
-    // Broadcast rule for pervasive dyadic
+    // Broadcast rule for pervasive dyadic — strips TM_BOOLEAN from inputs
+    // so shape comparisons work correctly (boolean is orthogonal to shape).
     auto broadcast = [](TypeMask l, TypeMask r) -> TypeMask {
-        if (!(l & TM_NUMERIC) || (l & ~TM_NUMERIC) ||
-            !(r & TM_NUMERIC) || (r & ~TM_NUMERIC))
+        TypeMask ls = l & ~TM_BOOLEAN;
+        TypeMask rs = r & ~TM_BOOLEAN;
+        if (!(ls & TM_NUMERIC) || (ls & ~TM_NUMERIC) ||
+            !(rs & TM_NUMERIC) || (rs & ~TM_NUMERIC))
             return TM_TOP;
-        if (l == r) return l;            // vec + vec = vec
-        if (l == TM_SCALAR) return r;    // scalar extends
-        if (r == TM_SCALAR) return l;    // scalar extends
-        return l | r;                    // conservative union
+        if (ls == rs) return ls;          // vec + vec = vec
+        if (ls == TM_SCALAR) return rs;   // scalar extends
+        if (rs == TM_SCALAR) return ls;   // scalar extends
+        return ls | rs;                   // conservative union
     };
 
-    // Pervasive
+    // Comparisons — always produce boolean results
+    if (name == "=" || name == "≠" || name == "<" || name == ">" ||
+        name == "≤" || name == "≥") {
+        TypeMask shape = broadcast(left, right);
+        return (shape == TM_TOP) ? TM_TOP : shape | TM_BOOLEAN;
+    }
+    // Boolean dyadic ops — produce boolean results
+    if (name == "∧" || name == "∨" || name == "⍲" || name == "⍱") {
+        TypeMask shape = broadcast(left, right);
+        return (shape == TM_TOP) ? TM_TOP : shape | TM_BOOLEAN;
+    }
+    // Pervasive arithmetic — strip boolean
     if (name == "+" || name == "-" || name == "×" || name == "÷" ||
         name == "*" || name == "|" || name == "⌈" || name == "⌊" ||
-        name == "⍟" || name == "!" || name == "○" || name == "?" ||
-        name == "=" || name == "≠" || name == "<" || name == ">" ||
-        name == "≤" || name == "≥" || name == "∧" || name == "∨" ||
-        name == "⍲" || name == "⍱")
+        name == "⍟" || name == "!" || name == "○" || name == "?")
         return broadcast(left, right);
     // Rotate
     if (name == "⌽" || name == "⊖") {
@@ -725,7 +745,7 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic_call(MonadicCallK* k) 
     // C3 — Constant fold reductions over known vectors
     // When fn is DERIVED_OPERATOR(op_reduce, prim_fn) and arg is a known vector singleton.
     if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
-        arg_state.singleton && (arg_state.mask == TM_VECTOR)) {
+        arg_state.singleton && (shape_mask(arg_state.mask) == TM_VECTOR)) {
         Value* derived_val = fn_state.singleton;
         auto* derived = derived_val->data.derived_op;
         if (derived->primitive_op == &op_reduce && derived->first_operand &&
@@ -757,7 +777,7 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic_call(MonadicCallK* k) 
     // E3 — Type-proven vector reduction → EigenReduceK
     // When fn is a known DERIVED_OPERATOR(op_reduce, prim_fn) and arg is TM_VECTOR.
     if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
-        arg_state.mask == TM_VECTOR) {
+        shape_mask(arg_state.mask) == TM_VECTOR) {
         Value* derived_val = fn_state.singleton;
         auto* derived = derived_val->data.derived_op;
         if (derived->primitive_op == &op_reduce && derived->first_operand &&
