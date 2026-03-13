@@ -21,6 +21,7 @@
 #include "value.h"
 #include "operators.h"
 #include "primitives.h"
+#include <Eigen/Dense>
 #include <cmath>
 #include <cassert>
 
@@ -774,6 +775,94 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic_call(MonadicCallK* k) 
         }
     }
 
+    // C4 — Closed-form reduction fusion: +/⍳N → N×(N+1)÷2
+    // When fn is +/ and arg is MonadicCallK(⍳, N) with N a known scalar.
+    if (fn_state.singleton && fn_state.mask == TM_DERIVED) {
+        Value* derived_val = fn_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op == &op_reduce && derived->first_operand &&
+            derived->first_operand->is_primitive()) {
+            PrimitiveFn* pfn = derived->first_operand->data.primitive_fn;
+            if (auto* inner = dynamic_cast<MonadicCallK*>(new_arg)) {
+                OptState inner_fn_st = lookup_state(inner->fn_cont);
+                OptState inner_arg_st = lookup_state(inner->arg_cont);
+                if (inner_fn_st.singleton && inner_fn_st.mask == TM_PRIMITIVE &&
+                    inner_fn_st.singleton->data.primitive_fn == &prim_iota &&
+                    inner_arg_st.singleton && shape_mask(inner_arg_st.mask) == TM_SCALAR) {
+                    double N = inner_arg_st.singleton->data.scalar;
+                    if (N >= 0 && N == std::floor(N) && N <= 1e15) {
+                        Value* folded = nullptr;
+                        if (pfn == &prim_plus) {
+                            folded = heap_->allocate_scalar(N * (N + 1.0) / 2.0);
+                        } else if (pfn == &prim_times && N <= 20 && N >= 1) {
+                            double fact = 1.0;
+                            for (int i = 2; i <= (int)N; ++i) fact *= i;
+                            folded = heap_->allocate_scalar(fact);
+                        }
+                        if (folded) {
+                            return {heap_->allocate<ValueK>(folded), opt_state_from_value(folded)};
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // A3 — Involution cancellation: f(f(X)) → X for self-inverse functions
+    if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
+        PrimitiveFn* outer_fn = fn_state.singleton->data.primitive_fn;
+        if (auto* inner = dynamic_cast<MonadicCallK*>(new_arg)) {
+            OptState inner_fn_st = lookup_state(inner->fn_cont);
+            if (inner_fn_st.singleton && inner_fn_st.mask == TM_PRIMITIVE &&
+                inner_fn_st.singleton->data.primitive_fn == outer_fn) {
+                bool cancel = false;
+                if (outer_fn == &prim_minus)   cancel = true;  // --X = X
+                if (outer_fn == &prim_reverse) cancel = true;  // ⌽⌽X = X
+                if (outer_fn == &prim_reverse_first) cancel = true;  // ⊖⊖X = X
+                if (outer_fn == &prim_not && (arg_state.mask & TM_BOOLEAN))
+                    cancel = true;  // ~~X = X (boolean)
+                if (outer_fn == &prim_transpose) {
+                    TypeMask inner_arg_shape = shape_mask(lookup_state(inner->arg_cont).mask);
+                    if (inner_arg_shape == TM_SCALAR || inner_arg_shape == TM_VECTOR ||
+                        inner_arg_shape == TM_MATRIX)
+                        cancel = true;  // ⍉⍉X = X (rank ≤ 2)
+                }
+                if (cancel) {
+                    return {inner->arg_cont, lookup_state(inner->arg_cont)};
+                }
+            }
+        }
+    }
+
+    // A4 — Structural short-circuits: ⍴⍳N → N, ≢⍳N → N
+    if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
+        PrimitiveFn* outer_fn = fn_state.singleton->data.primitive_fn;
+        if ((outer_fn == &prim_rho || outer_fn == &prim_tally)) {
+            if (auto* inner = dynamic_cast<MonadicCallK*>(new_arg)) {
+                OptState inner_fn_st = lookup_state(inner->fn_cont);
+                OptState inner_arg_st = lookup_state(inner->arg_cont);
+                if (inner_fn_st.singleton && inner_fn_st.mask == TM_PRIMITIVE &&
+                    inner_fn_st.singleton->data.primitive_fn == &prim_iota &&
+                    inner_arg_st.singleton && shape_mask(inner_arg_st.mask) == TM_SCALAR) {
+                    double N = inner_arg_st.singleton->data.scalar;
+                    if (N >= 0 && N == std::floor(N)) {
+                        if (outer_fn == &prim_tally) {
+                            // ≢⍳N → N (scalar)
+                            Value* folded = heap_->allocate_scalar(N);
+                            return {heap_->allocate<ValueK>(folded), opt_state_from_value(folded)};
+                        } else {
+                            // ⍴⍳N → 1-element vector containing N
+                            Eigen::VectorXd v(1);
+                            v(0) = N;
+                            Value* folded = heap_->allocate_vector(v);
+                            return {heap_->allocate<ValueK>(folded), opt_state_from_value(folded)};
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // E3 — Type-proven vector reduction → EigenReduceK
     // When fn is a known DERIVED_OPERATOR(op_reduce, prim_fn) and arg is TM_VECTOR.
     if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
@@ -813,6 +902,58 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_dyadic_call(DyadicCallK* k) {
     if (new_fn    != k->fn_cont)    k->fn_cont    = new_fn;
     if (new_left  != k->left_cont)  k->left_cont  = new_left;
     if (new_right != k->right_cont) k->right_cont = new_right;
+
+    // A1 — Identity element elimination: X+0→X, X×1→X, etc.
+    if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
+        PrimitiveFn* pfn = fn_state.singleton->data.primitive_fn;
+        auto is_val = [](const OptState& st, double v) -> bool {
+            return st.singleton && shape_mask(st.mask) == TM_SCALAR &&
+                   st.singleton->data.scalar == v;
+        };
+        Continuation* simplified = nullptr;
+        OptState simplified_state;
+        // X + 0 = X, 0 + X = X
+        if (pfn == &prim_plus) {
+            if (is_val(right_state, 0.0)) { simplified = new_left; simplified_state = left_state; }
+            else if (is_val(left_state, 0.0)) { simplified = new_right; simplified_state = right_state; }
+        }
+        // X × 1 = X, 1 × X = X
+        else if (pfn == &prim_times) {
+            if (is_val(right_state, 1.0)) { simplified = new_left; simplified_state = left_state; }
+            else if (is_val(left_state, 1.0)) { simplified = new_right; simplified_state = right_state; }
+        }
+        // X - 0 = X
+        else if (pfn == &prim_minus) {
+            if (is_val(right_state, 0.0)) { simplified = new_left; simplified_state = left_state; }
+        }
+        // X ÷ 1 = X
+        else if (pfn == &prim_divide) {
+            if (is_val(right_state, 1.0)) { simplified = new_left; simplified_state = left_state; }
+        }
+        // X * 1 = X
+        else if (pfn == &prim_star) {
+            if (is_val(right_state, 1.0)) { simplified = new_left; simplified_state = left_state; }
+        }
+        if (simplified) return {simplified, simplified_state};
+    }
+
+    // A2 — Strength reduction: X*2 → X×X, X*0.5 → X*0.5 (√)
+    if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE &&
+        fn_state.singleton->data.primitive_fn == &prim_star) {
+        if (right_state.singleton && shape_mask(right_state.mask) == TM_SCALAR) {
+            double exp = right_state.singleton->data.scalar;
+            if (exp == 2.0) {
+                // X*2 → X×X (replace pow with multiply)
+                auto* times_lookup = heap_->allocate<ValueK>(
+                    heap_->allocate_primitive(&prim_times));
+                auto* dcall = heap_->allocate<DyadicCallK>(
+                    times_lookup, new_left, new_left);
+                if (k->has_location()) dcall->set_location(k->line(), k->column());
+                TypeMask res = abstract_apply_dyadic("×", left_state.mask, left_state.mask);
+                return {dcall, {res, nullptr}};
+            }
+        }
+    }
 
     // E1 — +.× inner product → EigenProductK
     if (fn_state.singleton && fn_state.mask == TM_DERIVED) {

@@ -1425,6 +1425,202 @@ TEST_F(OptimizerTest, Bool_ReversePreservesBoolean) {
     EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 1.0);
 }
 
+// ---------------------------------------------------------------------------
+// 11. Category C4 – Closed-form reduction fusion
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, C4_SumIota) {
+    // +/⍳100 → 5050 (closed form: N×(N+1)÷2)
+    EXPECT_DOUBLE_EQ(scalar("+/⍳100"), 5050.0);
+}
+
+TEST_F(OptimizerTest, C4_SumIotaOne) {
+    // +/⍳1 → 1
+    EXPECT_DOUBLE_EQ(scalar("+/⍳1"), 1.0);
+}
+
+TEST_F(OptimizerTest, C4_SumIotaZero) {
+    // +/⍳0 → 0
+    EXPECT_DOUBLE_EQ(scalar("+/⍳0"), 0.0);
+}
+
+TEST_F(OptimizerTest, C4_FactorialIota) {
+    // ×/⍳5 → 120 (5!)
+    EXPECT_DOUBLE_EQ(scalar("×/⍳5"), 120.0);
+}
+
+TEST_F(OptimizerTest, C4_FactorialIotaLarge) {
+    // ×/⍳20 → 20! = 2432902008176640000
+    EXPECT_DOUBLE_EQ(scalar("×/⍳20"), 2432902008176640000.0);
+}
+
+TEST_F(OptimizerTest, C4_FactorialIotaTooLarge) {
+    // ×/⍳21 — beyond N≤20 guard, falls through to runtime
+    // Still produces correct result via normal reduction
+    Value* v = eval("×/⍳21");
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->tag, ValueType::SCALAR);
+}
+
+TEST_F(OptimizerTest, C4_MaxIotaNotMatched) {
+    // ⌈/⍳10 → 10 (not a C4 pattern, falls to runtime)
+    EXPECT_DOUBLE_EQ(scalar("⌈/⍳10"), 10.0);
+}
+
+// ---------------------------------------------------------------------------
+// 12. Category A1 – Identity element elimination
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, A1_PlusZeroRight) {
+    // x+0 → x (workspace var with known type)
+    eval("x←42");
+    EXPECT_DOUBLE_EQ(scalar("x+0"), 42.0);
+}
+
+TEST_F(OptimizerTest, A1_PlusZeroLeft) {
+    // 0+x → x
+    eval("x←42");
+    EXPECT_DOUBLE_EQ(scalar("0+x"), 42.0);
+}
+
+TEST_F(OptimizerTest, A1_TimesOneRight) {
+    // x×1 → x
+    eval("x←7");
+    EXPECT_DOUBLE_EQ(scalar("x×1"), 7.0);
+}
+
+TEST_F(OptimizerTest, A1_TimesOneLeft) {
+    // 1×x → x
+    eval("x←7");
+    EXPECT_DOUBLE_EQ(scalar("1×x"), 7.0);
+}
+
+TEST_F(OptimizerTest, A1_MinusZero) {
+    // x-0 → x (only right identity)
+    eval("x←99");
+    EXPECT_DOUBLE_EQ(scalar("x-0"), 99.0);
+}
+
+TEST_F(OptimizerTest, A1_DivideOne) {
+    // x÷1 → x
+    eval("x←13");
+    EXPECT_DOUBLE_EQ(scalar("x÷1"), 13.0);
+}
+
+TEST_F(OptimizerTest, A1_PowerOne) {
+    // x*1 → x
+    eval("x←5");
+    EXPECT_DOUBLE_EQ(scalar("x*1"), 5.0);
+}
+
+TEST_F(OptimizerTest, A1_VectorPlusZero) {
+    // (⍳5)+0 → 1 2 3 4 5 (vector identity preserved)
+    Value* v = eval("(⍳5)+0");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 5.0);
+}
+
+TEST_F(OptimizerTest, A1_ZeroMinusXNotEliminated) {
+    // 0-x should NOT be eliminated (not identity)
+    eval("x←5");
+    EXPECT_DOUBLE_EQ(scalar("0-x"), -5.0);
+}
+
+// ---------------------------------------------------------------------------
+// 13. Category A2 – Strength reduction
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, A2_PowerTwo) {
+    // x*2 → x×x
+    eval("x←7");
+    EXPECT_DOUBLE_EQ(scalar("x*2"), 49.0);
+}
+
+TEST_F(OptimizerTest, A2_VectorPowerTwo) {
+    // (1 2 3)*2 → 1 4 9
+    Value* v = eval("(1 2 3)*2");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 4.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 9.0);
+}
+
+TEST_F(OptimizerTest, A2_PowerThreeNotReduced) {
+    // x*3 — not in A2 pattern, falls through
+    eval("x←2");
+    EXPECT_DOUBLE_EQ(scalar("x*3"), 8.0);
+}
+
+// ---------------------------------------------------------------------------
+// 14. Category A3 – Involution cancellation
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, A3_DoubleNegate) {
+    // --5 → 5
+    EXPECT_DOUBLE_EQ(scalar("--5"), 5.0);
+}
+
+TEST_F(OptimizerTest, A3_DoubleReverse) {
+    // ⌽⌽1 2 3 → 1 2 3
+    Value* v = eval("⌽⌽1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 3.0);
+}
+
+TEST_F(OptimizerTest, A3_DoubleTranspose) {
+    // ⍉⍉M → M (rank 2)
+    eval("M←2 3⍴⍳6");
+    Value* v = eval("⍉⍉M");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    EXPECT_EQ(v->as_matrix()->rows(), 2);
+    EXPECT_EQ(v->as_matrix()->cols(), 3);
+}
+
+TEST_F(OptimizerTest, A3_DoubleNot) {
+    // ~~1 0 1 → 1 0 1 (boolean involution)
+    Value* v = eval("~~1 0 1");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 0.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// 15. Category A4 – Structural short-circuits
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, A4_TallyIota) {
+    // ≢⍳100 → 100 (scalar, no vector generated)
+    EXPECT_DOUBLE_EQ(scalar("≢⍳100"), 100.0);
+}
+
+TEST_F(OptimizerTest, A4_ShapeIota) {
+    // ⍴⍳100 → 1-element vector: 100
+    Value* v = eval("⍴⍳100");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 1);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 100.0);
+}
+
+TEST_F(OptimizerTest, A4_TallyIotaZero) {
+    // ≢⍳0 → 0
+    EXPECT_DOUBLE_EQ(scalar("≢⍳0"), 0.0);
+}
+
+TEST_F(OptimizerTest, A4_NonIotaNotMatched) {
+    // ≢1 2 3 → 3 (not ⍳, A4 doesn't fire, runtime handles it)
+    EXPECT_DOUBLE_EQ(scalar("≢1 2 3"), 3.0);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
