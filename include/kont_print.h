@@ -788,6 +788,21 @@ public:
         out << ")";
         print_location(k);
     }
+
+    void visit(EigenSortK* k) override {
+        out << "EigenSortK(";
+        out << (k->direction == EigenSortDir::ASCENDING ? "ASC" : "DESC");
+        out << ")";
+        print_location(k);
+        print_child("arg", k->arg_cont);
+    }
+
+    void visit(PerformEigenSortK* k) override {
+        out << "PerformEigenSortK(";
+        out << (k->direction == EigenSortDir::ASCENDING ? "ASC" : "DESC");
+        out << ")";
+        print_location(k);
+    }
 };
 
 } // namespace apl

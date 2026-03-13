@@ -4894,4 +4894,83 @@ void PerformEigenReduceFirstK::mark(Heap* heap) {
     heap->mark(derived_op);
 }
 
+// ============================================================================
+// EigenSortK - Direct sort (optimizer I1)
+// ============================================================================
+
+void EigenSortK::invoke(Machine* machine) {
+    auto* perform = machine->heap->allocate_ephemeral<PerformEigenSortK>(direction);
+    perform->set_location(src_line, src_column);
+    machine->push_kont(perform);
+    machine->push_kont(arg_cont);
+}
+
+void EigenSortK::mark(Heap* heap) {
+    heap->mark(arg_cont);
+}
+
+void PerformEigenSortK::invoke(Machine* machine) {
+    Value* arg = machine->result;
+    if (arg->is_vector() && !arg->is_char_data()) {
+        const Eigen::MatrixXd* mat = arg->as_matrix();
+        int len = mat->rows();
+        if (len <= 1) {
+            // 0 or 1 element: already sorted
+            machine->result = arg;
+            return;
+        }
+        // Copy data and sort
+        std::vector<double> data(len);
+        for (int i = 0; i < len; ++i) data[i] = (*mat)(i, 0);
+        if (direction == EigenSortDir::ASCENDING) {
+            std::stable_sort(data.begin(), data.end());
+        } else {
+            std::stable_sort(data.begin(), data.end(), std::greater<double>());
+        }
+        Eigen::VectorXd result(len);
+        for (int i = 0; i < len; ++i) result(i) = data[i];
+        machine->result = machine->heap->allocate_vector(result);
+    } else if (arg->is_matrix() && !arg->is_char_data()) {
+        // Matrix sort: sort rows lexicographically (same as X[⍋X] on matrix)
+        const Eigen::MatrixXd* mat = arg->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+        if (rows <= 1) {
+            machine->result = arg;
+            return;
+        }
+        // Build index array, sort, then reorder rows
+        std::vector<int> indices(rows);
+        for (int i = 0; i < rows; ++i) indices[i] = i;
+        if (direction == EigenSortDir::ASCENDING) {
+            std::stable_sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
+                for (int j = 0; j < cols; ++j) {
+                    if ((*mat)(a, j) < (*mat)(b, j)) return true;
+                    if ((*mat)(a, j) > (*mat)(b, j)) return false;
+                }
+                return false;
+            });
+        } else {
+            std::stable_sort(indices.begin(), indices.end(), [mat, cols](int a, int b) {
+                for (int j = 0; j < cols; ++j) {
+                    if ((*mat)(a, j) > (*mat)(b, j)) return true;
+                    if ((*mat)(a, j) < (*mat)(b, j)) return false;
+                }
+                return false;
+            });
+        }
+        Eigen::MatrixXd result(rows, cols);
+        for (int i = 0; i < rows; ++i) result.row(i) = mat->row(indices[i]);
+        machine->result = machine->heap->allocate_matrix(result);
+    } else {
+        // Fallback: can't sort this type, let runtime handle via grade+index
+        // This shouldn't happen if the optimizer guard is correct
+        machine->throw_error("DOMAIN ERROR: sort requires numeric array", nullptr, 11, 0);
+    }
+}
+
+void PerformEigenSortK::mark(Heap*) {
+    // No Value* fields to mark
+}
+
 } // namespace apl

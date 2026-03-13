@@ -1811,6 +1811,88 @@ TEST_F(OptimizerTest, E6_WorkspaceVars) {
     EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);  // 3≤2
 }
 
+// ---------------------------------------------------------------------------
+// 19. Category I1 – Sort idiom (X[⍋X], X[⍒X])
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, I1_SortAscending) {
+    // X[⍋X] on a vector → sorted ascending
+    eval("X←5 3 1 4 2");
+    Value* v = eval("X[⍋X]");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 4.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 5.0);
+}
+
+TEST_F(OptimizerTest, I1_SortDescending) {
+    // X[⍒X] → sorted descending
+    eval("X←5 3 1 4 2");
+    Value* v = eval("X[⍒X]");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 5.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 4.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 1.0);
+}
+
+TEST_F(OptimizerTest, I1_AlreadySorted) {
+    eval("X←1 2 3 4 5");
+    Value* v = eval("X[⍋X]");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 5.0);
+}
+
+TEST_F(OptimizerTest, I1_SingleElement) {
+    eval("X←,42");
+    Value* v = eval("X[⍋X]");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 42.0);
+}
+
+TEST_F(OptimizerTest, I1_Duplicates) {
+    eval("X←3 1 4 1 5 9 2 6 5 3");
+    Value* v = eval("X[⍋X]");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 10);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(9), 9.0);
+}
+
+TEST_F(OptimizerTest, I1_NegativeValues) {
+    eval("X←3 ¯1 4 ¯1 5");
+    Value* v = eval("X[⍋X]");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), -1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), -1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 5.0);
+}
+
+TEST_F(OptimizerTest, I1_DifferentVarNotMatched) {
+    // X[⍋Y] should NOT match I1 (different variables)
+    eval("X←5 3 1 4 2");
+    eval("Y←1 2 3 4 5");
+    Value* v = eval("X[⍋Y]");
+    ASSERT_NE(v, nullptr);
+    // Should still produce correct result via normal path
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 5.0);  // X indexed by ⍋Y = 1 2 3 4 5
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

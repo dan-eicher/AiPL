@@ -1262,12 +1262,8 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        double a = lhs->data.scalar;
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
-        for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = std::max(a, rmat->data()[i]);
-        }
+        Eigen::MatrixXd result = rmat->array().max(lhs->data.scalar);
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1281,12 +1277,8 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌈ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        double b = rhs->data.scalar;
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-        for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = std::max(lmat->data()[i], b);
-        }
+        Eigen::MatrixXd result = lmat->array().max(rhs->data.scalar);
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1307,10 +1299,7 @@ void fn_maximum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-    for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = std::max(lmat->data()[i], rmat->data()[i]);
-    }
+    Eigen::MatrixXd result = lmat->array().max(rmat->array());
 
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -1338,12 +1327,8 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        double a = lhs->data.scalar;
         const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
-        for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = std::min(a, rmat->data()[i]);
-        }
+        Eigen::MatrixXd result = rmat->array().min(lhs->data.scalar);
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1357,12 +1342,8 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⌊ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        double b = rhs->data.scalar;
         const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-        for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = std::min(lmat->data()[i], b);
-        }
+        Eigen::MatrixXd result = lmat->array().min(rhs->data.scalar);
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1383,10 +1364,7 @@ void fn_minimum(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-    for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = std::min(lmat->data()[i], rmat->data()[i]);
-    }
+    Eigen::MatrixXd result = lmat->array().min(rmat->array());
 
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -4524,31 +4502,20 @@ void fn_reverse(Machine* m, Value* axis, Value* omega) {
 
     if (omega->is_vector()) {
         // Reverse vector elements (only axis 1 is valid)
-        Eigen::VectorXd result(mat->rows());
-        for (int i = 0; i < mat->rows(); ++i) {
-            result(i) = (*mat)(mat->rows() - 1 - i, 0);
-        }
+        Eigen::VectorXd result = mat->col(0).reverse();
         m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
     // Matrix case
-    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    Eigen::MatrixXd result;
 
     if (reverse_axis == 1) {
         // Reverse along first axis (rows): swap row order
-        for (int i = 0; i < mat->rows(); ++i) {
-            for (int j = 0; j < mat->cols(); ++j) {
-                result(i, j) = (*mat)(mat->rows() - 1 - i, j);
-            }
-        }
+        result = mat->colwise().reverse();
     } else {
         // Reverse along second/last axis (columns): reverse within each row
-        for (int i = 0; i < mat->rows(); ++i) {
-            for (int j = 0; j < mat->cols(); ++j) {
-                result(i, j) = (*mat)(i, mat->cols() - 1 - j);
-            }
-        }
+        result = mat->rowwise().reverse();
     }
     m->result = m->heap->allocate_matrix(result, is_char);
 }
@@ -4648,29 +4615,20 @@ void fn_reverse_first(Machine* m, Value* axis, Value* omega) {
 
     if (omega->is_vector()) {
         // For vectors, first axis is the only axis, so same as reverse
-        Eigen::VectorXd result(mat->rows());
-        for (int i = 0; i < mat->rows(); ++i) {
-            result(i) = (*mat)(mat->rows() - 1 - i, 0);
-        }
+        Eigen::VectorXd result = mat->col(0).reverse();
         m->result = m->heap->allocate_vector(result, is_char);
         return;
     }
 
     // Matrix case
-    Eigen::MatrixXd result(mat->rows(), mat->cols());
+    Eigen::MatrixXd result;
 
     if (reverse_axis == 1) {
         // Reverse along first axis (rows): swap row order
-        for (int i = 0; i < mat->rows(); ++i) {
-            result.row(i) = mat->row(mat->rows() - 1 - i);
-        }
+        result = mat->colwise().reverse();
     } else {
         // Reverse along second/last axis (columns): reverse within each row
-        for (int i = 0; i < mat->rows(); ++i) {
-            for (int j = 0; j < mat->cols(); ++j) {
-                result(i, j) = (*mat)(i, mat->cols() - 1 - j);
-            }
-        }
+        result = mat->rowwise().reverse();
     }
     m->result = m->heap->allocate_matrix(result, is_char);
 }

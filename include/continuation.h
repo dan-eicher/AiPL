@@ -107,6 +107,8 @@ class EigenScanK;
 class PerformEigenScanK;
 class EigenReduceFirstK;
 class PerformEigenReduceFirstK;
+class EigenSortK;
+class PerformEigenSortK;
 
 // ============================================================================
 // Function Application Helper
@@ -220,6 +222,8 @@ public:
     virtual void visit(PerformEigenScanK*) = 0;
     virtual void visit(EigenReduceFirstK*) = 0;
     virtual void visit(PerformEigenReduceFirstK*) = 0;
+    virtual void visit(EigenSortK*) = 0;
+    virtual void visit(PerformEigenSortK*) = 0;
 };
 
 // Abstract Continuation base class
@@ -2169,6 +2173,45 @@ public:
     PerformEigenReduceFirstK(EigenReduceOp op, Value* derived)
         : reduce_op(op), derived_op(derived) {}
     ~PerformEigenReduceFirstK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// EigenSortK - Direct sort (optimizer I1 pattern)
+// For X[⍋X] (ascending) and X[⍒X] (descending) on type-proven vectors.
+// Created only by StaticOptimizer; never emitted by the parser.
+// ============================================================================
+
+enum class EigenSortDir { ASCENDING, DESCENDING };
+
+class EigenSortK : public Continuation {
+public:
+    EigenSortDir direction;
+    Continuation* arg_cont;
+
+    EigenSortK(EigenSortDir dir, Continuation* arg)
+        : direction(dir), arg_cont(arg) {}
+    ~EigenSortK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class PerformEigenSortK : public Continuation {
+public:
+    EigenSortDir direction;
+
+    explicit PerformEigenSortK(EigenSortDir dir)
+        : direction(dir) {}
+    ~PerformEigenSortK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }

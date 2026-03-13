@@ -207,6 +207,13 @@ Continuation* clone_impl(Continuation* k, Heap* heap,
         c->set_location(erfk->line(), erfk->column());
         result = c;
     }
+    else if (auto* esk = dynamic_cast<EigenSortK*>(k)) {
+        auto* c = heap->allocate<EigenSortK>(
+            esk->direction,
+            clone_impl(esk->arg_cont, heap, memo));
+        c->set_location(esk->line(), esk->column());
+        result = c;
+    }
 
     // --- Default: return original pointer unchanged (runtime-generated konts) ---
 

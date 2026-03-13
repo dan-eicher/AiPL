@@ -278,6 +278,11 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite(Continuation* k) {
         if (new_arg != erfk->arg_cont) erfk->arg_cont = new_arg;
         result = {erfk, {TM_VECTOR, nullptr}};
     }
+    else if (auto* esk = dynamic_cast<EigenSortK*>(k)) {
+        auto [new_arg, arg_state] = rewrite(esk->arg_cont);
+        if (new_arg != esk->arg_cont) esk->arg_cont = new_arg;
+        result = {esk, {arg_state.mask, nullptr}};
+    }
     else {
         // Unknown node type – return unchanged with TM_TOP
         result = {k, {TM_TOP, nullptr}};
@@ -626,6 +631,47 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
             if (fn_st.singleton && fn_st.mask == TM_DERIVED)
                 res = TM_TOP;  // Derived operators have complex return types
             return {dcall, {res, nullptr}};
+        }
+    }
+
+    // I1 — Sort idiom: X[⍋X] → EigenSortK(ASCENDING, X)
+    //                    X[⍒X] → EigenSortK(DESCENDING, X)
+    // Parser transforms X[I] into (I)⌷X, which after D1 becomes:
+    //   JuxtaposeK(MonadicCallK(⍋, LookupK(X)), MonadicCallK(⌷, LookupK(X)))
+    if (auto* left_mc = dynamic_cast<MonadicCallK*>(new_left)) {
+        if (auto* right_mc = dynamic_cast<MonadicCallK*>(new_right)) {
+            OptState left_fn_st = lookup_state(left_mc->fn_cont);
+            OptState right_fn_st = lookup_state(right_mc->fn_cont);
+            if (left_fn_st.singleton && right_fn_st.singleton &&
+                right_fn_st.singleton->is_primitive() &&
+                right_fn_st.singleton->data.primitive_fn == &prim_squad) {
+                PrimitiveFn* grade_fn = left_fn_st.singleton->is_primitive()
+                    ? left_fn_st.singleton->data.primitive_fn : nullptr;
+                EigenSortDir dir;
+                bool is_sort = false;
+                if (grade_fn == &prim_grade_up) {
+                    dir = EigenSortDir::ASCENDING;
+                    is_sort = true;
+                } else if (grade_fn == &prim_grade_down) {
+                    dir = EigenSortDir::DESCENDING;
+                    is_sort = true;
+                }
+                if (is_sort) {
+                    // Check both args are LookupK with the same var_name
+                    auto* left_lookup = dynamic_cast<LookupK*>(left_mc->arg_cont);
+                    auto* right_lookup = dynamic_cast<LookupK*>(right_mc->arg_cont);
+                    if (left_lookup && right_lookup &&
+                        left_lookup->var_name == right_lookup->var_name) {
+                        TypeMask arg_mask = lookup_state(left_mc->arg_cont).mask;
+                        TypeMask arg_shape = shape_mask(arg_mask);
+                        if (arg_shape == TM_VECTOR || arg_shape == TM_MATRIX) {
+                            auto* sort_k = heap_->allocate<EigenSortK>(dir, left_mc->arg_cont);
+                            if (k->has_location()) sort_k->set_location(k->line(), k->column());
+                            return {sort_k, {arg_mask, nullptr}};
+                        }
+                    }
+                }
+            }
         }
     }
 
