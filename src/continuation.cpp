@@ -4732,6 +4732,48 @@ void PerformEigenOuterK::invoke(Machine* machine) {
                 machine->result = machine->heap->allocate_matrix(res);
                 return;
             }
+            case EigenOuterOp::EQ: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = (r.array() == l(i)).cast<double>();
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+            case EigenOuterOp::NE: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = (r.array() != l(i)).cast<double>();
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+            case EigenOuterOp::LT: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = (r.array() > l(i)).cast<double>();
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+            case EigenOuterOp::GT: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = (r.array() < l(i)).cast<double>();
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+            case EigenOuterOp::LE: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = (r.array() >= l(i)).cast<double>();
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
+            case EigenOuterOp::GE: {
+                Eigen::MatrixXd res(l.size(), r.size());
+                for (Eigen::Index i = 0; i < l.size(); ++i)
+                    res.row(i) = (r.array() <= l(i)).cast<double>();
+                machine->result = machine->heap->allocate_matrix(res);
+                return;
+            }
         }
     }
     // Fallback: delegate to normal operator dispatch
@@ -4741,6 +4783,114 @@ void PerformEigenOuterK::invoke(Machine* machine) {
 void PerformEigenOuterK::mark(Heap* heap) {
     heap->mark(left_val);
     heap->mark(right_val);
+    heap->mark(derived_op);
+}
+
+// ============================================================================
+// EigenScanK - Direct Eigen scan (optimizer E4)
+// ============================================================================
+
+void EigenScanK::invoke(Machine* machine) {
+    auto* perform = machine->heap->allocate_ephemeral<PerformEigenScanK>(scan_op, derived_op);
+    perform->set_location(src_line, src_column);
+    machine->push_kont(perform);
+    machine->push_kont(arg_cont);
+}
+
+void EigenScanK::mark(Heap* heap) {
+    heap->mark(arg_cont);
+    heap->mark(derived_op);
+}
+
+void PerformEigenScanK::invoke(Machine* machine) {
+    Value* arg = machine->result;
+    if (arg->is_vector() && !arg->is_char_data()) {
+        auto* mat = arg->as_matrix();
+        int len = mat->rows();
+        if (len == 0) {
+            machine->result = machine->heap->allocate_vector(Eigen::VectorXd(0));
+            return;
+        }
+        Eigen::VectorXd result(len);
+        switch (scan_op) {
+            case EigenReduceOp::SUM: {
+                double acc = 0;
+                for (int i = 0; i < len; ++i) { acc += (*mat)(i,0); result(i) = acc; }
+                break;
+            }
+            case EigenReduceOp::PROD: {
+                double acc = 1;
+                for (int i = 0; i < len; ++i) { acc *= (*mat)(i,0); result(i) = acc; }
+                break;
+            }
+            case EigenReduceOp::MAX: {
+                double acc = (*mat)(0,0); result(0) = acc;
+                for (int i = 1; i < len; ++i) { acc = std::max(acc, (*mat)(i,0)); result(i) = acc; }
+                break;
+            }
+            case EigenReduceOp::MIN: {
+                double acc = (*mat)(0,0); result(0) = acc;
+                for (int i = 1; i < len; ++i) { acc = std::min(acc, (*mat)(i,0)); result(i) = acc; }
+                break;
+            }
+        }
+        machine->result = machine->heap->allocate_vector(result);
+    } else {
+        // Fallback: delegate to normal operator dispatch
+        apply_function_immediate(machine, derived_op, nullptr, arg);
+    }
+}
+
+void PerformEigenScanK::mark(Heap* heap) {
+    heap->mark(derived_op);
+}
+
+// ============================================================================
+// EigenReduceFirstK - Direct Eigen column-wise reduction (optimizer E5)
+// ============================================================================
+
+void EigenReduceFirstK::invoke(Machine* machine) {
+    auto* perform = machine->heap->allocate_ephemeral<PerformEigenReduceFirstK>(reduce_op, derived_op);
+    perform->set_location(src_line, src_column);
+    machine->push_kont(perform);
+    machine->push_kont(arg_cont);
+}
+
+void EigenReduceFirstK::mark(Heap* heap) {
+    heap->mark(arg_cont);
+    heap->mark(derived_op);
+}
+
+void PerformEigenReduceFirstK::invoke(Machine* machine) {
+    Value* arg = machine->result;
+    if (arg->is_matrix() && !arg->is_char_data()) {
+        auto* mat = arg->as_matrix();
+        int rows = mat->rows();
+        int cols = mat->cols();
+        if (rows == 0) {
+            // Empty matrix: use identity elements
+            apply_function_immediate(machine, derived_op, nullptr, arg);
+            return;
+        }
+        if (rows == 1) {
+            machine->result = machine->heap->allocate_vector(mat->row(0).transpose());
+            return;
+        }
+        Eigen::VectorXd result;
+        switch (reduce_op) {
+            case EigenReduceOp::SUM:  result = mat->colwise().sum().transpose();       break;
+            case EigenReduceOp::PROD: result = mat->colwise().prod().transpose();      break;
+            case EigenReduceOp::MAX:  result = mat->colwise().maxCoeff().transpose();  break;
+            case EigenReduceOp::MIN:  result = mat->colwise().minCoeff().transpose();  break;
+        }
+        machine->result = machine->heap->allocate_vector(result);
+    } else {
+        // Fallback: delegate to normal operator dispatch
+        apply_function_immediate(machine, derived_op, nullptr, arg);
+    }
+}
+
+void PerformEigenReduceFirstK::mark(Heap* heap) {
     heap->mark(derived_op);
 }
 

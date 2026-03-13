@@ -103,6 +103,10 @@ class PerformEigenProductK;
 class EigenOuterK;
 class EvalEigenOuterLeftK;
 class PerformEigenOuterK;
+class EigenScanK;
+class PerformEigenScanK;
+class EigenReduceFirstK;
+class PerformEigenReduceFirstK;
 
 // ============================================================================
 // Function Application Helper
@@ -212,6 +216,10 @@ public:
     virtual void visit(EigenOuterK*) = 0;
     virtual void visit(EvalEigenOuterLeftK*) = 0;
     virtual void visit(PerformEigenOuterK*) = 0;
+    virtual void visit(EigenScanK*) = 0;
+    virtual void visit(PerformEigenScanK*) = 0;
+    virtual void visit(EigenReduceFirstK*) = 0;
+    virtual void visit(PerformEigenReduceFirstK*) = 0;
 };
 
 // Abstract Continuation base class
@@ -2035,7 +2043,7 @@ protected:
 // Created only by StaticOptimizer; never emitted by the parser.
 // ============================================================================
 
-enum class EigenOuterOp { TIMES, PLUS, MIN, MAX };
+enum class EigenOuterOp { TIMES, PLUS, MIN, MAX, EQ, NE, LT, GT, LE, GE };
 
 class EigenOuterK : public Continuation {
 public:
@@ -2083,6 +2091,84 @@ public:
     PerformEigenOuterK(EigenOuterOp op, Value* left, Value* right, Value* derived)
         : outer_op(op), left_val(left), right_val(right), derived_op(derived) {}
     ~PerformEigenOuterK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// EigenScanK - Direct Eigen scan (optimizer E4 pattern)
+// For prefix scan (+\, ×\, ⌈\, ⌊\) on type-proven vectors.
+// Created only by StaticOptimizer; never emitted by the parser.
+// ============================================================================
+
+class EigenScanK : public Continuation {
+public:
+    EigenReduceOp scan_op;  // reuse EigenReduceOp enum for scan ops
+    Continuation* arg_cont;
+    Value* derived_op;
+
+    EigenScanK(EigenReduceOp op, Continuation* arg, Value* derived)
+        : scan_op(op), arg_cont(arg), derived_op(derived) {}
+    ~EigenScanK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class PerformEigenScanK : public Continuation {
+public:
+    EigenReduceOp scan_op;
+    Value* derived_op;
+
+    PerformEigenScanK(EigenReduceOp op, Value* derived)
+        : scan_op(op), derived_op(derived) {}
+    ~PerformEigenScanK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+// ============================================================================
+// EigenReduceFirstK - Direct Eigen column-wise reduction (optimizer E5 pattern)
+// For reduce-first (+⌿, ×⌿, ⌈⌿, ⌊⌿) on type-proven matrices.
+// Created only by StaticOptimizer; never emitted by the parser.
+// ============================================================================
+
+class EigenReduceFirstK : public Continuation {
+public:
+    EigenReduceOp reduce_op;
+    Continuation* arg_cont;
+    Value* derived_op;
+
+    EigenReduceFirstK(EigenReduceOp op, Continuation* arg, Value* derived)
+        : reduce_op(op), arg_cont(arg), derived_op(derived) {}
+    ~EigenReduceFirstK() override {}
+
+    void mark(Heap* heap) override;
+    void accept(ContinuationVisitor& v) override { v.visit(this); }
+
+protected:
+    void invoke(Machine* machine) override;
+};
+
+class PerformEigenReduceFirstK : public Continuation {
+public:
+    EigenReduceOp reduce_op;
+    Value* derived_op;
+
+    PerformEigenReduceFirstK(EigenReduceOp op, Value* derived)
+        : reduce_op(op), derived_op(derived) {}
+    ~PerformEigenReduceFirstK() override {}
 
     void mark(Heap* heap) override;
     void accept(ContinuationVisitor& v) override { v.visit(this); }

@@ -699,6 +699,12 @@ public:
             case EigenOuterOp::PLUS:  out << "PLUS"; break;
             case EigenOuterOp::MIN:   out << "MIN"; break;
             case EigenOuterOp::MAX:   out << "MAX"; break;
+            case EigenOuterOp::EQ:    out << "EQ"; break;
+            case EigenOuterOp::NE:    out << "NE"; break;
+            case EigenOuterOp::LT:    out << "LT"; break;
+            case EigenOuterOp::GT:    out << "GT"; break;
+            case EigenOuterOp::LE:    out << "LE"; break;
+            case EigenOuterOp::GE:    out << "GE"; break;
         }
         out << ")";
         print_location(k);
@@ -720,10 +726,66 @@ public:
             case EigenOuterOp::PLUS:  out << "PLUS"; break;
             case EigenOuterOp::MIN:   out << "MIN"; break;
             case EigenOuterOp::MAX:   out << "MAX"; break;
+            case EigenOuterOp::EQ:    out << "EQ"; break;
+            case EigenOuterOp::NE:    out << "NE"; break;
+            case EigenOuterOp::LT:    out << "LT"; break;
+            case EigenOuterOp::GT:    out << "GT"; break;
+            case EigenOuterOp::LE:    out << "LE"; break;
+            case EigenOuterOp::GE:    out << "GE"; break;
         }
         out << ")";
         print_value("left", k->left_val);
         print_value("right", k->right_val);
+        print_location(k);
+    }
+
+    void visit(EigenScanK* k) override {
+        out << "EigenScanK(";
+        switch (k->scan_op) {
+            case EigenReduceOp::SUM:  out << "SUM"; break;
+            case EigenReduceOp::PROD: out << "PROD"; break;
+            case EigenReduceOp::MAX:  out << "MAX"; break;
+            case EigenReduceOp::MIN:  out << "MIN"; break;
+        }
+        out << ")";
+        print_location(k);
+        print_child("arg", k->arg_cont);
+    }
+
+    void visit(PerformEigenScanK* k) override {
+        out << "PerformEigenScanK(";
+        switch (k->scan_op) {
+            case EigenReduceOp::SUM:  out << "SUM"; break;
+            case EigenReduceOp::PROD: out << "PROD"; break;
+            case EigenReduceOp::MAX:  out << "MAX"; break;
+            case EigenReduceOp::MIN:  out << "MIN"; break;
+        }
+        out << ")";
+        print_location(k);
+    }
+
+    void visit(EigenReduceFirstK* k) override {
+        out << "EigenReduceFirstK(";
+        switch (k->reduce_op) {
+            case EigenReduceOp::SUM:  out << "SUM"; break;
+            case EigenReduceOp::PROD: out << "PROD"; break;
+            case EigenReduceOp::MAX:  out << "MAX"; break;
+            case EigenReduceOp::MIN:  out << "MIN"; break;
+        }
+        out << ")";
+        print_location(k);
+        print_child("arg", k->arg_cont);
+    }
+
+    void visit(PerformEigenReduceFirstK* k) override {
+        out << "PerformEigenReduceFirstK(";
+        switch (k->reduce_op) {
+            case EigenReduceOp::SUM:  out << "SUM"; break;
+            case EigenReduceOp::PROD: out << "PROD"; break;
+            case EigenReduceOp::MAX:  out << "MAX"; break;
+            case EigenReduceOp::MIN:  out << "MIN"; break;
+        }
+        out << ")";
         print_location(k);
     }
 };

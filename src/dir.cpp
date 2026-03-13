@@ -191,6 +191,23 @@ Continuation* clone_impl(Continuation* k, Heap* heap,
         result = c;
     }
 
+    else if (auto* esk = dynamic_cast<EigenScanK*>(k)) {
+        auto* c = heap->allocate<EigenScanK>(
+            esk->scan_op,
+            clone_impl(esk->arg_cont, heap, memo),
+            esk->derived_op);
+        c->set_location(esk->line(), esk->column());
+        result = c;
+    }
+    else if (auto* erfk = dynamic_cast<EigenReduceFirstK*>(k)) {
+        auto* c = heap->allocate<EigenReduceFirstK>(
+            erfk->reduce_op,
+            clone_impl(erfk->arg_cont, heap, memo),
+            erfk->derived_op);
+        c->set_location(erfk->line(), erfk->column());
+        result = c;
+    }
+
     // --- Default: return original pointer unchanged (runtime-generated konts) ---
 
     else {

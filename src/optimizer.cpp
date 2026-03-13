@@ -268,6 +268,16 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite(Continuation* k) {
         if (new_right != eok->right_cont) eok->right_cont = new_right;
         result = {eok, {TM_MATRIX, nullptr}};
     }
+    else if (auto* esk = dynamic_cast<EigenScanK*>(k)) {
+        auto [new_arg, arg_state] = rewrite(esk->arg_cont);
+        if (new_arg != esk->arg_cont) esk->arg_cont = new_arg;
+        result = {esk, {TM_VECTOR, nullptr}};
+    }
+    else if (auto* erfk = dynamic_cast<EigenReduceFirstK*>(k)) {
+        auto [new_arg, arg_state] = rewrite(erfk->arg_cont);
+        if (new_arg != erfk->arg_cont) erfk->arg_cont = new_arg;
+        result = {erfk, {TM_VECTOR, nullptr}};
+    }
     else {
         // Unknown node type – return unchanged with TM_TOP
         result = {k, {TM_TOP, nullptr}};
@@ -887,6 +897,52 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_monadic_call(MonadicCallK* k) 
         }
     }
 
+    // E4 — Type-proven vector scan → EigenScanK
+    if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
+        shape_mask(arg_state.mask) == TM_VECTOR) {
+        Value* derived_val = fn_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op == &op_scan && derived->first_operand &&
+            derived->first_operand->is_primitive()) {
+            PrimitiveFn* pfn = derived->first_operand->data.primitive_fn;
+            EigenReduceOp sop;
+            bool matched = true;
+            if      (pfn == &prim_plus)    sop = EigenReduceOp::SUM;
+            else if (pfn == &prim_times)   sop = EigenReduceOp::PROD;
+            else if (pfn == &prim_ceiling) sop = EigenReduceOp::MAX;
+            else if (pfn == &prim_floor)   sop = EigenReduceOp::MIN;
+            else matched = false;
+            if (matched) {
+                auto* esk = heap_->allocate<EigenScanK>(sop, new_arg, derived_val);
+                if (k->has_location()) esk->set_location(k->line(), k->column());
+                return {esk, {TM_VECTOR, nullptr}};
+            }
+        }
+    }
+
+    // E5 — Type-proven matrix reduce-first → EigenReduceFirstK
+    if (fn_state.singleton && fn_state.mask == TM_DERIVED &&
+        arg_state.mask == TM_MATRIX) {
+        Value* derived_val = fn_state.singleton;
+        auto* derived = derived_val->data.derived_op;
+        if (derived->primitive_op == &op_reduce_first && derived->first_operand &&
+            derived->first_operand->is_primitive()) {
+            PrimitiveFn* pfn = derived->first_operand->data.primitive_fn;
+            EigenReduceOp rop;
+            bool matched = true;
+            if      (pfn == &prim_plus)    rop = EigenReduceOp::SUM;
+            else if (pfn == &prim_times)   rop = EigenReduceOp::PROD;
+            else if (pfn == &prim_ceiling) rop = EigenReduceOp::MAX;
+            else if (pfn == &prim_floor)   rop = EigenReduceOp::MIN;
+            else matched = false;
+            if (matched) {
+                auto* erfk = heap_->allocate<EigenReduceFirstK>(rop, new_arg, derived_val);
+                if (k->has_location()) erfk->set_location(k->line(), k->column());
+                return {erfk, {TM_VECTOR, nullptr}};
+            }
+        }
+    }
+
     if (fn_state.singleton && fn_state.mask == TM_PRIMITIVE) {
         TypeMask r = abstract_apply_monadic(
             fn_state.singleton->data.primitive_fn->name, arg_state.mask);
@@ -979,10 +1035,16 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_dyadic_call(DyadicCallK* k) {
             PrimitiveFn* pfn = derived->first_operand->data.primitive_fn;
             EigenOuterOp oop;
             bool matched = true;
-            if      (pfn == &prim_times)   oop = EigenOuterOp::TIMES;
-            else if (pfn == &prim_plus)    oop = EigenOuterOp::PLUS;
-            else if (pfn == &prim_floor)   oop = EigenOuterOp::MIN;
-            else if (pfn == &prim_ceiling) oop = EigenOuterOp::MAX;
+            if      (pfn == &prim_times)      oop = EigenOuterOp::TIMES;
+            else if (pfn == &prim_plus)       oop = EigenOuterOp::PLUS;
+            else if (pfn == &prim_floor)      oop = EigenOuterOp::MIN;
+            else if (pfn == &prim_ceiling)    oop = EigenOuterOp::MAX;
+            else if (pfn == &prim_equal)      oop = EigenOuterOp::EQ;
+            else if (pfn == &prim_not_equal)  oop = EigenOuterOp::NE;
+            else if (pfn == &prim_less)       oop = EigenOuterOp::LT;
+            else if (pfn == &prim_greater)    oop = EigenOuterOp::GT;
+            else if (pfn == &prim_less_eq)    oop = EigenOuterOp::LE;
+            else if (pfn == &prim_greater_eq) oop = EigenOuterOp::GE;
             else matched = false;
             if (matched) {
                 auto* eok = heap_->allocate<EigenOuterK>(oop, new_left, new_right, derived_val);

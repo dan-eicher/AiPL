@@ -1621,6 +1621,196 @@ TEST_F(OptimizerTest, A4_NonIotaNotMatched) {
     EXPECT_DOUBLE_EQ(scalar("≢1 2 3"), 3.0);
 }
 
+// ---------------------------------------------------------------------------
+// 16. Category E4 – Eigen scan fast-paths
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, E4_PrefixSum) {
+    // +\1 2 3 4 5 → 1 3 6 10 15
+    Value* v = eval("+\\1 2 3 4 5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 5);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 6.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 10.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 15.0);
+}
+
+TEST_F(OptimizerTest, E4_PrefixProduct) {
+    // ×\1 2 3 4 → 1 2 6 24
+    Value* v = eval("×\\1 2 3 4");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 4);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 2.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 6.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 24.0);
+}
+
+TEST_F(OptimizerTest, E4_RunningMax) {
+    // ⌈\3 1 4 1 5 → 3 3 4 4 5
+    Value* v = eval("⌈\\3 1 4 1 5");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 4.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 4.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 5.0);
+}
+
+TEST_F(OptimizerTest, E4_RunningMin) {
+    // ⌊\5 3 1 4 2 → 5 3 1 1 1
+    Value* v = eval("⌊\\5 3 1 4 2");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 5.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(3), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 1.0);
+}
+
+TEST_F(OptimizerTest, E4_WorkspaceVar) {
+    eval("data←1 2 3 4 5");
+    Value* v = eval("+\\data");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(4), 15.0);
+}
+
+TEST_F(OptimizerTest, E4_EmptyVector) {
+    // +\⍬ → empty vector (via iota 0)
+    Value* v = eval("+\\⍳0");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 0);
+}
+
+// ---------------------------------------------------------------------------
+// 17. Category E5 – Eigen reduce-first fast-paths
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, E5_ColwiseSum) {
+    // +⌿M where M is 3×2 → column sums
+    eval("M←3 2⍴1 2 3 4 5 6");
+    Value* v = eval("+⌿M");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 2);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 9.0);   // 1+3+5
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 12.0);  // 2+4+6
+}
+
+TEST_F(OptimizerTest, E5_ColwiseProduct) {
+    eval("M←2 3⍴1 2 3 4 5 6");
+    Value* v = eval("×⌿M");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 3);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 4.0);   // 1×4
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 10.0);  // 2×5
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 18.0);  // 3×6
+}
+
+TEST_F(OptimizerTest, E5_ColwiseMax) {
+    eval("M←2 3⍴6 1 4 3 5 2");
+    Value* v = eval("⌈⌿M");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 6.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 5.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 4.0);
+}
+
+TEST_F(OptimizerTest, E5_ColwiseMin) {
+    eval("M←2 3⍴6 1 4 3 5 2");
+    Value* v = eval("⌊⌿M");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 3.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(1), 1.0);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(2), 2.0);
+}
+
+TEST_F(OptimizerTest, E5_SingleRow) {
+    eval("M←1 4⍴1 2 3 4");
+    Value* v = eval("+⌿M");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_vector());
+    EXPECT_EQ(v->size(), 4);
+    EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// 18. Category E6 – Boolean outer product
+// ---------------------------------------------------------------------------
+
+TEST_F(OptimizerTest, E6_OuterEqual) {
+    // 1 2 3∘.=1 2 3 → identity matrix
+    Value* v = eval("1 2 3∘.=1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(2, 2), 1.0);
+}
+
+TEST_F(OptimizerTest, E6_OuterLess) {
+    // 1 2 3∘.<1 2 3 → strict upper triangle
+    Value* v = eval("1 2 3∘.<1 2 3");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);  // 1<1
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);  // 1<2
+    EXPECT_DOUBLE_EQ((*mat)(0, 2), 1.0);  // 1<3
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 2<1
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 0.0);  // 2<2
+    EXPECT_DOUBLE_EQ((*mat)(2, 2), 0.0);  // 3<3
+}
+
+TEST_F(OptimizerTest, E6_OuterGreaterEq) {
+    // 3 1∘.≥2 2 → [[1,1],[0,0]]
+    Value* v = eval("3 1∘.≥2 2");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 3≥2
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);  // 3≥2
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 0.0);  // 1≥2
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 0.0);  // 1≥2
+}
+
+TEST_F(OptimizerTest, E6_OuterNotEqual) {
+    // 1 2∘.≠1 2 → [[0,1],[1,0]]
+    Value* v = eval("1 2∘.≠1 2");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 0.0);
+    EXPECT_DOUBLE_EQ((*mat)(0, 1), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);
+    EXPECT_DOUBLE_EQ((*mat)(1, 1), 0.0);
+}
+
+TEST_F(OptimizerTest, E6_WorkspaceVars) {
+    eval("A←1 2 3");
+    eval("B←2 2 2");
+    Value* v = eval("A∘.≤B");
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->is_matrix());
+    auto* mat = v->as_matrix();
+    EXPECT_DOUBLE_EQ((*mat)(0, 0), 1.0);  // 1≤2
+    EXPECT_DOUBLE_EQ((*mat)(1, 0), 1.0);  // 2≤2
+    EXPECT_DOUBLE_EQ((*mat)(2, 0), 0.0);  // 3≤2
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
