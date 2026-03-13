@@ -1713,12 +1713,11 @@ void fn_not(Machine* m, Value* axis, Value* omega) {
         }
     }
 
-    Eigen::MatrixXd result(mat->rows(), mat->cols());
-    for (int i = 0; i < mat->size(); ++i) {
-        double d = mat->data()[i];
-        int b = (std::abs(d - 1.0) < std::abs(d)) ? 1 : 0;
-        result(i) = (b == 1) ? 0.0 : 1.0;
-    }
+    // After validation: all elements are near-boolean (near 0 or 1).
+    // "closer to 1 than to 0" → 1, else → 0, then complement.
+    Eigen::MatrixXd result = mat->unaryExpr([](double d) -> double {
+        return (std::abs(d - 1.0) < std::abs(d)) ? 0.0 : 1.0;
+    });
 
     if (omega->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -1763,20 +1762,38 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    // Validate and compute NAND for array cases
+    // Helper: validate all elements of a matrix are near-boolean
+    auto validate_bool = [m](const Eigen::MatrixXd* mat) -> bool {
+        for (int i = 0; i < mat->size(); ++i) {
+            if (!is_near_boolean(mat->data()[i])) {
+                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
+                return false;
+            }
+        }
+        return true;
+    };
+    // Helper: round near-boolean to 0/1
+    auto to_bool = [](const Eigen::MatrixXd* mat) -> Eigen::MatrixXd {
+        return mat->unaryExpr([](double d) -> double {
+            return (std::abs(d - 1.0) < std::abs(d)) ? 1.0 : 0.0;
+        });
+    };
+
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
             m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
-        for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = nand_bool(lhs->data.scalar, rmat->data()[i], error);
-            if (error) {
-                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
-                return;
-            }
+        if (!is_near_boolean(lhs->data.scalar)) {
+            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
+            return;
         }
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (!validate_bool(rmat)) return;
+        double a = (std::abs(lhs->data.scalar - 1.0) < std::abs(lhs->data.scalar)) ? 1.0 : 0.0;
+        Eigen::MatrixXd rb = to_bool(rmat);
+        Eigen::MatrixXd result = 1.0 - (rb.array() * a);
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1790,15 +1807,15 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⍲ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-        for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = nand_bool(lmat->data()[i], rhs->data.scalar, error);
-            if (error) {
-                m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
-                return;
-            }
+        if (!is_near_boolean(rhs->data.scalar)) {
+            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
+            return;
         }
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (!validate_bool(lmat)) return;
+        double b = (std::abs(rhs->data.scalar - 1.0) < std::abs(rhs->data.scalar)) ? 1.0 : 0.0;
+        Eigen::MatrixXd lb = to_bool(lmat);
+        Eigen::MatrixXd result = 1.0 - (lb.array() * b);
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1819,14 +1836,11 @@ void fn_nand(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-    for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = nand_bool(lmat->data()[i], rmat->data()[i], error);
-        if (error) {
-            m->throw_error("DOMAIN ERROR: ⍲ requires boolean arguments", nullptr, 11, 0);
-            return;
-        }
-    }
+    if (!validate_bool(lmat)) return;
+    if (!validate_bool(rmat)) return;
+    Eigen::MatrixXd lb = to_bool(lmat);
+    Eigen::MatrixXd rb = to_bool(rmat);
+    Eigen::MatrixXd result = 1.0 - (lb.array() * rb.array());
 
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -1870,20 +1884,36 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
+    // Validate and compute NOR for array cases: ~(A∨B) = (1-A)*(1-B)
+    auto validate_bool = [m](const Eigen::MatrixXd* mat) -> bool {
+        for (int i = 0; i < mat->size(); ++i) {
+            if (!is_near_boolean(mat->data()[i])) {
+                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
+                return false;
+            }
+        }
+        return true;
+    };
+    auto to_bool = [](const Eigen::MatrixXd* mat) -> Eigen::MatrixXd {
+        return mat->unaryExpr([](double d) -> double {
+            return (std::abs(d - 1.0) < std::abs(d)) ? 1.0 : 0.0;
+        });
+    };
+
     if (lhs->is_scalar()) {
         if (!rhs->is_array()) {
             m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        const Eigen::MatrixXd* rmat = rhs->as_matrix();
-        Eigen::MatrixXd result(rmat->rows(), rmat->cols());
-        for (int i = 0; i < rmat->size(); ++i) {
-            result(i) = nor_bool(lhs->data.scalar, rmat->data()[i], error);
-            if (error) {
-                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
-                return;
-            }
+        if (!is_near_boolean(lhs->data.scalar)) {
+            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
+            return;
         }
+        const Eigen::MatrixXd* rmat = rhs->as_matrix();
+        if (!validate_bool(rmat)) return;
+        double a = (std::abs(lhs->data.scalar - 1.0) < std::abs(lhs->data.scalar)) ? 1.0 : 0.0;
+        Eigen::MatrixXd rb = to_bool(rmat);
+        Eigen::MatrixXd result = (1.0 - a) * (1.0 - rb.array());
         if (rhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1897,15 +1927,15 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
             m->throw_error("DOMAIN ERROR: ⍱ requires numeric argument", nullptr, 11, 0);
             return;
         }
-        const Eigen::MatrixXd* lmat = lhs->as_matrix();
-        Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-        for (int i = 0; i < lmat->size(); ++i) {
-            result(i) = nor_bool(lmat->data()[i], rhs->data.scalar, error);
-            if (error) {
-                m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
-                return;
-            }
+        if (!is_near_boolean(rhs->data.scalar)) {
+            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
+            return;
         }
+        const Eigen::MatrixXd* lmat = lhs->as_matrix();
+        if (!validate_bool(lmat)) return;
+        double b = (std::abs(rhs->data.scalar - 1.0) < std::abs(rhs->data.scalar)) ? 1.0 : 0.0;
+        Eigen::MatrixXd lb = to_bool(lmat);
+        Eigen::MatrixXd result = (1.0 - lb.array()) * (1.0 - b);
         if (lhs->is_vector()) {
             m->result = m->heap->allocate_vector(result.col(0));
         } else {
@@ -1926,14 +1956,11 @@ void fn_nor(Machine* m, Value* axis, Value* lhs, Value* rhs) {
         return;
     }
 
-    Eigen::MatrixXd result(lmat->rows(), lmat->cols());
-    for (int i = 0; i < lmat->size(); ++i) {
-        result(i) = nor_bool(lmat->data()[i], rmat->data()[i], error);
-        if (error) {
-            m->throw_error("DOMAIN ERROR: ⍱ requires boolean arguments", nullptr, 11, 0);
-            return;
-        }
-    }
+    if (!validate_bool(lmat)) return;
+    if (!validate_bool(rmat)) return;
+    Eigen::MatrixXd lb = to_bool(lmat);
+    Eigen::MatrixXd rb = to_bool(rmat);
+    Eigen::MatrixXd result = (1.0 - lb.array()) * (1.0 - rb.array());
 
     if (lhs->is_vector() && rhs->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
@@ -2270,10 +2297,7 @@ void fn_factorial(Machine* m, Value* axis, Value* omega) {
         }
     }
 
-    Eigen::MatrixXd result(mat->rows(), mat->cols());
-    for (int i = 0; i < mat->size(); ++i) {
-        result(i) = std::tgamma(mat->data()[i] + 1.0);
-    }
+    Eigen::MatrixXd result = mat->unaryExpr([](double x) { return std::tgamma(x + 1.0); });
 
     if (omega->is_vector()) {
         m->result = m->heap->allocate_vector(result.col(0));
