@@ -254,12 +254,12 @@ TEST_F(DIRTest, DIR_ReturnTypeTracking) {
 
 TEST_F(DIRTest, DIR_ReturnTypeDifferentSigs) {
     // Two calls with different arg types produce different return type entries.
-    // Note: non-scalar args arrive as G_PRIME curries (CURRIED_FN) due to
-    // APL's G2 grammar — ⍳10 creates G_PRIME(⍳,10), not an immediate vector.
+    // Call-boundary finalization eagerly resolves G_PRIME curries, so ⍳3
+    // arrives as VECTOR (not CURRIED_FN).
     eval("f←{⍵+1}");
     EXPECT_DOUBLE_EQ(scalar("f 5"), 6.0);   // SCALAR arg
 
-    Value* v = eval("f ⍳3");  // CURRIED_FN arg (G_PRIME curry from ⍳)
+    Value* v = eval("f ⍳3");  // Finalized to VECTOR at call boundary
     ASSERT_NE(v, nullptr);
     EXPECT_EQ(v->tag, ValueType::VECTOR);
 
@@ -267,13 +267,90 @@ TEST_F(DIRTest, DIR_ReturnTypeDifferentSigs) {
     auto* tdk = f_val->data.closure->type_dispatch;
     ASSERT_NE(tdk, nullptr);
 
-    // Should have two entries: SCALAR and CURRIED_FN
+    // Should have two entries: SCALAR and VECTOR (not CURRIED_FN)
     EXPECT_EQ(tdk->returns.size(), 2u);
 
     TypeSig scalar_sig{ValueType::SCALAR, ValueType::SCALAR, false};
     auto it1 = tdk->returns.find(scalar_sig);
     ASSERT_NE(it1, tdk->returns.end());
     EXPECT_EQ(it1->second, ValueType::SCALAR);
+
+    TypeSig vector_sig{ValueType::VECTOR, ValueType::SCALAR, false};
+    auto it2 = tdk->returns.find(vector_sig);
+    ASSERT_NE(it2, tdk->returns.end());
+    EXPECT_EQ(it2->second, ValueType::VECTOR);
+}
+
+// ---------------------------------------------------------------------------
+// 14. Call-boundary finalization
+// ---------------------------------------------------------------------------
+
+TEST_F(DIRTest, DIR_CallBoundaryFinalization) {
+    // ⍳1000 creates a G_PRIME curry at runtime, but call-boundary
+    // finalization resolves it to VECTOR before entering the body.
+    // This lets DIR specialize with ⍵=VECTOR so E3 (EigenReduceK) fires.
+    eval("f←{+/⍵}");
+    EXPECT_DOUBLE_EQ(scalar("f ⍳1000"), 500500.0);
+
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    auto* tdk = f_val->data.closure->type_dispatch;
+    ASSERT_NE(tdk, nullptr);
+
+    // The cache key should be VECTOR, not CURRIED_FN
+    TypeSig vec_sig{ValueType::VECTOR, ValueType::SCALAR, false};
+    auto it = tdk->cache.find(vec_sig);
+    EXPECT_NE(it, tdk->cache.end());
+
+    // CURRIED_FN should NOT be in the cache
+    TypeSig curry_sig{ValueType::CURRIED_FN, ValueType::SCALAR, false};
+    auto it2 = tdk->cache.find(curry_sig);
+    EXPECT_EQ(it2, tdk->cache.end());
+}
+
+TEST_F(DIRTest, DIR_CallBoundaryScalarUnchanged) {
+    // Scalar arguments are not curries — they pass through unchanged.
+    eval("f←{⍵+1}");
+    EXPECT_DOUBLE_EQ(scalar("f 5"), 6.0);
+
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    auto* tdk = f_val->data.closure->type_dispatch;
+    ASSERT_NE(tdk, nullptr);
+
+    TypeSig sig{ValueType::SCALAR, ValueType::SCALAR, false};
+    EXPECT_NE(tdk->cache.find(sig), tdk->cache.end());
+}
+
+TEST_F(DIRTest, DIR_CallBoundaryDyadicFinalization) {
+    // Both arguments can be curries in dyadic calls.
+    // ⍳3 and ⍳3 are both G_PRIME curries that get finalized.
+    eval("f←{⍺+⍵}");
+    Value* v = eval("(⍳3) f (⍳3)");
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->tag, ValueType::VECTOR);
+
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    auto* tdk = f_val->data.closure->type_dispatch;
+    ASSERT_NE(tdk, nullptr);
+
+    // Both args should be VECTOR, not CURRIED_FN
+    TypeSig sig{ValueType::VECTOR, ValueType::VECTOR, true};
+    EXPECT_NE(tdk->cache.find(sig), tdk->cache.end());
+}
+
+TEST_F(DIRTest, DIR_CallBoundaryReturnTypeWithFinalization) {
+    // Return type should reflect the finalized argument type.
+    eval("f←{+/⍵}");
+    EXPECT_DOUBLE_EQ(scalar("f ⍳100"), 5050.0);
+
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    auto* tdk = f_val->data.closure->type_dispatch;
+    ASSERT_NE(tdk, nullptr);
+
+    // Return type for VECTOR arg should be SCALAR (reduction result)
+    TypeSig sig{ValueType::VECTOR, ValueType::SCALAR, false};
+    auto it = tdk->returns.find(sig);
+    ASSERT_NE(it, tdk->returns.end());
+    EXPECT_EQ(it->second, ValueType::SCALAR);
 }
 
 int main(int argc, char** argv) {

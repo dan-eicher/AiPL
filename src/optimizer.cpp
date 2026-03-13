@@ -627,9 +627,10 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
                 inner_jux->right, inner_jux->left, right_arg);
             if (k->has_location()) dcall->set_location(k->line(), k->column());
             OptState fn_st = lookup_state(inner_jux->right);
+            TypeMask right_fin_mask = lookup_state(right_arg).mask;
             TypeMask res = TM_TOP;
-            if (fn_st.singleton && fn_st.mask == TM_DERIVED)
-                res = TM_TOP;  // Derived operators have complex return types
+            if (fn_st.singleton && fn_st.mask == TM_PRIMITIVE)
+                res = abstract_apply_dyadic(fn_st.singleton->data.primitive_fn->name, inner_left_mask, right_fin_mask);
             return {dcall, {res, nullptr}};
         }
     }
@@ -709,13 +710,26 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
         }
     }
 
-    // D4 – Dead G_PRIME branch elimination: DEFERRED
-    // JuxtaposeK(BASIC, CALLABLE) at runtime creates a G_PRIME curry (not
-    // immediate monadic application). The curry is resolved later by FinalizeK.
-    // D4 would need parent-context awareness (e.g., "is this the last expression
-    // in a dfn body, where PerformFinalizeK(gprime=true) finalizes the result?")
-    // to be correct. Without that, `(2×)3` would be broken (curry used dyadically).
-    // Deferred to Tier 2 JIT which can reason about surrounding continuation context.
+    // Infer type for unrewritten JuxtaposeK from child types.
+    // D4 (JuxtaposeK(BASIC, CALLABLE) → MonadicCallK) is semantically incorrect
+    // for APL's G2 grammar — A f creates a G_PRIME curry, not monadic application.
+    // But we can still annotate the result type precisely.
+    auto is_callable = [](TypeMask m) -> bool {
+        return m != TM_BOT && m != TM_TOP && (m & TM_CALLABLE) && !(m & ~TM_CALLABLE);
+    };
+
+    if (is_callable(lm) && is_basic(rm)) {
+        // fn arg → G_PRIME curry (will be finalized later)
+        return {k, {TM_CURRIED, nullptr}};
+    }
+    if (is_basic(lm) && is_callable(rm)) {
+        // arg fn → G_PRIME curry
+        return {k, {TM_CURRIED, nullptr}};
+    }
+    if (is_basic(lm) && is_basic(rm)) {
+        // BASIC BASIC → syntax error at runtime, but type is ⊥
+        return {k, {TM_BOT, nullptr}};
+    }
 
     return {k, {TM_TOP, nullptr}};
 }
@@ -777,9 +791,13 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_assign(AssignK* k) {
     auto [new_expr, expr_state] = rewrite(k->expr);
     if (new_expr != k->expr) k->expr = new_expr;
 
-    // After an assignment the result is the value that was assigned.
-    // We don't track the binding here (would need to update env_ dynamically).
-    return {k, {TM_TOP, nullptr}};
+    // Update abstract environment so subsequent lookups see the assigned type.
+    if (k->var_name) {
+        env_[k->var_name->str()] = expr_state;
+    }
+
+    // APL assignment returns the assigned value.
+    return {k, expr_state};
 }
 
 // ---------------------------------------------------------------------------

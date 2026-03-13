@@ -2526,6 +2526,17 @@ void FunctionCallK::invoke(Machine* machine) {
         return;
     }
 
+    // Call-boundary finalization: eagerly finalize G_PRIME curries so that
+    // DIR sees the finalized type (e.g., VECTOR instead of CURRIED_FN).
+    if (right_arg && right_arg->tag == ValueType::CURRIED_FN) {
+        Value* finalized = try_finalize_sync(machine, right_arg);
+        if (finalized) right_arg = finalized;
+    }
+    if (left_arg && left_arg->tag == ValueType::CURRIED_FN) {
+        Value* finalized = try_finalize_sync(machine, left_arg);
+        if (finalized) left_arg = finalized;
+    }
+
     // DIR: specialize body for concrete argument types via TypeDirectedK
     TypeDirectedK* tdk = fn_value->data.closure->type_dispatch;
     if (!tdk && machine->dir_backend && machine->optimizer_enabled &&
