@@ -1893,6 +1893,15 @@ TEST_F(OptimizerTest, I1_DifferentVarNotMatched) {
     EXPECT_DOUBLE_EQ((*v->as_matrix())(0), 5.0);  // X indexed by ⍋Y = 1 2 3 4 5
 }
 
+// ---------------------------------------------------------------------------
+// D4 — Dead G_PRIME branch elimination: DEFERRED
+// ---------------------------------------------------------------------------
+// D4 would rewrite JuxtaposeK(BASIC, CALLABLE) → MonadicCallK(right, left).
+// This is INCORRECT for APL's G2 grammar: A f creates a G_PRIME curry (not
+// immediate monadic application). The curry may later be resolved monadically
+// (by FinalizeK) OR dyadically (by a left argument). D4 requires parent-context
+// awareness to determine which case applies. Deferred to Tier 2 JIT.
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

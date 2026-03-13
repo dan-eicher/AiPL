@@ -16,6 +16,7 @@ class Continuation;
 class Environment;
 class Heap;
 class Machine;
+class TypeDirectedK;
 
 // GCObject base class - defined here to avoid circular dependencies
 // This is the base for all garbage-collected objects
@@ -182,9 +183,9 @@ public:
     struct ClosureData {
         Continuation* body;        // The function body (continuation graph)
         bool is_niladic;           // True if function doesn't reference ⍵ or ⍺
-        // DIR specialization cache (opaque pointer to SpecCache in dir.h)
-        // nullptr until first specialization; allocated on first cache miss
-        void* specialized_bodies = nullptr;
+        // DIR dispatch: TypeDirectedK holds the specialization cache + return type map.
+        // nullptr until first non-niladic function call; GC-tracked via heap.
+        TypeDirectedK* type_dispatch = nullptr;
     };
 
     // NDARRAY metadata - shape and precomputed strides for fast indexing

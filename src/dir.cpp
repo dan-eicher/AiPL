@@ -7,6 +7,7 @@
 #include "continuation.h"
 #include "heap.h"
 #include "optimizer.h"
+#include "machine.h"
 #include <unordered_map>
 
 namespace apl {
@@ -255,46 +256,58 @@ Continuation* CloningBackend::specialize(
 }
 
 // ---------------------------------------------------------------------------
-// dir_lookup_or_specialize
+// TypeDirectedK implementation
 // ---------------------------------------------------------------------------
 
-Continuation* dir_lookup_or_specialize(
-    Value* closure_val, const TypeSig& sig,
-    Heap* heap, SpecializationBackend* backend)
-{
-    if (!closure_val || closure_val->tag != ValueType::CLOSURE) return nullptr;
-    if (!closure_val->data.closure) return nullptr;
-    if (!backend) return nullptr;
-
-    auto* cdata = closure_val->data.closure;
-    Continuation* original_body = cdata->body;
-
-    // Lazy-init the cache on first call
-    if (!cdata->specialized_bodies) {
-        cdata->specialized_bodies = new SpecCache();
-    }
-
-    auto* cache = static_cast<SpecCache*>(cdata->specialized_bodies);
+Continuation* TypeDirectedK::dispatch(ValueType omega, bool has_alpha, ValueType alpha) {
+    TypeSig sig{omega, alpha, has_alpha};
 
     // Cache lookup
-    auto it = cache->find(sig);
-    if (it != cache->end()) {
+    auto it = cache.find(sig);
+    if (it != cache.end()) {
         // nullptr means "already tried, no benefit" — return original
         return it->second ? it->second : original_body;
     }
 
     // Cache miss — specialize
     Continuation* specialized = backend->specialize(
-        original_body, heap, sig.omega_type, sig.has_alpha, sig.alpha_type);
+        original_body, heap_ref, sig.omega_type, sig.has_alpha, sig.alpha_type);
 
     // If specialize returned the exact same pointer, store nullptr to avoid retrying
     if (specialized == original_body) {
-        (*cache)[sig] = nullptr;
+        cache[sig] = nullptr;
         return original_body;
     }
 
-    (*cache)[sig] = specialized;
+    cache[sig] = specialized;
     return specialized;
+}
+
+void TypeDirectedK::invoke(Machine* /*machine*/) {
+    // Future JIT integration: read ⍵/⍺ from environment, call dispatch().
+    // For CloningBackend, FunctionCallK::invoke calls dispatch() directly.
+}
+
+void TypeDirectedK::mark(Heap* heap) {
+    heap->mark(original_body);
+    for (auto& [sig, kont] : cache) {
+        if (kont) heap->mark(kont);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ReturnTypeRecordK implementation
+// ---------------------------------------------------------------------------
+
+void ReturnTypeRecordK::invoke(Machine* machine) {
+    if (tdk && machine->result) {
+        tdk->returns[sig] = machine->result->tag;
+    }
+    // Result passes through unchanged.
+}
+
+void ReturnTypeRecordK::mark(Heap* heap) {
+    heap->mark(tdk);
 }
 
 } // namespace apl

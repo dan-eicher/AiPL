@@ -2526,15 +2526,19 @@ void FunctionCallK::invoke(Machine* machine) {
         return;
     }
 
-    // DIR: specialize body for concrete argument types
-    if (machine->dir_backend && machine->optimizer_enabled && right_arg) {
-        TypeSig sig;
-        sig.omega_type = right_arg->tag;
-        sig.has_alpha = (left_arg != nullptr);
-        sig.alpha_type = left_arg ? left_arg->tag : ValueType::SCALAR;
-        Continuation* specialized = dir_lookup_or_specialize(
-            fn_value, sig, machine->heap, machine->dir_backend);
-        if (specialized) body = specialized;
+    // DIR: specialize body for concrete argument types via TypeDirectedK
+    TypeDirectedK* tdk = fn_value->data.closure->type_dispatch;
+    if (!tdk && machine->dir_backend && machine->optimizer_enabled &&
+        !fn_value->data.closure->is_niladic && right_arg) {
+        tdk = machine->heap->allocate<TypeDirectedK>(body, machine->dir_backend, machine->heap);
+        fn_value->data.closure->type_dispatch = tdk;
+    }
+    TypeSig call_sig{};
+    if (tdk && right_arg) {
+        call_sig.omega_type = right_arg->tag;
+        call_sig.has_alpha = (left_arg != nullptr);
+        call_sig.alpha_type = left_arg ? left_arg->tag : ValueType::SCALAR;
+        body = tdk->dispatch(call_sig.omega_type, call_sig.has_alpha, call_sig.alpha_type);
     }
 
     // Create new environment for function scope (GC-managed)
@@ -2559,6 +2563,12 @@ void FunctionCallK::invoke(Machine* machine) {
     // Push restore environment continuation (executes after function returns)
     RestoreEnvK* restore_k = machine->heap->allocate_ephemeral<RestoreEnvK>(saved_env);
     machine->push_kont(restore_k);
+
+    // Record return type when TypeDirectedK is active
+    if (tdk && right_arg) {
+        ReturnTypeRecordK* rtr_k = machine->heap->allocate_ephemeral<ReturnTypeRecordK>(tdk, call_sig);
+        machine->push_kont(rtr_k);
+    }
 
     // Push finalization to resolve any G_PRIME curries BEFORE environment restoration
     // This ensures closures created inside the dfn execute while their environment is active

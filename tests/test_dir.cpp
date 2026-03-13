@@ -187,6 +187,95 @@ TEST_F(DIRTest, DIR_PersistAcrossExpressions) {
     EXPECT_DOUBLE_EQ(scalar("f ⍳30"), 465.0);
 }
 
+// ---------------------------------------------------------------------------
+// 11. TypeDirectedK created on ClosureData
+// ---------------------------------------------------------------------------
+
+TEST_F(DIRTest, DIR_TypeDirectedKCreated) {
+    // After first non-niladic call, ClosureData should have type_dispatch set.
+    eval("f←{⍵+1}");
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    ASSERT_NE(f_val, nullptr);
+    ASSERT_EQ(f_val->tag, ValueType::CLOSURE);
+    EXPECT_EQ(f_val->data.closure->type_dispatch, nullptr);  // Not yet called
+
+    EXPECT_DOUBLE_EQ(scalar("f 5"), 6.0);
+
+    // After first call, TypeDirectedK should be created
+    EXPECT_NE(f_val->data.closure->type_dispatch, nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// 12. Cache hit via TypeDirectedK
+// ---------------------------------------------------------------------------
+
+TEST_F(DIRTest, DIR_TypeDirectedKCacheHit) {
+    eval("f←{+/⍵}");
+    EXPECT_DOUBLE_EQ(scalar("f ⍳100"), 5050.0);
+
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    ASSERT_NE(f_val, nullptr);
+    auto* tdk = f_val->data.closure->type_dispatch;
+    ASSERT_NE(tdk, nullptr);
+
+    // Cache should have one entry (VECTOR monadic)
+    EXPECT_EQ(tdk->cache.size(), 1u);
+
+    // Second call with same type — cache hit (still one entry)
+    EXPECT_DOUBLE_EQ(scalar("f ⍳200"), 20100.0);
+    EXPECT_EQ(tdk->cache.size(), 1u);
+
+    // Different type — new entry
+    EXPECT_DOUBLE_EQ(scalar("f 5"), 5.0);
+    EXPECT_EQ(tdk->cache.size(), 2u);
+}
+
+// ---------------------------------------------------------------------------
+// 13. Return type tracking via ReturnTypeRecordK
+// ---------------------------------------------------------------------------
+
+TEST_F(DIRTest, DIR_ReturnTypeTracking) {
+    // Use scalar argument (no G_PRIME curry indirection).
+    eval("f←{⍵+1}");
+    EXPECT_DOUBLE_EQ(scalar("f 5"), 6.0);
+
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    ASSERT_NE(f_val, nullptr);
+    auto* tdk = f_val->data.closure->type_dispatch;
+    ASSERT_NE(tdk, nullptr);
+
+    // Scalar arg → scalar return. TypeSig: omega=SCALAR, has_alpha=false.
+    ASSERT_GE(tdk->returns.size(), 1u);
+    TypeSig sig{ValueType::SCALAR, ValueType::SCALAR, false};
+    auto it = tdk->returns.find(sig);
+    ASSERT_NE(it, tdk->returns.end());
+    EXPECT_EQ(it->second, ValueType::SCALAR);
+}
+
+TEST_F(DIRTest, DIR_ReturnTypeDifferentSigs) {
+    // Two calls with different arg types produce different return type entries.
+    // Note: non-scalar args arrive as G_PRIME curries (CURRIED_FN) due to
+    // APL's G2 grammar — ⍳10 creates G_PRIME(⍳,10), not an immediate vector.
+    eval("f←{⍵+1}");
+    EXPECT_DOUBLE_EQ(scalar("f 5"), 6.0);   // SCALAR arg
+
+    Value* v = eval("f ⍳3");  // CURRIED_FN arg (G_PRIME curry from ⍳)
+    ASSERT_NE(v, nullptr);
+    EXPECT_EQ(v->tag, ValueType::VECTOR);
+
+    Value* f_val = m->env->lookup(m->string_pool.intern("f"));
+    auto* tdk = f_val->data.closure->type_dispatch;
+    ASSERT_NE(tdk, nullptr);
+
+    // Should have two entries: SCALAR and CURRIED_FN
+    EXPECT_EQ(tdk->returns.size(), 2u);
+
+    TypeSig scalar_sig{ValueType::SCALAR, ValueType::SCALAR, false};
+    auto it1 = tdk->returns.find(scalar_sig);
+    ASSERT_NE(it1, tdk->returns.end());
+    EXPECT_EQ(it1->second, ValueType::SCALAR);
+}
+
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

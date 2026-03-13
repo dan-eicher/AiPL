@@ -109,6 +109,8 @@ class EigenReduceFirstK;
 class PerformEigenReduceFirstK;
 class EigenSortK;
 class PerformEigenSortK;
+class TypeDirectedK;
+class ReturnTypeRecordK;
 
 // ============================================================================
 // Function Application Helper
@@ -224,6 +226,8 @@ public:
     virtual void visit(PerformEigenReduceFirstK*) = 0;
     virtual void visit(EigenSortK*) = 0;
     virtual void visit(PerformEigenSortK*) = 0;
+    virtual void visit(TypeDirectedK*) = 0;
+    virtual void visit(ReturnTypeRecordK*) = 0;
 };
 
 // Abstract Continuation base class

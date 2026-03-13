@@ -185,11 +185,10 @@ void Value::cleanup() {
     }
     // Note: PRIMITIVE and OPERATOR values point to static globals (prim_plus, op_reduce, etc.)
     // CLOSURE body points to GC-managed Continuation (marked via mark(), not deleted here)
+    // TypeDirectedK (type_dispatch) is GC-tracked via heap; just null the pointer.
     if (tag == ValueType::CLOSURE) {
-        if (data.closure && data.closure->specialized_bodies) {
-            // Continuations inside are GC-managed; just delete the map itself.
-            delete static_cast<SpecCache*>(data.closure->specialized_bodies);
-            data.closure->specialized_bodies = nullptr;
+        if (data.closure) {
+            data.closure->type_dispatch = nullptr;
         }
         delete data.closure;  // ClosureData struct, not the Continuation inside
         data.closure = nullptr;
@@ -357,14 +356,11 @@ void Value::mark(Heap* heap) {
         }
     }
 
-    // If this is a CLOSURE, mark the continuation graph body and specialized cache
+    // If this is a CLOSURE, mark the continuation graph body and TypeDirectedK
     if (tag == ValueType::CLOSURE && data.closure) {
         heap->mark(data.closure->body);
-        if (data.closure->specialized_bodies) {
-            auto* cache = static_cast<SpecCache*>(data.closure->specialized_bodies);
-            for (auto& [sig, kont] : *cache) {
-                heap->mark(kont);
-            }
+        if (data.closure->type_dispatch) {
+            heap->mark(data.closure->type_dispatch);
         }
     }
 

@@ -3,6 +3,7 @@
 #pragma once
 
 #include "continuation.h"
+#include "dir.h"
 #include <sstream>
 #include <string>
 
@@ -801,6 +802,18 @@ public:
         out << "PerformEigenSortK(";
         out << (k->direction == EigenSortDir::ASCENDING ? "ASC" : "DESC");
         out << ")";
+        print_location(k);
+    }
+
+    void visit(TypeDirectedK* k) override {
+        out << "TypeDirectedK(cache=" << k->cache.size()
+            << ", returns=" << k->returns.size() << ")";
+        print_location(k);
+        print_child("body", k->original_body);
+    }
+
+    void visit(ReturnTypeRecordK* k) override {
+        out << "ReturnTypeRecordK";
         print_location(k);
     }
 };

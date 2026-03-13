@@ -709,6 +709,14 @@ StaticOptimizer::Rewrite StaticOptimizer::rewrite_juxtapose(JuxtaposeK* k) {
         }
     }
 
+    // D4 – Dead G_PRIME branch elimination: DEFERRED
+    // JuxtaposeK(BASIC, CALLABLE) at runtime creates a G_PRIME curry (not
+    // immediate monadic application). The curry is resolved later by FinalizeK.
+    // D4 would need parent-context awareness (e.g., "is this the last expression
+    // in a dfn body, where PerformFinalizeK(gprime=true) finalizes the result?")
+    // to be correct. Without that, `(2×)3` would be broken (curry used dyadically).
+    // Deferred to Tier 2 JIT which can reason about surrounding continuation context.
+
     return {k, {TM_TOP, nullptr}};
 }
 
